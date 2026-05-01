@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-27">
+<meta name="app-version" content="2026-04-30-28">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -2505,7 +2505,7 @@ function renderWidgetHTML(id) {
         +'<button class="action-btn" onclick="showPage(&quot;pedidos&quot;)" style="font-size:10px;">Ver todos →</button>'
         +'</div>'
         +'<div class="table-wrap"><table>'
-        +'<thead><tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Total</th></tr></thead>'
+        +'<thead><tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Produto</th><th>Total</th></tr></thead>'
         +'<tbody id="dash-pedidos-body"></tbody>'
         +'</table></div></div>';
 
@@ -2997,6 +2997,28 @@ function renderDashGrafico(dados) {
 }
 
 
+// Extrai um label "Produto" do array de itens do pedido.
+// Ignora itens com valor 0 (brindes/capacetes/frete).
+// Tenta `descricao` direto, depois `item.descricao` (estrutura aninhada
+// que o Tiny às vezes retorna), e cai pra `produto` como fallback.
+function _pedidoProdutoLabel(itens) {
+  if (!Array.isArray(itens) || !itens.length) return '—';
+  const validos = itens.filter(it => {
+    const v = +(it.valorUnitario != null ? it.valorUnitario : (it.valor != null ? it.valor : 0));
+    return v > 0;
+  });
+  if (!validos.length) return '—';
+  const nome = (it => (
+    it.descricao
+    || (it.item && it.item.descricao)
+    || it.produto
+    || ''
+  ).trim())(validos[0]) || 'Sem nome';
+  if (validos.length === 1) return nome;
+  const extras = validos.length - 1;
+  return nome + ' <span style="color:var(--text3);font-weight:500;">+ ' + extras + ' iten' + (extras !== 1 ? 's' : '') + '</span>';
+}
+
 function renderDashPedidos(pedidos) {
   const card = document.getElementById('dash-pedidos-card');
   if (!pedidos || pedidos.length === 0) { card.style.display='none'; return; }
@@ -3010,9 +3032,8 @@ function renderDashPedidos(pedidos) {
     <tr>
       <td class="td-mono" style="color:var(--gold);font-weight:700;">#${p.numero || p.id}</td>
       <td class="td-mono">${p.data||'—'}</td>
-      <td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.cliente || '—'}</td>
-      <td class="td-mono">${fmt(p.totalProdutos)}</td>
-      <td class="td-mono" style="color:var(--text3);">${fmt(p.valorFrete)}</td>
+      <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.cliente || '—'}</td>
+      <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_pedidoProdutoLabel(p.itens)}</td>
       <td class="td-mono" style="font-weight:700;color:var(--green);">${fmt(p.valor)}</td>
     </tr>
   `).join('');
