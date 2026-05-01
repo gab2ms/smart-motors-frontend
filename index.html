@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-28">
+<meta name="app-version" content="2026-04-30-29">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -817,6 +817,40 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
   border-color: rgba(245,197,24,0.35);
 }
 
+/* ── ABAS DO MODULO FINANCEIRO ── */
+.fin-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid transparent;
+  margin-bottom: 22px;
+  position: relative;
+}
+.fin-tabs::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(245,197,24,0.30), transparent);
+}
+.fin-tab-btn {
+  background: none; border: none;
+  padding: 10px 18px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 12px; font-weight: 600;
+  color: var(--text3);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.2s var(--ease);
+  letter-spacing: 0.3px;
+  position: relative;
+  z-index: 1;
+}
+.fin-tab-btn:hover { color: var(--text2); }
+.fin-tab-btn.active {
+  color: var(--gold-bright);
+  border-bottom-color: var(--gold);
+  text-shadow: 0 0 12px var(--gold-glow);
+}
+
 /* ── DASHBOARD PRESETS DE PERIODO ── */
 .dash-preset-btn.active {
   background: var(--gold-dim);
@@ -1348,12 +1382,12 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
   <div class="page content" id="page-financeiro">
 
     <!-- HEADER -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:10px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
       <div>
         <div style="font-size:13px;font-weight:700;">Saúde financeira</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="fin-periodo-label">Todos os lançamentos</div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div id="fin-header-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <input type="date" id="fin-data-ini" class="search-input" style="max-width:135px;padding:7px 10px;font-size:11px;" onchange="filtrarLancamentos()">
         <span style="color:var(--text3);font-size:11px;">até</span>
         <input type="date" id="fin-data-fim" class="search-input" style="max-width:135px;padding:7px 10px;font-size:11px;" onchange="filtrarLancamentos()">
@@ -1362,30 +1396,15 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       </div>
     </div>
 
-    <!-- SEÇÃO NOVA: CONTROLE DE EMPRÉSTIMO -->
-    <div class="card" style="margin-bottom:18px;">
-      <div class="card-header">
-        <div>
-          <div class="card-title">💰 Controle de empréstimo</div>
-          <div class="card-sub" id="emp-fin-sub">Carregando...</div>
-        </div>
-      </div>
-      <div id="emp-fin-content" style="padding:18px 20px;"></div>
+    <!-- ABAS -->
+    <div class="fin-tabs">
+      <button class="fin-tab-btn active" data-fintab="caixa"       onclick="switchFinTab('caixa')">💳 Caixa Atual</button>
+      <button class="fin-tab-btn"        data-fintab="emprestimos" onclick="switchFinTab('emprestimos')">💰 Empréstimos</button>
+      <button class="fin-tab-btn"        data-fintab="ia"          onclick="switchFinTab('ia')">🤖 Análise IA</button>
     </div>
 
-    <!-- SEÇÃO NOVA: ANÁLISE DE SAÚDE FINANCEIRA POR IA -->
-    <div class="card" style="margin-bottom:22px;">
-      <div class="card-header">
-        <div>
-          <div class="card-title">🤖 Análise de saúde financeira</div>
-          <div class="card-sub">Parecer da IA com base nos dados atuais (cache 2h)</div>
-        </div>
-        <button class="btn btn-gold" id="btn-ai-saude" onclick="analisarSaudeFinanceira()" style="font-size:11px;padding:8px 16px;">🤖 Analisar saúde financeira</button>
-      </div>
-      <div id="ai-saude-output" style="padding:16px 20px;">
-        <div style="color:var(--text3);font-size:12px;text-align:center;padding:14px;">Clique em "Analisar saúde financeira" para gerar um parecer baseado nas suas finanças do mês corrente.</div>
-      </div>
-    </div>
+    <!-- ════════ ABA: CAIXA ATUAL ════════ -->
+    <div class="fin-tab-content" id="fin-tab-caixa">
 
     <!-- SEÇÃO 1: CONTAS BANCÁRIAS -->
     <div style="margin-bottom:8px;">
@@ -1466,6 +1485,37 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
           <span>Data</span><span>Descrição</span><span>Categoria</span><span>Conta</span><span>Valor</span><span>Ações</span>
         </div>
         <div id="fin-lan-tbody"></div>
+      </div>
+    </div>
+
+    </div><!-- /fin-tab-caixa -->
+
+    <!-- ════════ ABA: EMPRÉSTIMOS ════════ -->
+    <div class="fin-tab-content" id="fin-tab-emprestimos" style="display:none;">
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">💰 Controle de empréstimo</div>
+            <div class="card-sub" id="emp-fin-sub">Carregando...</div>
+          </div>
+        </div>
+        <div id="emp-fin-content" style="padding:18px 20px;"></div>
+      </div>
+    </div>
+
+    <!-- ════════ ABA: ANÁLISE IA ════════ -->
+    <div class="fin-tab-content" id="fin-tab-ia" style="display:none;">
+      <div class="card" style="margin-bottom:22px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🤖 Análise de saúde financeira</div>
+            <div class="card-sub">Parecer da IA com base nos dados atuais (cache 2h)</div>
+          </div>
+          <button class="btn btn-gold" id="btn-ai-saude" onclick="analisarSaudeFinanceira()" style="font-size:11px;padding:8px 16px;">🤖 Analisar saúde financeira</button>
+        </div>
+        <div id="ai-saude-output" style="padding:16px 20px;">
+          <div style="color:var(--text3);font-size:12px;text-align:center;padding:14px;">Clique em "Analisar saúde financeira" para gerar um parecer baseado nas suas finanças do mês corrente.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -5076,6 +5126,27 @@ async function initFinanceiro() {
   renderEmprestimoFin();
   // Tenta usar cache de IA se ainda válido (não dispara chamada)
   hidratarAnaliseFinanceiraCacheada();
+  // Restaura aba salva (default: caixa)
+  const savedTab = localStorage.getItem('sm_fin_tab') || 'caixa';
+  switchFinTab(savedTab);
+}
+
+// Troca a aba ativa do módulo Financeiro
+function switchFinTab(tabId) {
+  const tabs   = ['caixa', 'emprestimos', 'ia'];
+  if (!tabs.includes(tabId)) tabId = 'caixa';
+  tabs.forEach(t => {
+    const content = document.getElementById('fin-tab-' + t);
+    if (content) content.style.display = (t === tabId) ? '' : 'none';
+  });
+  document.querySelectorAll('.fin-tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.fintab === tabId);
+  });
+  // Os botões de ação (date inputs / + Conta / + Lançamento) só fazem
+  // sentido na aba Caixa Atual.
+  const headerActions = document.getElementById('fin-header-actions');
+  if (headerActions) headerActions.style.display = (tabId === 'caixa') ? '' : 'none';
+  try { localStorage.setItem('sm_fin_tab', tabId); } catch(e) {}
 }
 
 // ── Carrega emprestimo + parcelas do Supabase ──
