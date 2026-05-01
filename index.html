@@ -6,10 +6,11 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-7">
+<meta name="app-version" content="2026-04-30-8">
+<script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onload="console.log('[head] supabase CDN carregou')" onerror="console.error('[head] supabase CDN FALHOU ao carregar')"></script>
 <style>
 :root {
   --mono: 'JetBrains Mono', monospace;
@@ -1379,11 +1380,33 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 
 <script>
 // ══════════════════════════════════════════
+//  BOOTSTRAP — primeira coisa, sem dependências
+// ══════════════════════════════════════════
+console.log('[bootstrap] script principal executando');
+console.log('[bootstrap] typeof supabase =', typeof supabase);
+if (typeof supabase === 'undefined') {
+  console.error('[bootstrap] objeto "supabase" NAO definido — CDN do @supabase/supabase-js nao carregou (bloqueio de extensao? rede?)');
+}
+
+// ══════════════════════════════════════════
 //  SUPABASE
 // ══════════════════════════════════════════
 const SUPABASE_URL = 'https://sxmeuqlotjuchslevofv.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4bWV1cWxvdGp1Y2hzbGV2b2Z2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1NzU4MjQsImV4cCI6MjA5MzE1MTgyNH0.uqXors6qAgX5GOK7U00kj0V9Y1RQNjHnyOgGIdtsCdw';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let sb = null;
+try {
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  console.log('[bootstrap] cliente supabase criado OK');
+} catch(e) {
+  console.error('[bootstrap] supabase.createClient FALHOU:', e.message);
+  // Stub para o resto do script nao quebrar - todas as queries ficam como erro
+  const stubResp = { data: null, error: { message: 'supabase nao disponivel' } };
+  const stubChain = new Proxy(() => stubChain, {
+    get: (_, prop) => prop === 'then' ? undefined : stubChain,
+    apply: () => Promise.resolve(stubResp),
+  });
+  sb = { from: () => stubChain };
+}
 
 // camelCase <-> snake_case mappers (JS usa camelCase, Postgres convention é snake_case)
 const _toSnakeKey = s => s.replace(/[A-Z]/g, l => '_' + l.toLowerCase());
