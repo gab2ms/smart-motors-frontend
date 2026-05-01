@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-10">
+<meta name="app-version" content="2026-04-30-11">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1660,11 +1660,19 @@ async function _syncTable(table, list) {
 
   if (withId.length) {
     const { error } = await sb.from(table).upsert(withId.map(map.toDb));
-    if (error) console.warn('Erro upsert ' + table + ':', error.message);
+    if (error) {
+      console.error('[sync] ERRO upsert ' + table + ':', error.message, error);
+    } else {
+      console.log('[sync] upsert ' + table + ': ' + withId.length + ' rows OK');
+    }
   }
   if (withoutId.length) {
     const { data, error } = await sb.from(table).insert(withoutId.map(map.toDb)).select();
-    if (error) { console.warn('Erro insert ' + table + ':', error.message); return; }
+    if (error) {
+      console.error('[sync] ERRO insert ' + table + ':', error.message, error);
+      return;
+    }
+    console.log('[sync] insert ' + table + ': ' + (data?.length || 0) + ' rows OK');
     if (data) data.forEach((row, i) => Object.assign(withoutId[i], map.fromDb(row)));
   }
 }
@@ -1686,6 +1694,7 @@ async function _enviarParaBanco() {
 
 // Carrega dados do Supabase. Se uma tabela estiver vazia e houver SEED, faz seed inicial.
 async function carregarDados() {
+  console.log('[carregarDados] iniciando fetch de todas as tabelas');
   try {
     const [c, l, cp, cf, pr] = await Promise.all([
       sb.from('contas_bancarias').select('*').order('id'),
@@ -1694,6 +1703,13 @@ async function carregarDados() {
       sb.from('custos_fixos').select('*').order('id'),
       sb.from('produtos_precos').select('*').order('id'),
     ]);
+
+    // Loga resultado (e erros explicitos) de cada tabela
+    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['custos_fixos',cf],['produtos_precos',pr]]
+      .forEach(([n, r]) => {
+        if (r.error) console.error('[carregarDados] ERRO em ' + n + ':', r.error.message, r.error);
+        else console.log('[carregarDados] ' + n + ': ' + (r.data?.length || 0) + ' rows');
+      });
 
     const fromDb = name => (TABLE_MAP[name] || { fromDb: toCamel }).fromDb;
     contas       = (!c.error  && c.data?.length)  ? c.data.map(fromDb('contas_bancarias')) : [];
@@ -1707,14 +1723,20 @@ async function carregarDados() {
       if (target.length || !seedData?.length) return target;
       const map = TABLE_MAP[tbl] || { toDb: toSnake, fromDb: toCamel };
       const { data, error } = await sb.from(tbl).insert(seedData.map(map.toDb)).select();
-      if (error) { console.warn('Seed ' + tbl + ' falhou:', error.message); return target; }
+      if (error) { console.warn('[carregarDados] seed ' + tbl + ' falhou:', error.message); return target; }
+      console.log('[carregarDados] seed ' + tbl + ': ' + (data?.length || 0) + ' rows inseridos');
       return (data || []).map(map.fromDb);
     };
     if (!c.error)  contas      = await seed('contas_bancarias', contas,      CONTAS_SEED);
     if (!cf.error) custosFixos = await seed('custos_fixos',     custosFixos, CUSTOS_FIXOS_SEED);
     if (!pr.error) products    = await seed('produtos_precos',  products,    PRODUCTS_SEED);
 
-    console.log('✅ Dados carregados do Supabase');
+    console.log('[carregarDados] estado em memoria pos-load:',
+      'contas=' + contas.length,
+      'lancamentos=' + lancamentos.length,
+      'contasPagar=' + contasPagar.length,
+      'custosFixos=' + custosFixos.length,
+      'products=' + products.length);
     return true;
   } catch(e) {
     console.warn('Erro ao carregar do Supabase:', e.message || e);
@@ -1994,8 +2016,21 @@ document.addEventListener('DOMContentLoaded', async function() {
   await carregarDados();
   console.log('[init] login-overlay classes DEPOIS do carregarDados =',
     document.getElementById('login-overlay')?.className);
-  renderDashboard();
-  atualizarDotContasPagar();
+
+  // Re-renderiza TUDO que depende de dados, para o estado em memoria
+  // ficar refletido em qualquer modulo que o usuario navegue depois.
+  try { renderDashboard?.(); }              catch(e) { console.warn('renderDashboard falhou:', e.message); }
+  try { atualizarDotContasPagar?.(); }      catch(e) {}
+  try { populateFinCatFilter?.(); }         catch(e) {}
+  try { populateFinContaFilter?.(); }       catch(e) {}
+  try { renderContas?.(); }                 catch(e) {}
+  try { renderFinKpis?.(); }                catch(e) {}
+  try { renderLancamentos?.(); }            catch(e) {}
+  try { renderContasPagarKpis?.(); }        catch(e) {}
+  try { renderContasPagarAlertas?.(); }     catch(e) {}
+  try { renderContasPagar?.(); }            catch(e) {}
+  try { renderCustos?.(); }                 catch(e) {}
+  try { renderPrecos?.(); }                 catch(e) {}
 
   // Restaura a última página acessada (se houver) para não voltar sempre
   // para o dashboard depois de um refresh.
@@ -2003,11 +2038,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (paginaSalva && document.getElementById('page-' + paginaSalva)) {
     console.log('[init] restaurando pagina:', paginaSalva);
     showPage(paginaSalva);
-  } else {
-    // Re-renderiza módulos da página atualmente ativa (caso seja diferente do dashboard)
-    if (document.getElementById('page-financeiro')?.classList.contains('active')) initFinanceiro();
-    if (document.getElementById('page-contas-pagar')?.classList.contains('active')) initContasPagar();
-    if (document.getElementById('page-custos')?.classList.contains('active')) renderCustos();
   }
 });
 
