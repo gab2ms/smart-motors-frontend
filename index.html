@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-6">
+<meta name="app-version" content="2026-04-30-7">
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1923,6 +1923,31 @@ document.addEventListener('DOMContentLoaded', async function() {
   console.log('[init] login-overlay element =', document.getElementById('login-overlay'));
   console.log('[init] login-overlay classes ANTES do initLogin =',
     document.getElementById('login-overlay')?.className);
+
+  // ── DEBUG: observa mutações na classe do login-overlay ──
+  // Loga toda vez que 'show' é adicionada ou removida, com stack trace
+  // pra identificar qual código está fazendo a mudança.
+  const overlayEl = document.getElementById('login-overlay');
+  if (overlayEl && window.MutationObserver) {
+    let _prevHasShow = overlayEl.classList.contains('show');
+    const obs = new MutationObserver(muts => {
+      muts.forEach(m => {
+        if (m.type !== 'attributes' || m.attributeName !== 'class') return;
+        const hasShow = overlayEl.classList.contains('show');
+        if (hasShow === _prevHasShow) return;
+        const acao = hasShow ? 'ADICIONOU show' : 'REMOVEU show';
+        const stack = new Error().stack || '';
+        console.log('[overlay-watch] ' + acao + ' | classes=' + overlayEl.className);
+        console.log('[overlay-watch] stack:\n' + stack);
+        _prevHasShow = hasShow;
+      });
+    });
+    obs.observe(overlayEl, { attributes: true, attributeFilter: ['class'] });
+    console.log('[overlay-watch] MutationObserver instalado');
+  } else {
+    console.log('[overlay-watch] NAO instalado: overlayEl=' + !!overlayEl
+      + ' MutationObserver=' + !!window.MutationObserver);
+  }
   // Login PRIMEIRO. Caminho rápido (< 24h) só lê localStorage e nem
   // espera Supabase, então a tela de login some imediatamente para
   // usuários autenticados, mesmo se o Supabase estiver lento.
