@@ -3479,7 +3479,7 @@ function getAcessoCode() { return _acessoCode; }
 
 async function initLogin() {
   await garantirAdmin();
-  const user = sessionStorage.getItem('sm_user');
+  const user = localStorage.getItem('sm_user');
   if (user) {
     try {
       const u = JSON.parse(user);
@@ -3491,7 +3491,7 @@ async function initLogin() {
         return;
       }
     } catch(e) {}
-    sessionStorage.removeItem('sm_user');
+    localStorage.removeItem('sm_user');
   }
 }
 
@@ -3552,7 +3552,7 @@ async function fazerLogin() {
   if (email === ADMIN_EMAIL && senha === 'Ma49721106') {
     const adminUser = { nome:'Gabriel', email:ADMIN_EMAIL, role:'admin', status:'aprovado' };
     await saveUser({ ...adminUser, senha: hashSenha(senha), criadoEm: new Date().toISOString() });
-    sessionStorage.setItem('sm_user', JSON.stringify(adminUser));
+    localStorage.setItem('sm_user', JSON.stringify(adminUser));
     hideLoginOverlay();
     atualizarUserDisplay(adminUser);
     return;
@@ -3572,7 +3572,7 @@ async function fazerLogin() {
     return;
   }
 
-  sessionStorage.setItem('sm_user', JSON.stringify(user));
+  localStorage.setItem('sm_user', JSON.stringify(user));
   hideLoginOverlay();
   atualizarUserDisplay(user);
 }
@@ -3687,7 +3687,7 @@ async function atualizarPendingDot() {
 
 function fazerLogout() {
   if (!confirm('Deseja sair da sua conta?')) return;
-  sessionStorage.removeItem('sm_user');
+  localStorage.removeItem('sm_user');
   document.getElementById('login-overlay').classList.add('show');
   const su = document.getElementById('sidebar-user');
   if (su) su.remove();
