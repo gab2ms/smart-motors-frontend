@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-20">
+<meta name="app-version" content="2026-04-30-21">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -2012,14 +2012,13 @@ const pageMeta={
   'contas-pagar':['Contas a Pagar','Gerencie vencimentos e nunca esqueça um pagamento'],
   custos:['Custos Fixos','Despesas mensais e controle do empréstimo'],
 };
-function showPage(id){
-  console.log('[showPage] chamada com id =', id, '| stack:', new Error().stack?.split('\n').slice(1,4).join(' | '));
-  try {
-    localStorage.setItem('sm_pagina_atual', id);
-    console.log('[showPage] sm_pagina_atual SALVO no localStorage =', localStorage.getItem('sm_pagina_atual'));
-  } catch(e) {
-    console.error('[showPage] FALHOU ao salvar no localStorage:', e.message);
-  }
+// opts.fromHistory=true → veio do popstate, NÃO empilha (evita loop)
+// opts.replace=true     → primeira navegação, replaceState em vez de pushState
+function showPage(id, opts){
+  opts = opts || {};
+  console.log('[showPage] id=' + id + ' fromHistory=' + !!opts.fromHistory
+    + ' replace=' + !!opts.replace);
+  try { localStorage.setItem('sm_pagina_atual', id); } catch(e) {}
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
@@ -2032,6 +2031,18 @@ function showPage(id){
   closeSidebar();
   const btnProd = document.getElementById('btn-add-produto');
   if (btnProd) btnProd.style.display = ['estoque','simulador'].includes(id) ? '' : 'none';
+
+  // Sincroniza com History API: o botão voltar/avançar do navegador
+  // navega entre módulos como se fossem páginas separadas.
+  if (!opts.fromHistory) {
+    const url = '#' + id;
+    const state = { pagina: id };
+    try {
+      if (opts.replace) history.replaceState(state, '', url);
+      else              history.pushState(state, '', url);
+    } catch(e) { console.warn('[showPage] history API falhou:', e.message); }
+  }
+
   atualizarDotContasPagar();
   if(id==='dashboard')renderDashboard();
   if(id==='precos')renderPrecos();
@@ -2044,6 +2055,16 @@ function showPage(id){
   if(id==='contas-pagar')initContasPagar();
   if(id==='custos')renderCustos();
 }
+
+// Detecta voltar/avançar do navegador
+window.addEventListener('popstate', function(e) {
+  const id = (e.state && e.state.pagina)
+    || (location.hash ? location.hash.slice(1) : 'dashboard');
+  console.log('[popstate] navegando para:', id);
+  if (document.getElementById('page-' + id)) {
+    showPage(id, { fromHistory: true });
+  }
+});
 
 // Helpers de data
 function toBRDate(iso) {
@@ -4248,19 +4269,24 @@ async function fazerLogin() {
   restaurarUltimaPagina();
 }
 
-// Restaura a última página acessada (chamado após login e em DOMContentLoaded)
+// Restaura a última página acessada (chamado após login e em DOMContentLoaded).
+// Prioridade: hash da URL > localStorage > dashboard. Usa replaceState para
+// não criar uma entrada extra no histórico só por carregar a página.
 function restaurarUltimaPagina() {
-  const paginaSalva = localStorage.getItem('sm_pagina_atual');
-  console.log('[restaurarUltimaPagina] sm_pagina_atual =', JSON.stringify(paginaSalva));
-  if (!paginaSalva) return;
+  const hash = location.hash ? location.hash.slice(1) : '';
+  const paginaSalva = hash || localStorage.getItem('sm_pagina_atual') || 'dashboard';
+  console.log('[restaurarUltimaPagina] hash="' + hash + '" localStorage='
+    + JSON.stringify(localStorage.getItem('sm_pagina_atual'))
+    + ' -> escolhida=' + paginaSalva);
+
   const pageEl = document.getElementById('page-' + paginaSalva);
   if (!pageEl) {
-    console.warn('[restaurarUltimaPagina] page-' + paginaSalva + ' nao existe — limpando');
+    console.warn('[restaurarUltimaPagina] page-' + paginaSalva + ' nao existe — fallback dashboard');
     localStorage.removeItem('sm_pagina_atual');
+    showPage('dashboard', { replace: true });
     return;
   }
-  console.log('[restaurarUltimaPagina] -> showPage("' + paginaSalva + '")');
-  showPage(paginaSalva);
+  showPage(paginaSalva, { replace: true });
 }
 
 async function criarConta() {
