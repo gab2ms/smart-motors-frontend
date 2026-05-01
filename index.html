@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-23">
+<meta name="app-version" content="2026-04-30-24">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -2576,43 +2576,21 @@ function esconderBootLoader() {
 
 // ── KPIs internos (sem API) ─────────────────
 function renderDashInternal(){
-  const totalFixo  = custosFixos.reduce((s,c)=>s+c.valor,0);
   const avgMC      = products.length ? products.reduce((s,p)=>s+mcp(p),0)/products.length : 0;
-  const bestP      = products.length ? products.reduce((a,b)=>mcp(a)>mcp(b)?a:b) : null;
   const lowCount   = products.filter(p=>mcp(p)<15).length;
   const aberto     = emprestimo.pagamentos.filter(p=>p.status!=='Pago').reduce((s,p)=>s+p.valor,0);
+  const parcelasAbertas = emprestimo.pagamentos.filter(p=>p.status!=='Pago').length;
 
   document.getElementById('dash-int-kpis').innerHTML = `
-    <div class="kpi" onclick="showPage('estoque')" style="cursor:pointer;transition:border .15s;" onmouseenter="this.style.borderColor='var(--gold)'" onmouseleave="this.style.borderColor='var(--border)'">
-      <div class="kpi-label">Produtos ativos</div>
-      <div class="kpi-value gold">${products.length}</div>
-      <div class="kpi-change">clique para ver estoque ↗</div>
-    </div>
     <div class="kpi" onclick="showPage('precos')" style="cursor:pointer;" onmouseenter="this.style.borderColor='var(--gold)'" onmouseleave="this.style.borderColor='var(--border)'">
-      <div class="kpi-label">MC% média geral</div>
+      <div class="kpi-label">MC% Média Bruta</div>
       <div class="kpi-value ${avgMC>=20?'green':'red'}">${avgMC.toFixed(1)}%</div>
       <div class="kpi-change">${lowCount} produto${lowCount!==1?'s':''} abaixo de 15%</div>
     </div>
     <div class="kpi" onclick="showPage('custos')" style="cursor:pointer;" onmouseenter="this.style.borderColor='var(--gold)'" onmouseleave="this.style.borderColor='var(--border)'">
-      <div class="kpi-label">Custo fixo / mês</div>
-      <div class="kpi-value red">${fmt(totalFixo)}</div>
-      <div class="kpi-change">clique para gerenciar ↗</div>
-    </div>
-    <div class="kpi" onclick="showPage('custos')" style="cursor:pointer;" onmouseenter="this.style.borderColor='var(--gold)'" onmouseleave="this.style.borderColor='var(--border)'">
       <div class="kpi-label">Empréstimo em aberto</div>
       <div class="kpi-value red">${fmt(aberto)}</div>
-      <div class="kpi-change">${emprestimo.pagamentos.filter(p=>p.status!=='Pago').length} parcelas restantes</div>
-    </div>
-    ${bestP ? `
-    <div class="kpi" onclick="showPage('simulador')" style="cursor:pointer;" onmouseenter="this.style.borderColor='var(--gold)'" onmouseleave="this.style.borderColor='var(--border)'">
-      <div class="kpi-label">Melhor margem</div>
-      <div class="kpi-value green">${mcp(bestP).toFixed(1)}%</div>
-      <div class="kpi-change">${bestP.modelo}</div>
-    </div>` : ''}
-    <div class="kpi" onclick="showPage('vendas')" style="cursor:pointer;" onmouseenter="this.style.borderColor='var(--gold)'" onmouseleave="this.style.borderColor='var(--border)'">
-      <div class="kpi-label">Relatório mensal</div>
-      <div class="kpi-value gold" style="font-size:14px;">${vendasData?'✅ Importado':'📥 Pendente'}</div>
-      <div class="kpi-change">clique para importar XLS ↗</div>
+      <div class="kpi-change">${parcelasAbertas} parcela${parcelasAbertas!==1?'s':''} restante${parcelasAbertas!==1?'s':''}</div>
     </div>
   `;
 }
@@ -3101,8 +3079,16 @@ async function carregarFaturamentoDash() {
     dot.style.background = 'var(--green)';
     label.textContent    = 'Faturamento — ' + mesLabel;
 
+    // KPIs internos (MC% e Empréstimo) entram no mesmo grid pra
+    // ficar 8 cards numa unica linha continua, sem espacos vazios.
+    var avgMC = products.length ? products.reduce(function(s,p){return s+mcp(p);},0)/products.length : 0;
+    var lowCount = products.filter(function(p){return mcp(p)<15;}).length;
+    var aberto = emprestimo.pagamentos.filter(function(p){return p.status!=='Pago';}).reduce(function(s,p){return s+p.valor;},0);
+    var parcelasAbertas = emprestimo.pagamentos.filter(function(p){return p.status!=='Pago';}).length;
+
     var kpiClickPed = ' style="border-top:2px solid var(--gold);cursor:pointer;" onclick="showPage(&quot;pedidos&quot;)"';
     var kpiClickCus = ' style="border-top:2px solid var(--gold);cursor:pointer;" onclick="showPage(&quot;custos&quot;)"';
+    var kpiClickPre = ' style="border-top:2px solid var(--gold);cursor:pointer;" onclick="showPage(&quot;precos&quot;)"';
     var kpiNormal   = ' style="border-top:2px solid var(--gold);"';
     kpis.innerHTML =
       '<div class="kpi"' + kpiClickPed + '>'
@@ -3133,7 +3119,26 @@ async function carregarFaturamentoDash() {
       + '<div class="kpi-label">Lucro líquido est.</div>'
       + '<div class="kpi-value ' + (lucroLiquido>=0?'green':'red') + '">' + fmt(lucroLiquido) + '</div>'
       + deltaHTML(lucroLiquido, lucroLiquidoAnt)
-      + '<div class="kpi-change">' + (margemLiq>=0?'+':'') + margemLiq.toFixed(1) + '% da receita</div></div>';
+      + '<div class="kpi-change">' + (margemLiq>=0?'+':'') + margemLiq.toFixed(1) + '% da receita</div></div>'
+      + '<div class="kpi"' + kpiClickPre + '>'
+      + '<div class="kpi-label">MC% Média Bruta</div>'
+      + '<div class="kpi-value ' + (avgMC>=20?'green':'red') + '">' + avgMC.toFixed(1) + '%</div>'
+      + '<div class="kpi-change">' + lowCount + ' produto' + (lowCount!==1?'s':'') + ' abaixo de 15%</div></div>'
+      + '<div class="kpi"' + kpiClickCus + '>'
+      + '<div class="kpi-label">Empréstimo em aberto</div>'
+      + '<div class="kpi-value red">' + fmt(aberto) + '</div>'
+      + '<div class="kpi-change">' + parcelasAbertas + ' parcela' + (parcelasAbertas!==1?'s':'') + ' restante' + (parcelasAbertas!==1?'s':'') + '</div></div>';
+
+    // Esconde o container kpis-int duplicado (legacy do builder).
+    // As 2 KPIs internas agora ficam na mesma grid acima.
+    var intEl = document.getElementById('dash-int-kpis');
+    if (intEl) {
+      intEl.style.display = 'none';
+      // Se o container pai do widget só tem ele, esconde o row inteiro
+      // pra não deixar uma linha vazia entre o KPI grid e o próximo.
+      var row = intEl.parentElement;
+      if (row && row.children.length === 1) row.style.display = 'none';
+    }
 
     // Gráfico por dia
     renderDashGrafico(pedidos);
