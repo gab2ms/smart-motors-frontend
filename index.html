@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-29">
+<meta name="app-version" content="2026-04-30-30">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -947,6 +947,14 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-icon">📦</span> Pedidos
       <span class="nav-dot"></span>
     </button>
+    <button class="nav-item" onclick="showPage('oficina')">
+      <span class="nav-icon">🔧</span> Oficina
+      <span class="nav-dot"></span>
+    </button>
+    <button class="nav-item" onclick="showPage('sac')">
+      <span class="nav-icon">📞</span> SAC
+      <span class="nav-dot" id="dot-sac"></span>
+    </button>
     <button class="nav-item" onclick="showPage('financeiro')">
       <span class="nav-icon">💰</span> Financeiro
       <span class="nav-dot"></span>
@@ -1517,6 +1525,78 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
           <div style="color:var(--text3);font-size:12px;text-align:center;padding:14px;">Clique em "Analisar saúde financeira" para gerar um parecer baseado nas suas finanças do mês corrente.</div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ OFICINA ══════════════ -->
+  <div class="page content" id="page-oficina">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;">Ordens de serviço</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="of-sub">—</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select class="search-input" id="of-filtro-status" onchange="renderOficina()" style="max-width:180px;">
+          <option value="">Todos status</option>
+          <option value="aguardando">Aguardando</option>
+          <option value="em_andamento">Em andamento</option>
+          <option value="pronto">Pronto</option>
+          <option value="entregue">Entregue</option>
+        </select>
+        <input type="text" class="search-input" id="of-busca" placeholder="🔍 Cliente, modelo, chassi..." oninput="renderOficina()" style="min-width:220px;">
+        <button class="btn btn-gold" onclick="abrirOfModal()">+ Nova OS</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid" id="of-kpis"></div>
+
+    <div class="card">
+      <div class="card-header"><div><div class="card-sub" id="of-count">—</div></div></div>
+      <div id="of-lista"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════ SAC ══════════════ -->
+  <div class="page content" id="page-sac">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;">Casos de SAC</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="sac-sub">—</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select class="search-input" id="sac-filtro-status" onchange="renderSac()" style="max-width:160px;">
+          <option value="">Todos status</option>
+          <option value="aberto">Aberto</option>
+          <option value="em_andamento">Em andamento</option>
+          <option value="aguardando_fornecedor">Aguardando fornecedor</option>
+          <option value="resolvido">Resolvido</option>
+        </select>
+        <select class="search-input" id="sac-filtro-prio" onchange="renderSac()" style="max-width:140px;">
+          <option value="">Todas prioridades</option>
+          <option value="urgente">Urgente</option>
+          <option value="alta">Alta</option>
+          <option value="normal">Normal</option>
+          <option value="baixa">Baixa</option>
+        </select>
+        <select class="search-input" id="sac-filtro-tipo" onchange="renderSac()" style="max-width:170px;">
+          <option value="">Todos tipos</option>
+          <option value="Bateria">Bateria</option>
+          <option value="Módulo elétrico">Módulo elétrico</option>
+          <option value="Freio">Freio</option>
+          <option value="Motor">Motor</option>
+          <option value="Garantia geral">Garantia geral</option>
+          <option value="Outro">Outro</option>
+        </select>
+        <input type="text" class="search-input" id="sac-busca" placeholder="🔍 Cliente, fornecedor..." oninput="renderSac()" style="min-width:200px;">
+        <button class="btn btn-gold" onclick="abrirSacModal()">+ Novo caso</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid" id="sac-kpis"></div>
+
+    <div class="card">
+      <div class="card-header"><div><div class="card-sub" id="sac-count">—</div></div></div>
+      <div id="sac-lista"></div>
     </div>
   </div>
 
@@ -2128,6 +2208,8 @@ const pageMeta={
   vendas:['Vendas do Mês','Importe o relatório do Tiny ERP e veja a margem líquida real'],
   estoque:['Produtos & Estoque','Produtos e estoque sincronizados do Tiny ERP em tempo real'],
   pedidos:['Pedidos','Controle seus pedidos por fornecedor'],
+  oficina:['Oficina','Ordens de serviço e cadastro de clientes'],
+  sac:['SAC','Atendimento pós-venda, garantias e contatos com fornecedores'],
   admin:['Administração','Gerenciar usuários e aprovações de acesso'],
   financeiro:['Caixa Atual','Controle de caixa, contas e lançamentos'],
   'contas-pagar':['Contas a Pagar','Gerencie vencimentos e nunca esqueça um pagamento'],
@@ -2186,6 +2268,8 @@ function showPage(id, opts){
   if(id==='financeiro')initFinanceiro();
   if(id==='contas-pagar')initContasPagar();
   if(id==='custos')renderCustos();
+  if(id==='oficina')initOficina();
+  if(id==='sac')initSac();
 }
 
 // Detecta voltar/avançar do navegador
@@ -2275,16 +2359,17 @@ async function _enviarParaBanco() {
 async function carregarDados() {
   console.log('[carregarDados] iniciando fetch de todas as tabelas');
   try {
-    const [c, l, cp, cf, pr] = await Promise.all([
+    const [c, l, cp, cf, pr, sc] = await Promise.all([
       sb.from('contas_bancarias').select('*').order('id'),
       sb.from('lancamentos').select('*'),
       sb.from('contas_pagar').select('*'),
       sb.from('custos_fixos').select('*').order('id'),
       sb.from('produtos_precos').select('*').order('id'),
+      sb.from('sac_casos').select('*').order('numero', { ascending: false }),
     ]);
 
     // Loga resultado (e erros explicitos) de cada tabela
-    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['custos_fixos',cf],['produtos_precos',pr]]
+    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc]]
       .forEach(([n, r]) => {
         if (r.error) console.error('[carregarDados] ERRO em ' + n + ':', r.error.message, r.error);
         else console.log('[carregarDados] ' + n + ': ' + (r.data?.length || 0) + ' rows');
@@ -2296,6 +2381,7 @@ async function carregarDados() {
     contasPagar  = (!cp.error && cp.data)         ? cp.data.map(fromDb('contas_pagar'))    : [];
     custosFixos  = (!cf.error && cf.data?.length) ? cf.data.map(fromDb('custos_fixos'))    : [];
     products     = (!pr.error && pr.data?.length) ? pr.data.map(fromDb('produtos_precos')) : [];
+    sacCasos     = (!sc.error && sc.data)         ? toCamelArr(sc.data)                   : [];
 
     // Seed inicial se a tabela existe mas está vazia
     const seed = async (tbl, target, seedData) => {
@@ -2619,6 +2705,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // ficar refletido em qualquer modulo que o usuario navegue depois.
   try { renderDashboard?.(); }              catch(e) { console.warn('renderDashboard falhou:', e.message); }
   try { atualizarDotContasPagar?.(); }      catch(e) {}
+  try { atualizarDotSac?.(); }              catch(e) {}
   try { populateFinCatFilter?.(); }         catch(e) {}
   try { populateFinContaFilter?.(); }       catch(e) {}
   try { renderContas?.(); }                 catch(e) {}
@@ -4647,6 +4734,8 @@ const TODOS_MODULOS = [
   { id: 'vendas',       nome: 'Vendas' },
   { id: 'estoque',      nome: 'Produtos & Estoque' },
   { id: 'pedidos',      nome: 'Pedidos' },
+  { id: 'oficina',      nome: 'Oficina' },
+  { id: 'sac',          nome: 'SAC' },
   { id: 'admin',        nome: 'Administração' },
   { id: 'financeiro',   nome: 'Financeiro' },
   { id: 'contas-pagar', nome: 'Contas a Pagar' },
@@ -4655,7 +4744,7 @@ const TODOS_MODULOS = [
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
   vendedor:    ['dashboard', 'pedidos', 'simulador'],
-  operacional: ['dashboard', 'precos', 'estoque', 'simulador', 'vendas', 'pedidos', 'financeiro', 'contas-pagar', 'custos'],
+  operacional: ['dashboard', 'precos', 'estoque', 'simulador', 'vendas', 'pedidos', 'oficina', 'sac', 'financeiro', 'contas-pagar', 'custos'],
   customizado: null, // usa user.modulosPermitidos
 };
 function modulosPermitidos(user) {
@@ -6737,6 +6826,477 @@ document.addEventListener('DOMContentLoaded', function() {
     if (e.target === this) closeLanModal();
   });
 });
+
+// ══════════════════════════════════════════
+//  OFICINA
+// ══════════════════════════════════════════
+let oficinaClientes = [];
+let oficinaOrdens   = [];
+
+const OF_STATUS = {
+  aguardando:   { label: 'Aguardando',   cor: 'var(--text2)',     bg: 'var(--surface3)' },
+  em_andamento: { label: 'Em andamento', cor: 'var(--orange)',    bg: 'var(--orange-dim)' },
+  pronto:       { label: 'Pronto',       cor: 'var(--gold-bright)',bg: 'var(--gold-dim)' },
+  entregue:     { label: 'Entregue',     cor: 'var(--green)',     bg: 'var(--green-dim)' },
+};
+
+async function initOficina() {
+  const [oc, oo] = await Promise.all([
+    sb.from('oficina_clientes').select('*').order('nome'),
+    sb.from('oficina_ordens').select('*').order('numero', { ascending: false }),
+  ]);
+  oficinaClientes = oc.data ? toCamelArr(oc.data) : [];
+  oficinaOrdens   = oo.data ? toCamelArr(oo.data) : [];
+  console.log('[oficina] clientes=' + oficinaClientes.length + ' ordens=' + oficinaOrdens.length);
+  renderOficinaKpis();
+  renderOficina();
+}
+
+function renderOficinaKpis() {
+  const hoje = new Date();
+  const mes  = String(hoje.getMonth() + 1).padStart(2, '0');
+  const ano  = hoje.getFullYear();
+  const prefMes = ano + '-' + mes;
+  const abertas    = oficinaOrdens.filter(o => o.status === 'aguardando').length;
+  const andamento  = oficinaOrdens.filter(o => o.status === 'em_andamento').length;
+  const prontas    = oficinaOrdens.filter(o => o.status === 'pronto').length;
+  const entregMes  = oficinaOrdens.filter(o => o.status === 'entregue' && (o.dataConclusao || '').startsWith(prefMes)).length;
+  const el = document.getElementById('of-kpis');
+  if (!el) return;
+  el.innerHTML =
+    `<div class="kpi" style="border-top:2px solid var(--text2);"><div class="kpi-label">Aguardando</div><div class="kpi-value" style="color:var(--text);">${abertas}</div><div class="kpi-change">OS abertas</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--orange);"><div class="kpi-label">Em andamento</div><div class="kpi-value" style="color:var(--orange);">${andamento}</div><div class="kpi-change">em serviço</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">Prontas para retirar</div><div class="kpi-value gold">${prontas}</div><div class="kpi-change">aguardando cliente</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Entregues no mês</div><div class="kpi-value green">${entregMes}</div><div class="kpi-change">${hoje.toLocaleString('pt-BR',{month:'long'})}/${ano}</div></div>`;
+}
+
+function renderOficina() {
+  const el  = document.getElementById('of-lista');
+  const sub = document.getElementById('of-sub');
+  if (!el) return;
+  const filtroStatus = document.getElementById('of-filtro-status')?.value || '';
+  const busca        = (document.getElementById('of-busca')?.value || '').toLowerCase();
+
+  let lista = oficinaOrdens.slice();
+  if (filtroStatus) lista = lista.filter(o => o.status === filtroStatus);
+  if (busca) lista = lista.filter(o =>
+    (o.clienteNome||'').toLowerCase().includes(busca)
+    || (o.modeloScooter||'').toLowerCase().includes(busca)
+    || (o.chassi||'').toLowerCase().includes(busca));
+
+  if (sub) sub.textContent = lista.length + ' OS exibida' + (lista.length!==1?'s':'');
+  document.getElementById('of-count').textContent = oficinaOrdens.length + ' OS no total';
+
+  if (!lista.length) {
+    el.innerHTML = '<div class="empty" style="padding:32px;">Nenhuma OS encontrada</div>';
+    return;
+  }
+
+  el.innerHTML = lista.map(o => {
+    const st = OF_STATUS[o.status] || OF_STATUS.aguardando;
+    const next = { aguardando: 'em_andamento', em_andamento: 'pronto', pronto: 'entregue', entregue: null }[o.status];
+    const nextLabel = next ? OF_STATUS[next].label : null;
+    const valorTxt = o.valorServico ? fmt(o.valorServico) : '—';
+    return '<div style="display:grid;grid-template-columns:60px 1.7fr 1.3fr 1.3fr 110px 130px auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
+      + `<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#${o.numero}</div>`
+      + `<div><div style="font-weight:700;">${o.clienteNome||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${o.modeloScooter||'—'}${o.cor?(' · '+o.cor):''}${o.chassi?(' · '+o.chassi):''}</div></div>`
+      + `<div style="font-size:11px;color:var(--text2);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(o.problemaRelatado||'').replace(/"/g,'&quot;')}">${o.problemaRelatado||'—'}</div>`
+      + `<div style="font-size:10px;color:var(--text3);">Entrada: ${o.dataEntrada||'—'}${o.dataPrevisao?('<br>Previsão: '+o.dataPrevisao):''}</div>`
+      + `<div class="td-mono" style="font-weight:700;color:var(--green);">${valorTxt}</div>`
+      + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
+      + `<div style="display:flex;gap:5px;">`
+        + (next ? `<button class="btn btn-gold" onclick="ofAvancarStatus('${o.id}')" style="font-size:10px;padding:5px 10px;" title="Avançar para ${nextLabel}">→ ${nextLabel}</button>` : '')
+        + `<button class="action-btn edit-btn" onclick="abrirOfModal('${o.id}')">✏</button>`
+        + `<button class="action-btn del-btn" onclick="ofExcluir('${o.id}')">✕</button>`
+      + `</div>`
+      + '</div>';
+  }).join('');
+}
+
+async function ofAvancarStatus(id) {
+  const o = oficinaOrdens.find(x => x.id === id);
+  if (!o) return;
+  const next = { aguardando: 'em_andamento', em_andamento: 'pronto', pronto: 'entregue' }[o.status];
+  if (!next) return;
+  const update = { status: next, atualizado_em: new Date().toISOString() };
+  if (next === 'entregue') update.data_conclusao = new Date().toISOString().split('T')[0];
+  const { error } = await sb.from('oficina_ordens').update(update).eq('id', id);
+  if (error) { smAlert('Erro: ' + error.message); return; }
+  o.status = next;
+  if (next === 'entregue') o.dataConclusao = update.data_conclusao;
+  renderOficinaKpis(); renderOficina();
+}
+
+async function ofExcluir(id) {
+  const o = oficinaOrdens.find(x => x.id === id);
+  if (!o) return;
+  if (!(await smConfirm(`Remover OS #${o.numero} (${o.clienteNome})?`))) return;
+  const { error } = await sb.from('oficina_ordens').delete().eq('id', id);
+  if (error) { smAlert('Erro: ' + error.message); return; }
+  oficinaOrdens = oficinaOrdens.filter(x => x.id !== id);
+  renderOficinaKpis(); renderOficina();
+}
+
+function abrirOfModal(id) {
+  const o = id ? oficinaOrdens.find(x => x.id === id) : null;
+  const isEdit = !!o;
+  const escAttr = s => (s || '').replace(/"/g,'&quot;');
+  const old = document.getElementById('of-modal');
+  if (old) old.remove();
+  const shell = document.createElement('div');
+  shell.id = 'of-modal';
+  shell.className = 'modal-overlay open';
+  const statusOpts = Object.keys(OF_STATUS).map(k =>
+    `<option value="${k}"${(o&&o.status===k)?' selected':''}>${OF_STATUS[k].label}</option>`).join('');
+  shell.innerHTML =
+    `<div class="modal" style="width:680px;max-width:95vw;">`
+    + `<div class="modal-title">${isEdit?('Editar OS #'+o.numero):'Nova <span>OS</span>'}</div>`
+    + `<div class="form-grid">`
+    +   `<div class="form-group full" style="position:relative;"><label>Cliente</label>`
+    +     `<input class="form-input" id="of-cli-nome" value="${escAttr(o&&o.clienteNome)}" autocomplete="off" oninput="ofClienteSugestao()">`
+    +     `<div id="of-cli-sugestoes" style="position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;display:none;"></div>`
+    +   `</div>`
+    +   `<div class="form-group"><label>Telefone</label><input class="form-input" id="of-cli-tel" value="${escAttr(o&&o.clienteTelefone)}"></div>`
+    +   `<div class="form-group"><label>CPF</label><input class="form-input" id="of-cli-cpf" value=""></div>`
+    +   `<div class="form-group"><label>Modelo</label><input class="form-input" id="of-modelo" value="${escAttr(o&&o.modeloScooter)}"></div>`
+    +   `<div class="form-group"><label>Cor</label><input class="form-input" id="of-cor" value="${escAttr(o&&o.cor)}"></div>`
+    +   `<div class="form-group full"><label>Chassi</label><input class="form-input" id="of-chassi" value="${escAttr(o&&o.chassi)}"></div>`
+    +   `<div class="form-group full"><label>Problema relatado</label><textarea class="form-input" id="of-problema" rows="2">${escAttr(o&&o.problemaRelatado)}</textarea></div>`
+    +   `<div class="form-group full"><label>Itens deixados</label><input class="form-input" id="of-itens" value="${escAttr(o&&o.itensDeixados)}"></div>`
+    +   `<div class="form-group"><label>Data entrada</label><input class="form-input" id="of-data-ent" type="date" value="${(o&&o.dataEntrada)||new Date().toISOString().split('T')[0]}"></div>`
+    +   `<div class="form-group"><label>Previsão</label><input class="form-input" id="of-data-prev" type="date" value="${(o&&o.dataPrevisao)||''}"></div>`
+    +   `<div class="form-group"><label>Status</label><select class="form-input" id="of-status">${statusOpts}</select></div>`
+    +   `<div class="form-group"><label>Valor do serviço (R$)</label><input class="form-input" id="of-valor" type="number" step="0.01" value="${(o&&o.valorServico)||0}"></div>`
+    +   (isEdit ? `<div class="form-group full"><label>Diagnóstico</label><textarea class="form-input" id="of-diag" rows="2">${escAttr(o.diagnostico)}</textarea></div>` : '')
+    +   (isEdit ? `<div class="form-group full"><label>Solução aplicada</label><textarea class="form-input" id="of-sol" rows="2">${escAttr(o.solucao)}</textarea></div>` : '')
+    + `</div>`
+    + `<div class="modal-actions">`
+    +   `<button class="btn" onclick="document.getElementById('of-modal').remove();">Cancelar</button>`
+    +   `<button class="btn btn-gold" onclick="ofSalvar('${isEdit?o.id:''}')">${isEdit?'Salvar':'Cadastrar OS'}</button>`
+    + `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+  // Pré-preenche telefone se cliente já existir
+  if (!isEdit) ofClienteSugestao();
+}
+
+function ofClienteSugestao() {
+  const inp = document.getElementById('of-cli-nome');
+  const box = document.getElementById('of-cli-sugestoes');
+  if (!inp || !box) return;
+  const q = inp.value.trim().toLowerCase();
+  if (!q) { box.style.display = 'none'; return; }
+  const matches = oficinaClientes.filter(c => (c.nome||'').toLowerCase().includes(q)).slice(0, 6);
+  if (!matches.length) { box.style.display = 'none'; return; }
+  box.innerHTML = matches.map(c =>
+    `<div onclick="ofSelecionarCliente('${c.id}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px;" onmouseenter="this.style.background='var(--surface3)'" onmouseleave="this.style.background='transparent'"><div style="font-weight:600;">${c.nome}</div>${c.telefone?`<div style="font-size:10px;color:var(--text3);">${c.telefone}</div>`:''}</div>`
+  ).join('');
+  box.style.display = 'block';
+}
+function ofSelecionarCliente(id) {
+  const c = oficinaClientes.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('of-cli-nome').value = c.nome || '';
+  document.getElementById('of-cli-tel').value  = c.telefone || '';
+  document.getElementById('of-cli-cpf').value  = c.cpf || '';
+  document.getElementById('of-cli-nome').dataset.clienteId = c.id;
+  document.getElementById('of-cli-sugestoes').style.display = 'none';
+}
+
+async function ofSalvar(editId) {
+  const cliNome = document.getElementById('of-cli-nome').value.trim();
+  const cliTel  = document.getElementById('of-cli-tel').value.trim();
+  const cliCpf  = document.getElementById('of-cli-cpf').value.trim();
+  const modelo  = document.getElementById('of-modelo').value.trim();
+  const cor     = document.getElementById('of-cor').value.trim();
+  const chassi  = document.getElementById('of-chassi').value.trim();
+  const problema= document.getElementById('of-problema').value.trim();
+  const itens   = document.getElementById('of-itens').value.trim();
+  const dataEnt = document.getElementById('of-data-ent').value;
+  const dataPrev= document.getElementById('of-data-prev').value;
+  const status  = document.getElementById('of-status').value;
+  const valor   = parseFloat(document.getElementById('of-valor').value) || 0;
+  const diag    = document.getElementById('of-diag')?.value.trim() || null;
+  const sol     = document.getElementById('of-sol')?.value.trim() || null;
+
+  if (!cliNome) return smAlert('Preencha o nome do cliente.');
+  if (!modelo)  return smAlert('Preencha o modelo da scooter.');
+  if (!problema) return smAlert('Preencha o problema relatado.');
+
+  // Cliente: se nome bate exato com alguém do cadastro, usa o id; senão cria
+  let clienteId = document.getElementById('of-cli-nome').dataset.clienteId || null;
+  if (!clienteId) {
+    const existing = oficinaClientes.find(c => (c.nome||'').toLowerCase() === cliNome.toLowerCase());
+    if (existing) {
+      clienteId = existing.id;
+    } else {
+      const novoCli = { nome: cliNome };
+      if (cliTel) novoCli.telefone = cliTel;
+      if (cliCpf) novoCli.cpf = cliCpf;
+      const { data, error } = await sb.from('oficina_clientes').insert(novoCli).select().single();
+      if (error) return smAlert('Erro ao cadastrar cliente: ' + error.message);
+      clienteId = data.id;
+      oficinaClientes.push(toCamel(data));
+    }
+  }
+
+  const payload = {
+    cliente_id: clienteId,
+    cliente_nome: cliNome,
+    modelo_scooter: modelo,
+    cor: cor || null,
+    chassi: chassi || null,
+    problema_relatado: problema,
+    itens_deixados: itens || null,
+    status,
+    valor_servico: valor,
+    data_entrada: dataEnt || new Date().toISOString().split('T')[0],
+    data_previsao: dataPrev || null,
+  };
+  if (status === 'entregue') {
+    payload.data_conclusao = new Date().toISOString().split('T')[0];
+  }
+  if (editId) {
+    payload.diagnostico = diag;
+    payload.solucao = sol;
+    payload.atualizado_em = new Date().toISOString();
+    const { data, error } = await sb.from('oficina_ordens').update(payload).eq('id', editId).select().single();
+    if (error) return smAlert('Erro ao salvar: ' + error.message);
+    const i = oficinaOrdens.findIndex(x => x.id === editId);
+    if (i >= 0) oficinaOrdens[i] = toCamel(data);
+  } else {
+    const { data, error } = await sb.from('oficina_ordens').insert(payload).select().single();
+    if (error) return smAlert('Erro ao salvar: ' + error.message);
+    oficinaOrdens.unshift(toCamel(data));
+  }
+  document.getElementById('of-modal').remove();
+  renderOficinaKpis(); renderOficina();
+}
+
+// ══════════════════════════════════════════
+//  SAC
+// ══════════════════════════════════════════
+let sacCasos = [];
+
+const SAC_STATUS = {
+  aberto:                 { label: 'Aberto',                 cor: 'var(--text2)',     bg: 'var(--surface3)' },
+  em_andamento:           { label: 'Em andamento',           cor: 'var(--orange)',    bg: 'var(--orange-dim)' },
+  aguardando_fornecedor:  { label: 'Aguardando fornecedor',  cor: 'var(--gold-bright)',bg: 'var(--gold-dim)' },
+  resolvido:              { label: 'Resolvido',              cor: 'var(--green)',     bg: 'var(--green-dim)' },
+};
+const SAC_PRIO = {
+  baixa:   { label: 'Baixa',   cor: 'var(--text3)',       bg: 'var(--surface3)' },
+  normal:  { label: 'Normal',  cor: 'var(--text2)',       bg: 'var(--surface3)' },
+  alta:    { label: 'Alta',    cor: 'var(--orange)',      bg: 'var(--orange-dim)' },
+  urgente: { label: 'Urgente', cor: 'var(--red)',         bg: 'var(--red-dim)' },
+};
+
+async function initSac() {
+  const { data, error } = await sb.from('sac_casos').select('*').order('numero', { ascending: false });
+  sacCasos = (!error && data) ? toCamelArr(data) : [];
+  console.log('[sac] casos=' + sacCasos.length);
+  renderSacKpis();
+  renderSac();
+  atualizarDotSac();
+}
+
+function atualizarDotSac() {
+  const dot = document.getElementById('dot-sac');
+  if (!dot) return;
+  const hoje = new Date().toISOString().split('T')[0];
+  const alerta = sacCasos.some(c =>
+    c.status !== 'resolvido' &&
+    ((c.proximoContato && c.proximoContato <= hoje) || c.prioridade === 'urgente')
+  );
+  dot.style.background = alerta ? 'var(--red)' : 'var(--border2)';
+  dot.style.display = alerta ? 'block' : 'none';
+}
+
+function renderSacKpis() {
+  const hoje = new Date().toISOString().split('T')[0];
+  const mesPref = hoje.slice(0, 7);
+  const abertos = sacCasos.filter(c => c.status !== 'resolvido').length;
+  const urgentes = sacCasos.filter(c => c.status !== 'resolvido' && c.prioridade === 'urgente').length;
+  const vencidos = sacCasos.filter(c => c.status !== 'resolvido' && c.proximoContato && c.proximoContato <= hoje).length;
+  const resolvMes = sacCasos.filter(c => c.status === 'resolvido' && (c.dataResolucao || '').startsWith(mesPref)).length;
+  document.getElementById('sac-kpis').innerHTML =
+    `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">Casos abertos</div><div class="kpi-value gold">${abertos}</div><div class="kpi-change">em aberto</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">Urgentes</div><div class="kpi-value red">${urgentes}</div><div class="kpi-change">prioridade alta</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">Contato vencido</div><div class="kpi-value red">${vencidos}</div><div class="kpi-change">precisa retornar hoje</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Resolvidos no mês</div><div class="kpi-value green">${resolvMes}</div><div class="kpi-change">${new Date().toLocaleString('pt-BR',{month:'long'})}</div></div>`;
+}
+
+function renderSac() {
+  const el = document.getElementById('sac-lista');
+  const sub = document.getElementById('sac-sub');
+  if (!el) return;
+  const fS = document.getElementById('sac-filtro-status')?.value || '';
+  const fP = document.getElementById('sac-filtro-prio')?.value || '';
+  const fT = document.getElementById('sac-filtro-tipo')?.value || '';
+  const q  = (document.getElementById('sac-busca')?.value || '').toLowerCase();
+  let lista = sacCasos.slice();
+  if (fS) lista = lista.filter(c => c.status === fS);
+  if (fP) lista = lista.filter(c => c.prioridade === fP);
+  if (fT) lista = lista.filter(c => c.tipoProblema === fT);
+  if (q)  lista = lista.filter(c =>
+    (c.clienteNome||'').toLowerCase().includes(q)
+    || (c.fornecedor||'').toLowerCase().includes(q)
+    || (c.descricao||'').toLowerCase().includes(q));
+
+  if (sub) sub.textContent = lista.length + ' caso' + (lista.length!==1?'s':'') + ' exibido' + (lista.length!==1?'s':'');
+  document.getElementById('sac-count').textContent = sacCasos.length + ' casos no total';
+
+  if (!lista.length) {
+    el.innerHTML = '<div class="empty" style="padding:32px;">Nenhum caso encontrado</div>';
+    return;
+  }
+  const hoje = new Date().toISOString().split('T')[0];
+  el.innerHTML = lista.map(c => {
+    const st = SAC_STATUS[c.status] || SAC_STATUS.aberto;
+    const pr = SAC_PRIO[c.prioridade] || SAC_PRIO.normal;
+    const venc = c.proximoContato && c.proximoContato <= hoje && c.status !== 'resolvido';
+    const vencHTML = venc ? `<span style="color:var(--red);font-weight:700;">⚠ contato vencido</span>` : (c.proximoContato ? `próximo: ${c.proximoContato}` : '');
+    return '<div style="display:grid;grid-template-columns:60px 1.6fr 1.4fr 110px 110px 1fr auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;' + (venc?'background:rgba(255,77,77,0.04);':'') + '">'
+      + `<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#${c.numero}</div>`
+      + `<div><div style="font-weight:700;">${c.clienteNome||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${c.modeloScooter||''}${c.fornecedor?(' · '+c.fornecedor):''}</div></div>`
+      + `<div><div style="font-size:11px;font-weight:600;">${c.tipoProblema||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(c.descricao||'').replace(/"/g,'&quot;')}">${c.descricao||''}</div></div>`
+      + `<div><span class="badge" style="background:${pr.bg};color:${pr.cor};">${pr.label}</span></div>`
+      + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
+      + `<div style="font-size:10px;color:var(--text3);">${vencHTML}</div>`
+      + `<div style="display:flex;gap:5px;">`
+        + `<button class="action-btn edit-btn" onclick="abrirSacModal('${c.id}')">✏</button>`
+        + `<button class="action-btn del-btn" onclick="sacExcluir('${c.id}')">✕</button>`
+      + `</div>`
+      + '</div>';
+  }).join('');
+}
+
+function abrirSacModal(id) {
+  const c = id ? sacCasos.find(x => x.id === id) : null;
+  const isEdit = !!c;
+  const escAttr = s => (s || '').replace(/"/g,'&quot;');
+  const old = document.getElementById('sac-modal');
+  if (old) old.remove();
+  const shell = document.createElement('div');
+  shell.id = 'sac-modal';
+  shell.className = 'modal-overlay open';
+  const tipos = ['Bateria','Módulo elétrico','Freio','Motor','Garantia geral','Outro'];
+  const statusOpts = Object.keys(SAC_STATUS).map(k =>
+    `<option value="${k}"${(c&&c.status===k)?' selected':''}>${SAC_STATUS[k].label}</option>`).join('');
+  const prioOpts = Object.keys(SAC_PRIO).map(k =>
+    `<option value="${k}"${(c&&c.prioridade===k)?' selected':''}>${SAC_PRIO[k].label}</option>`).join('');
+  const tipoOpts = tipos.map(t =>
+    `<option value="${t}"${(c&&c.tipoProblema===t)?' selected':''}>${t}</option>`).join('');
+
+  // Histórico parsing — newest first na exibicao
+  const histLinhas = (c && c.historico) ? c.historico.split(/\r?\n/).filter(l => l.trim()) : [];
+  const histHTML = histLinhas.length
+    ? '<div style="max-height:180px;overflow-y:auto;border:1px solid var(--border2);border-radius:var(--r-sm);padding:10px;background:var(--surface2);">'
+      + histLinhas.slice().reverse().map(l => `<div style="font-size:11px;color:var(--text2);padding:4px 0;border-bottom:1px solid var(--border);line-height:1.5;">${l.replace(/</g,'&lt;')}</div>`).join('')
+      + '</div>'
+    : '<div style="font-size:11px;color:var(--text3);padding:6px 0;">Nenhum registro ainda.</div>';
+
+  shell.innerHTML =
+    `<div class="modal" style="width:680px;max-width:95vw;">`
+    + `<div class="modal-title">${isEdit?('Caso #'+c.numero):'Novo <span>caso</span>'}</div>`
+    + `<div class="form-grid">`
+    +   `<div class="form-group"><label>Cliente</label><input class="form-input" id="sac-cli" value="${escAttr(c&&c.clienteNome)}"></div>`
+    +   `<div class="form-group"><label>Telefone</label><input class="form-input" id="sac-tel" value="${escAttr(c&&c.clienteTelefone)}"></div>`
+    +   `<div class="form-group"><label>Modelo</label><input class="form-input" id="sac-modelo" value="${escAttr(c&&c.modeloScooter)}"></div>`
+    +   `<div class="form-group"><label>Fornecedor</label><input class="form-input" id="sac-forn" value="${escAttr(c&&c.fornecedor)}"></div>`
+    +   `<div class="form-group"><label>Tipo do problema</label><select class="form-input" id="sac-tipo">${tipoOpts}</select></div>`
+    +   `<div class="form-group"><label>Prioridade</label><select class="form-input" id="sac-prio">${prioOpts}</select></div>`
+    +   `<div class="form-group"><label>Status</label><select class="form-input" id="sac-status">${statusOpts}</select></div>`
+    +   `<div class="form-group"><label>Próximo contato</label><input class="form-input" id="sac-prox" type="date" value="${(c&&c.proximoContato)||''}"></div>`
+    +   `<div class="form-group"><label>Prazo alerta (dias)</label><input class="form-input" id="sac-alerta" type="number" min="0" value="${(c&&c.prazoAlerta)||3}"></div>`
+    +   `<div class="form-group full"><label>Descrição</label><textarea class="form-input" id="sac-desc" rows="3">${escAttr(c&&c.descricao)}</textarea></div>`
+    +   (isEdit ? `<div class="form-group full"><label>Histórico (mais recente em cima)</label>${histHTML}</div>` : '')
+    +   `<div class="form-group full"><label>${isEdit?'Adicionar entrada ao histórico (timestamp será adicionado)':'Anotação inicial (opcional)'}</label><textarea class="form-input" id="sac-hist-novo" rows="2" placeholder="Ex: Liguei pro fornecedor, prazo 5 dias úteis"></textarea></div>`
+    + `</div>`
+    + `<div class="modal-actions">`
+    +   `<button class="btn" onclick="document.getElementById('sac-modal').remove();">Cancelar</button>`
+    +   `<button class="btn btn-gold" onclick="sacSalvar('${isEdit?c.id:''}')">${isEdit?'Salvar':'Cadastrar caso'}</button>`
+    + `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function sacSalvar(editId) {
+  const clienteNome     = document.getElementById('sac-cli').value.trim();
+  const clienteTelefone = document.getElementById('sac-tel').value.trim();
+  const modelo          = document.getElementById('sac-modelo').value.trim();
+  const fornecedor      = document.getElementById('sac-forn').value.trim();
+  const tipoProblema    = document.getElementById('sac-tipo').value;
+  const prioridade      = document.getElementById('sac-prio').value;
+  const status          = document.getElementById('sac-status').value;
+  const proximoContato  = document.getElementById('sac-prox').value;
+  const prazoAlerta     = parseInt(document.getElementById('sac-alerta').value) || 3;
+  const descricao       = document.getElementById('sac-desc').value.trim();
+  const histNovo        = document.getElementById('sac-hist-novo').value.trim();
+
+  if (!clienteNome) return smAlert('Preencha o nome do cliente.');
+  if (!tipoProblema) return smAlert('Selecione o tipo do problema.');
+  if (!descricao) return smAlert('Preencha a descrição.');
+
+  // Append no historico se houver entrada nova
+  let historicoFinal;
+  if (editId) {
+    const cExist = sacCasos.find(x => x.id === editId);
+    historicoFinal = cExist?.historico || '';
+    if (histNovo) {
+      const ts = new Date().toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'});
+      historicoFinal = (historicoFinal ? historicoFinal + '\n' : '') + '[' + ts + '] ' + histNovo;
+    }
+  } else {
+    historicoFinal = '';
+    if (histNovo) {
+      const ts = new Date().toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'});
+      historicoFinal = '[' + ts + '] ' + histNovo;
+    }
+  }
+
+  const payload = {
+    cliente_nome: clienteNome,
+    cliente_telefone: clienteTelefone || null,
+    modelo_scooter: modelo || null,
+    fornecedor: fornecedor || null,
+    tipo_problema: tipoProblema,
+    prioridade,
+    status,
+    proximo_contato: proximoContato || null,
+    prazo_alerta: prazoAlerta,
+    descricao,
+    historico: historicoFinal || null,
+  };
+  if (status === 'resolvido') {
+    payload.data_resolucao = new Date().toISOString().split('T')[0];
+  }
+  if (editId) {
+    payload.atualizado_em = new Date().toISOString();
+    const { data, error } = await sb.from('sac_casos').update(payload).eq('id', editId).select().single();
+    if (error) return smAlert('Erro ao salvar: ' + error.message);
+    const i = sacCasos.findIndex(x => x.id === editId);
+    if (i >= 0) sacCasos[i] = toCamel(data);
+  } else {
+    const { data, error } = await sb.from('sac_casos').insert(payload).select().single();
+    if (error) return smAlert('Erro ao salvar: ' + error.message);
+    sacCasos.unshift(toCamel(data));
+  }
+  document.getElementById('sac-modal').remove();
+  renderSacKpis(); renderSac(); atualizarDotSac();
+}
+
+async function sacExcluir(id) {
+  const c = sacCasos.find(x => x.id === id);
+  if (!c) return;
+  if (!(await smConfirm(`Remover caso #${c.numero} (${c.clienteNome})?`))) return;
+  const { error } = await sb.from('sac_casos').delete().eq('id', id);
+  if (error) { smAlert('Erro: ' + error.message); return; }
+  sacCasos = sacCasos.filter(x => x.id !== id);
+  renderSacKpis(); renderSac(); atualizarDotSac();
+}
 
 // ══════════════════════════════════════════
 //  INIT
