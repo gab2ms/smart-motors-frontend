@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-13">
+<meta name="app-version" content="2026-04-30-14">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -330,6 +330,36 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 /* GOLD DIVIDER */
 .gold-line{height:1px;background:linear-gradient(90deg,var(--gold2),var(--gold3),transparent);margin:18px 0;opacity:0.3;}
 
+/* ══ BOOT LOADER ══
+   Cobre a tela inteira durante a inicializacao para evitar o "piscar"
+   do dashboard antes da rota salva ser restaurada. Some ao final do
+   DOMContentLoaded. */
+.boot-loader{
+  position:fixed;inset:0;background:var(--bg);
+  z-index:10000;
+  display:flex;align-items:center;justify-content:center;
+  flex-direction:column;gap:24px;
+  transition:opacity .25s ease;
+}
+.boot-loader.hidden{opacity:0;pointer-events:none;}
+.boot-loader-logo{
+  position:relative;width:78px;height:78px;
+  display:flex;align-items:center;justify-content:center;
+}
+.boot-loader-logo svg{width:46px;height:58px;position:relative;z-index:1;}
+.boot-loader-ring{
+  position:absolute;inset:0;
+  border-radius:50%;
+  border:3px solid rgba(245,197,24,0.18);
+  border-top-color:var(--gold);
+  animation:boot-spin 1s linear infinite;
+}
+@keyframes boot-spin{to{transform:rotate(360deg);}}
+.boot-loader-text{
+  font-size:11px;letter-spacing:2px;text-transform:uppercase;
+  color:var(--text3);font-weight:700;
+}
+
 /* ══ LOGIN ══ */
 .login-overlay{
   display:none;position:fixed;inset:0;background:var(--bg);
@@ -453,6 +483,22 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 </style>
 </head>
 <body>
+<!-- Boot loader: visivel imediatamente para esconder o flash do dashboard
+     enquanto o JS roda login + carregarDados + restaura rota. JS remove
+     no final do DOMContentLoaded. -->
+<div class="boot-loader" id="boot-loader">
+  <div class="boot-loader-logo">
+    <div class="boot-loader-ring"></div>
+    <svg viewBox="0 0 40 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="bl-grad" x1="0" y1="0" x2="40" y2="50" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#ffdb6e"/><stop offset="50%" stop-color="#f5c518"/><stop offset="100%" stop-color="#c98a00"/>
+      </linearGradient></defs>
+      <path d="M24 2L4 28h14l-4 20L36 22H22L26 2z" stroke="url(#bl-grad)" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+      <path d="M22 8L8 28h10l-3 14L32 22H20L24 8z" fill="url(#bl-grad)" opacity="0.35"/>
+    </svg>
+  </div>
+  <div class="boot-loader-text">Smart Motors</div>
+</div>
 <div class="layout">
 
 <!-- SIDEBAR -->
@@ -1984,6 +2030,16 @@ function renderWidgetHTML(id) {
 // Init after DOM is fully loaded
 document.addEventListener('DOMContentLoaded', async function() {
   console.log('[Smart Motors] init', document.querySelector('meta[name="app-version"]')?.content);
+
+  // Safety net: se algo na cadeia (Supabase lento, erro silencioso, etc)
+  // segurar o init alem de 8s, esconde o loader pra usuario poder
+  // interagir mesmo em estado degradado.
+  const safetyTimer = setTimeout(() => {
+    console.warn('[init] safety timeout 8s atingido — escondendo boot-loader');
+    esconderBootLoader();
+  }, 8000);
+  // limpa quando init normal terminar
+  window._bootSafety = safetyTimer;
   console.log('[init] login-overlay element =', document.getElementById('login-overlay'));
   console.log('[init] login-overlay classes ANTES do initLogin =',
     document.getElementById('login-overlay')?.className);
@@ -2042,7 +2098,19 @@ document.addEventListener('DOMContentLoaded', async function() {
   // para o dashboard depois de um refresh.
   console.log('[init] -> restaurarUltimaPagina()');
   restaurarUltimaPagina();
+
+  // Some com o boot-loader: tudo (login, dados, rota) já está pronto.
+  esconderBootLoader();
 });
+
+function esconderBootLoader() {
+  if (window._bootSafety) { clearTimeout(window._bootSafety); window._bootSafety = null; }
+  const el = document.getElementById('boot-loader');
+  if (!el) return;
+  el.classList.add('hidden');
+  // Remove totalmente do DOM depois do fade pra não barrar interação.
+  setTimeout(() => el.remove(), 300);
+}
 
 // ══════════════════════════════════════════
 //  DASHBOARD
