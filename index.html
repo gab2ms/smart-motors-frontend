@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="pragma" content="no-cache">
+<meta http-equiv="expires" content="0">
+<meta name="app-version" content="2026-04-30-3">
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1915,9 +1919,13 @@ function renderWidgetHTML(id) {
 
 // Init after DOM is fully loaded
 document.addEventListener('DOMContentLoaded', async function() {
-  // Carrega dados do Supabase antes de renderizar
-  await carregarDados();
+  console.log('[Smart Motors] init', document.querySelector('meta[name="app-version"]')?.content);
+  // Login PRIMEIRO. Caminho rápido (< 24h) só lê localStorage e nem
+  // espera Supabase, então a tela de login some imediatamente para
+  // usuários autenticados, mesmo se o Supabase estiver lento.
   await initLogin();
+  // Dados depois, em paralelo com o render. Falha aqui não afeta o login.
+  await carregarDados();
   renderDashboard();
   atualizarDotContasPagar();
   // Re-renderiza módulos com dados carregados
