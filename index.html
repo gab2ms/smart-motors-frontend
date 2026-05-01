@@ -1404,16 +1404,10 @@ const toCamelArr = arr => (arr || []).map(toCamel);
 // Mappers explícitos por tabela (alinhados ao schema real do Supabase).
 // Cada tabela define toDb (JS → linha do banco) e fromDb (linha do banco → JS).
 const TABLE_MAP = {
-  usuarios: {
-    toDb: u => { const { aprovadoEm, ...rest } = u; return toSnake(rest); },
-    fromDb: r => toCamel(r),
-  },
-  contas_bancarias: {
-    // schema não tem 'tipo'; mantemos em memória mas não persistimos
-    toDb: c => { const { tipo, ...rest } = c; return toSnake(rest); },
-    fromDb: r => toCamel(r),
-  },
+  usuarios:        { toDb: toSnake, fromDb: toCamel },
+  contas_bancarias:{ toDb: toSnake, fromDb: toCamel },
   lancamentos: {
+    // schema usa 'observacao' e 'conta_nome' (FK conta_id também existe mas não usamos)
     toDb: l => {
       const { obs, conta, ...rest } = l;
       const out = toSnake(rest);
@@ -1430,10 +1424,10 @@ const TABLE_MAP = {
     },
   },
   contas_pagar: {
-    // schema usa 'descricao' (não 'nome'), 'observacao' (não 'obs'), 'status'
-    // (não bool 'paga'); não tem avisar/pagaEm/tinyId — mantidos só em memória
+    // schema usa 'descricao' (não 'nome'), 'observacao' (não 'obs') e 'status'
+    // (string 'pago'/'pendente' em vez do bool 'paga' do JS)
     toDb: c => {
-      const { nome, obs, paga, pagaEm, avisar, tinyId, ...rest } = c;
+      const { nome, obs, paga, ...rest } = c;
       const out = toSnake(rest);
       out.descricao = nome;
       if (obs  !== undefined) out.observacao = obs;
@@ -1445,7 +1439,6 @@ const TABLE_MAP = {
       out.nome = r.descricao || '';
       out.obs  = r.observacao || '';
       out.paga = r.status === 'pago';
-      out.avisar = '3';
       delete out.descricao; delete out.observacao; delete out.status;
       return out;
     },
