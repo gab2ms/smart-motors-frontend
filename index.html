@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-15">
+<meta name="app-version" content="2026-04-30-16">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -662,71 +662,13 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       </div>
     </div>
 
-    <!-- Container dinâmico do dashboard -->
+    <!-- Container dinâmico do dashboard.
+         renderDashboardDynamic() preenche este container com todos os
+         widgets (KPIs, vendedores, scooters, gráfico, pedidos).
+         NÃO duplicar markup aqui — IDs colidem (dash-fat-kpis,
+         dash-int-kpis, dash-vendedores-card, etc) e os renders
+         apontariam para o elemento errado, mostrando KPIs duplicados. -->
     <div id="dash-dynamic-container"></div>
-
-    <!-- ROW 1: KPIs faturamento Tiny -->
-    <div class="kpi-grid" id="dash-fat-kpis" style="margin-bottom:16px;"></div>
-
-    <!-- ROW 2: KPIs internos -->
-    <div class="kpi-grid" id="dash-int-kpis" style="margin-bottom:20px;"></div>
-
-    <!-- ROW 3: Vendedores + Scooters lado a lado -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;" id="dash-mid-grid">
-
-      <!-- Vendas por vendedor -->
-      <div class="card" id="dash-vendedores-card">
-        <div class="card-header">
-          <div>
-            <div class="card-title">👤 Vendas por vendedor</div>
-            <div class="card-sub" id="dash-vendedores-sub">Baseado nos pedidos faturados do período</div>
-          </div>
-        </div>
-        <div style="padding:16px 20px;" id="ranking-vendedores">
-          <div class="empty" style="font-size:11px;">Carregando...</div>
-        </div>
-      </div>
-
-      <!-- Scooters mais vendidas -->
-      <div class="card">
-        <div class="card-header">
-          <div><div class="card-title">🏆 Scooters mais vendidas</div><div class="card-sub" id="dash-ranking-sub">Baseado nos pedidos faturados do período</div></div>
-        </div>
-        <div style="padding:0;" id="dash-ranking-body">
-          <div class="empty" style="padding:24px;font-size:11px;">Carregando pedidos do período...</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ROW 4: Faturamento por dia — full width sozinho -->
-    <div class="card" style="margin-bottom:16px;" id="dash-grafico-card">
-      <div class="card-header">
-        <div><div class="card-title">📊 Faturamento por dia</div><div class="card-sub" id="dash-grafico-sub">—</div></div>
-      </div>
-      <div style="padding:16px 20px 4px;">
-        <div id="dash-grafico" style="display:flex;align-items:flex-end;gap:2px;height:130px;"></div>
-        <div id="dash-grafico-labels" style="display:flex;gap:2px;margin-top:4px;"></div>
-      </div>
-    </div>
-
-
-
-
-
-    <!-- ROW 5: Últimos pedidos -->
-    <div class="card" id="dash-pedidos-card" style="display:none;">
-      <div class="card-header">
-        <div><div class="card-title">🧾 Últimos pedidos faturados</div><div class="card-sub" id="dash-pedidos-sub">—</div></div>
-        <button class="action-btn" onclick="showPage('pedidos')" style="font-size:10px;">Ver todos →</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Total</th></tr></thead>
-          <tbody id="dash-pedidos-body"></tbody>
-        </table>
-      </div>
-    </div>
-
   </div>
 
   <!-- ══════════════ PREÇOS ══════════════ -->
