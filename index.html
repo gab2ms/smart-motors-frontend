@@ -1401,6 +1401,59 @@ function toCamel(obj) {
 }
 const toCamelArr = arr => (arr || []).map(toCamel);
 
+// Mappers explícitos por tabela (alinhados ao schema real do Supabase).
+// Cada tabela define toDb (JS → linha do banco) e fromDb (linha do banco → JS).
+const TABLE_MAP = {
+  usuarios: {
+    toDb: u => { const { aprovadoEm, ...rest } = u; return toSnake(rest); },
+    fromDb: r => toCamel(r),
+  },
+  contas_bancarias: {
+    // schema não tem 'tipo'; mantemos em memória mas não persistimos
+    toDb: c => { const { tipo, ...rest } = c; return toSnake(rest); },
+    fromDb: r => toCamel(r),
+  },
+  lancamentos: {
+    toDb: l => {
+      const { obs, conta, ...rest } = l;
+      const out = toSnake(rest);
+      if (obs   !== undefined) out.observacao = obs;
+      if (conta !== undefined) out.conta_nome = conta;
+      return out;
+    },
+    fromDb: r => {
+      const out = toCamel(r);
+      out.obs   = r.observacao || '';
+      out.conta = r.conta_nome || '';
+      delete out.observacao; delete out.contaNome;
+      return out;
+    },
+  },
+  contas_pagar: {
+    // schema usa 'descricao' (não 'nome'), 'observacao' (não 'obs'), 'status'
+    // (não bool 'paga'); não tem avisar/pagaEm/tinyId — mantidos só em memória
+    toDb: c => {
+      const { nome, obs, paga, pagaEm, avisar, tinyId, ...rest } = c;
+      const out = toSnake(rest);
+      out.descricao = nome;
+      if (obs  !== undefined) out.observacao = obs;
+      if (paga !== undefined) out.status = paga ? 'pago' : 'pendente';
+      return out;
+    },
+    fromDb: r => {
+      const out = toCamel(r);
+      out.nome = r.descricao || '';
+      out.obs  = r.observacao || '';
+      out.paga = r.status === 'pago';
+      out.avisar = '3';
+      delete out.descricao; delete out.observacao; delete out.status;
+      return out;
+    },
+  },
+  custos_fixos:    { toDb: toSnake, fromDb: toCamel },
+  produtos_precos: { toDb: toSnake, fromDb: toCamel },
+};
+
 // ══════════════════════════════════════════
 //  DATA
 // ══════════════════════════════════════════
@@ -1568,17 +1621,18 @@ function salvarDados() {
 // Itens com id → upsert; itens sem id → insert + captura de id gerado.
 async function _syncTable(table, list) {
   if (!list?.length) return;
+  const map = TABLE_MAP[table] || { toDb: toSnake, fromDb: toCamel };
   const withId    = list.filter(x => x.id !== undefined && x.id !== null);
   const withoutId = list.filter(x => x.id === undefined || x.id === null);
 
   if (withId.length) {
-    const { error } = await sb.from(table).upsert(withId.map(toSnake));
+    const { error } = await sb.from(table).upsert(withId.map(map.toDb));
     if (error) console.warn('Erro upsert ' + table + ':', error.message);
   }
   if (withoutId.length) {
-    const { data, error } = await sb.from(table).insert(withoutId.map(toSnake)).select();
+    const { data, error } = await sb.from(table).insert(withoutId.map(map.toDb)).select();
     if (error) { console.warn('Erro insert ' + table + ':', error.message); return; }
-    if (data) data.forEach((row, i) => Object.assign(withoutId[i], toCamel(row)));
+    if (data) data.forEach((row, i) => Object.assign(withoutId[i], map.fromDb(row)));
   }
 }
 
@@ -1608,18 +1662,20 @@ async function carregarDados() {
       sb.from('produtos_precos').select('*').order('id'),
     ]);
 
-    contas       = (!c.error  && c.data?.length)  ? toCamelArr(c.data)  : [];
-    lancamentos  = (!l.error  && l.data)          ? toCamelArr(l.data)  : [];
-    contasPagar  = (!cp.error && cp.data)         ? toCamelArr(cp.data) : [];
-    custosFixos  = (!cf.error && cf.data?.length) ? toCamelArr(cf.data) : [];
-    products     = (!pr.error && pr.data?.length) ? toCamelArr(pr.data) : [];
+    const fromDb = name => (TABLE_MAP[name] || { fromDb: toCamel }).fromDb;
+    contas       = (!c.error  && c.data?.length)  ? c.data.map(fromDb('contas_bancarias')) : [];
+    lancamentos  = (!l.error  && l.data)          ? l.data.map(fromDb('lancamentos'))      : [];
+    contasPagar  = (!cp.error && cp.data)         ? cp.data.map(fromDb('contas_pagar'))    : [];
+    custosFixos  = (!cf.error && cf.data?.length) ? cf.data.map(fromDb('custos_fixos'))    : [];
+    products     = (!pr.error && pr.data?.length) ? pr.data.map(fromDb('produtos_precos')) : [];
 
     // Seed inicial se a tabela existe mas está vazia
     const seed = async (tbl, target, seedData) => {
       if (target.length || !seedData?.length) return target;
-      const { data, error } = await sb.from(tbl).insert(seedData.map(toSnake)).select();
+      const map = TABLE_MAP[tbl] || { toDb: toSnake, fromDb: toCamel };
+      const { data, error } = await sb.from(tbl).insert(seedData.map(map.toDb)).select();
       if (error) { console.warn('Seed ' + tbl + ' falhou:', error.message); return target; }
-      return toCamelArr(data || []);
+      return (data || []).map(map.fromDb);
     };
     if (!c.error)  contas      = await seed('contas_bancarias', contas,      CONTAS_SEED);
     if (!cf.error) custosFixos = await seed('custos_fixos',     custosFixos, CUSTOS_FIXOS_SEED);
@@ -3482,12 +3538,12 @@ function hashSenha(s) {
 async function getUsers() {
   const { data, error } = await sb.from('usuarios').select('*');
   if (error) { console.warn('Erro getUsers:', error.message); return []; }
-  return toCamelArr(data || []);
+  return (data || []).map(TABLE_MAP.usuarios.fromDb);
 }
 async function saveUser(u) {
-  const { data, error } = await sb.from('usuarios').upsert(toSnake(u)).select().single();
+  const { data, error } = await sb.from('usuarios').upsert(TABLE_MAP.usuarios.toDb(u)).select().single();
   if (error) { console.warn('Erro saveUser:', error.message); return null; }
-  const merged = toCamel(data);
+  const merged = TABLE_MAP.usuarios.fromDb(data);
   Object.assign(u, merged);
   return merged;
 }
@@ -4177,10 +4233,9 @@ function openContaModal() {
   const tipo = prompt('Tipo (Dinheiro, Banco, Digital, etc.):','Banco');
   if (tipo===null) return;
   const saldoInicial = parseFloat(prompt('Saldo inicial (R$):','0'))||0;
-  contas.push({id:Date.now(), nome, tipo:tipo||'Banco', saldo:saldoInicial});
+  contas.push({nome, tipo:tipo||'Banco', saldo:saldoInicial});
   renderContas();
   renderFinKpis();
-  salvarDados();
   salvarDados();
 }
 
