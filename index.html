@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-22">
+<meta name="app-version" content="2026-04-30-23">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -813,6 +813,23 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
   transform: translateY(-1px);
   border-color: rgba(245,197,24,0.35);
 }
+
+/* ── DASHBOARD PRESETS DE PERIODO ── */
+.dash-preset-btn.active {
+  background: var(--gold-dim);
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  box-shadow: 0 0 12px rgba(245,197,24,0.25);
+}
+.kpi-delta {
+  font-size: 11px;
+  margin-top: 4px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.kpi-delta.up    { color: var(--green); text-shadow: 0 0 8px var(--green-glow); }
+.kpi-delta.down  { color: var(--red);   text-shadow: 0 0 8px var(--red-glow); }
+.kpi-delta.flat  { color: var(--text3); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -943,9 +960,15 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <input type="date" id="dash-fat-ini" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;">
+        <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;" id="dash-preset-row">
+          <button class="btn dash-preset-btn" data-preset="mes-atual" onclick="setPeriodoPreset('mes-atual')" style="font-size:10px;padding:5px 9px;">Este mês</button>
+          <button class="btn dash-preset-btn" data-preset="mes-anterior" onclick="setPeriodoPreset('mes-anterior')" style="font-size:10px;padding:5px 9px;">Mês anterior</button>
+          <button class="btn dash-preset-btn" data-preset="7d" onclick="setPeriodoPreset('7d')" style="font-size:10px;padding:5px 9px;">7 dias</button>
+          <button class="btn dash-preset-btn" data-preset="30d" onclick="setPeriodoPreset('30d')" style="font-size:10px;padding:5px 9px;">30 dias</button>
+        </div>
+        <input type="date" id="dash-fat-ini" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;" onchange="onDashDateChange()">
         <span style="color:var(--text3);font-size:11px;">até</span>
-        <input type="date" id="dash-fat-fim" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;">
+        <input type="date" id="dash-fat-fim" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;" onchange="onDashDateChange()">
         <button class="btn" onclick="abrirBuilder()" style="font-size:11px;padding:6px 12px;">⚙ Personalizar</button>
         <button class="btn btn-gold" onclick="carregarFaturamentoDash()" style="font-size:11px;padding:6px 14px;">⚡ Atualizar</button>
       </div>
@@ -2950,14 +2973,74 @@ function renderDashPedidos(pedidos) {
 }
 
 function initFaturamentoDash() {
-  var hoje = new Date();
-  var ini  = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-  var toISO = function(d) { return d.toISOString().split('T')[0]; };
-  var elIni = document.getElementById('dash-fat-ini');
-  var elFim = document.getElementById('dash-fat-fim');
-  if (elIni && !elIni.value) elIni.value = toISO(ini);
-  if (elFim && !elFim.value) elFim.value = toISO(hoje);
+  setPeriodoPreset('mes-atual');
+}
+
+// ── Presets de período ──
+const _toISO = d => d.toISOString().split('T')[0];
+
+function setPeriodoPreset(preset) {
+  const elIni = document.getElementById('dash-fat-ini');
+  const elFim = document.getElementById('dash-fat-fim');
+  if (!elIni || !elFim) return;
+
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  let ini, fim;
+  if (preset === 'mes-atual') {
+    ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    fim = hoje;
+  } else if (preset === 'mes-anterior') {
+    ini = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+    fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0); // último dia do mês anterior
+  } else if (preset === '7d') {
+    fim = hoje;
+    ini = new Date(hoje.getTime() - 6 * 86400000);
+  } else if (preset === '30d') {
+    fim = hoje;
+    ini = new Date(hoje.getTime() - 29 * 86400000);
+  } else {
+    return;
+  }
+  elIni.value = _toISO(ini);
+  elFim.value = _toISO(fim);
+
+  // Marca preset ativo visualmente
+  document.querySelectorAll('.dash-preset-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.preset === preset);
+  });
   carregarFaturamentoDash();
+}
+
+// Quando o usuário muda data manualmente, desmarca presets
+function onDashDateChange() {
+  document.querySelectorAll('.dash-preset-btn').forEach(b => b.classList.remove('active'));
+  carregarFaturamentoDash();
+}
+
+// Calcula período imediatamente anterior do mesmo tamanho.
+// Ex: 01/04 a 12/04 (12 dias) → 20/03 a 31/03 (12 dias).
+function calcPeriodoAnterior(iniISO, fimISO) {
+  const ini = new Date(iniISO + 'T00:00:00');
+  const fim = new Date(fimISO + 'T00:00:00');
+  const dias = Math.round((fim - ini) / 86400000);
+  const fimAnt = new Date(ini.getTime() - 86400000);
+  const iniAnt = new Date(fimAnt.getTime() - dias * 86400000);
+  return { ini: _toISO(iniAnt), fim: _toISO(fimAnt) };
+}
+
+// Renderiza HTML do delta (▲ X% / ▼ X% / —) entre o valor atual e o anterior.
+// invertido=true para KPIs onde menos é melhor (custo). Aqui não usamos.
+function deltaHTML(curr, prev, invertido) {
+  if (prev == null || prev === 0) {
+    if (curr === 0) return '<div class="kpi-delta flat">— sem dados anteriores</div>';
+    return '<div class="kpi-delta up">▲ novo período</div>';
+  }
+  const pct = ((curr - prev) / Math.abs(prev)) * 100;
+  if (Math.abs(pct) < 0.5) return '<div class="kpi-delta flat">— estável vs anterior</div>';
+  const better = invertido ? pct < 0 : pct > 0;
+  const arrow  = pct > 0 ? '▲' : '▼';
+  const cls    = better ? 'up' : 'down';
+  return '<div class="kpi-delta ' + cls + '">' + arrow + ' ' + Math.abs(pct).toFixed(0) + '% vs período anterior</div>';
 }
 
 async function carregarFaturamentoDash() {
@@ -2983,16 +3066,35 @@ async function carregarFaturamentoDash() {
       return p[2]+'/'+p[1]+'/'+p[0];
     };
 
-    var pedidos = await buscarPedidosCompletos(fmtDate(iniISO), fmtDate(fimISO));
+    // Período atual + anterior em paralelo
+    var anterior = calcPeriodoAnterior(iniISO, fimISO);
+    var resultados = await Promise.all([
+      buscarPedidosCompletos(fmtDate(iniISO), fmtDate(fimISO)),
+      buscarPedidosCompletos(fmtDate(anterior.ini), fmtDate(anterior.fim)),
+    ]);
+    var pedidos    = resultados[0];
+    var pedidosAnt = resultados[1];
 
-    var receitaTotal = pedidos.reduce(function(s,p){return s+(p.valor||0);}, 0);
-    var totalPedidos = pedidos.length;
-    var ticketMedio  = totalPedidos > 0 ? receitaTotal / totalPedidos : 0;
+    function calcKpis(peds) {
+      var receita = peds.reduce(function(s,p){return s+(p.valor||0);}, 0);
+      var qtd     = peds.length;
+      var ticket  = qtd > 0 ? receita / qtd : 0;
+      return { receita: receita, qtd: qtd, ticket: ticket };
+    }
+    var kc = calcKpis(pedidos);
+    var ka = calcKpis(pedidosAnt);
+
+    var receitaTotal = kc.receita;
+    var totalPedidos = kc.qtd;
+    var ticketMedio  = kc.ticket;
     var custoFixoMensal = custosFixos.reduce(function(s,c){return s+c.valor;}, 0);
     var avgMCpct    = products.length ? products.reduce(function(s,p){return s+mcp(p);},0)/products.length/100 : 0;
     var lucroBruto  = receitaTotal * avgMCpct;
     var lucroLiquido = lucroBruto - custoFixoMensal;
     var margemLiq   = receitaTotal > 0 ? lucroLiquido/receitaTotal*100 : 0;
+    // Mesma fórmula aplicada ao período anterior (para comparação)
+    var lucroBrutoAnt   = ka.receita * avgMCpct;
+    var lucroLiquidoAnt = lucroBrutoAnt - custoFixoMensal;
 
     var iniDate  = new Date(iniISO);
     var mesLabel = iniDate.toLocaleString('pt-BR', {month:'long', year:'numeric'});
@@ -3006,18 +3108,22 @@ async function carregarFaturamentoDash() {
       '<div class="kpi"' + kpiClickPed + '>'
       + '<div class="kpi-label">Faturamento do período</div>'
       + '<div class="kpi-value green">' + fmt(receitaTotal) + '</div>'
+      + deltaHTML(receitaTotal, ka.receita)
       + '<div class="kpi-change">clique para ver pedidos ↗</div></div>'
       + '<div class="kpi"' + kpiClickPed + '>'
       + '<div class="kpi-label">Pedidos faturados</div>'
       + '<div class="kpi-value gold">' + totalPedidos + '</div>'
+      + deltaHTML(totalPedidos, ka.qtd)
       + '<div class="kpi-change">no período</div></div>'
       + '<div class="kpi"' + kpiNormal + '>'
       + '<div class="kpi-label">Ticket médio</div>'
       + '<div class="kpi-value gold">' + fmt(ticketMedio) + '</div>'
+      + deltaHTML(ticketMedio, ka.ticket)
       + '<div class="kpi-change">por pedido</div></div>'
       + '<div class="kpi"' + kpiNormal + '>'
       + '<div class="kpi-label">Lucro bruto est.</div>'
       + '<div class="kpi-value ' + (lucroBruto>=0?'green':'red') + '">' + fmt(lucroBruto) + '</div>'
+      + deltaHTML(lucroBruto, lucroBrutoAnt)
       + '<div class="kpi-change">MC média ' + (avgMCpct*100).toFixed(1) + '% × receita</div></div>'
       + '<div class="kpi"' + kpiClickCus + '>'
       + '<div class="kpi-label">Custo fixo do mês</div>'
@@ -3026,6 +3132,7 @@ async function carregarFaturamentoDash() {
       + '<div class="kpi"' + kpiNormal + '>'
       + '<div class="kpi-label">Lucro líquido est.</div>'
       + '<div class="kpi-value ' + (lucroLiquido>=0?'green':'red') + '">' + fmt(lucroLiquido) + '</div>'
+      + deltaHTML(lucroLiquido, lucroLiquidoAnt)
       + '<div class="kpi-change">' + (margemLiq>=0?'+':'') + margemLiq.toFixed(1) + '% da receita</div></div>';
 
     // Gráfico por dia
