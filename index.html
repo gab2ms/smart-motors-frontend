@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-8">
+<meta name="app-version" content="2026-04-30-9">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1606,7 +1606,19 @@ function showPage(id){
   const btnProd = document.getElementById('btn-add-produto');
   if (btnProd) btnProd.style.display = ['estoque','simulador'].includes(id) ? '' : 'none';
   atualizarDotContasPagar();
-  if(id==='dashboard')// Helpers de data
+  if(id==='dashboard')renderDashboard();
+  if(id==='precos')renderPrecos();
+  if(id==='vendas'){popularSeletorPeriodo();carregarVendasDoMes();}
+  if(id==='simulador'){populateSimSelect();}
+  if(id==='estoque')initEstoque();
+  if(id==='pedidos')initPedidosTiny();
+  if(id==='admin')renderAdmin();
+  if(id==='financeiro')initFinanceiro();
+  if(id==='contas-pagar')initContasPagar();
+  if(id==='custos')renderCustos();
+}
+
+// Helpers de data
 function toBRDate(iso) {
   if (!iso) return '—';
   // Se já está em DD/MM/YYYY retorna direto
@@ -1988,16 +2000,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (document.getElementById('page-contas-pagar')?.classList.contains('active')) initContasPagar();
   if (document.getElementById('page-custos')?.classList.contains('active')) renderCustos();
 });
-  if(id==='precos')renderPrecos();
-  if(id==='vendas'){popularSeletorPeriodo();carregarVendasDoMes();}
-  if(id==='simulador'){populateSimSelect();}
-  if(id==='estoque')initEstoque();
-  if(id==='pedidos')initPedidosTiny();
-  if(id==='admin')renderAdmin();
-  if(id==='financeiro')initFinanceiro();
-  if(id==='contas-pagar')initContasPagar();
-  if(id==='custos')renderCustos();
-}
 
 // ══════════════════════════════════════════
 //  DASHBOARD
