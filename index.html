@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root {
   --mono: 'JetBrains Mono', monospace;
@@ -1374,9 +1375,36 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 
 <script>
 // ══════════════════════════════════════════
+//  SUPABASE
+// ══════════════════════════════════════════
+const SUPABASE_URL = 'https://sxmeuqlotjuchslevofv.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4bWV1cWxvdGp1Y2hzbGV2b2Z2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1NzU4MjQsImV4cCI6MjA5MzE1MTgyNH0.uqXors6qAgX5GOK7U00kj0V9Y1RQNjHnyOgGIdtsCdw';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// camelCase <-> snake_case mappers (JS usa camelCase, Postgres convention é snake_case)
+const _toSnakeKey = s => s.replace(/[A-Z]/g, l => '_' + l.toLowerCase());
+const _toCamelKey = s => s.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
+function toSnake(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+  const out = {};
+  for (const k of Object.keys(obj)) {
+    if (obj[k] === undefined) continue;
+    out[_toSnakeKey(k)] = obj[k];
+  }
+  return out;
+}
+function toCamel(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+  const out = {};
+  for (const k of Object.keys(obj)) out[_toCamelKey(k)] = obj[k];
+  return out;
+}
+const toCamelArr = arr => (arr || []).map(toCamel);
+
+// ══════════════════════════════════════════
 //  DATA
 // ══════════════════════════════════════════
-let products = [
+const PRODUCTS_SEED = [
   {modelo:"GT1",fornecedor:"GARRA MOBILIDADE",custo:7500,montagem:0,comissao:0,nfCompra:75,nf:30,jonosake:1157.30,financeiro:92,venda:9200},
   {modelo:"Valley",fornecedor:"HAO",custo:7090,montagem:110,comissao:100,nfCompra:70.90,nf:30,jonosake:1157.30,financeiro:94.99,venda:9499},
   {modelo:"Best",fornecedor:"HAO",custo:6985,montagem:110,comissao:100,nfCompra:69.85,nf:30,jonosake:1157.30,financeiro:94.99,venda:9499},
@@ -1408,6 +1436,7 @@ let products = [
   {modelo:"Felicie duo",fornecedor:"HAO",custo:2990,montagem:0,comissao:100,nfCompra:29.90,nf:30,jonosake:0,financeiro:38.99,venda:3899},
   {modelo:"Maggie",fornecedor:"HAO",custo:2790,montagem:0,comissao:100,nfCompra:27.90,nf:30,jonosake:0,financeiro:34.99,venda:3499},
 ];
+let products = [];
 
 let pedidos = [
   {id:1,fornecedor:"HAO",nome:"Lote HAO — Jan/2026",items:[
@@ -1429,7 +1458,7 @@ let pedidos = [
   ]},
 ];
 
-let custosFixos = [
+const CUSTOS_FIXOS_SEED = [
   {nome:"Empréstimo",valor:9973.88},{nome:"Tráfego Pago",valor:4416},
   {nome:"Pró-labore Sócios",valor:4000},{nome:"Aluguel",valor:3500},
   {nome:"Quiosque",valor:3500},{nome:"Saveiro Assinatura",valor:2099},
@@ -1440,6 +1469,7 @@ let custosFixos = [
   {nome:"Verisure",valor:342},{nome:"Insumos",valor:300},
   {nome:"ERP Olist Tiny",valor:139.60},{nome:"Água",valor:60},{nome:"Internet",valor:60},
 ];
+let custosFixos = [];
 
 let emprestimo = {
   valor:65050,custo:4767.13,total:69817.13,parcelas:7,
@@ -1523,63 +1553,82 @@ function toISODate(br) {
 }
 
 // ══════════════════════════════════════════
-//  PERSISTÊNCIA — POSTGRESQL (nuvem)
+//  PERSISTÊNCIA — SUPABASE
 // ══════════════════════════════════════════
 
 var _saveTimer = null;
 
-// Salva no banco com debounce de 1.5s (evita muitas chamadas seguidas)
+// Salva no Supabase com debounce de 1s
 function salvarDados() {
   if (_saveTimer) clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(function() {
-    _enviarParaBanco();
-  }, 1500);
+  _saveTimer = setTimeout(_enviarParaBanco, 1000);
+}
+
+// Sincroniza um array com uma tabela Supabase.
+// Itens com id → upsert; itens sem id → insert + captura de id gerado.
+async function _syncTable(table, list) {
+  if (!list?.length) return;
+  const withId    = list.filter(x => x.id !== undefined && x.id !== null);
+  const withoutId = list.filter(x => x.id === undefined || x.id === null);
+
+  if (withId.length) {
+    const { error } = await sb.from(table).upsert(withId.map(toSnake));
+    if (error) console.warn('Erro upsert ' + table + ':', error.message);
+  }
+  if (withoutId.length) {
+    const { data, error } = await sb.from(table).insert(withoutId.map(toSnake)).select();
+    if (error) { console.warn('Erro insert ' + table + ':', error.message); return; }
+    if (data) data.forEach((row, i) => Object.assign(withoutId[i], toCamel(row)));
+  }
 }
 
 async function _enviarParaBanco() {
   try {
-    await fetch(API_URL + '/db/save-all', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contas, lancamentos, contasPagar, custosFixos }),
-    });
-    console.log('✅ Dados salvos no banco');
+    await Promise.all([
+      _syncTable('contas_bancarias', contas),
+      _syncTable('lancamentos',      lancamentos),
+      _syncTable('contas_pagar',     contasPagar),
+      _syncTable('custos_fixos',     custosFixos),
+      _syncTable('produtos_precos',  products),
+    ]);
+    console.log('✅ Dados salvos no Supabase');
   } catch(e) {
-    console.warn('Erro ao salvar no banco:', e.message);
-    // Fallback: salva no localStorage
-    try {
-      localStorage.setItem('sm_backup', JSON.stringify({ contas, lancamentos, contasPagar, custosFixos }));
-    } catch(e2) {}
+    console.warn('Erro ao salvar no Supabase:', e.message || e);
   }
 }
 
+// Carrega dados do Supabase. Se uma tabela estiver vazia e houver SEED, faz seed inicial.
 async function carregarDados() {
   try {
-    const res  = await fetch(API_URL + '/db/sync');
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.erro);
+    const [c, l, cp, cf, pr] = await Promise.all([
+      sb.from('contas_bancarias').select('*').order('id'),
+      sb.from('lancamentos').select('*'),
+      sb.from('contas_pagar').select('*'),
+      sb.from('custos_fixos').select('*').order('id'),
+      sb.from('produtos_precos').select('*').order('id'),
+    ]);
 
-    if (data.contas?.length)       contas       = data.contas;
-    if (data.lancamentos?.length)  lancamentos  = data.lancamentos;
-    if (data.contasPagar?.length)  contasPagar  = data.contasPagar;
-    if (data.custosFixos?.length)  custosFixos  = data.custosFixos;
+    contas       = (!c.error  && c.data?.length)  ? toCamelArr(c.data)  : [];
+    lancamentos  = (!l.error  && l.data)          ? toCamelArr(l.data)  : [];
+    contasPagar  = (!cp.error && cp.data)         ? toCamelArr(cp.data) : [];
+    custosFixos  = (!cf.error && cf.data?.length) ? toCamelArr(cf.data) : [];
+    products     = (!pr.error && pr.data?.length) ? toCamelArr(pr.data) : [];
 
-    console.log('✅ Dados carregados do banco PostgreSQL');
+    // Seed inicial se a tabela existe mas está vazia
+    const seed = async (tbl, target, seedData) => {
+      if (target.length || !seedData?.length) return target;
+      const { data, error } = await sb.from(tbl).insert(seedData.map(toSnake)).select();
+      if (error) { console.warn('Seed ' + tbl + ' falhou:', error.message); return target; }
+      return toCamelArr(data || []);
+    };
+    if (!c.error)  contas      = await seed('contas_bancarias', contas,      CONTAS_SEED);
+    if (!cf.error) custosFixos = await seed('custos_fixos',     custosFixos, CUSTOS_FIXOS_SEED);
+    if (!pr.error) products    = await seed('produtos_precos',  products,    PRODUCTS_SEED);
+
+    console.log('✅ Dados carregados do Supabase');
     return true;
   } catch(e) {
-    console.warn('Banco indisponível, tentando backup local:', e.message);
-    // Fallback: tenta carregar do localStorage
-    try {
-      const raw = localStorage.getItem('sm_backup');
-      if (raw) {
-        const d = JSON.parse(raw);
-        if (d.contas?.length)       contas       = d.contas;
-        if (d.lancamentos?.length)  lancamentos  = d.lancamentos;
-        if (d.contasPagar?.length)  contasPagar  = d.contasPagar;
-        if (d.custosFixos?.length)  custosFixos  = d.custosFixos;
-        console.log('✅ Dados carregados do backup local');
-      }
-    } catch(e2) {}
+    console.warn('Erro ao carregar do Supabase:', e.message || e);
     return false;
   }
 }
@@ -1817,9 +1866,9 @@ function renderWidgetHTML(id) {
 
 // Init after DOM is fully loaded
 document.addEventListener('DOMContentLoaded', async function() {
-  initLogin();
-  // Carrega dados do banco antes de renderizar
+  // Carrega dados do Supabase antes de renderizar
   await carregarDados();
+  await initLogin();
   renderDashboard();
   atualizarDotContasPagar();
   // Re-renderiza módulos com dados carregados
@@ -2456,11 +2505,14 @@ function saveProduct(){
     venda:+document.getElementById('edit-venda').value||0,
   };
   if(!p.modelo){alert('Preencha o nome do modelo');return;}
-  if(i===-1)products.push(p); else products[i]=p;
+  if(i===-1){products.push(p);} else {p.id=products[i].id;products[i]=p;}
   closeModal();renderPrecos();renderDashboard();
+  salvarDados();
 }
 function delProduct(i){
   if(!confirm('Remover "'+products[i].modelo+'"?'))return;
+  const id = products[i].id;
+  if (id != null) sb.from('produtos_precos').delete().eq('id', id);
   products.splice(i,1);renderPrecos();renderDashboard();
 }
 
@@ -2830,13 +2882,15 @@ function editCusto(i){
 }
 function delCusto(i){
   if(!confirm('Remover "'+custosFixos[i].nome+'" de R$ '+custosFixos[i].valor.toFixed(2)+'?'))return;
+  const id = custosFixos[i].id;
+  if (id != null) sb.from('custos_fixos').delete().eq('id', id);
   custosFixos.splice(i,1);renderCustos();salvarDados();
 }
 function addCusto(){
   const nome=prompt('Nome da despesa:','');
   if(!nome)return;
   const val=parseFloat(prompt('Valor mensal (R$):','0'))||0;
-  custosFixos.push({nome,valor:val});renderCustos();
+  custosFixos.push({nome,valor:val});renderCustos();salvarDados();
 }
 
 // ══════════════════════════════════════════
@@ -3367,20 +3421,20 @@ function switchVTab(name){
 
 
 // ══════════════════════════════════════════
-//  LOGIN SYSTEM
+//  LOGIN SYSTEM (Supabase)
 // ══════════════════════════════════════════
-function getAcessoCode() {
-  return localStorage.getItem('sm_acesso_code') || 'smartmotors2026';
-}
 const ADMIN_EMAIL  = 'gabrielllmoreirall@gmail.com';
+const ACESSO_CODE_DEFAULT = 'smartmotors2026';
+let _acessoCode = ACESSO_CODE_DEFAULT;
+function getAcessoCode() { return _acessoCode; }
 
-function initLogin() {
-  garantirAdmin();
-  const user = localStorage.getItem('sm_user');
+async function initLogin() {
+  await garantirAdmin();
+  const user = sessionStorage.getItem('sm_user');
   if (user) {
     try {
       const u = JSON.parse(user);
-      const users = getUsers();
+      const users = await getUsers();
       const fresh = users.find(x => x.email === u.email);
       if (fresh && fresh.status === 'aprovado') {
         hideLoginOverlay();
@@ -3388,22 +3442,23 @@ function initLogin() {
         return;
       }
     } catch(e) {}
-    localStorage.removeItem('sm_user');
+    sessionStorage.removeItem('sm_user');
   }
 }
 
-function garantirAdmin() {
-  // Limpa tudo e força recriação do admin com credenciais corretas
-  let users = getUsers().filter(u => u.email !== ADMIN_EMAIL && u.role !== 'admin');
-  users.unshift({
-    nome:      'Gabriel',
-    email:     ADMIN_EMAIL,
-    senha:     hashSenha('Ma49721106'),
-    role:      'admin',
-    status:    'aprovado',
-    criadoEm:  new Date().toISOString(),
-  });
-  saveUsers(users);
+async function garantirAdmin() {
+  const users = await getUsers();
+  const exists = users.find(u => u.email === ADMIN_EMAIL);
+  if (!exists) {
+    await saveUser({
+      nome:     'Gabriel',
+      email:    ADMIN_EMAIL,
+      senha:    hashSenha('Ma49721106'),
+      role:     'admin',
+      status:   'aprovado',
+      criadoEm: new Date().toISOString(),
+    });
+  }
 }
 
 function switchLoginTab(tab) {
@@ -3424,34 +3479,37 @@ function hashSenha(s) {
   catch(e) { return btoa(s); }
 }
 
-function getUsers() {
-  return JSON.parse(localStorage.getItem('sm_users') || '[]');
+async function getUsers() {
+  const { data, error } = await sb.from('usuarios').select('*');
+  if (error) { console.warn('Erro getUsers:', error.message); return []; }
+  return toCamelArr(data || []);
 }
-function saveUsers(users) {
-  localStorage.setItem('sm_users', JSON.stringify(users));
+async function saveUser(u) {
+  const { data, error } = await sb.from('usuarios').upsert(toSnake(u)).select().single();
+  if (error) { console.warn('Erro saveUser:', error.message); return null; }
+  const merged = toCamel(data);
+  Object.assign(u, merged);
+  return merged;
 }
 
-function fazerLogin() {
+async function fazerLogin() {
   const email  = document.getElementById('login-email').value.trim().toLowerCase();
   const senha  = document.getElementById('login-senha').value;
   const erroEl = document.getElementById('login-erro');
 
   if (!email || !senha) { showLoginErro(erroEl,'Preencha e-mail e senha.'); return; }
 
-  // Verifica admin fixo primeiro (sem depender de localStorage)
+  // Atalho admin fixo: garante existência e loga
   if (email === ADMIN_EMAIL && senha === 'Ma49721106') {
     const adminUser = { nome:'Gabriel', email:ADMIN_EMAIL, role:'admin', status:'aprovado' };
-    // Atualiza localStorage com credenciais corretas
-    let users = getUsers().filter(u => u.email !== ADMIN_EMAIL);
-    users.unshift({ ...adminUser, senha: hashSenha(senha), criadoEm: new Date().toISOString() });
-    saveUsers(users);
-    localStorage.setItem('sm_user', JSON.stringify(adminUser));
+    await saveUser({ ...adminUser, senha: hashSenha(senha), criadoEm: new Date().toISOString() });
+    sessionStorage.setItem('sm_user', JSON.stringify(adminUser));
     hideLoginOverlay();
     atualizarUserDisplay(adminUser);
     return;
   }
 
-  const users = getUsers();
+  const users = await getUsers();
   const user  = users.find(u => u.email === email && u.senha === hashSenha(senha));
 
   if (!user) { showLoginErro(erroEl,'E-mail ou senha incorretos.'); return; }
@@ -3465,12 +3523,12 @@ function fazerLogin() {
     return;
   }
 
-  localStorage.setItem('sm_user', JSON.stringify(user));
+  sessionStorage.setItem('sm_user', JSON.stringify(user));
   hideLoginOverlay();
   atualizarUserDisplay(user);
 }
 
-function criarConta() {
+async function criarConta() {
   const nome     = document.getElementById('criar-nome').value.trim();
   const email    = document.getElementById('criar-email').value.trim().toLowerCase();
   const senha    = document.getElementById('criar-senha').value;
@@ -3484,32 +3542,30 @@ function criarConta() {
   if (senha !== confirma){ showLoginErro(erroEl,'As senhas não conferem.'); return; }
   if (codigo !== getAcessoCode()){ showLoginErro(erroEl,'Código de acesso inválido.'); return; }
 
-  const users = getUsers();
+  const users = await getUsers();
   if (users.find(u => u.email === email)){ showLoginErro(erroEl,'E-mail já cadastrado.'); return; }
 
-  users.push({
+  await saveUser({
     nome, email, senha: hashSenha(senha),
     role: 'user',
     status: 'pendente',
     criadoEm: new Date().toISOString(),
   });
-  saveUsers(users);
 
   erroEl.classList.remove('show');
   okEl.textContent = '✅ Solicitação enviada! Aguarde a aprovação do administrador para fazer login.';
   okEl.classList.add('show');
-  // Update pending dot if admin is logged
-  atualizarPendingDot();
+  await atualizarPendingDot();
 }
 
-function resetSenha() {
+async function resetSenha() {
   const email  = document.getElementById('reset-email').value.trim().toLowerCase();
   const erroEl = document.getElementById('reset-erro');
   const okEl   = document.getElementById('reset-ok');
 
   if (!email){ showLoginErro(erroEl,'Digite seu e-mail.'); return; }
 
-  const users = getUsers();
+  const users = await getUsers();
   const user  = users.find(u => u.email === email);
 
   // Por segurança, sempre mostra mesma mensagem
@@ -3519,10 +3575,9 @@ function resetSenha() {
 Faça login e altere sua senha.`;
   okEl.classList.add('show');
 
-  // Reseta senha para temporária
   if (user) {
     user.senha = hashSenha('smartmotors123');
-    saveUsers(users);
+    await saveUser(user);
   }
 }
 
@@ -3574,8 +3629,8 @@ function atualizarUserDisplay(user) {
   }
 }
 
-function atualizarPendingDot() {
-  const users   = getUsers();
+async function atualizarPendingDot() {
+  const users   = await getUsers();
   const pending = users.filter(u=>u.status==='pendente').length;
   const dot = document.getElementById('admin-pending-dot');
   if (dot) dot.style.display = pending>0?'block':'none';
@@ -3583,7 +3638,7 @@ function atualizarPendingDot() {
 
 function fazerLogout() {
   if (!confirm('Deseja sair da sua conta?')) return;
-  localStorage.removeItem('sm_user');
+  sessionStorage.removeItem('sm_user');
   document.getElementById('login-overlay').classList.add('show');
   const su = document.getElementById('sidebar-user');
   if (su) su.remove();
@@ -3592,10 +3647,11 @@ function fazerLogout() {
 // ══════════════════════════════════════════
 //  FINANCEIRO
 // ══════════════════════════════════════════
-let contas = [
-  {id:1, nome:'Caixa', tipo:'Dinheiro', saldo:0},
-  {id:2, nome:'Conta Corrente', tipo:'Banco', saldo:0},
+const CONTAS_SEED = [
+  {nome:'Caixa', tipo:'Dinheiro', saldo:0},
+  {nome:'Conta Corrente', tipo:'Banco', saldo:0},
 ];
+let contas = [];
 
 let lancamentos = [];
 let lanSortCol = 'data';
@@ -4076,6 +4132,7 @@ function deletarLancamento(id) {
   // Reverte saldo
   const ct = contas.find(c=>c.nome===l.conta);
   if (ct) ct.saldo += l.tipo==='entrada'?-l.valor:l.valor;
+  sb.from('lancamentos').delete().eq('id', id);
   lancamentos = lancamentos.filter(l=>l.id!==id);
   populateFinCatFilter();
   populateFinContaFilter();
@@ -4526,6 +4583,7 @@ function editarContaPagar(id) {
 function deletarContaPagar(id) {
   const c = contasPagar.find(x=>x.id===id);
   if (!c||!confirm(`Remover "${c.nome}"?`)) return;
+  sb.from('contas_pagar').delete().eq('id', id);
   contasPagar = contasPagar.filter(x=>x.id!==id);
   renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar(); atualizarDotContasPagar(); salvarDados();
 }
@@ -4745,11 +4803,11 @@ document.addEventListener('DOMContentLoaded', function() {
 // ══════════════════════════════════════════
 //  ADMIN — GESTÃO DE USUÁRIOS
 // ══════════════════════════════════════════
-function renderAdmin() {
+async function renderAdmin() {
   // Atualiza display do código
   const codeEl = document.getElementById('admin-codigo-display');
   if (codeEl) codeEl.textContent = getAcessoCode();
-  const users    = getUsers();
+  const users    = await getUsers();
   const pendente = users.filter(u=>u.status==='pendente');
   const ativo    = users.filter(u=>u.status==='aprovado');
   const rejeit   = users.filter(u=>u.status==='rejeitado');
@@ -4805,8 +4863,8 @@ function alterarCodigo() {
   const novo  = prompt(`Código atual: ${atual}\n\nDigite o novo código de acesso:`, atual);
   if (!novo || novo.trim() === '') return;
   if (novo.trim().length < 6) { alert('O código deve ter pelo menos 6 caracteres.'); return; }
-  localStorage.setItem('sm_acesso_code', novo.trim());
-  alert(`✅ Código alterado para: ${novo.trim()}`);
+  _acessoCode = novo.trim();
+  alert(`✅ Código alterado para: ${novo.trim()}\n\n⚠️ Mudança válida só para esta sessão.`);
   renderAdmin();
 }
 
@@ -4819,41 +4877,41 @@ function copiarCodigo() {
   });
 }
 
-function aprovarUser(email) {
-  const users = getUsers();
+async function aprovarUser(email) {
+  const users = await getUsers();
   const u = users.find(x=>x.email===email);
   if (!u) return;
   u.status = 'aprovado';
   u.aprovadoEm = new Date().toISOString();
-  saveUsers(users);
-  atualizarPendingDot();
-  renderAdmin();
+  await saveUser(u);
+  await atualizarPendingDot();
+  await renderAdmin();
 }
 
-function rejeitarUser(email) {
-  const users = getUsers();
+async function rejeitarUser(email) {
+  const users = await getUsers();
   const u = users.find(x=>x.email===email);
   if (!u || !confirm(`Bloquear acesso de "${u.nome}"?`)) return;
   u.status = 'rejeitado';
-  saveUsers(users);
-  atualizarPendingDot();
-  renderAdmin();
+  await saveUser(u);
+  await atualizarPendingDot();
+  await renderAdmin();
 }
 
-function tornarAdmin(email) {
-  const users = getUsers();
+async function tornarAdmin(email) {
+  const users = await getUsers();
   const u = users.find(x=>x.email===email);
   if (!u || !confirm(`Tornar "${u.nome}" administrador? Ele terá acesso total.`)) return;
   u.role = 'admin';
-  saveUsers(users);
-  renderAdmin();
+  await saveUser(u);
+  await renderAdmin();
 }
 
-function deletarUser(email) {
+async function deletarUser(email) {
   if (!confirm(`Remover permanentemente o usuário ${email}?`)) return;
-  const users = getUsers().filter(u=>u.email!==email);
-  saveUsers(users);
-  renderAdmin();
+  const { error } = await sb.from('usuarios').delete().eq('email', email);
+  if (error) console.warn('Erro deletarUser:', error.message);
+  await renderAdmin();
 }
 
 document.getElementById('lan-modal').addEventListener('click',function(e){if(e.target===this)closeLanModal();});
