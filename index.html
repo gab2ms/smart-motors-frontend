@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-26">
+<meta name="app-version" content="2026-04-30-27">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1359,6 +1359,31 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         <input type="date" id="fin-data-fim" class="search-input" style="max-width:135px;padding:7px 10px;font-size:11px;" onchange="filtrarLancamentos()">
         <button class="btn" onclick="openContaModal()">+ Conta</button>
         <button class="btn btn-gold" onclick="openLanModal()">+ Lançamento</button>
+      </div>
+    </div>
+
+    <!-- SEÇÃO NOVA: CONTROLE DE EMPRÉSTIMO -->
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card-header">
+        <div>
+          <div class="card-title">💰 Controle de empréstimo</div>
+          <div class="card-sub" id="emp-fin-sub">Carregando...</div>
+        </div>
+      </div>
+      <div id="emp-fin-content" style="padding:18px 20px;"></div>
+    </div>
+
+    <!-- SEÇÃO NOVA: ANÁLISE DE SAÚDE FINANCEIRA POR IA -->
+    <div class="card" style="margin-bottom:22px;">
+      <div class="card-header">
+        <div>
+          <div class="card-title">🤖 Análise de saúde financeira</div>
+          <div class="card-sub">Parecer da IA com base nos dados atuais (cache 2h)</div>
+        </div>
+        <button class="btn btn-gold" id="btn-ai-saude" onclick="analisarSaudeFinanceira()" style="font-size:11px;padding:8px 16px;">🤖 Analisar saúde financeira</button>
+      </div>
+      <div id="ai-saude-output" style="padding:16px 20px;">
+        <div style="color:var(--text3);font-size:12px;text-align:center;padding:14px;">Clique em "Analisar saúde financeira" para gerar um parecer baseado nas suas finanças do mês corrente.</div>
       </div>
     </div>
 
@@ -3400,16 +3425,8 @@ async function carregarFaturamentoDash() {
     dot.style.background = 'var(--green)';
     label.textContent    = 'Faturamento — ' + mesLabel;
 
-    // KPIs internos (MC% e Empréstimo) entram no mesmo grid pra
-    // ficar 8 cards numa unica linha continua, sem espacos vazios.
-    var avgMC = products.length ? products.reduce(function(s,p){return s+mcp(p);},0)/products.length : 0;
-    var lowCount = products.filter(function(p){return mcp(p)<15;}).length;
-    var aberto = emprestimo.pagamentos.filter(function(p){return p.status!=='Pago';}).reduce(function(s,p){return s+p.valor;},0);
-    var parcelasAbertas = emprestimo.pagamentos.filter(function(p){return p.status!=='Pago';}).length;
-
     var kpiClickPed = ' style="border-top:2px solid var(--gold);cursor:pointer;" onclick="showPage(&quot;pedidos&quot;)"';
     var kpiClickCus = ' style="border-top:2px solid var(--gold);cursor:pointer;" onclick="showPage(&quot;custos&quot;)"';
-    var kpiClickPre = ' style="border-top:2px solid var(--gold);cursor:pointer;" onclick="showPage(&quot;precos&quot;)"';
     var kpiNormal   = ' style="border-top:2px solid var(--gold);"';
     kpis.innerHTML =
       '<div class="kpi"' + kpiClickPed + '>'
@@ -3440,15 +3457,7 @@ async function carregarFaturamentoDash() {
       + '<div class="kpi-label">Lucro líquido est.</div>'
       + '<div class="kpi-value ' + (lucroLiquido>=0?'green':'red') + '">' + fmt(lucroLiquido) + '</div>'
       + deltaHTML(lucroLiquido, lucroLiquidoAnt)
-      + '<div class="kpi-change">' + (margemLiq>=0?'+':'') + margemLiq.toFixed(1) + '% da receita</div></div>'
-      + '<div class="kpi"' + kpiClickPre + '>'
-      + '<div class="kpi-label">MC% Média Bruta</div>'
-      + '<div class="kpi-value ' + (avgMC>=20?'green':'red') + '">' + avgMC.toFixed(1) + '%</div>'
-      + '<div class="kpi-change">' + lowCount + ' produto' + (lowCount!==1?'s':'') + ' abaixo de 15%</div></div>'
-      + '<div class="kpi"' + kpiClickCus + '>'
-      + '<div class="kpi-label">Empréstimo em aberto</div>'
-      + '<div class="kpi-value red">' + fmt(aberto) + '</div>'
-      + '<div class="kpi-change">' + parcelasAbertas + ' parcela' + (parcelasAbertas!==1?'s':'') + ' restante' + (parcelasAbertas!==1?'s':'') + '</div></div>';
+      + '<div class="kpi-change">' + (margemLiq>=0?'+':'') + margemLiq.toFixed(1) + '% da receita</div></div>';
 
     // Esconde o container kpis-int duplicado (legacy do builder).
     // As 2 KPIs internas agora ficam na mesma grid acima.
@@ -5028,7 +5037,7 @@ function populateFinContaFilter() {
   sel.value = current;
 }
 
-function initFinanceiro() {
+async function initFinanceiro() {
   // Set default dates
   const hoje = new Date();
   const ini  = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
@@ -5042,6 +5051,324 @@ function initFinanceiro() {
   renderContas();
   renderFinKpis();
   renderLancamentos();
+  await carregarEmprestimo();
+  renderEmprestimoFin();
+  // Tenta usar cache de IA se ainda válido (não dispara chamada)
+  hidratarAnaliseFinanceiraCacheada();
+}
+
+// ── Carrega emprestimo + parcelas do Supabase ──
+async function carregarEmprestimo() {
+  try {
+    const [emp, parc] = await Promise.all([
+      sb.from('emprestimo').select('*').order('criado_em', { ascending: false }).limit(1).maybeSingle(),
+      sb.from('emprestimo_parcelas').select('*').order('numero'),
+    ]);
+    if (!emp.error && emp.data) {
+      emprestimo.id    = emp.data.id;
+      emprestimo.valor = +emp.data.valor_original;
+      emprestimo.total = +emp.data.total_com_juros;
+      emprestimo.custo = emprestimo.total - emprestimo.valor;
+    }
+    if (!parc.error && parc.data && parc.data.length) {
+      // Filtra só as parcelas deste emprestimo (caso haja varios)
+      const filhas = emprestimo.id
+        ? parc.data.filter(p => !p.emprestimo_id || p.emprestimo_id === emprestimo.id)
+        : parc.data;
+      emprestimo.pagamentos = filhas.map(p => ({
+        id:     p.id,
+        num:    p.numero,
+        venc:   p.vencimento ? p.vencimento.split('-').reverse().join('/') : '',
+        vencISO:p.vencimento || '',
+        valor:  +p.valor,
+        pago:   +(p.valor_pago || 0),
+        status: p.status === 'pago' ? 'Pago' : 'Em Aberto',
+      }));
+      emprestimo.parcelas = emprestimo.pagamentos.length;
+    }
+    console.log('[carregarEmprestimo] valor=' + emprestimo.valor
+      + ' total=' + emprestimo.total
+      + ' parcelas=' + emprestimo.pagamentos.length);
+  } catch (e) {
+    console.warn('[carregarEmprestimo] erro:', e.message);
+  }
+}
+
+function renderEmprestimoFin() {
+  const el  = document.getElementById('emp-fin-content');
+  const sub = document.getElementById('emp-fin-sub');
+  if (!el) return;
+  if (!emprestimo.pagamentos || !emprestimo.pagamentos.length) {
+    if (sub) sub.textContent = 'Sem dados de empréstimo';
+    el.innerHTML = '<div class="empty" style="padding:18px;">Nenhum empréstimo cadastrado.</div>';
+    return;
+  }
+
+  const pagas = emprestimo.pagamentos.filter(p => p.status === 'Pago');
+  const abertas = emprestimo.pagamentos.filter(p => p.status !== 'Pago');
+  const totalPago = pagas.reduce((s, p) => s + (p.pago || p.valor), 0);
+  const saldoRestante = (emprestimo.total || 0) - totalPago;
+  const pctPago = emprestimo.total > 0 ? (totalPago / emprestimo.total) * 100 : 0;
+  const proxima = abertas
+    .slice()
+    .sort((a, b) => (a.vencISO || '').localeCompare(b.vencISO || ''))[0];
+  if (sub) sub.textContent = pagas.length + '/' + emprestimo.pagamentos.length + ' parcelas pagas · ' + pctPago.toFixed(0) + '% quitado';
+
+  const proxId = proxima ? proxima.id : null;
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px;">
+      <div style="padding:14px;background:var(--surface2);border-radius:var(--r-sm);">
+        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Valor original</div>
+        <div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);margin-top:5px;">${fmt(emprestimo.valor || 0)}</div>
+      </div>
+      <div style="padding:14px;background:var(--surface2);border-radius:var(--r-sm);">
+        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Total c/ juros</div>
+        <div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);margin-top:5px;">${fmt(emprestimo.total || 0)}</div>
+      </div>
+      <div style="padding:14px;background:var(--green-dim);border-radius:var(--r-sm);">
+        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Pago</div>
+        <div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);color:var(--green);margin-top:5px;">${fmt(totalPago)}</div>
+      </div>
+      <div style="padding:14px;background:var(--red-dim);border-radius:var(--r-sm);">
+        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Saldo restante</div>
+        <div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);color:var(--red);margin-top:5px;">${fmt(saldoRestante)}</div>
+      </div>
+    </div>
+    <div style="margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">
+        <span>Progresso</span><span>${pctPago.toFixed(1)}% quitado</span>
+      </div>
+      <div style="height:8px;background:var(--surface3);border-radius:4px;overflow:hidden;">
+        <div style="height:100%;width:${Math.min(pctPago,100)}%;background:linear-gradient(90deg,var(--gold),var(--gold-bright));border-radius:4px;box-shadow:0 0 14px var(--gold-glow);transition:width .5s var(--ease);"></div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Parcelas</div>
+    <div style="display:flex;flex-direction:column;gap:6px;">
+      ${emprestimo.pagamentos.map(p => {
+        const isPaga = p.status === 'Pago';
+        const isProx = !isPaga && p.id === proxId;
+        const bg = isPaga ? 'var(--green-dim)' : (isProx ? 'var(--gold-dim)' : 'var(--surface2)');
+        const cor = isPaga ? 'var(--green)' : (isProx ? 'var(--gold-bright)' : 'var(--text2)');
+        const badge = isPaga
+          ? '<span class="badge badge-green">✓ Paga</span>'
+          : isProx
+            ? '<span class="badge badge-gold">🔔 Próxima</span>'
+            : '<span class="badge" style="background:var(--surface3);color:var(--text3);">Pendente</span>';
+        const action = isPaga
+          ? ''
+          : '<button class="btn btn-gold" style="font-size:10px;padding:5px 12px;" onclick="marcarParcelaPaga(\'' + p.id + '\')">Marcar paga</button>';
+        return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;background:${bg};border-radius:var(--r-sm);font-size:12px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-family:var(--mono,monospace);font-weight:700;color:${cor};min-width:30px;">${String(p.num).padStart(2,'0')}</span>
+            <span style="color:var(--text2);">${p.venc}</span>
+            ${badge}
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-family:var(--mono,monospace);font-weight:700;color:${cor};">${fmt(p.valor)}</span>
+            ${action}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+async function marcarParcelaPaga(parcelaId) {
+  if (!parcelaId) return;
+  if (!(await smConfirm('Marcar esta parcela como paga?'))) return;
+  const p = emprestimo.pagamentos.find(x => x.id === parcelaId);
+  if (!p) return;
+  // Otimista: atualiza UI
+  p.status = 'Pago';
+  p.pago = p.valor;
+  renderEmprestimoFin();
+  // Persiste
+  const { error } = await sb.from('emprestimo_parcelas')
+    .update({ status: 'pago', valor_pago: p.valor })
+    .eq('id', parcelaId);
+  if (error) {
+    console.error('[marcarParcelaPaga] erro:', error.message);
+    smAlert('Erro ao salvar: ' + error.message);
+    // Reverte
+    p.status = 'Em Aberto';
+    p.pago = 0;
+    renderEmprestimoFin();
+  }
+}
+
+// ════════════════════════════════════════
+//  ANÁLISE DE SAÚDE FINANCEIRA POR IA
+// ════════════════════════════════════════
+function _cacheKeyAnaliseFin() {
+  const d = new Date();
+  return 'analise_financeira_' + d.getFullYear() + '_' + String(d.getMonth() + 1).padStart(2, '0');
+}
+function hidratarAnaliseFinanceiraCacheada() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(_cacheKeyAnaliseFin()) || 'null');
+    if (cached && Date.now() - cached.ts < 2 * 60 * 60 * 1000 && cached.text) {
+      renderAnaliseFinanceira(cached.text, /*skipTypewriter*/ true);
+    }
+  } catch (e) {}
+}
+function buildDadosSaudeFinanceira() {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const toISO = d => d.toISOString().split('T')[0];
+  const iniMes = toISO(inicio);
+  const fimMes = toISO(hoje);
+
+  const lancMes = (lancamentos || []).filter(l => l.data >= iniMes && l.data <= fimMes);
+  const entradas = lancMes.filter(l => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0);
+  const saidas = lancMes.filter(l => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0);
+  const saldoTotal = (contas || []).reduce((s, c) => s + c.saldo, 0);
+  const custoFixoMensal = (custosFixos || []).reduce((s, c) => s + c.valor, 0);
+
+  const parcelasAbertas = (emprestimo.pagamentos || []).filter(p => p.status !== 'Pago');
+  const saldoDevedor = parcelasAbertas.reduce((s, p) => s + p.valor, 0);
+
+  const em30 = new Date(hoje.getTime() + 30 * 86400000);
+  const em30ISO = toISO(em30);
+  const hojeISO = toISO(hoje);
+  const cpVencidas = (contasPagar || []).filter(c => !c.paga && c.vencimento < hojeISO);
+  const cpProximas = (contasPagar || []).filter(c => !c.paga && c.vencimento >= hojeISO && c.vencimento <= em30ISO);
+
+  return {
+    saldoTotalContasBancarias: saldoTotal,
+    entradasMesAtual:          entradas,
+    saidasMesAtual:            saidas,
+    fluxoLiquidoMesAtual:      entradas - saidas,
+    custosFixosMensais:        custoFixoMensal,
+    emprestimo: {
+      saldoDevedor:        saldoDevedor,
+      parcelasRestantes:   parcelasAbertas.length,
+      valorTotalContratado:emprestimo.total || 0,
+    },
+    contasPagar: {
+      vencidas:        { qtd: cpVencidas.length,  total: cpVencidas.reduce((s,c)=>s+c.valor,0) },
+      proximos30Dias:  { qtd: cpProximas.length,  total: cpProximas.reduce((s,c)=>s+c.valor,0) },
+    },
+  };
+}
+
+async function analisarSaudeFinanceira() {
+  const btn = document.getElementById('btn-ai-saude');
+  const out = document.getElementById('ai-saude-output');
+
+  // Cache hit?
+  const cacheKey = _cacheKeyAnaliseFin();
+  try {
+    const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+    if (cached && Date.now() - cached.ts < 2 * 60 * 60 * 1000 && cached.text) {
+      console.log('[analisarSaude] cache hit (idade ' + Math.round((Date.now()-cached.ts)/60000) + 'min)');
+      renderAnaliseFinanceira(cached.text);
+      return;
+    }
+  } catch (e) {}
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Analisando...'; }
+  if (out) out.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:18px;">⏳ Analisando saúde financeira...</div>';
+
+  const dados = buildDadosSaudeFinanceira();
+  const prompt = 'Você é um consultor financeiro especialista em pequenas empresas brasileiras. '
+    + 'Analise os dados financeiros abaixo da Smart Motors, uma loja de scooters elétricas, e dê um '
+    + 'parecer direto sobre a saúde financeira da empresa. Responda em 4 partes sem markdown, sem '
+    + 'asteriscos, cada parte começando com a palavra em maiúsculo seguida de dois pontos: '
+    + 'SITUAÇÃO: (como está a saúde financeira geral), RISCOS: (principais riscos identificados com '
+    + 'números), PONTOS POSITIVOS: (o que está bem), RECOMENDAÇÕES: (3 ações concretas para melhorar). '
+    + 'Seja direto, use linguagem simples, máximo 200 palavras. Dados: ' + JSON.stringify(dados);
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 800,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    const data = await res.json();
+    const text = (data.content && data.content[0] && data.content[0].text || '').trim();
+    if (!text) throw new Error('Resposta vazia da IA. ' + (data.error?.message || ''));
+
+    try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), text })); } catch (e) {}
+    renderAnaliseFinanceira(text);
+  } catch (err) {
+    console.error('[analisarSaude] erro:', err);
+    if (out) out.innerHTML = '<div style="color:var(--red);padding:14px;font-size:12px;">Erro ao analisar: ' + err.message + '</div>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🤖 Analisar saúde financeira'; }
+  }
+}
+
+const _ANALISE_SECOES = [
+  { key: 'SITUAÇÃO',          alt: ['SITUACAO'],         label: '📊 Situação',        cor: '#4a9eff', glow: 'rgba(74,158,255,0.30)' },
+  { key: 'RISCOS',            alt: [],                   label: '⚠️ Riscos',          cor: 'var(--red)',         glow: 'var(--red-glow)' },
+  { key: 'PONTOS POSITIVOS',  alt: [],                   label: '✅ Pontos positivos', cor: 'var(--green)',       glow: 'var(--green-glow)' },
+  { key: 'RECOMENDAÇÕES',     alt: ['RECOMENDACOES'],    label: '💡 Recomendações',   cor: 'var(--gold-bright)', glow: 'var(--gold-glow)' },
+];
+function _parseAnalise(text) {
+  const out = {};
+  _ANALISE_SECOES.forEach(s => out[s.key] = '');
+  const allKeys = _ANALISE_SECOES.flatMap(s => [s.key, ...s.alt]);
+  // Regex que casa qualquer um dos cabeçalhos no início de uma linha (case-insensitive)
+  const headerRe = new RegExp('^\\s*(' + allKeys.map(k => k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|') + ')\\s*:\\s*', 'i');
+  let current = null;
+  text.split(/\r?\n/).forEach(line => {
+    const trimmed = line.trim();
+    const m = trimmed.match(headerRe);
+    if (m) {
+      const key = m[1].toUpperCase();
+      const sec = _ANALISE_SECOES.find(s => s.key === key || s.alt.includes(key));
+      if (sec) {
+        current = sec.key;
+        const after = trimmed.slice(m[0].length).trim();
+        if (after) out[current] = after;
+        return;
+      }
+    }
+    if (current) out[current] += (out[current] ? '\n' : '') + trimmed;
+  });
+  return out;
+}
+function renderAnaliseFinanceira(text, skipTypewriter) {
+  const out = document.getElementById('ai-saude-output');
+  if (!out) return;
+  const parsed = _parseAnalise(text);
+  out.innerHTML = _ANALISE_SECOES.map(s => `
+    <div style="border-left:3px solid ${s.cor};padding:14px 18px;margin-bottom:10px;background:linear-gradient(135deg,#1e1e1e,#1a1a1a);border-radius:var(--r-sm);box-shadow:0 0 14px ${s.glow};">
+      <div style="font-size:11px;font-weight:800;color:${s.cor};text-transform:uppercase;letter-spacing:1.2px;margin-bottom:8px;">${s.label}</div>
+      <div data-key="${s.key}" style="font-size:12px;line-height:1.6;color:var(--text);white-space:pre-wrap;"></div>
+    </div>
+  `).join('');
+
+  if (skipTypewriter) {
+    _ANALISE_SECOES.forEach(s => {
+      const el = out.querySelector('[data-key="' + s.key + '"]');
+      if (el) el.textContent = parsed[s.key] || '—';
+    });
+    return;
+  }
+
+  // Typewriter sequencial
+  let idx = 0;
+  const next = () => {
+    if (idx >= _ANALISE_SECOES.length) return;
+    const s = _ANALISE_SECOES[idx++];
+    const el = out.querySelector('[data-key="' + s.key + '"]');
+    const txt = parsed[s.key] || '—';
+    if (!el) return next();
+    let i = 0;
+    el.textContent = '';
+    const tick = () => {
+      if (i >= txt.length) { setTimeout(next, 120); return; }
+      el.textContent += txt[i++];
+      setTimeout(tick, 12);
+    };
+    tick();
+  };
+  next();
 }
 
 function renderContas() {
