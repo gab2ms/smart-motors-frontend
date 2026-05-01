@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-12">
+<meta name="app-version" content="2026-04-30-13">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -3787,18 +3787,22 @@ async function criarConta() {
   const users = await getUsers();
   if (users.find(u => u.email === email)){ showLoginErro(erroEl,'E-mail já cadastrado.'); return; }
 
+  console.log('[criarConta] tentando salvar usuario:', email, 'role=usuario status=pendente');
   const salvo = await saveUser({
     nome, email, senha: hashSenha(senha),
     role: 'usuario',
     status: 'pendente',
     criadoEm: new Date().toISOString(),
   });
+  console.log('[criarConta] saveUser retornou:', salvo);
 
   if (!salvo) {
+    console.error('[criarConta] FALHOU — saveUser retornou null. Veja erro acima.');
     showLoginErro(erroEl, 'Erro ao salvar no servidor. Tente novamente.');
     return;
   }
 
+  console.log('[criarConta] usuario criado OK, id=' + salvo.id);
   erroEl.classList.remove('show');
   okEl.textContent = '✅ Solicitação enviada! Aguarde a aprovação do administrador para fazer login.';
   okEl.classList.add('show');
@@ -3880,6 +3884,9 @@ async function atualizarPendingDot() {
   const users   = await getUsers();
   const pending = users.filter(u=>u.status==='pendente').length;
   const dot = document.getElementById('admin-pending-dot');
+  console.log('[atualizarPendingDot] total users=' + users.length
+    + ', pendentes=' + pending
+    + ', dotEl=' + !!dot);
   if (dot) dot.style.display = pending>0?'block':'none';
 }
 
@@ -5050,6 +5057,7 @@ document.addEventListener('DOMContentLoaded', function() {
 //  ADMIN — GESTÃO DE USUÁRIOS
 // ══════════════════════════════════════════
 async function renderAdmin() {
+  console.log('[renderAdmin] iniciando — buscando usuarios do Supabase');
   // Atualiza display do código
   const codeEl = document.getElementById('admin-codigo-display');
   if (codeEl) codeEl.textContent = getAcessoCode();
@@ -5057,6 +5065,11 @@ async function renderAdmin() {
   const pendente = users.filter(u=>u.status==='pendente');
   const ativo    = users.filter(u=>u.status==='aprovado');
   const rejeit   = users.filter(u=>u.status==='rejeitado');
+  console.log('[renderAdmin] total=' + users.length
+    + ' | pendentes=' + pendente.length
+    + ' | aprovados=' + ativo.length
+    + ' | rejeitados=' + rejeit.length);
+  if (pendente.length) console.log('[renderAdmin] pendentes:', pendente.map(u => u.email));
 
   document.getElementById('admin-pending-count').textContent =
     `${pendente.length} solicitação${pendente.length!==1?'ões':''} pendente${pendente.length!==1?'s':''}`;
