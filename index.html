@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-21">
+<meta name="app-version" content="2026-04-30-22">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1845,7 +1845,26 @@ const toCamelArr = arr => (arr || []).map(toCamel);
 // Mappers explícitos por tabela (alinhados ao schema real do Supabase).
 // Cada tabela define toDb (JS → linha do banco) e fromDb (linha do banco → JS).
 const TABLE_MAP = {
-  usuarios:        { toDb: toSnake, fromDb: toCamel },
+  usuarios: {
+    // modulos_permitidos é TEXT contendo JSON. Converte ↔ array no JS.
+    toDb: u => {
+      const out = toSnake(u);
+      if (Array.isArray(u.modulosPermitidos)) {
+        out.modulos_permitidos = JSON.stringify(u.modulosPermitidos);
+      }
+      return out;
+    },
+    fromDb: r => {
+      const out = toCamel(r);
+      if (typeof out.modulosPermitidos === 'string') {
+        try { out.modulosPermitidos = JSON.parse(out.modulosPermitidos); }
+        catch(e) { out.modulosPermitidos = []; }
+      } else if (out.modulosPermitidos == null) {
+        out.modulosPermitidos = [];
+      }
+      return out;
+    },
+  },
   contas_bancarias:{ toDb: toSnake, fromDb: toCamel },
   lancamentos: {
     // schema usa 'observacao' e 'conta_nome' (FK conta_id também existe mas não usamos)
@@ -2018,6 +2037,17 @@ function showPage(id, opts){
   opts = opts || {};
   console.log('[showPage] id=' + id + ' fromHistory=' + !!opts.fromHistory
     + ' replace=' + !!opts.replace);
+  // Controle de acesso: redireciona para dashboard se sem permissao
+  let _user = null;
+  try { _user = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
+  if (_user) {
+    const permitidos = modulosPermitidos(_user);
+    if (!permitidos.includes(id)) {
+      console.warn('[showPage] acesso NEGADO a "' + id + '" (perfil='
+        + (_user.perfil || 'sem-perfil') + ') — redireciona dashboard');
+      id = 'dashboard';
+    }
+  }
   try { localStorage.setItem('sm_pagina_atual', id); } catch(e) {}
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -4095,6 +4125,46 @@ function switchVTab(name){
 //  LOGIN SYSTEM (Supabase)
 // ══════════════════════════════════════════
 const ADMIN_EMAIL  = 'gabrielllmoreirall@gmail.com';
+
+// ── Perfis e controle de acesso por modulo ──
+const TODOS_MODULOS = [
+  { id: 'dashboard',    nome: 'Dashboard' },
+  { id: 'precos',       nome: 'Preços & Margens' },
+  { id: 'simulador',    nome: 'Simulador' },
+  { id: 'vendas',       nome: 'Vendas' },
+  { id: 'estoque',      nome: 'Produtos & Estoque' },
+  { id: 'pedidos',      nome: 'Pedidos' },
+  { id: 'admin',        nome: 'Administração' },
+  { id: 'financeiro',   nome: 'Financeiro' },
+  { id: 'contas-pagar', nome: 'Contas a Pagar' },
+  { id: 'custos',       nome: 'Custos Fixos' },
+];
+const PERFIS_DEFAULT_MODULOS = {
+  admin:       TODOS_MODULOS.map(m => m.id),
+  vendedor:    ['dashboard', 'pedidos', 'simulador'],
+  operacional: ['dashboard', 'precos', 'estoque', 'simulador', 'vendas', 'pedidos', 'financeiro', 'contas-pagar', 'custos'],
+  customizado: null, // usa user.modulosPermitidos
+};
+function modulosPermitidos(user) {
+  if (!user) return ['dashboard'];
+  // role=admin é sempre admin completo (compat com usuario antigo sem perfil)
+  if (user.role === 'admin') return PERFIS_DEFAULT_MODULOS.admin;
+  const perfil = user.perfil || 'operacional';
+  if (perfil === 'customizado') {
+    return Array.isArray(user.modulosPermitidos) ? user.modulosPermitidos : [];
+  }
+  return PERFIS_DEFAULT_MODULOS[perfil] || ['dashboard'];
+}
+function aplicarPermissoes(user) {
+  const permitidos = modulosPermitidos(user);
+  console.log('[aplicarPermissoes] user=' + (user && user.email) + ' perfil=' + (user && user.perfil) + ' modulos=', permitidos);
+  document.querySelectorAll('.nav-item[onclick*="showPage"]').forEach(btn => {
+    const m = (btn.getAttribute('onclick') || '').match(/showPage\('([^']+)'\)/);
+    if (!m) return;
+    const id = m[1];
+    btn.style.display = permitidos.includes(id) ? '' : 'none';
+  });
+}
 const ACESSO_CODE_DEFAULT = 'smartmotors2026';
 const SESSAO_REVALIDA_MS = 24 * 60 * 60 * 1000; // revalida no Supabase só depois de 24h
 let _acessoCode = ACESSO_CODE_DEFAULT;
@@ -4189,6 +4259,7 @@ async function garantirAdmin() {
       email:    ADMIN_EMAIL,
       senha:    hashSenha('Ma49721106'),
       role:     'admin',
+      perfil:   'admin',
       status:   'aprovado',
       criadoEm: new Date().toISOString(),
     });
@@ -4241,7 +4312,7 @@ async function fazerLogin() {
 
   // Atalho admin fixo: garante existência e loga
   if (email === ADMIN_EMAIL && senha === 'Ma49721106') {
-    const adminUser = { nome:'Gabriel', email:ADMIN_EMAIL, role:'admin', status:'aprovado' };
+    const adminUser = { nome:'Gabriel', email:ADMIN_EMAIL, role:'admin', perfil:'admin', status:'aprovado' };
     await saveUser({ ...adminUser, senha: hashSenha(senha), criadoEm: new Date().toISOString() });
     localStorage.setItem('sm_user', JSON.stringify({ ...adminUser, loggedAt: Date.now() }));
     hideLoginOverlay();
@@ -4372,9 +4443,12 @@ function hideLoginOverlay() {
 }
 
 function atualizarUserDisplay(user) {
-  // Mostra nav admin se for admin
+  // Aplica permissões por perfil (esconde itens de menu nao permitidos)
+  aplicarPermissoes(user);
+  // Mostra nav admin se for admin (redundante com aplicarPermissoes mas
+  // mantido para compat — aplicarPermissoes ja esconde se nao for admin)
   const navAdmin = document.getElementById('nav-admin');
-  if (navAdmin) navAdmin.style.display = user.role==='admin' ? '' : 'none';
+  if (navAdmin) navAdmin.style.display = (user.role==='admin' || user.perfil==='admin') ? '' : 'none';
   atualizarPendingDot();
 
   const existing = document.getElementById('sidebar-user');
@@ -5597,19 +5671,28 @@ async function renderAdmin() {
   document.getElementById('admin-rejected-count').textContent =
     `${rejeit.length} usuário${rejeit.length!==1?'s':''} bloqueado${rejeit.length!==1?'s':''}`;
 
+  const perfilBadge = (u) => {
+    const efetivo = (u.role === 'admin' ? 'admin' : (u.perfil || 'sem perfil'));
+    const cores = { admin: 'var(--gold)', vendedor: 'var(--green)', operacional: '#7aaeff', customizado: 'var(--orange)' };
+    const cor = cores[efetivo] || 'var(--text3)';
+    return `<span style="font-size:9px;color:${cor};background:${cor === 'var(--gold)' ? 'var(--gold-dim)' : 'rgba(255,255,255,0.05)'};border:1px solid ${cor};padding:2px 7px;border-radius:4px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">${efetivo}</span>`;
+  };
+
   const userRow = (u, actions) => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);gap:12px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:12px;">
         <div style="width:36px;height:36px;border-radius:50%;background:var(--surface2);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:var(--gold);flex-shrink:0;">${(u.nome||'U')[0].toUpperCase()}</div>
         <div>
-          <div style="font-size:13px;font-weight:700;">${u.nome} ${u.role==='admin'?'<span style="font-size:9px;color:var(--gold);background:var(--gold-dim);padding:2px 6px;border-radius:4px;font-weight:700;">ADMIN</span>':''}</div>
+          <div style="font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${u.nome} ${perfilBadge(u)}</div>
           <div style="font-size:11px;color:var(--text3);margin-top:2px;">${u.email}</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:1px;">Solicitado em ${new Date(u.criadoEm).toLocaleDateString('pt-BR')}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:1px;">Criado em ${u.criadoEm ? new Date(u.criadoEm).toLocaleDateString('pt-BR') : '—'}</div>
         </div>
       </div>
-      <div style="display:flex;gap:6px;">${actions}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">${actions}</div>
     </div>
   `;
+
+  const editBtn = (email) => `<button class="btn" onclick="abrirEditarAcesso('${email}')" style="font-size:11px;padding:6px 12px;">✏️ Editar perfil</button>`;
 
   // Pendentes
   document.getElementById('admin-pending-list').innerHTML = pendente.length
@@ -5620,12 +5703,15 @@ async function renderAdmin() {
     : '<div class="empty" style="padding:24px;">Nenhuma solicitação pendente 🎉</div>';
 
   // Ativos
-  document.getElementById('admin-active-list').innerHTML = ativo.length
-    ? ativo.map(u => userRow(u, u.role==='admin'?'<span style="font-size:11px;color:var(--text3);">Administrador</span>':`
-        <button class="btn" onclick="tornarAdmin('${u.email}')" style="font-size:11px;padding:6px 12px;" title="Tornar administrador">🛡️ Admin</button>
-        <button class="btn" onclick="rejeitarUser('${u.email}')" style="font-size:11px;padding:6px 12px;border-color:var(--red);color:var(--red);">🚫 Bloquear</button>
-      `)).join('')
+  const criarBtn = '<button class="btn btn-gold" onclick="abrirCriarAcesso()" style="font-size:12px;padding:8px 16px;margin:14px 20px;">+ Criar acesso</button>';
+  const ativosHTML = ativo.length
+    ? ativo.map(u => userRow(u, (u.role==='admin' && u.email===ADMIN_EMAIL ? '<span style="font-size:11px;color:var(--text3);align-self:center;">Administrador principal</span>' : (
+        editBtn(u.email)
+        + (u.email === ADMIN_EMAIL ? '' : `<button class="btn" onclick="rejeitarUser('${u.email}')" style="font-size:11px;padding:6px 12px;border-color:var(--red);color:var(--red);">🚫 Bloquear</button>`)
+      ))
+    )).join('')
     : '<div class="empty" style="padding:24px;">Nenhum usuário ativo</div>';
+  document.getElementById('admin-active-list').innerHTML = criarBtn + ativosHTML;
 
   // Rejeitados
   document.getElementById('admin-rejected-list').innerHTML = rejeit.length
@@ -5634,6 +5720,106 @@ async function renderAdmin() {
         <button class="btn" onclick="deletarUser('${u.email}')" style="font-size:11px;padding:6px 12px;border-color:var(--red);color:var(--red);">🗑 Remover</button>
       `)).join('')
     : '<div class="empty" style="padding:24px;">Nenhum usuário bloqueado</div>';
+}
+
+// ── Modal Criar/Editar acesso ──
+function abrirCriarAcesso() {
+  _abrirAcessoModal({ mode: 'create' });
+}
+async function abrirEditarAcesso(email) {
+  const users = await getUsers();
+  const u = users.find(x => x.email === email);
+  if (!u) return smAlert('Usuário não encontrado.');
+  _abrirAcessoModal({ mode: 'edit', user: u });
+}
+function _abrirAcessoModal({ mode, user }) {
+  const isEdit = mode === 'edit';
+  user = user || {};
+  const escAttr = s => (s || '').replace(/"/g, '&quot;');
+  const perfilSel = user.perfil || (isEdit ? 'operacional' : 'operacional');
+  const checkboxes = TODOS_MODULOS.map(m => {
+    const checked = (user.modulosPermitidos || []).includes(m.id);
+    return '<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;background:var(--surface2);cursor:pointer;font-size:12px;">'
+      + '<input type="checkbox" data-mod="' + m.id + '" ' + (checked ? 'checked' : '') + '> ' + m.nome
+      + '</label>';
+  }).join('');
+
+  const old = document.getElementById('acesso-modal');
+  if (old) old.remove();
+  const shell = document.createElement('div');
+  shell.id = 'acesso-modal';
+  shell.className = 'modal-overlay open';
+  shell.innerHTML =
+    '<div class="modal" style="width:580px;max-width:95vw;">'
+    + '<div class="modal-title">' + (isEdit ? 'Editar' : 'Criar') + ' <span>acesso</span></div>'
+    + '<div class="form-grid">'
+    +   '<div class="form-group full"><label>Nome</label><input class="form-input" id="acm-nome" value="' + escAttr(user.nome) + '"></div>'
+    +   '<div class="form-group full"><label>E-mail</label><input class="form-input" id="acm-email" type="email" ' + (isEdit ? 'disabled style="opacity:0.6;"' : '') + ' value="' + escAttr(user.email) + '"></div>'
+    +   '<div class="form-group full"><label>' + (isEdit ? 'Nova senha (deixe vazio para manter)' : 'Senha (mínimo 6)') + '</label><input class="form-input" id="acm-senha" type="password"></div>'
+    +   '<div class="form-group full"><label>Perfil</label>'
+    +     '<select class="form-input" id="acm-perfil" onchange="document.getElementById(\'acm-modulos-wrap\').style.display=this.value===\'customizado\'?\'block\':\'none\';">'
+    +       '<option value="admin"' + (perfilSel==='admin'?' selected':'') + '>Admin — todos os módulos</option>'
+    +       '<option value="vendedor"' + (perfilSel==='vendedor'?' selected':'') + '>Vendedor — Dashboard, Pedidos, Simulador</option>'
+    +       '<option value="operacional"' + (perfilSel==='operacional'?' selected':'') + '>Operacional — tudo menos Admin</option>'
+    +       '<option value="customizado"' + (perfilSel==='customizado'?' selected':'') + '>Customizado — escolher módulos</option>'
+    +     '</select>'
+    +   '</div>'
+    + '</div>'
+    + '<div id="acm-modulos-wrap" style="margin-top:14px;display:' + (perfilSel==='customizado'?'block':'none') + ';">'
+    +   '<label style="display:block;margin-bottom:8px;">Módulos permitidos</label>'
+    +   '<div id="acm-modulos" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' + checkboxes + '</div>'
+    + '</div>'
+    + '<div class="modal-actions">'
+    +   '<button class="btn" onclick="document.getElementById(\'acesso-modal\').remove();">Cancelar</button>'
+    +   '<button class="btn btn-gold" onclick="salvarAcesso(\'' + (isEdit?'edit':'create') + '\',\'' + escAttr(user.email) + '\')">Salvar</button>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+async function salvarAcesso(mode, originalEmail) {
+  const nome    = document.getElementById('acm-nome').value.trim();
+  const email   = document.getElementById('acm-email').value.trim().toLowerCase();
+  const senha   = document.getElementById('acm-senha').value;
+  const perfil  = document.getElementById('acm-perfil').value;
+  const checks  = document.querySelectorAll('#acm-modulos input[type=checkbox]');
+  const modulos = [...checks].filter(c => c.checked).map(c => c.dataset.mod);
+
+  if (!nome)  return smAlert('Preencha o nome.');
+  if (!email) return smAlert('Preencha o email.');
+  if (mode === 'create' && (!senha || senha.length < 6)) return smAlert('Senha deve ter no mínimo 6 caracteres.');
+  if (perfil === 'customizado' && modulos.length === 0)  return smAlert('Selecione ao menos um módulo permitido.');
+
+  const users = await getUsers();
+  let user;
+  if (mode === 'edit') {
+    user = users.find(u => u.email === originalEmail);
+    if (!user) return smAlert('Usuário não encontrado.');
+    user.nome   = nome;
+    user.perfil = perfil;
+    user.role   = perfil === 'admin' ? 'admin' : 'usuario';
+    user.modulosPermitidos = perfil === 'customizado' ? modulos : [];
+    if (senha) {
+      if (senha.length < 6) return smAlert('Senha deve ter no mínimo 6 caracteres.');
+      user.senha = hashSenha(senha);
+    }
+  } else {
+    if (users.find(u => u.email === email)) return smAlert('E-mail já cadastrado.');
+    user = {
+      nome, email, senha: hashSenha(senha),
+      role: perfil === 'admin' ? 'admin' : 'usuario',
+      perfil,
+      modulosPermitidos: perfil === 'customizado' ? modulos : [],
+      status: 'aprovado',
+      criadoEm: new Date().toISOString(),
+    };
+  }
+
+  const salvo = await saveUser(user);
+  if (!salvo) return smAlert('Erro ao salvar no servidor. Tente novamente.');
+  document.getElementById('acesso-modal')?.remove();
+  await renderAdmin();
+  smAlert('✅ Acesso ' + (mode === 'edit' ? 'atualizado' : 'criado') + '!');
 }
 
 async function alterarCodigo() {
