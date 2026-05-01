@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-14">
+<meta name="app-version" content="2026-04-30-15">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -329,6 +329,50 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 
 /* GOLD DIVIDER */
 .gold-line{height:1px;background:linear-gradient(90deg,var(--gold2),var(--gold3),transparent);margin:18px 0;opacity:0.3;}
+
+/* ══ SM MODAL (alert/confirm/prompt customizados) ══ */
+.sm-modal-shell{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,0.72);
+  z-index:10001;
+  align-items:center;justify-content:center;
+  font-family:'Montserrat',sans-serif;
+  padding:20px;
+}
+.sm-modal-shell.open{display:flex;}
+.sm-modal-box{
+  background:#1c1c1c;border:1px solid #2a2a2a;border-radius:10px;
+  padding:24px 26px 20px;width:430px;max-width:100%;
+  box-shadow:0 20px 60px rgba(0,0,0,0.55);
+}
+.sm-modal-msg{
+  font-size:14px;line-height:1.55;color:#f5f5f5;
+  white-space:pre-wrap;margin-bottom:18px;
+}
+.sm-modal-input-wrap{margin-bottom:18px;}
+.sm-modal-input{
+  width:100%;padding:10px 12px;border-radius:6px;
+  border:1px solid #363636;background:#232323;color:#f5f5f5;
+  font-family:'Montserrat',sans-serif;font-size:13px;outline:none;
+  transition:border-color .15s;
+}
+.sm-modal-input:focus{border-color:#f5c518;}
+.sm-modal-actions{display:flex;gap:10px;justify-content:flex-end;}
+.sm-modal-btn{
+  padding:9px 22px;border-radius:6px;
+  font-family:'Montserrat',sans-serif;
+  font-size:12px;font-weight:700;text-transform:uppercase;
+  letter-spacing:0.5px;cursor:pointer;
+  transition:all .15s;border:1px solid;
+}
+.sm-modal-btn-cancel{
+  background:transparent;border-color:#363636;color:#9a9a9a;
+}
+.sm-modal-btn-cancel:hover{border-color:#555;color:#f5f5f5;}
+.sm-modal-btn-ok{
+  background:#f5c518;border-color:#f5c518;color:#141414;
+}
+.sm-modal-btn-ok:hover{background:#e8a800;border-color:#e8a800;}
 
 /* ══ BOOT LOADER ══
    Cobre a tela inteira durante a inicializacao para evitar o "piscar"
@@ -1433,6 +1477,99 @@ console.log('[bootstrap] typeof supabase =', typeof supabase);
 if (typeof supabase === 'undefined') {
   console.error('[bootstrap] objeto "supabase" NAO definido — CDN do @supabase/supabase-js nao carregou (bloqueio de extensao? rede?)');
 }
+
+// ══════════════════════════════════════════
+//  MODAIS CUSTOMIZADOS (substituem alert/confirm/prompt nativos)
+// ══════════════════════════════════════════
+function _smCreateModalShell() {
+  if (document.getElementById('sm-modal-shell')) return;
+  const shell = document.createElement('div');
+  shell.id = 'sm-modal-shell';
+  shell.className = 'sm-modal-shell';
+  shell.innerHTML =
+    '<div class="sm-modal-box">' +
+      '<div class="sm-modal-msg" id="sm-modal-msg"></div>' +
+      '<div class="sm-modal-input-wrap" id="sm-modal-input-wrap" style="display:none;">' +
+        '<input class="sm-modal-input" id="sm-modal-input" type="text">' +
+      '</div>' +
+      '<div class="sm-modal-actions">' +
+        '<button class="sm-modal-btn sm-modal-btn-cancel" id="sm-modal-cancel">Cancelar</button>' +
+        '<button class="sm-modal-btn sm-modal-btn-ok" id="sm-modal-ok">OK</button>' +
+      '</div>' +
+    '</div>';
+  // Garante que o body existe (script no head -> espera DOMContentLoaded
+  // se for cedo demais; mas com defer/end-of-body já tem body)
+  (document.body || document.documentElement).appendChild(shell);
+}
+
+// type: 'alert' | 'confirm' | 'prompt'
+// resolve com:
+//  - alert: undefined
+//  - confirm: true (OK) | false (cancel/ESC)
+//  - prompt: string (OK) | null (cancel/ESC)
+function _smShowModal({ message, type, defaultValue }) {
+  _smCreateModalShell();
+  return new Promise(resolve => {
+    const shell    = document.getElementById('sm-modal-shell');
+    const msgEl    = document.getElementById('sm-modal-msg');
+    const wrap     = document.getElementById('sm-modal-input-wrap');
+    const inputEl  = document.getElementById('sm-modal-input');
+    const okBtn    = document.getElementById('sm-modal-ok');
+    const cancel   = document.getElementById('sm-modal-cancel');
+
+    msgEl.textContent = message == null ? '' : String(message);
+
+    if (type === 'prompt') {
+      wrap.style.display = '';
+      inputEl.value = defaultValue == null ? '' : String(defaultValue);
+      okBtn.textContent = 'Confirmar';
+      cancel.style.display = '';
+    } else if (type === 'confirm') {
+      wrap.style.display = 'none';
+      okBtn.textContent = 'Confirmar';
+      cancel.style.display = '';
+    } else {
+      wrap.style.display = 'none';
+      okBtn.textContent = 'OK';
+      cancel.style.display = 'none';
+    }
+
+    shell.classList.add('open');
+    setTimeout(() => (type === 'prompt' ? inputEl : okBtn).focus(), 0);
+
+    const cleanup = () => {
+      shell.classList.remove('open');
+      okBtn.onclick = null;
+      cancel.onclick = null;
+      inputEl.onkeydown = null;
+      document.removeEventListener('keydown', escHandler);
+    };
+    const finish = (val) => { cleanup(); resolve(val); };
+
+    const cancelValue = () => type === 'prompt' ? null : (type === 'confirm' ? false : undefined);
+    const okValue     = () => type === 'prompt' ? inputEl.value : (type === 'confirm' ? true : undefined);
+
+    const escHandler = e => {
+      if (e.key === 'Escape') finish(cancelValue());
+      else if (e.key === 'Enter' && type !== 'prompt') finish(okValue());
+    };
+    document.addEventListener('keydown', escHandler);
+
+    okBtn.onclick = () => finish(okValue());
+    cancel.onclick = () => finish(cancelValue());
+
+    if (type === 'prompt') {
+      inputEl.onkeydown = e => {
+        if (e.key === 'Enter')  finish(inputEl.value);
+        if (e.key === 'Escape') finish(null);
+      };
+    }
+  });
+}
+
+function smAlert(msg)            { return _smShowModal({ message: msg, type: 'alert' }); }
+function smConfirm(msg)          { return _smShowModal({ message: msg, type: 'confirm' }); }
+function smPrompt(msg, defValue) { return _smShowModal({ message: msg, type: 'prompt', defaultValue: defValue }); }
 
 // ══════════════════════════════════════════
 //  SUPABASE
@@ -2729,13 +2866,13 @@ function saveProduct(){
     financeiro:+document.getElementById('edit-financeiro').value||0,
     venda:+document.getElementById('edit-venda').value||0,
   };
-  if(!p.modelo){alert('Preencha o nome do modelo');return;}
+  if(!p.modelo){smAlert('Preencha o nome do modelo');return;}
   if(i===-1){products.push(p);} else {p.id=products[i].id;products[i]=p;}
   closeModal();renderPrecos();renderDashboard();
   salvarDados();
 }
-function delProduct(i){
-  if(!confirm('Remover "'+products[i].modelo+'"?'))return;
+async function delProduct(i){
+  if(!(await smConfirm('Remover "'+products[i].modelo+'"?')))return;
   const id = products[i].id;
   if (id != null) sb.from('produtos_precos').delete().eq('id', id);
   products.splice(i,1);renderPrecos();renderDashboard();
@@ -2881,7 +3018,7 @@ function calcParcelamento(v){
 
 function addSimToProducts(){
   const p=getSimP();p.modelo=document.getElementById('sim-modelo').value||'Novo modelo';p.fornecedor='—';
-  products.push(p);alert('⚡ "'+p.modelo+'" adicionado à tabela!');
+  products.push(p);smAlert('⚡ "'+p.modelo+'" adicionado à tabela!');
 }
 
 // ══════════════════════════════════════════
@@ -3095,26 +3232,26 @@ function renderCustos(){
     </div>`).join('')}
   `;
 }
-function editCusto(i){
-  const novoNome=prompt('Nome da despesa:',custosFixos[i].nome);
+async function editCusto(i){
+  const novoNome=await smPrompt('Nome da despesa:',custosFixos[i].nome);
   if(novoNome===null)return;
-  const novoVal=prompt('Valor (R$):',custosFixos[i].valor);
+  const novoVal=await smPrompt('Valor (R$):',custosFixos[i].valor);
   if(novoVal===null)return;
   custosFixos[i].nome=novoNome||custosFixos[i].nome;
   custosFixos[i].valor=parseFloat(novoVal)||custosFixos[i].valor;
   renderCustos();
   salvarDados();
 }
-function delCusto(i){
-  if(!confirm('Remover "'+custosFixos[i].nome+'" de R$ '+custosFixos[i].valor.toFixed(2)+'?'))return;
+async function delCusto(i){
+  if(!(await smConfirm('Remover "'+custosFixos[i].nome+'" de R$ '+custosFixos[i].valor.toFixed(2)+'?')))return;
   const id = custosFixos[i].id;
   if (id != null) sb.from('custos_fixos').delete().eq('id', id);
   custosFixos.splice(i,1);renderCustos();salvarDados();
 }
-function addCusto(){
-  const nome=prompt('Nome da despesa:','');
+async function addCusto(){
+  const nome=await smPrompt('Nome da despesa:','');
   if(!nome)return;
-  const val=parseFloat(prompt('Valor mensal (R$):','0'))||0;
+  const val=parseFloat(await smPrompt('Valor mensal (R$):','0'))||0;
   custosFixos.push({nome,valor:val});renderCustos();salvarDados();
 }
 
@@ -3427,12 +3564,12 @@ async function savePricingToTable() {
       closePricingModal();
       filtrarEstoque();
       renderEstoqueKpis();
-      alert('⚡ "' + nome + '" atualizado no Tiny ERP e na tabela de preços!');
+      smAlert('⚡ "' + nome + '" atualizado no Tiny ERP e na tabela de preços!');
     } else {
-      alert('Erro ao salvar no Tiny: ' + data.erro);
+      smAlert('Erro ao salvar no Tiny: ' + data.erro);
     }
   } catch (err) {
-    alert('Erro de conexão: ' + err.message);
+    smAlert('Erro de conexão: ' + err.message);
   } finally {
     btn.textContent = originalText;
     btn.disabled = false;
@@ -3958,8 +4095,8 @@ async function atualizarPendingDot() {
   if (dot) dot.style.display = pending>0?'block':'none';
 }
 
-function fazerLogout() {
-  if (!confirm('Deseja sair da sua conta?')) return;
+async function fazerLogout() {
+  if (!(await smConfirm('Deseja sair da sua conta?'))) return;
   localStorage.removeItem('sm_user');
   document.getElementById('login-overlay').classList.add('show');
   const su = document.getElementById('sidebar-user');
@@ -3987,7 +4124,7 @@ function importarCSVTiny(input) {
   reader.onload = function(e) {
     const text = e.target.result;
     const lines = text.split(/\r?\n/).filter(l => l.trim());
-    if (lines.length < 2) { alert('Arquivo vazio ou inválido.'); return; }
+    if (lines.length < 2) { smAlert('Arquivo vazio ou inválido.'); return; }
 
     // Parse header
     const parseCSVLine = line => {
@@ -4055,7 +4192,7 @@ function importarCSVTiny(input) {
     renderContas();
     renderFinKpis();
     renderLancamentos();
-    alert(`✅ ${importados} lançamentos importados!${duplicados > 0 ? ' (' + duplicados + ' duplicados ignorados)' : ''}`);
+    smAlert(`✅ ${importados} lançamentos importados!${duplicados > 0 ? ' (' + duplicados + ' duplicados ignorados)' : ''}`);
     input.value = '';
   };
   reader.readAsText(file, 'UTF-8');
@@ -4402,10 +4539,10 @@ function salvarLancamento() {
   const conta     = document.getElementById('lan-conta').value;
   const obs       = document.getElementById('lan-obs').value.trim();
 
-  if (!descricao) { alert('Preencha a descrição'); return; }
-  if (!valor)     { alert('Preencha o valor'); return; }
-  if (!data)      { alert('Preencha a data'); return; }
-  if (!categoria) { alert('Selecione a categoria'); return; }
+  if (!descricao) { smAlert('Preencha a descrição'); return; }
+  if (!valor)     { smAlert('Preencha o valor'); return; }
+  if (!data)      { smAlert('Preencha a data'); return; }
+  if (!categoria) { smAlert('Selecione a categoria'); return; }
 
   if (editLanId) {
     // Editar — reverte saldo antigo
@@ -4448,9 +4585,9 @@ function editarLancamento(id) {
   document.getElementById('lan-modal').classList.add('open');
 }
 
-function deletarLancamento(id) {
+async function deletarLancamento(id) {
   const l = lancamentos.find(l=>l.id===id);
-  if (!l || !confirm(`Remover "${l.descricao}"?`)) return;
+  if (!l || !(await smConfirm(`Remover "${l.descricao}"?`))) return;
   // Reverte saldo
   const ct = contas.find(c=>c.nome===l.conta);
   if (ct) ct.saldo += l.tipo==='entrada'?-l.valor:l.valor;
@@ -4464,23 +4601,23 @@ function deletarLancamento(id) {
   salvarDados();
 }
 
-function editarSaldoConta(i) {
+async function editarSaldoConta(i) {
   const c = contas[i];
-  const novoSaldo = prompt(`Saldo atual de "${c.nome}":\n\nDigite o saldo correto (R$):`, c.saldo.toFixed(2));
+  const novoSaldo = await smPrompt(`Saldo atual de "${c.nome}":\n\nDigite o saldo correto (R$):`, c.saldo.toFixed(2));
   if (novoSaldo === null) return;
   const val = parseFloat(novoSaldo.replace(',','.'));
-  if (isNaN(val)) { alert('Valor inválido'); return; }
+  if (isNaN(val)) { smAlert('Valor inválido'); return; }
   c.saldo = val;
   renderContas();
   renderFinKpis();
   salvarDados();
 }
 
-function editarNomeConta(i) {
+async function editarNomeConta(i) {
   const c = contas[i];
-  const novoNome = prompt('Nome da conta:', c.nome);
+  const novoNome = await smPrompt('Nome da conta:', c.nome);
   if (!novoNome || novoNome === null) return;
-  const novoTipo = prompt('Tipo (Dinheiro, Banco, Digital):', c.tipo);
+  const novoTipo = await smPrompt('Tipo (Dinheiro, Banco, Digital):', c.tipo);
   if (novoTipo === null) return;
   // Update all lancamentos with old name
   const oldNome = c.nome;
@@ -4493,12 +4630,12 @@ function editarNomeConta(i) {
   salvarDados();
 }
 
-function openContaModal() {
-  const nome = prompt('Nome da conta:','');
+async function openContaModal() {
+  const nome = await smPrompt('Nome da conta:','');
   if (!nome) return;
-  const tipo = prompt('Tipo (Dinheiro, Banco, Digital, etc.):','Banco');
+  const tipo = await smPrompt('Tipo (Dinheiro, Banco, Digital, etc.):','Banco');
   if (tipo===null) return;
-  const saldoInicial = parseFloat(prompt('Saldo inicial (R$):','0'))||0;
+  const saldoInicial = parseFloat(await smPrompt('Saldo inicial (R$):','0'))||0;
   contas.push({nome, tipo:tipo||'Banco', saldo:saldoInicial});
   renderContas();
   renderFinKpis();
@@ -4554,9 +4691,9 @@ async function sincFinanceiro() {
     renderContas();
     renderFinKpis();
     renderLancamentos();
-    alert(`✅ ${importados} lançamentos importados do Tiny!`);
+    smAlert(`✅ ${importados} lançamentos importados do Tiny!`);
   } catch(err) {
-    alert('Erro ao sincronizar: '+err.message);
+    smAlert('Erro ao sincronizar: '+err.message);
   } finally {
     btn.textContent = '⚡ Sincronizar Tiny';
     btn.disabled = false;
@@ -4579,7 +4716,7 @@ const CATEGORIAS_SMART = [
 
 async function sugerirCategoriaAI() {
   const desc = document.getElementById('lan-descricao').value.trim();
-  if (!desc) { alert('Digite uma descrição primeiro.'); return; }
+  if (!desc) { smAlert('Digite uma descrição primeiro.'); return; }
 
   const btn = document.getElementById('btn-ai-cat');
   const div = document.getElementById('ai-sugestao');
@@ -4837,9 +4974,9 @@ function salvarContaPagar() {
   const obs          = document.getElementById('cp-obs').value.trim();
   const editId       = document.getElementById('cp-edit-id').value;
 
-  if (!nome)       { alert('Preencha o nome'); return; }
-  if (!valor)      { alert('Preencha o valor'); return; }
-  if (!vencimento) { alert('Preencha o vencimento'); return; }
+  if (!nome)       { smAlert('Preencha o nome'); return; }
+  if (!valor)      { smAlert('Preencha o valor'); return; }
+  if (!vencimento) { smAlert('Preencha o vencimento'); return; }
 
   if (editId) {
     const c = contasPagar.find(x=>x.id===editId);
@@ -4901,9 +5038,9 @@ function editarContaPagar(id) {
   document.getElementById('cp-modal').classList.add('open');
 }
 
-function deletarContaPagar(id) {
+async function deletarContaPagar(id) {
   const c = contasPagar.find(x=>x.id===id);
-  if (!c||!confirm(`Remover "${c.nome}"?`)) return;
+  if (!c||!(await smConfirm(`Remover "${c.nome}"?`))) return;
   sb.from('contas_pagar').delete().eq('id', id);
   contasPagar = contasPagar.filter(x=>x.id!==id);
   renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar(); atualizarDotContasPagar(); salvarDados();
@@ -5000,7 +5137,7 @@ async function importarContasTiny() {
     }
     document.getElementById('cp-import-modal').classList.add('open');
   } catch(err) {
-    alert('Erro ao buscar do Tiny: ' + err.message);
+    smAlert('Erro ao buscar do Tiny: ' + err.message);
   } finally {
     btn.textContent = '⚡ Importar do Tiny';
     btn.disabled = false;
@@ -5112,7 +5249,7 @@ function confirmarImportTiny() {
   renderContasPagar();
   atualizarDotContasPagar();
   salvarDados();
-  alert(`✅ ${importadas} conta${importadas!==1?'s':''} importada${importadas!==1?'s':''} com sucesso!`);
+  smAlert(`✅ ${importadas} conta${importadas!==1?'s':''} importada${importadas!==1?'s':''} com sucesso!`);
 }
 
 // cp-import-modal listener added after DOM ready
@@ -5185,22 +5322,22 @@ async function renderAdmin() {
     : '<div class="empty" style="padding:24px;">Nenhum usuário bloqueado</div>';
 }
 
-function alterarCodigo() {
+async function alterarCodigo() {
   const atual = getAcessoCode();
-  const novo  = prompt(`Código atual: ${atual}\n\nDigite o novo código de acesso:`, atual);
+  const novo  = await smPrompt(`Código atual: ${atual}\n\nDigite o novo código de acesso:`, atual);
   if (!novo || novo.trim() === '') return;
-  if (novo.trim().length < 6) { alert('O código deve ter pelo menos 6 caracteres.'); return; }
+  if (novo.trim().length < 6) { smAlert('O código deve ter pelo menos 6 caracteres.'); return; }
   _acessoCode = novo.trim();
-  alert(`✅ Código alterado para: ${novo.trim()}\n\n⚠️ Mudança válida só para esta sessão.`);
+  smAlert(`✅ Código alterado para: ${novo.trim()}\n\n⚠️ Mudança válida só para esta sessão.`);
   renderAdmin();
 }
 
 function copiarCodigo() {
   const code = getAcessoCode();
   navigator.clipboard.writeText(code).then(() => {
-    alert(`✅ Código copiado: ${code}`);
+    smAlert(`✅ Código copiado: ${code}`);
   }).catch(() => {
-    prompt('Copie o código abaixo:', code);
+    smPrompt('Copie o código abaixo:', code);
   });
 }
 
@@ -5218,7 +5355,7 @@ async function aprovarUser(email) {
 async function rejeitarUser(email) {
   const users = await getUsers();
   const u = users.find(x=>x.email===email);
-  if (!u || !confirm(`Bloquear acesso de "${u.nome}"?`)) return;
+  if (!u || !(await smConfirm(`Bloquear acesso de "${u.nome}"?`))) return;
   u.status = 'rejeitado';
   await saveUser(u);
   await atualizarPendingDot();
@@ -5228,14 +5365,14 @@ async function rejeitarUser(email) {
 async function tornarAdmin(email) {
   const users = await getUsers();
   const u = users.find(x=>x.email===email);
-  if (!u || !confirm(`Tornar "${u.nome}" administrador? Ele terá acesso total.`)) return;
+  if (!u || !(await smConfirm(`Tornar "${u.nome}" administrador? Ele terá acesso total.`))) return;
   u.role = 'admin';
   await saveUser(u);
   await renderAdmin();
 }
 
 async function deletarUser(email) {
-  if (!confirm(`Remover permanentemente o usuário ${email}?`)) return;
+  if (!(await smConfirm(`Remover permanentemente o usuário ${email}?`))) return;
   const { error } = await sb.from('usuarios').delete().eq('email', email);
   if (error) console.warn('Erro deletarUser:', error.message);
   await renderAdmin();
