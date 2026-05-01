@@ -3474,25 +3474,65 @@ function switchVTab(name){
 // ══════════════════════════════════════════
 const ADMIN_EMAIL  = 'gabrielllmoreirall@gmail.com';
 const ACESSO_CODE_DEFAULT = 'smartmotors2026';
+const SESSAO_REVALIDA_MS = 24 * 60 * 60 * 1000; // revalida no Supabase só depois de 24h
 let _acessoCode = ACESSO_CODE_DEFAULT;
 function getAcessoCode() { return _acessoCode; }
 
+// Busca um usuário específico no Supabase.
+//   - Retorna o usuário (camelCase) se encontrado
+//   - Retorna null se a tabela respondeu mas o usuário não existe
+//   - Retorna undefined se houve erro de rede/API (ambíguo, não derruba sessão)
+async function getUserByEmail(email) {
+  const { data, error } = await sb.from('usuarios').select('*').eq('email', email).maybeSingle();
+  if (error) return undefined;
+  if (!data)  return null;
+  return TABLE_MAP.usuarios.fromDb(data);
+}
+
 async function initLogin() {
-  await garantirAdmin();
-  const user = localStorage.getItem('sm_user');
-  if (user) {
-    try {
-      const u = JSON.parse(user);
-      const users = await getUsers();
-      const fresh = users.find(x => x.email === u.email);
-      if (fresh && fresh.status === 'aprovado') {
-        hideLoginOverlay();
-        atualizarUserDisplay(fresh);
-        return;
-      }
-    } catch(e) {}
+  const userJSON = localStorage.getItem('sm_user');
+  if (!userJSON) { await garantirAdmin(); return; }
+
+  let u;
+  try { u = JSON.parse(userJSON); }
+  catch(e) { localStorage.removeItem('sm_user'); await garantirAdmin(); return; }
+
+  if (u.status !== 'aprovado') {
     localStorage.removeItem('sm_user');
+    await garantirAdmin();
+    return;
   }
+
+  // Sessão fresca (< 24h): confia no localStorage e nem fala com Supabase
+  const idade = Date.now() - (u.loggedAt || 0);
+  if (idade < SESSAO_REVALIDA_MS) {
+    hideLoginOverlay();
+    atualizarUserDisplay(u);
+    return;
+  }
+
+  // Sessão antiga: revalida no Supabase
+  const fresh = await getUserByEmail(u.email);
+
+  if (fresh === undefined) {
+    // Erro de rede/API — mantém logado para não cair sessão por instabilidade
+    hideLoginOverlay();
+    atualizarUserDisplay(u);
+    return;
+  }
+
+  if (fresh && fresh.status === 'aprovado') {
+    // Confirmado: renova timestamp
+    const updated = { ...fresh, loggedAt: Date.now() };
+    localStorage.setItem('sm_user', JSON.stringify(updated));
+    hideLoginOverlay();
+    atualizarUserDisplay(updated);
+    return;
+  }
+
+  // Usuário foi removido ou perdeu o acesso
+  localStorage.removeItem('sm_user');
+  await garantirAdmin();
 }
 
 async function garantirAdmin() {
@@ -3552,7 +3592,7 @@ async function fazerLogin() {
   if (email === ADMIN_EMAIL && senha === 'Ma49721106') {
     const adminUser = { nome:'Gabriel', email:ADMIN_EMAIL, role:'admin', status:'aprovado' };
     await saveUser({ ...adminUser, senha: hashSenha(senha), criadoEm: new Date().toISOString() });
-    localStorage.setItem('sm_user', JSON.stringify(adminUser));
+    localStorage.setItem('sm_user', JSON.stringify({ ...adminUser, loggedAt: Date.now() }));
     hideLoginOverlay();
     atualizarUserDisplay(adminUser);
     return;
@@ -3572,7 +3612,7 @@ async function fazerLogin() {
     return;
   }
 
-  localStorage.setItem('sm_user', JSON.stringify(user));
+  localStorage.setItem('sm_user', JSON.stringify({ ...user, loggedAt: Date.now() }));
   hideLoginOverlay();
   atualizarUserDisplay(user);
 }
