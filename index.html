@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-19">
+<meta name="app-version" content="2026-04-30-20">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1572,7 +1572,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
           <span style="font-size:10px;color:var(--text3);font-weight:600;">Vendas/mês:</span>
           <input type="number" id="vendas-mes-input" value="40" min="1" max="999"
             style="width:60px;background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:3px 6px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;text-align:center;outline:none;"
-            oninput="renderCustos()">
+            oninput="vendasMesChanged()">
         </div>
       </div>
     </div>
@@ -1958,6 +1958,12 @@ const CUSTOS_FIXOS_SEED = [
 ];
 let custosFixos = [];
 
+// Config do "vendas/mês" do módulo Custos Fixos. Persistido como uma row
+// especial na tabela custos_fixos (nome 'vendas_mes_config'); separamos
+// do array de custos para não exibir como despesa.
+const VENDAS_MES_CONFIG_NOME = 'vendas_mes_config';
+let vendasMesConfig = { nome: VENDAS_MES_CONFIG_NOME, valor: 40 };
+
 let emprestimo = {
   valor:65050,custo:4767.13,total:69817.13,parcelas:7,
   pagamentos:[
@@ -2151,12 +2157,21 @@ async function carregarDados() {
     if (!cf.error) custosFixos = await seed('custos_fixos',     custosFixos, CUSTOS_FIXOS_SEED);
     if (!pr.error) products    = await seed('produtos_precos',  products,    PRODUCTS_SEED);
 
+    // Extrai a config de "vendas/mês" da lista de custos (não é despesa real)
+    const _cfgIdx = custosFixos.findIndex(x => x.nome === VENDAS_MES_CONFIG_NOME);
+    if (_cfgIdx >= 0) {
+      vendasMesConfig = custosFixos[_cfgIdx];
+      custosFixos.splice(_cfgIdx, 1);
+      console.log('[carregarDados] vendas_mes_config carregado:', vendasMesConfig.valor);
+    }
+
     console.log('[carregarDados] estado em memoria pos-load:',
       'contas=' + contas.length,
       'lancamentos=' + lancamentos.length,
       'contasPagar=' + contasPagar.length,
       'custosFixos=' + custosFixos.length,
-      'products=' + products.length);
+      'products=' + products.length,
+      'vendasMes=' + vendasMesConfig.valor);
     return true;
   } catch(e) {
     console.warn('Erro ao carregar do Supabase:', e.message || e);
@@ -3419,7 +3434,12 @@ function addOrderItem(){}
 function renderCustos(){
   const tot=custosFixos.reduce((s,c)=>s+c.valor,0);
   document.getElementById('custo-total-mes').textContent=fmt(tot);
-  const vendasMesInput = parseInt(document.getElementById('vendas-mes-input')?.value)||40;
+  const inp = document.getElementById('vendas-mes-input');
+  // Sincroniza o input com o valor salvo no Supabase (vendasMesConfig).
+  // O usuário pode estar editando — só sobrescreve quando o valor difere
+  // do que ele tem na tela (caso de carga inicial / outro device).
+  if (inp && document.activeElement !== inp) inp.value = vendasMesConfig.valor;
+  const vendasMesInput = parseInt(inp?.value) || vendasMesConfig.valor || 40;
   document.getElementById('custo-por-venda').textContent=fmt(tot/vendasMesInput);
   document.getElementById('custos-lista').innerHTML=custosFixos.map((c,i)=>`
     <div class="custo-row">
@@ -3463,6 +3483,43 @@ function renderCustos(){
     </div>`).join('')}
   `;
 }
+
+// Persiste o valor de "vendas/mês" no Supabase como uma row especial em
+// custos_fixos (nome=vendas_mes_config). Debounced para não bater no
+// banco a cada keystroke.
+let _vendasMesTimer = null;
+function vendasMesChanged() {
+  // Re-render imediato (UX), persistência depois
+  renderCustos();
+  if (_vendasMesTimer) clearTimeout(_vendasMesTimer);
+  _vendasMesTimer = setTimeout(salvarVendasMes, 600);
+}
+async function salvarVendasMes() {
+  const inp = document.getElementById('vendas-mes-input');
+  if (!inp) return;
+  const val = parseInt(inp.value) || 40;
+  if (val === vendasMesConfig.valor) return;
+  vendasMesConfig.valor = val;
+  vendasMesConfig.nome  = VENDAS_MES_CONFIG_NOME;
+
+  const payload = TABLE_MAP.custos_fixos.toDb(vendasMesConfig);
+  let resp;
+  if (vendasMesConfig.id) {
+    resp = await sb.from('custos_fixos')
+      .update(payload).eq('id', vendasMesConfig.id)
+      .select().single();
+  } else {
+    resp = await sb.from('custos_fixos')
+      .insert(payload).select().single();
+  }
+  if (resp.error) {
+    console.error('[vendas-mes] erro ao salvar:', resp.error.message);
+    return;
+  }
+  if (resp.data) Object.assign(vendasMesConfig, TABLE_MAP.custos_fixos.fromDb(resp.data));
+  console.log('[vendas-mes] salvo no Supabase:', vendasMesConfig.valor, 'id=' + vendasMesConfig.id);
+}
+
 async function editCusto(i){
   const novoNome=await smPrompt('Nome da despesa:',custosFixos[i].nome);
   if(novoNome===null)return;
