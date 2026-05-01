@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-4">
+<meta name="app-version" content="2026-04-30-5">
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -2962,7 +2962,7 @@ function closeSidebar(){
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('backdrop').classList.remove('open');
 }
-document.getElementById('edit-modal').addEventListener('click',function(e){if(e.target===this)closeModal();});
+document.getElementById('edit-modal')?.addEventListener('click',function(e){if(e.target===this)closeModal();});
 
 // ══════════════════════════════════════════
 //  TINY ERP — PRODUTOS & ESTOQUE
@@ -3271,7 +3271,7 @@ async function savePricingToTable() {
   }
 }
 
-document.getElementById('pricing-modal').addEventListener('click', function(e) {
+document.getElementById('pricing-modal')?.addEventListener('click', function(e) {
   if (e.target === this) closePricingModal();
 });
 
@@ -3582,7 +3582,13 @@ async function getUsers() {
   return (data || []).map(TABLE_MAP.usuarios.fromDb);
 }
 async function saveUser(u) {
-  const { data, error } = await sb.from('usuarios').upsert(TABLE_MAP.usuarios.toDb(u)).select().single();
+  // onConflict:'email' faz upsert detectar conflito pelo email (UNIQUE)
+  // em vez do PK auto-gerado, então nao da 409 quando admin já existe.
+  const { data, error } = await sb
+    .from('usuarios')
+    .upsert(TABLE_MAP.usuarios.toDb(u), { onConflict: 'email' })
+    .select()
+    .single();
   if (error) { console.warn('Erro saveUser:', error.message); return null; }
   const merged = TABLE_MAP.usuarios.fromDb(data);
   Object.assign(u, merged);
@@ -4689,7 +4695,7 @@ function deletarContaPagar(id) {
   renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar(); atualizarDotContasPagar(); salvarDados();
 }
 
-document.getElementById('cp-modal').addEventListener('click',function(e){if(e.target===this)closeCPModal();});
+document.getElementById('cp-modal')?.addEventListener('click',function(e){if(e.target===this)closeCPModal();});
 
 
 // ══════════════════════════════════════════
@@ -5015,7 +5021,13 @@ async function deletarUser(email) {
   await renderAdmin();
 }
 
-document.getElementById('lan-modal').addEventListener('click',function(e){if(e.target===this)closeLanModal();});
+// lan-modal e login-overlay ficam DEPOIS do </script>, então só dá pra
+// pegar referência depois que o DOM termina de parsear.
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('lan-modal')?.addEventListener('click', function(e){
+    if (e.target === this) closeLanModal();
+  });
+});
 
 // ══════════════════════════════════════════
 //  INIT
