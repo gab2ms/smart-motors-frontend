@@ -6,11 +6,14 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-25">
+<meta name="app-version" content="2026-04-30-26">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onload="console.log('[head] supabase CDN carregou')" onerror="console.error('[head] supabase CDN FALHOU ao carregar')"></script>
+<!-- xlsx-js-style: fork do SheetJS que preserva estilos (cell.s) no output xlsx.
+     A versao oficial community em cdn.sheetjs.com nao salva estilos. -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onload="console.log('[head] xlsx-js-style carregou')" onerror="console.error('[head] xlsx-js-style FALHOU')"></script>
 <style>
 :root {
   --mono: 'JetBrains Mono', monospace;
@@ -971,6 +974,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         <input type="date" id="dash-fat-fim" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;" onchange="onDashDateChange()">
         <button class="btn" onclick="abrirBuilder()" style="font-size:11px;padding:6px 12px;">⚙ Personalizar</button>
         <button class="btn btn-gold" onclick="carregarFaturamentoDash()" style="font-size:11px;padding:6px 14px;">⚡ Atualizar</button>
+        <button class="btn" onclick="gerarFechamentoMes()" style="font-size:11px;padding:6px 12px;" title="Exporta DRE + planilhas detalhadas em xlsx">📊 Fechar Mês</button>
       </div>
     </div>
 
@@ -3058,6 +3062,284 @@ function deltaHTML(curr, prev, invertido) {
   const arrow  = pct > 0 ? '▲' : '▼';
   const cls    = better ? 'up' : 'down';
   return '<div class="kpi-delta ' + cls + '">' + arrow + ' ' + Math.abs(pct).toFixed(0) + '% vs período anterior</div>';
+}
+
+// ══════════════════════════════════════════
+//  FECHAMENTO DE MÊS — gera xlsx com 5 abas
+// ══════════════════════════════════════════
+async function gerarFechamentoMes() {
+  if (typeof XLSX === 'undefined') {
+    smAlert('Biblioteca XLSX não carregada. Recarregue a página e tente de novo.');
+    return;
+  }
+  const iniISO = document.getElementById('dash-fat-ini')?.value;
+  const fimISO = document.getElementById('dash-fat-fim')?.value;
+  if (!iniISO || !fimISO) {
+    smAlert('Selecione um período no dashboard antes de fechar o mês.');
+    return;
+  }
+
+  // Feedback visual: usa o label de status existente
+  const labelEl = document.getElementById('dash-fat-label');
+  const labelOriginal = labelEl ? labelEl.textContent : '';
+  if (labelEl) labelEl.textContent = 'Gerando fechamento...';
+
+  try {
+    const fmtDateBR = iso => { const p = iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
+    const pedidos = await buscarPedidosCompletos(fmtDateBR(iniISO), fmtDateBR(fimISO));
+    const lancFiltrados = (lancamentos || []).filter(l => l.data >= iniISO && l.data <= fimISO);
+
+    // ── Vendas por produto ──
+    const porProd = {};
+    pedidos.forEach(ped => {
+      (ped.itens || []).forEach(it => {
+        const nome = (it.produto || '').trim();
+        if (!nome) return;
+        const qtd = it.quantidade || 1;
+        const rec = (it.valorUnitario || 0) * qtd;
+        if (!porProd[nome]) porProd[nome] = { nome, qtd: 0, receita: 0 };
+        porProd[nome].qtd     += qtd;
+        porProd[nome].receita += rec;
+      });
+    });
+    const vendasArr = Object.values(porProd).sort((a, b) => b.receita - a.receita);
+
+    let custoProdVendidos = 0;
+    vendasArr.forEach(v => {
+      const prod = _matchProdutoPorNome(v.nome);
+      if (prod && prod.venda) {
+        v.custoUnit = ct(prod);
+        v.mcRS  = v.receita - v.custoUnit * v.qtd;
+        v.mcPct = v.receita > 0 ? (v.mcRS / v.receita) * 100 : 0;
+        custoProdVendidos += v.custoUnit * v.qtd;
+      } else {
+        v.custoUnit = null; v.mcRS = null; v.mcPct = null;
+      }
+    });
+
+    const receitaBruta      = pedidos.reduce((s, p) => s + (p.valor || 0), 0);
+    const mcBruta           = receitaBruta - custoProdVendidos;
+    const mcPctBruta        = receitaBruta > 0 ? (mcBruta / receitaBruta) * 100 : 0;
+    const custoFixoTotal    = (custosFixos || []).reduce((s, c) => s + c.valor, 0);
+    const saidasFinanceiras = lancFiltrados.filter(l => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0);
+    const entradasExtras    = lancFiltrados.filter(l => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0);
+    const lucroLiquido      = mcBruta - custoFixoTotal - saidasFinanceiras + entradasExtras;
+    const lucroPct          = receitaBruta > 0 ? (lucroLiquido / receitaBruta) * 100 : 0;
+
+    // ── Vendas por vendedor ──
+    const porVend = {};
+    pedidos.forEach(ped => {
+      const nome = (ped.vendedor && ped.vendedor.nome) || 'Sem vendedor';
+      if (!porVend[nome]) porVend[nome] = { nome, qtd: 0, receita: 0 };
+      porVend[nome].qtd     += 1;
+      porVend[nome].receita += ped.valor || 0;
+    });
+    const vendArr = Object.values(porVend).sort((a, b) => b.receita - a.receita);
+
+    // ── Estilos ──
+    const HEADER = {
+      fill: { fgColor: { rgb: '1A1A1A' } },
+      font: { bold: true, color: { rgb: 'F5C518' }, sz: 11 },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: { bottom: { style: 'thin', color: { rgb: '363636' } } }
+    };
+    const TITLE_BIG = {
+      font: { bold: true, sz: 22, color: { rgb: 'F5C518' } },
+      alignment: { horizontal: 'left' }
+    };
+    const SUBTITLE = {
+      font: { italic: true, sz: 11, color: { rgb: '9A9A9A' } }
+    };
+    const SECTION = {
+      font: { bold: true, sz: 13, color: { rgb: 'F5C518' } }
+    };
+    const TOTAL_ROW = {
+      fill: { fgColor: { rgb: '232323' } },
+      font: { bold: true, color: { rgb: 'F5F5F5' }, sz: 11 },
+      border: { top: { style: 'thin', color: { rgb: '363636' } } }
+    };
+    const POS = { font: { bold: true, color: { rgb: '00B47A' } } };
+    const NEG = { font: { bold: true, color: { rgb: 'D32F2F' } } };
+    const BRL = '"R$ "#,##0.00';
+    const colorVal = (v, base) => Object.assign({}, base || {}, v >= 0 ? POS : NEG);
+
+    const wb = XLSX.utils.book_new();
+    const periodoLabel = fmtDateBR(iniISO) + ' a ' + fmtDateBR(fimISO);
+
+    // ════════ ABA 1: RESUMO (DRE) ════════
+    const resumoRows = [
+      [{ v: '⚡ SMART MOTORS', s: TITLE_BIG }],
+      [{ v: 'Fechamento — ' + periodoLabel, s: SUBTITLE }],
+      [],
+      [{ v: 'DRE — Demonstrativo de Resultado', s: SECTION }],
+      [],
+      [{ v: 'Item', s: HEADER }, { v: 'Valor', s: HEADER }, { v: '% Receita', s: HEADER }],
+      [
+        'Receita bruta',
+        { v: receitaBruta, t: 'n', z: BRL, s: POS },
+        { v: 1, t: 'n', z: '0.0%' }
+      ],
+      [
+        '(−) Custo dos produtos vendidos',
+        { v: -custoProdVendidos, t: 'n', z: BRL, s: NEG },
+        { v: receitaBruta > 0 ? -custoProdVendidos/receitaBruta : 0, t: 'n', z: '0.0%' }
+      ],
+      [
+        { v: '= Margem de contribuição bruta', s: TOTAL_ROW },
+        { v: mcBruta, t: 'n', z: BRL, s: colorVal(mcBruta, TOTAL_ROW) },
+        { v: mcPctBruta/100, t: 'n', z: '0.0%', s: TOTAL_ROW }
+      ],
+      [
+        '(−) Custos fixos do mês',
+        { v: -custoFixoTotal, t: 'n', z: BRL, s: NEG },
+        { v: receitaBruta > 0 ? -custoFixoTotal/receitaBruta : 0, t: 'n', z: '0.0%' }
+      ],
+      [
+        '(−) Gastos variáveis do mês',
+        { v: -saidasFinanceiras, t: 'n', z: BRL, s: NEG },
+        { v: receitaBruta > 0 ? -saidasFinanceiras/receitaBruta : 0, t: 'n', z: '0.0%' }
+      ],
+      [
+        '(+) Entradas extras',
+        { v: entradasExtras, t: 'n', z: BRL, s: POS },
+        { v: receitaBruta > 0 ? entradasExtras/receitaBruta : 0, t: 'n', z: '0.0%' }
+      ],
+      [
+        { v: '= Lucro líquido estimado', s: TOTAL_ROW },
+        { v: lucroLiquido, t: 'n', z: BRL, s: colorVal(lucroLiquido, TOTAL_ROW) },
+        { v: lucroPct/100, t: 'n', z: '0.0%', s: TOTAL_ROW }
+      ],
+    ];
+    const ws1 = XLSX.utils.aoa_to_sheet(resumoRows);
+    ws1['!cols']   = [{ wch: 40 }, { wch: 20 }, { wch: 12 }];
+    ws1['!rows']   = [{ hpt: 30 }];
+    ws1['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 2 } },
+      { s: { r: 3, c: 0 }, e: { r: 3, c: 2 } },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws1, 'Resumo');
+
+    // ════════ ABA 2: VENDAS POR PRODUTO ════════
+    const prodRows = [
+      ['Produto', 'Qtd vendida', 'Receita total', 'Custo unitário', 'MC R$', 'MC%'].map(h => ({ v: h, s: HEADER }))
+    ];
+    let totQtd = 0, totRec = 0, totMC = 0;
+    vendasArr.forEach(v => {
+      totQtd += v.qtd;
+      totRec += v.receita;
+      if (v.mcRS != null) totMC += v.mcRS;
+      prodRows.push([
+        v.nome,
+        { v: v.qtd, t: 'n' },
+        { v: v.receita, t: 'n', z: BRL },
+        v.custoUnit != null ? { v: v.custoUnit, t: 'n', z: BRL } : '—',
+        v.mcRS != null   ? { v: v.mcRS,  t: 'n', z: BRL, s: colorVal(v.mcRS) } : '—',
+        v.mcPct != null  ? { v: v.mcPct/100, t: 'n', z: '0.0%', s: colorVal(v.mcPct) } : '—',
+      ]);
+    });
+    prodRows.push([
+      { v: 'TOTAL', s: TOTAL_ROW },
+      { v: totQtd, t: 'n', s: TOTAL_ROW },
+      { v: totRec, t: 'n', z: BRL, s: TOTAL_ROW },
+      { v: '', s: TOTAL_ROW },
+      { v: totMC, t: 'n', z: BRL, s: colorVal(totMC, TOTAL_ROW) },
+      { v: totRec > 0 ? totMC/totRec : 0, t: 'n', z: '0.0%', s: TOTAL_ROW },
+    ]);
+    const ws2 = XLSX.utils.aoa_to_sheet(prodRows);
+    ws2['!cols'] = [{ wch: 30 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, ws2, 'Vendas por Produto');
+
+    // ════════ ABA 3: VENDAS POR VENDEDOR ════════
+    const totRecVend = vendArr.reduce((s, v) => s + v.receita, 0);
+    const totQtdVend = vendArr.reduce((s, v) => s + v.qtd, 0);
+    const vendRows = [
+      ['Vendedor', 'Qtd pedidos', 'Receita total', '% do total'].map(h => ({ v: h, s: HEADER })),
+      ...vendArr.map(v => [
+        v.nome,
+        { v: v.qtd, t: 'n' },
+        { v: v.receita, t: 'n', z: BRL },
+        { v: totRecVend > 0 ? v.receita/totRecVend : 0, t: 'n', z: '0.0%' },
+      ]),
+      [
+        { v: 'TOTAL', s: TOTAL_ROW },
+        { v: totQtdVend, t: 'n', s: TOTAL_ROW },
+        { v: totRecVend, t: 'n', z: BRL, s: TOTAL_ROW },
+        { v: 1, t: 'n', z: '0.0%', s: TOTAL_ROW },
+      ],
+    ];
+    const ws3 = XLSX.utils.aoa_to_sheet(vendRows);
+    ws3['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 16 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws3, 'Vendas por Vendedor');
+
+    // ════════ ABA 4: CUSTOS FIXOS ════════
+    const custosOrdenados = (custosFixos || []).slice().sort((a, b) => b.valor - a.valor);
+    const custosRows = [
+      ['Descrição', 'Valor'].map(h => ({ v: h, s: HEADER })),
+      ...custosOrdenados.map(c => [c.nome, { v: c.valor, t: 'n', z: BRL }]),
+      [{ v: 'TOTAL', s: TOTAL_ROW }, { v: custoFixoTotal, t: 'n', z: BRL, s: { ...TOTAL_ROW, ...NEG } }],
+    ];
+    const ws4 = XLSX.utils.aoa_to_sheet(custosRows);
+    ws4['!cols'] = [{ wch: 32 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, ws4, 'Custos Fixos');
+
+    // ════════ ABA 5: LANÇAMENTOS FINANCEIROS ════════
+    const entradas = lancFiltrados.filter(l => l.tipo === 'entrada').sort((a, b) => a.data.localeCompare(b.data));
+    const saidas   = lancFiltrados.filter(l => l.tipo === 'saida').sort((a, b) => a.data.localeCompare(b.data));
+    const lancRows = [
+      ['Data', 'Descrição', 'Categoria', 'Tipo', 'Valor', 'Conta'].map(h => ({ v: h, s: HEADER })),
+      [{ v: 'ENTRADAS', s: SECTION }],
+      ...entradas.map(l => [
+        { v: fmtDateBR(l.data) },
+        l.descricao || '',
+        l.categoria || '',
+        { v: 'Entrada', s: POS },
+        { v: l.valor, t: 'n', z: BRL, s: POS },
+        l.conta || '',
+      ]),
+      [
+        { v: 'Subtotal entradas', s: TOTAL_ROW },
+        { v: '', s: TOTAL_ROW }, { v: '', s: TOTAL_ROW }, { v: '', s: TOTAL_ROW },
+        { v: entradasExtras, t: 'n', z: BRL, s: { ...TOTAL_ROW, ...POS } },
+        { v: '', s: TOTAL_ROW },
+      ],
+      [],
+      [{ v: 'SAÍDAS', s: SECTION }],
+      ...saidas.map(l => [
+        { v: fmtDateBR(l.data) },
+        l.descricao || '',
+        l.categoria || '',
+        { v: 'Saída', s: NEG },
+        { v: l.valor, t: 'n', z: BRL, s: NEG },
+        l.conta || '',
+      ]),
+      [
+        { v: 'Subtotal saídas', s: TOTAL_ROW },
+        { v: '', s: TOTAL_ROW }, { v: '', s: TOTAL_ROW }, { v: '', s: TOTAL_ROW },
+        { v: saidasFinanceiras, t: 'n', z: BRL, s: { ...TOTAL_ROW, ...NEG } },
+        { v: '', s: TOTAL_ROW },
+      ],
+    ];
+    const ws5 = XLSX.utils.aoa_to_sheet(lancRows);
+    ws5['!cols'] = [{ wch: 12 }, { wch: 36 }, { wch: 22 }, { wch: 10 }, { wch: 14 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, ws5, 'Lançamentos');
+
+    // ── Nome do arquivo ──
+    const meses = ['janeiro','fevereiro','marco','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+    const iniDate = new Date(iniISO + 'T00:00:00');
+    const monthName = meses[iniDate.getMonth()];
+    const year = iniDate.getFullYear();
+    const filename = 'smart-motors-fechamento-' + monthName + '-' + year + '.xlsx';
+
+    XLSX.writeFile(wb, filename);
+    console.log('[fechamento] gerado:', filename);
+    if (labelEl) labelEl.textContent = 'Fechamento gerado: ' + filename;
+    setTimeout(() => { if (labelEl) labelEl.textContent = labelOriginal; }, 4000);
+  } catch (err) {
+    console.error('[fechamento] erro:', err);
+    smAlert('Erro ao gerar fechamento: ' + err.message);
+    if (labelEl) labelEl.textContent = labelOriginal;
+  }
 }
 
 async function carregarFaturamentoDash() {
