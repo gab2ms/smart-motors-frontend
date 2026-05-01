@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-3">
+<meta name="app-version" content="2026-04-30-4">
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -3642,12 +3642,17 @@ async function criarConta() {
   const users = await getUsers();
   if (users.find(u => u.email === email)){ showLoginErro(erroEl,'E-mail já cadastrado.'); return; }
 
-  await saveUser({
+  const salvo = await saveUser({
     nome, email, senha: hashSenha(senha),
-    role: 'user',
+    role: 'usuario',
     status: 'pendente',
     criadoEm: new Date().toISOString(),
   });
+
+  if (!salvo) {
+    showLoginErro(erroEl, 'Erro ao salvar no servidor. Tente novamente.');
+    return;
+  }
 
   erroEl.classList.remove('show');
   okEl.textContent = '✅ Solicitação enviada! Aguarde a aprovação do administrador para fazer login.';
