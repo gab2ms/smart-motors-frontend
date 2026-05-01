@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-9">
+<meta name="app-version" content="2026-04-30-10">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1593,6 +1593,7 @@ const pageMeta={
   custos:['Custos Fixos','Despesas mensais e controle do empréstimo'],
 };
 function showPage(id){
+  try { localStorage.setItem('sm_pagina_atual', id); } catch(e) {}
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
@@ -1995,10 +1996,19 @@ document.addEventListener('DOMContentLoaded', async function() {
     document.getElementById('login-overlay')?.className);
   renderDashboard();
   atualizarDotContasPagar();
-  // Re-renderiza módulos com dados carregados
-  if (document.getElementById('page-financeiro')?.classList.contains('active')) initFinanceiro();
-  if (document.getElementById('page-contas-pagar')?.classList.contains('active')) initContasPagar();
-  if (document.getElementById('page-custos')?.classList.contains('active')) renderCustos();
+
+  // Restaura a última página acessada (se houver) para não voltar sempre
+  // para o dashboard depois de um refresh.
+  const paginaSalva = localStorage.getItem('sm_pagina_atual');
+  if (paginaSalva && document.getElementById('page-' + paginaSalva)) {
+    console.log('[init] restaurando pagina:', paginaSalva);
+    showPage(paginaSalva);
+  } else {
+    // Re-renderiza módulos da página atualmente ativa (caso seja diferente do dashboard)
+    if (document.getElementById('page-financeiro')?.classList.contains('active')) initFinanceiro();
+    if (document.getElementById('page-contas-pagar')?.classList.contains('active')) initContasPagar();
+    if (document.getElementById('page-custos')?.classList.contains('active')) renderCustos();
+  }
 });
 
 // ══════════════════════════════════════════
