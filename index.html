@@ -6,7 +6,7 @@
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
-<meta name="app-version" content="2026-04-30-30">
+<meta name="app-version" content="2026-04-30-31">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -926,27 +926,27 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-dot" id="admin-pending-dot" style="background:var(--red);display:none;"></span>
     </button>
 
+    <div class="nav-label">Vendas</div>
+    <button class="nav-item" onclick="showPage('pedidos')">
+      <span class="nav-icon">📦</span> Pedidos
+      <span class="nav-dot"></span>
+    </button>
+    <button class="nav-item" onclick="showPage('vendas')">
+      <span class="nav-icon">📈</span> Vendas do Mês
+      <span class="nav-dot"></span>
+    </button>
+
     <div class="nav-label">Produtos</div>
     <button class="nav-item" onclick="showPage('estoque')">
       <span class="nav-icon">🏪</span> Produtos & Estoque
       <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('simulador')">
-      <span class="nav-icon">🧮</span> Simulador
-      <span class="nav-dot"></span>
-    </button>
-
-    <div class="nav-label">Relatórios</div>
-    <button class="nav-item" onclick="showPage('vendas')">
-      <span class="nav-icon">📈</span> Vendas do Mês
+      <span class="nav-icon">🧮</span> Simulador de Preços
       <span class="nav-dot"></span>
     </button>
 
     <div class="nav-label">Operação</div>
-    <button class="nav-item" onclick="showPage('pedidos')">
-      <span class="nav-icon">📦</span> Pedidos
-      <span class="nav-dot"></span>
-    </button>
     <button class="nav-item" onclick="showPage('oficina')">
       <span class="nav-icon">🔧</span> Oficina
       <span class="nav-dot"></span>
@@ -955,6 +955,8 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-icon">📞</span> SAC
       <span class="nav-dot" id="dot-sac"></span>
     </button>
+
+    <div class="nav-label">Financeiro</div>
     <button class="nav-item" onclick="showPage('financeiro')">
       <span class="nav-icon">💰</span> Financeiro
       <span class="nav-dot"></span>
