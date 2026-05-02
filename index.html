@@ -2942,10 +2942,26 @@ function buscarPedidosCompletos(dataInicial, dataFinal) {
   var url = API_URL + '/pedidos-completos'
     + '?dataInicial=' + encodeURIComponent(dataInicial)
     + '&dataFinal='   + encodeURIComponent(dataFinal);
+  console.log('[pedidos-completos] GET', url);
   return fetch(url)
-    .then(function(r){ return r.json(); })
-    .then(function(data){ return Array.isArray(data) ? data : []; })
-    .catch(function(){ return []; });
+    .then(function(r){
+      console.log('[pedidos-completos] status', r.status, r.statusText);
+      if (!r.ok) {
+        return r.text().then(function(txt){
+          console.warn('[pedidos-completos] resposta nao-OK:', txt.slice(0, 300));
+          return [];
+        });
+      }
+      return r.json().then(function(data){
+        var arr = Array.isArray(data) ? data : (data && data.pedidos) || [];
+        console.log('[pedidos-completos] recebidos', arr.length, 'pedidos');
+        return arr;
+      });
+    })
+    .catch(function(err){
+      console.error('[pedidos-completos] erro de rede:', err.message);
+      return [];
+    });
 }
 
 function calcularRankingScooters(pedidos) {
