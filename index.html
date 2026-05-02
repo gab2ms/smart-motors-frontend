@@ -4835,6 +4835,18 @@ async function getUserByEmail(email) {
   return TABLE_MAP.usuarios.fromDb(data);
 }
 
+// Revalidacao por id (preferido) ou email — necessario para usuarios sem email.
+async function getUserByIdOrEmail(id, email) {
+  if (id) {
+    const { data, error } = await sb.from('usuarios').select('*').eq('id', id).maybeSingle();
+    if (error) return undefined;
+    if (data)  return TABLE_MAP.usuarios.fromDb(data);
+    // se id nao encontrou e ha email, ainda tenta por email
+  }
+  if (email) return getUserByEmail(email);
+  return null;
+}
+
 async function initLogin() {
   const log = (...args) => console.log('[initLogin]', ...args);
   const userJSON = localStorage.getItem('sm_user');
@@ -4878,10 +4890,10 @@ async function initLogin() {
     return;
   }
 
-  // Sessão antiga: revalida no Supabase
+  // Sessão antiga: revalida no Supabase (por id ou email)
   log('sessao > 24h -> revalidando no Supabase');
-  const fresh = await getUserByEmail(u.email);
-  log('getUserByEmail retornou:', fresh);
+  const fresh = await getUserByIdOrEmail(u.id, u.email);
+  log('getUserByIdOrEmail retornou:', fresh);
 
   if (fresh === undefined) {
     log('decisao: erro de rede/API -> mantem logado (resiliencia)');
@@ -4944,28 +4956,37 @@ async function getUsers() {
   return (data || []).map(TABLE_MAP.usuarios.fromDb);
 }
 async function saveUser(u) {
-  // onConflict:'email' faz upsert detectar conflito pelo email (UNIQUE)
-  // em vez do PK auto-gerado, então nao da 409 quando admin já existe.
-  const { data, error } = await sb
-    .from('usuarios')
-    .upsert(TABLE_MAP.usuarios.toDb(u), { onConflict: 'email' })
-    .select()
-    .single();
-  if (error) { console.warn('Erro saveUser:', error.message); return null; }
-  const merged = TABLE_MAP.usuarios.fromDb(data);
+  // Estrategia de conflito:
+  //  - se ja temos o id, usa onConflict:'id' (update certeiro)
+  //  - senao se tem email, onConflict:'email' (cobre o admin fixo, que entra
+  //    sem id mas precisa upsert para nao dar 409 quando ja existe)
+  //  - senao (sem id, sem email) faz insert puro — usuario criado pelo Admin
+  //    sem email cai aqui na primeira gravacao
+  const row = TABLE_MAP.usuarios.toDb(u);
+  let resp;
+  if (u.id) {
+    resp = await sb.from('usuarios').upsert(row, { onConflict: 'id' }).select().single();
+  } else if (u.email) {
+    resp = await sb.from('usuarios').upsert(row, { onConflict: 'email' }).select().single();
+  } else {
+    resp = await sb.from('usuarios').insert(row).select().single();
+  }
+  if (resp.error) { console.warn('Erro saveUser:', resp.error.message); return null; }
+  const merged = TABLE_MAP.usuarios.fromDb(resp.data);
   Object.assign(u, merged);
   return merged;
 }
 
 async function fazerLogin() {
-  const email  = document.getElementById('login-email').value.trim().toLowerCase();
+  const identificadorRaw = document.getElementById('login-email').value.trim();
+  const identificador    = identificadorRaw.toLowerCase();
   const senha  = document.getElementById('login-senha').value;
   const erroEl = document.getElementById('login-erro');
 
-  if (!email || !senha) { showLoginErro(erroEl,'Preencha e-mail e senha.'); return; }
+  if (!identificador || !senha) { showLoginErro(erroEl,'Preencha e-mail/usuário e senha.'); return; }
 
   // Atalho admin fixo: garante existência e loga
-  if (email === ADMIN_EMAIL && senha === 'Ma49721106') {
+  if (identificador === ADMIN_EMAIL && senha === 'Ma49721106') {
     const adminUser = { nome:'Gabriel', email:ADMIN_EMAIL, role:'admin', perfil:'admin', status:'aprovado' };
     await saveUser({ ...adminUser, senha: hashSenha(senha), criadoEm: new Date().toISOString() });
     localStorage.setItem('sm_user', JSON.stringify({ ...adminUser, loggedAt: Date.now() }));
@@ -4974,10 +4995,14 @@ async function fazerLogin() {
     return;
   }
 
-  const users = await getUsers();
-  const user  = users.find(u => u.email === email && u.senha === hashSenha(senha));
+  const users    = await getUsers();
+  const senhaH   = hashSenha(senha);
+  const porEmail = identificador.includes('@');
+  const user = porEmail
+    ? users.find(u => (u.email||'').toLowerCase() === identificador && u.senha === senhaH)
+    : users.find(u => (u.nome ||'').toLowerCase() === identificador && u.senha === senhaH);
 
-  if (!user) { showLoginErro(erroEl,'E-mail ou senha incorretos.'); return; }
+  if (!user) { showLoginErro(erroEl, porEmail ? 'E-mail ou senha incorretos.' : 'Usuário ou senha incorretos.'); return; }
 
   if (user.status === 'pendente') {
     showLoginErro(erroEl,'⏳ Seu cadastro ainda aguarda aprovação do administrador.');
@@ -6748,8 +6773,8 @@ function _abrirAcessoModal({ mode, user }) {
     '<div class="modal" style="width:580px;max-width:95vw;">'
     + '<div class="modal-title">' + (isEdit ? 'Editar' : 'Criar') + ' <span>acesso</span></div>'
     + '<div class="form-grid">'
-    +   '<div class="form-group full"><label>Nome</label><input class="form-input" id="acm-nome" value="' + escAttr(user.nome) + '"></div>'
-    +   '<div class="form-group full"><label>E-mail</label><input class="form-input" id="acm-email" type="email" ' + (isEdit ? 'disabled style="opacity:0.6;"' : '') + ' value="' + escAttr(user.email) + '"></div>'
+    +   '<div class="form-group full"><label>Nome de usuário <span style="color:var(--red);">*</span></label><input class="form-input" id="acm-nome" placeholder="Usado para login (ex: vendedor1)" value="' + escAttr(user.nome) + '"></div>'
+    +   '<div class="form-group full"><label>E-mail <span style="color:var(--text3);font-weight:500;">(opcional)</span></label><input class="form-input" id="acm-email" type="email" ' + (isEdit ? 'disabled style="opacity:0.6;"' : 'placeholder="Deixe vazio se não tiver e-mail"') + ' value="' + escAttr(user.email) + '"></div>'
     +   '<div class="form-group full"><label>' + (isEdit ? 'Nova senha (deixe vazio para manter)' : 'Senha (mínimo 6)') + '</label><input class="form-input" id="acm-senha" type="password"></div>'
     +   '<div class="form-group full"><label>Perfil</label>'
     +     '<select class="form-input" id="acm-perfil" onchange="document.getElementById(\'acm-modulos-wrap\').style.display=this.value===\'customizado\'?\'block\':\'none\';">'
@@ -6772,24 +6797,59 @@ function _abrirAcessoModal({ mode, user }) {
   document.body.appendChild(shell);
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
 }
+function _slugifyNome(s) {
+  return (s||'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 async function salvarAcesso(mode, originalEmail) {
   const nome    = document.getElementById('acm-nome').value.trim();
-  const email   = document.getElementById('acm-email').value.trim().toLowerCase();
+  let   email   = document.getElementById('acm-email').value.trim().toLowerCase();
   const senha   = document.getElementById('acm-senha').value;
   const perfil  = document.getElementById('acm-perfil').value;
   const checks  = document.querySelectorAll('#acm-modulos input[type=checkbox]');
   const modulos = [...checks].filter(c => c.checked).map(c => c.dataset.mod);
 
-  if (!nome)  return smAlert('Preencha o nome.');
-  if (!email) return smAlert('Preencha o email.');
+  if (!nome) return smAlert('Preencha o nome de usuário.');
   if (mode === 'create' && (!senha || senha.length < 6)) return smAlert('Senha deve ter no mínimo 6 caracteres.');
   if (perfil === 'customizado' && modulos.length === 0)  return smAlert('Selecione ao menos um módulo permitido.');
 
   const users = await getUsers();
+
+  // Se email vazio na criacao, gera identificador interno (perfil_slugDoNome@smartmotors.internal).
+  // Garante unicidade adicionando sufixo numerico se ja existir.
+  if (mode === 'create' && !email) {
+    const base = `${perfil}_${_slugifyNome(nome) || 'user'}@smartmotors.internal`;
+    email = base;
+    let n = 2;
+    while (users.find(u => (u.email||'').toLowerCase() === email)) {
+      email = base.replace('@', `_${n}@`);
+      n++;
+    }
+  }
+
+  // Bloqueia conflito de nome de usuario (case-insensitive) na criacao
+  if (mode === 'create') {
+    const nomeLower = nome.toLowerCase();
+    if (users.find(u => (u.nome||'').toLowerCase() === nomeLower)) {
+      return smAlert('Já existe um usuário com esse nome de usuário.');
+    }
+  }
+
   let user;
   if (mode === 'edit') {
     user = users.find(u => u.email === originalEmail);
     if (!user) return smAlert('Usuário não encontrado.');
+    // Se o nome mudou, valida unicidade contra os outros usuarios
+    if (nome.toLowerCase() !== (user.nome||'').toLowerCase()) {
+      const nomeLower = nome.toLowerCase();
+      if (users.find(u => u.email !== originalEmail && (u.nome||'').toLowerCase() === nomeLower)) {
+        return smAlert('Já existe um usuário com esse nome de usuário.');
+      }
+    }
     user.nome   = nome;
     user.perfil = perfil;
     user.role   = perfil === 'admin' ? 'admin' : 'usuario';
@@ -6799,7 +6859,7 @@ async function salvarAcesso(mode, originalEmail) {
       user.senha = hashSenha(senha);
     }
   } else {
-    if (users.find(u => u.email === email)) return smAlert('E-mail já cadastrado.');
+    if (email && users.find(u => (u.email||'').toLowerCase() === email)) return smAlert('E-mail já cadastrado.');
     user = {
       nome, email, senha: hashSenha(senha),
       role: perfil === 'admin' ? 'admin' : 'usuario',
@@ -7762,8 +7822,8 @@ renderDashboard();
     <!-- Entrar -->
     <div id="lform-entrar" class="login-form">
       <div class="form-group">
-        <label>E-mail</label>
-        <input class="form-input" id="login-email" type="email" placeholder="seu@email.com" onkeydown="if(event.key==='Enter')fazerLogin()">
+        <label>E-mail ou usuário</label>
+        <input class="form-input" id="login-email" type="text" autocomplete="username" placeholder="seu@email.com ou nome de usuário" onkeydown="if(event.key==='Enter')fazerLogin()">
       </div>
       <div class="form-group">
         <label>Senha</label>
