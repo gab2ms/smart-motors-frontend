@@ -955,6 +955,10 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-icon">📞</span> SAC
       <span class="nav-dot" id="dot-sac"></span>
     </button>
+    <button class="nav-item" onclick="showPage('clientes')">
+      <span class="nav-icon">👥</span> Clientes
+      <span class="nav-dot"></span>
+    </button>
 
     <div class="nav-label">Financeiro</div>
     <button class="nav-item" onclick="showPage('financeiro')">
@@ -1602,6 +1606,33 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     </div>
   </div>
 
+  <!-- ══════════════ CLIENTES ══════════════ -->
+  <div class="page content" id="page-clientes">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;">Cadastro de clientes</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="cli-sub">—</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select class="search-input" id="cli-filtro-origem" onchange="renderClientes()" style="max-width:160px;">
+          <option value="">Todas origens</option>
+          <option value="manual">Manual</option>
+          <option value="tiny">Tiny</option>
+        </select>
+        <input type="text" class="search-input" id="cli-busca" placeholder="🔍 Nome, CPF/CNPJ, telefone..." oninput="renderClientes()" style="min-width:240px;">
+        <button class="btn" onclick="sincronizarClientesTiny()" id="btn-cli-sync">⚡ Sincronizar com Tiny</button>
+        <button class="btn btn-gold" onclick="abrirCliModal()">+ Novo cliente</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid" id="cli-kpis"></div>
+
+    <div class="card">
+      <div class="card-header"><div><div class="card-sub" id="cli-count">—</div></div></div>
+      <div id="cli-lista"></div>
+    </div>
+  </div>
+
     <!-- ══════════════ CONTAS A PAGAR ══════════════ -->
   <div class="page content" id="page-contas-pagar">
 
@@ -2212,6 +2243,7 @@ const pageMeta={
   pedidos:['Pedidos','Controle seus pedidos por fornecedor'],
   oficina:['Oficina','Ordens de serviço e cadastro de clientes'],
   sac:['SAC','Atendimento pós-venda, garantias e contatos com fornecedores'],
+  clientes:['Clientes','Cadastro central — manuais e sincronizados com Tiny'],
   admin:['Administração','Gerenciar usuários e aprovações de acesso'],
   financeiro:['Caixa Atual','Controle de caixa, contas e lançamentos'],
   'contas-pagar':['Contas a Pagar','Gerencie vencimentos e nunca esqueça um pagamento'],
@@ -2272,6 +2304,7 @@ function showPage(id, opts){
   if(id==='custos')renderCustos();
   if(id==='oficina')initOficina();
   if(id==='sac')initSac();
+  if(id==='clientes')initClientes();
 }
 
 // Detecta voltar/avançar do navegador
@@ -2718,6 +2751,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   try { renderContasPagar?.(); }            catch(e) {}
   try { renderCustos?.(); }                 catch(e) {}
   try { renderPrecos?.(); }                 catch(e) {}
+  // Notificações WhatsApp globais (contas a pagar) — uma vez por dia por item
+  try { checarWhatsAppGlobais?.(); }        catch(e) {}
 
   // Restaura a última página acessada (se houver) para não voltar sempre
   // para o dashboard depois de um refresh.
@@ -3166,6 +3201,9 @@ function renderDashPedidos(pedidos) {
   const ultimos = [...pedidos].reverse().slice(0, 15);
   document.getElementById('dash-pedidos-sub').textContent =
     `Mostrando ${ultimos.length} de ${pedidos.length} pedidos`;
+
+  // Notifica WhatsApp para os pedidos faturados (1x/dia/pedido)
+  try { checarWhatsAppPedidosFaturados(ultimos); } catch(e) { console.warn('[wa] dash falhou:', e.message); }
 
   document.getElementById('dash-pedidos-body').innerHTML = ultimos.map(p => `
     <tr>
@@ -4738,6 +4776,7 @@ const TODOS_MODULOS = [
   { id: 'pedidos',      nome: 'Pedidos' },
   { id: 'oficina',      nome: 'Oficina' },
   { id: 'sac',          nome: 'SAC' },
+  { id: 'clientes',     nome: 'Clientes' },
   { id: 'admin',        nome: 'Administração' },
   { id: 'financeiro',   nome: 'Financeiro' },
   { id: 'contas-pagar', nome: 'Contas a Pagar' },
@@ -4746,7 +4785,7 @@ const TODOS_MODULOS = [
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
   vendedor:    ['dashboard', 'pedidos', 'simulador'],
-  operacional: ['dashboard', 'precos', 'estoque', 'simulador', 'vendas', 'pedidos', 'oficina', 'sac', 'financeiro', 'contas-pagar', 'custos'],
+  operacional: ['dashboard', 'precos', 'estoque', 'simulador', 'vendas', 'pedidos', 'oficina', 'sac', 'clientes', 'financeiro', 'contas-pagar', 'custos'],
   customizado: null, // usa user.modulosPermitidos
 };
 function modulosPermitidos(user) {
@@ -6109,6 +6148,8 @@ function initContasPagar() {
   renderContasPagarKpis();
   renderContasPagarAlertas();
   renderContasPagar();
+  // Notifica WhatsApp para vencidas e vencendo em até 3d (1x/dia/conta)
+  checarWhatsAppContasPagar();
 }
 
 function diasAteVencimento(dataISO) {
@@ -6844,14 +6885,17 @@ const OF_STATUS = {
 
 async function initOficina() {
   const [oc, oo] = await Promise.all([
-    sb.from('oficina_clientes').select('*').order('nome'),
+    sb.from('clientes').select('*').order('nome'),
     sb.from('oficina_ordens').select('*').order('numero', { ascending: false }),
   ]);
-  oficinaClientes = oc.data ? toCamelArr(oc.data) : [];
+  clientesAll     = oc.data ? toCamelArr(oc.data) : [];
+  oficinaClientes = clientesAll.slice();
   oficinaOrdens   = oo.data ? toCamelArr(oo.data) : [];
   console.log('[oficina] clientes=' + oficinaClientes.length + ' ordens=' + oficinaOrdens.length);
   renderOficinaKpis();
   renderOficina();
+  // Notifica OS prontas pendentes (1x/dia/item)
+  checarWhatsAppOficinaPronto();
 }
 
 function renderOficinaKpis() {
@@ -6927,6 +6971,7 @@ async function ofAvancarStatus(id) {
   o.status = next;
   if (next === 'entregue') o.dataConclusao = update.data_conclusao;
   renderOficinaKpis(); renderOficina();
+  if (next === 'pronto') checarWhatsAppOficinaPronto();
 }
 
 async function ofExcluir(id) {
@@ -7001,7 +7046,7 @@ function ofSelecionarCliente(id) {
   if (!c) return;
   document.getElementById('of-cli-nome').value = c.nome || '';
   document.getElementById('of-cli-tel').value  = c.telefone || '';
-  document.getElementById('of-cli-cpf').value  = c.cpf || '';
+  document.getElementById('of-cli-cpf').value  = c.cpfCnpj || c.cpf || '';
   document.getElementById('of-cli-nome').dataset.clienteId = c.id;
   document.getElementById('of-cli-sugestoes').style.display = 'none';
 }
@@ -7033,13 +7078,15 @@ async function ofSalvar(editId) {
     if (existing) {
       clienteId = existing.id;
     } else {
-      const novoCli = { nome: cliNome };
+      const novoCli = { nome: cliNome, origem: 'manual' };
       if (cliTel) novoCli.telefone = cliTel;
-      if (cliCpf) novoCli.cpf = cliCpf;
-      const { data, error } = await sb.from('oficina_clientes').insert(novoCli).select().single();
+      if (cliCpf) novoCli.cpf_cnpj = cliCpf;
+      const { data, error } = await sb.from('clientes').insert(novoCli).select().single();
       if (error) return smAlert('Erro ao cadastrar cliente: ' + error.message);
       clienteId = data.id;
-      oficinaClientes.push(toCamel(data));
+      const novo = toCamel(data);
+      oficinaClientes.push(novo);
+      clientesAll.push(novo);
     }
   }
 
@@ -7095,12 +7142,44 @@ const SAC_PRIO = {
 };
 
 async function initSac() {
-  const { data, error } = await sb.from('sac_casos').select('*').order('numero', { ascending: false });
-  sacCasos = (!error && data) ? toCamelArr(data) : [];
-  console.log('[sac] casos=' + sacCasos.length);
+  const requests = [sb.from('sac_casos').select('*').order('numero', { ascending: false })];
+  if (!clientesAll.length) requests.push(sb.from('clientes').select('*').order('nome'));
+  const results = await Promise.all(requests);
+  const sacRes = results[0];
+  sacCasos = (!sacRes.error && sacRes.data) ? toCamelArr(sacRes.data) : [];
+  if (results[1] && !results[1].error && results[1].data) {
+    clientesAll = toCamelArr(results[1].data);
+    oficinaClientes = clientesAll.slice();
+  }
+  console.log('[sac] casos=' + sacCasos.length + ' clientes=' + clientesAll.length);
   renderSacKpis();
   renderSac();
   atualizarDotSac();
+  // Notifica casos com prazo vencido (1x/dia/item)
+  checarWhatsAppSacVencido();
+}
+
+function sacClienteSugestao() {
+  const inp = document.getElementById('sac-cli');
+  const box = document.getElementById('sac-cli-sugestoes');
+  if (!inp || !box) return;
+  const q = inp.value.trim().toLowerCase();
+  if (!q) { box.style.display = 'none'; return; }
+  const matches = clientesAll.filter(c => (c.nome||'').toLowerCase().includes(q)).slice(0, 6);
+  if (!matches.length) { box.style.display = 'none'; return; }
+  box.innerHTML = matches.map(c =>
+    `<div onclick="sacSelecionarCliente('${c.id}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px;" onmouseenter="this.style.background='var(--surface3)'" onmouseleave="this.style.background='transparent'"><div style="font-weight:600;">${c.nome}</div>${c.telefone?`<div style="font-size:10px;color:var(--text3);">${c.telefone}</div>`:''}</div>`
+  ).join('');
+  box.style.display = 'block';
+}
+
+function sacSelecionarCliente(id) {
+  const c = clientesAll.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('sac-cli').value = c.nome || '';
+  const tel = document.getElementById('sac-tel');
+  if (tel && !tel.value) tel.value = c.telefone || '';
+  document.getElementById('sac-cli-sugestoes').style.display = 'none';
 }
 
 function atualizarDotSac() {
@@ -7203,7 +7282,10 @@ function abrirSacModal(id) {
     `<div class="modal" style="width:680px;max-width:95vw;">`
     + `<div class="modal-title">${isEdit?('Caso #'+c.numero):'Novo <span>caso</span>'}</div>`
     + `<div class="form-grid">`
-    +   `<div class="form-group"><label>Cliente</label><input class="form-input" id="sac-cli" value="${escAttr(c&&c.clienteNome)}"></div>`
+    +   `<div class="form-group" style="position:relative;"><label>Cliente</label>`
+    +     `<input class="form-input" id="sac-cli" value="${escAttr(c&&c.clienteNome)}" autocomplete="off" oninput="sacClienteSugestao()">`
+    +     `<div id="sac-cli-sugestoes" style="position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;display:none;"></div>`
+    +   `</div>`
     +   `<div class="form-group"><label>Telefone</label><input class="form-input" id="sac-tel" value="${escAttr(c&&c.clienteTelefone)}"></div>`
     +   `<div class="form-group"><label>Modelo</label><input class="form-input" id="sac-modelo" value="${escAttr(c&&c.modeloScooter)}"></div>`
     +   `<div class="form-group"><label>Fornecedor</label><input class="form-input" id="sac-forn" value="${escAttr(c&&c.fornecedor)}"></div>`
@@ -7298,6 +7380,333 @@ async function sacExcluir(id) {
   if (error) { smAlert('Erro: ' + error.message); return; }
   sacCasos = sacCasos.filter(x => x.id !== id);
   renderSacKpis(); renderSac(); atualizarDotSac();
+}
+
+// ══════════════════════════════════════════
+//  CLIENTES (cadastro central)
+// ══════════════════════════════════════════
+let clientesAll = [];
+
+async function initClientes() {
+  const { data, error } = await sb.from('clientes').select('*').order('nome');
+  if (error) {
+    console.warn('[clientes] erro ao carregar:', error.message);
+    clientesAll = [];
+  } else {
+    clientesAll = toCamelArr(data || []);
+  }
+  console.log('[clientes] total=' + clientesAll.length);
+  // Mantém oficinaClientes em sincronia para compat com modal/autocomplete da oficina
+  oficinaClientes = clientesAll.slice();
+  renderClientesKpis();
+  renderClientes();
+}
+
+function renderClientesKpis() {
+  const total   = clientesAll.length;
+  const manuais = clientesAll.filter(c => (c.origem || 'manual') === 'manual').length;
+  const tiny    = clientesAll.filter(c => c.origem === 'tiny').length;
+  const comTel  = clientesAll.filter(c => (c.telefone || '').trim().length > 0).length;
+  const el = document.getElementById('cli-kpis');
+  if (!el) return;
+  el.innerHTML =
+      `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">Total</div><div class="kpi-value gold">${total}</div><div class="kpi-change">clientes cadastrados</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--text2);"><div class="kpi-label">Manual</div><div class="kpi-value" style="color:var(--text);">${manuais}</div><div class="kpi-change">cadastro local</div></div>`
+    + `<div class="kpi" style="border-top:2px solid #25D366;"><div class="kpi-label">Tiny</div><div class="kpi-value" style="color:#25D366;">${tiny}</div><div class="kpi-change">via sincronização</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Com telefone</div><div class="kpi-value green">${comTel}</div><div class="kpi-change">contato disponível</div></div>`;
+}
+
+function renderClientes() {
+  const el  = document.getElementById('cli-lista');
+  const sub = document.getElementById('cli-sub');
+  if (!el) return;
+  const fO = document.getElementById('cli-filtro-origem')?.value || '';
+  const q  = (document.getElementById('cli-busca')?.value || '').toLowerCase();
+  let lista = clientesAll.slice();
+  if (fO) lista = lista.filter(c => (c.origem || 'manual') === fO);
+  if (q)  lista = lista.filter(c =>
+       (c.nome     ||'').toLowerCase().includes(q)
+    || (c.telefone ||'').toLowerCase().includes(q)
+    || (c.cpfCnpj  ||'').toLowerCase().includes(q)
+    || (c.email    ||'').toLowerCase().includes(q));
+  lista.sort((a,b) => (a.nome||'').localeCompare(b.nome||'', 'pt-BR'));
+
+  if (sub) sub.textContent = lista.length + ' cliente' + (lista.length!==1?'s':'') + ' exibido' + (lista.length!==1?'s':'');
+  document.getElementById('cli-count').textContent = clientesAll.length + ' clientes no total';
+
+  if (!lista.length) {
+    el.innerHTML = '<div class="empty" style="padding:32px;">Nenhum cliente encontrado</div>';
+    return;
+  }
+
+  el.innerHTML = lista.map(c => {
+    const origem = c.origem || 'manual';
+    const badge = origem === 'tiny'
+      ? '<span class="badge" style="background:rgba(37,211,102,0.15);color:#25D366;">Tiny</span>'
+      : '<span class="badge" style="background:var(--surface3);color:var(--text2);">Manual</span>';
+    return '<div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 0.9fr 90px auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
+      + `<div><div style="font-weight:700;">${c.nome||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${c.email||''}</div></div>`
+      + `<div style="font-size:11px;color:var(--text2);">${c.telefone||'—'}</div>`
+      + `<div style="font-size:11px;color:var(--text2);">${c.cpfCnpj||'—'}</div>`
+      + `<div style="font-size:10px;color:var(--text3);">${c.cidade||''}${c.uf?(' / '+c.uf):''}</div>`
+      + `<div>${badge}</div>`
+      + `<div style="display:flex;gap:5px;">`
+        + `<button class="action-btn edit-btn" onclick="abrirCliModal('${c.id}')">✏</button>`
+        + `<button class="action-btn del-btn" onclick="cliExcluir('${c.id}')">✕</button>`
+      + `</div>`
+      + '</div>';
+  }).join('');
+}
+
+function abrirCliModal(id) {
+  const c = id ? clientesAll.find(x => x.id === id) : null;
+  const isEdit = !!c;
+  const escAttr = s => (s || '').replace(/"/g,'&quot;');
+  const old = document.getElementById('cli-modal');
+  if (old) old.remove();
+  const shell = document.createElement('div');
+  shell.id = 'cli-modal';
+  shell.className = 'modal-overlay open';
+  shell.innerHTML =
+      `<div class="modal" style="width:620px;max-width:95vw;">`
+    + `<div class="modal-title">${isEdit?('Editar cliente'):'Novo <span>cliente</span>'}</div>`
+    + `<div class="form-grid">`
+    +   `<div class="form-group full"><label>Nome / Razão social</label><input class="form-input" id="cli-nome" value="${escAttr(c&&c.nome)}"></div>`
+    +   `<div class="form-group"><label>Telefone</label><input class="form-input" id="cli-tel" value="${escAttr(c&&c.telefone)}"></div>`
+    +   `<div class="form-group"><label>E-mail</label><input class="form-input" id="cli-email" type="email" value="${escAttr(c&&c.email)}"></div>`
+    +   `<div class="form-group"><label>CPF / CNPJ</label><input class="form-input" id="cli-cpf" value="${escAttr(c&&c.cpfCnpj)}"></div>`
+    +   `<div class="form-group"><label>Cidade</label><input class="form-input" id="cli-cidade" value="${escAttr(c&&c.cidade)}"></div>`
+    +   `<div class="form-group"><label>UF</label><input class="form-input" id="cli-uf" maxlength="2" value="${escAttr(c&&c.uf)}"></div>`
+    +   `<div class="form-group full"><label>Endereço</label><input class="form-input" id="cli-end" value="${escAttr(c&&c.endereco)}"></div>`
+    +   `<div class="form-group full"><label>Observações</label><textarea class="form-input" id="cli-obs" rows="2">${escAttr(c&&c.observacoes)}</textarea></div>`
+    + `</div>`
+    + `<div class="modal-actions">`
+    +   `<button class="btn" onclick="document.getElementById('cli-modal').remove();">Cancelar</button>`
+    +   `<button class="btn btn-gold" onclick="cliSalvar('${isEdit?c.id:''}')">${isEdit?'Salvar':'Cadastrar'}</button>`
+    + `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function cliSalvar(editId) {
+  const nome    = document.getElementById('cli-nome').value.trim();
+  const tel     = document.getElementById('cli-tel').value.trim();
+  const email   = document.getElementById('cli-email').value.trim();
+  const cpf     = document.getElementById('cli-cpf').value.trim();
+  const cidade  = document.getElementById('cli-cidade').value.trim();
+  const uf      = document.getElementById('cli-uf').value.trim().toUpperCase();
+  const endereco= document.getElementById('cli-end').value.trim();
+  const obs     = document.getElementById('cli-obs').value.trim();
+  if (!nome) return smAlert('Preencha o nome.');
+
+  const payload = {
+    nome,
+    telefone: tel || null,
+    email: email || null,
+    cpf_cnpj: cpf || null,
+    cidade: cidade || null,
+    uf: uf || null,
+    endereco: endereco || null,
+    observacoes: obs || null,
+  };
+  if (editId) {
+    const { data, error } = await sb.from('clientes').update(payload).eq('id', editId).select().single();
+    if (error) return smAlert('Erro ao salvar: ' + error.message);
+    const i = clientesAll.findIndex(x => x.id === editId);
+    if (i >= 0) clientesAll[i] = toCamel(data);
+  } else {
+    payload.origem = 'manual';
+    const { data, error } = await sb.from('clientes').insert(payload).select().single();
+    if (error) return smAlert('Erro ao salvar: ' + error.message);
+    clientesAll.push(toCamel(data));
+  }
+  oficinaClientes = clientesAll.slice();
+  document.getElementById('cli-modal').remove();
+  renderClientesKpis(); renderClientes();
+}
+
+async function cliExcluir(id) {
+  const c = clientesAll.find(x => x.id === id);
+  if (!c) return;
+  if (!(await smConfirm(`Remover cliente "${c.nome}"?`))) return;
+  const { error } = await sb.from('clientes').delete().eq('id', id);
+  if (error) { smAlert('Erro: ' + error.message); return; }
+  clientesAll = clientesAll.filter(x => x.id !== id);
+  oficinaClientes = clientesAll.slice();
+  renderClientesKpis(); renderClientes();
+}
+
+async function sincronizarClientesTiny() {
+  const btn = document.getElementById('btn-cli-sync');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ Sincronizando...';
+  try {
+    let pagina = 1;
+    let total = 0;
+    let novos = 0;
+    let atualizados = 0;
+    const existsByTinyId = new Map();
+    clientesAll.forEach(c => { if (c.tinyId) existsByTinyId.set(String(c.tinyId), c); });
+
+    while (true) {
+      const res = await fetch(`${API_URL}/clientes-tiny?pagina=${pagina}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.erro || 'Erro na resposta do Tiny');
+      const lote = json.contatos || [];
+      total += lote.length;
+      for (const t of lote) {
+        const tinyId = String(t.id);
+        const payload = {
+          nome:        (t.nome || '').trim() || 'Sem nome',
+          telefone:    t.fone || t.celular || null,
+          email:       t.email || null,
+          cpf_cnpj:    t.cpfCnpj || null,
+          cidade:      t.cidade || null,
+          uf:          t.uf || null,
+          endereco:    t.endereco || null,
+          origem:      'tiny',
+          tiny_id:     tinyId,
+        };
+        const existente = existsByTinyId.get(tinyId);
+        if (existente) {
+          const { data, error } = await sb.from('clientes').update(payload).eq('id', existente.id).select().single();
+          if (!error && data) {
+            Object.assign(existente, toCamel(data));
+            atualizados++;
+          }
+        } else {
+          const { data, error } = await sb.from('clientes').insert(payload).select().single();
+          if (!error && data) {
+            clientesAll.push(toCamel(data));
+            existsByTinyId.set(tinyId, clientesAll[clientesAll.length - 1]);
+            novos++;
+          } else if (error) {
+            console.warn('[cli sync] insert falhou:', error.message);
+          }
+        }
+      }
+      if (!json.totalPaginas || pagina >= json.totalPaginas) break;
+      pagina++;
+      if (pagina > 50) break; // hard guard
+    }
+    oficinaClientes = clientesAll.slice();
+    renderClientesKpis(); renderClientes();
+    smAlert(`Sincronização concluída.\n${total} contatos lidos do Tiny.\n+${novos} novos · ${atualizados} atualizados.`);
+  } catch (e) {
+    smAlert('Erro ao sincronizar: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Sincronizar com Tiny';
+  }
+}
+
+// ══════════════════════════════════════════
+//  WHATSAPP NOTIFY (CallMeBot)
+// ══════════════════════════════════════════
+const WA_NUMBER  = '5521997507738';
+const WA_APIKEY  = '6372158';
+const WA_API_URL = 'https://api.callmebot.com/whatsapp.php';
+
+async function enviarWhatsApp(mensagem) {
+  if (!mensagem) return false;
+  try {
+    const url = `${WA_API_URL}?phone=${WA_NUMBER}&text=${encodeURIComponent(mensagem)}&apikey=${WA_APIKEY}`;
+    // CallMeBot responde texto simples; usar no-cors para evitar erro de CORS no fetch.
+    await fetch(url, { method: 'GET', mode: 'no-cors' });
+    console.log('[whatsapp] enviado:', mensagem.split('\n')[0]);
+    return true;
+  } catch (e) {
+    console.warn('[whatsapp] falhou:', e.message);
+    return false;
+  }
+}
+
+function _waHoje() { return new Date().toISOString().slice(0,10); }
+function _waKey(tipo, itemId) { return `wa-${tipo}-${itemId}-${_waHoje()}`; }
+
+function _waJaEnviado(tipo, itemId) {
+  try { return localStorage.getItem(_waKey(tipo, itemId)) === '1'; }
+  catch(e) { return false; }
+}
+function _waMarcar(tipo, itemId) {
+  try { localStorage.setItem(_waKey(tipo, itemId), '1'); } catch(e) {}
+}
+
+// Limpa chaves wa-* antigas (mantém só as do dia atual) — evita acumular lixo.
+function _waLimparAntigas() {
+  try {
+    const hojeSuf = _waHoje();
+    const remover = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('wa-') && !k.endsWith(hojeSuf)) remover.push(k);
+    }
+    remover.forEach(k => localStorage.removeItem(k));
+  } catch(e) {}
+}
+
+async function _waNotificar(tipo, itemId, msg) {
+  if (_waJaEnviado(tipo, itemId)) return;
+  const ok = await enviarWhatsApp(msg);
+  if (ok) _waMarcar(tipo, itemId);
+}
+
+// ── Disparadores por evento ──
+async function checarWhatsAppContasPagar() {
+  if (!Array.isArray(contasPagar) || !contasPagar.length) return;
+  for (const c of contasPagar) {
+    if (c.paga) continue;
+    const dias = diasAteVencimento(c.vencimento);
+    if (dias < 0) {
+      const msg = `🚨 Smart Motors — Conta VENCIDA\n\n📌 ${c.nome}\n💰 R$ ${(c.valor||0).toFixed(2).replace('.',',')}\n📅 Venceu em ${(c.vencimento||'').split('-').reverse().join('/')} (${Math.abs(dias)}d atrás)`;
+      await _waNotificar('cp-vencida', c.id, msg);
+    } else if (dias <= 3) {
+      const quando = dias === 0 ? 'HOJE' : `em ${dias} dia${dias!==1?'s':''}`;
+      const msg = `🔔 Smart Motors — Conta vencendo ${quando}\n\n📌 ${c.nome}\n💰 R$ ${(c.valor||0).toFixed(2).replace('.',',')}\n📅 Vencimento: ${(c.vencimento||'').split('-').reverse().join('/')}`;
+      await _waNotificar('cp-prox', c.id, msg);
+    }
+  }
+}
+
+async function checarWhatsAppOficinaPronto() {
+  if (!Array.isArray(oficinaOrdens) || !oficinaOrdens.length) return;
+  for (const o of oficinaOrdens) {
+    if (o.status !== 'pronto') continue;
+    const msg = `🛠️ Smart Motors — OS pronta para retirada\n\n#${o.numero} · ${o.clienteNome||'—'}\n${o.modeloScooter||''}${o.cor?(' · '+o.cor):''}\n${o.clienteTelefone?('☎ '+o.clienteTelefone):''}`;
+    await _waNotificar('of-pronto', o.id, msg);
+  }
+}
+
+async function checarWhatsAppSacVencido() {
+  if (!Array.isArray(sacCasos) || !sacCasos.length) return;
+  const hoje = _waHoje();
+  for (const c of sacCasos) {
+    if (c.status === 'resolvido') continue;
+    if (!c.proximoContato || c.proximoContato > hoje) continue;
+    const msg = `📞 Smart Motors — Caso SAC com prazo vencido\n\n#${c.numero} · ${c.clienteNome||'—'}\n${c.tipoProblema||''}${c.fornecedor?(' · '+c.fornecedor):''}\nPróximo contato: ${(c.proximoContato||'').split('-').reverse().join('/')}`;
+    await _waNotificar('sac-venc', c.id, msg);
+  }
+}
+
+async function checarWhatsAppPedidosFaturados(pedidos) {
+  if (!Array.isArray(pedidos) || !pedidos.length) return;
+  for (const p of pedidos) {
+    const sit = (p.situacao || '').toLowerCase();
+    if (sit && sit !== 'faturado') continue;
+    const id = p.id || p.numero;
+    if (!id) continue;
+    const msg = `💰 Smart Motors — Pedido faturado\n\n#${p.numero||p.id} · ${p.cliente||'—'}\nData: ${p.data||'—'}\nValor: R$ ${(parseFloat(p.valor)||0).toFixed(2).replace('.',',')}`;
+    await _waNotificar('ped-fat', id, msg);
+  }
+}
+
+async function checarWhatsAppGlobais() {
+  _waLimparAntigas();
+  try { await checarWhatsAppContasPagar(); }     catch(e) { console.warn('[wa] cp falhou:', e.message); }
+  try { await checarWhatsAppOficinaPronto(); }   catch(e) { console.warn('[wa] of falhou:', e.message); }
+  try { await checarWhatsAppSacVencido(); }      catch(e) { console.warn('[wa] sac falhou:', e.message); }
 }
 
 // ══════════════════════════════════════════
