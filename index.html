@@ -1401,6 +1401,22 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         </div>
       </div>
     </div>
+
+    <!-- Mapeamento de vendedores -->
+    <div class="section-gap">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🧑‍💼 Mapeamento de vendedores</div>
+            <div class="card-sub">Agrupe múltiplos nomes do Tiny sob um único nome real (ex: "Rafael Quiosque" + "Rafael Matriz" → "Rafael")</div>
+          </div>
+          <button class="btn btn-gold" onclick="abrirVendMapModal()" style="font-size:11px;padding:6px 12px;">+ Adicionar mapeamento</button>
+        </div>
+        <div id="admin-vend-map-list">
+          <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+        </div>
+      </div>
+    </div>
   </div>
 
     <!-- ══════════════ FINANCEIRO ══════════════ -->
@@ -2405,17 +2421,18 @@ async function _enviarParaBanco() {
 async function carregarDados() {
   console.log('[carregarDados] iniciando fetch de todas as tabelas');
   try {
-    const [c, l, cp, cf, pr, sc] = await Promise.all([
+    const [c, l, cp, cf, pr, sc, vm] = await Promise.all([
       sb.from('contas_bancarias').select('*').order('id'),
       sb.from('lancamentos').select('*'),
       sb.from('contas_pagar').select('*'),
       sb.from('custos_fixos').select('*').order('id'),
       sb.from('produtos_precos').select('*').order('id'),
       sb.from('sac_casos').select('*').order('numero', { ascending: false }),
+      sb.from('vendedores_mapeamento').select('*').order('nome_real'),
     ]);
 
     // Loga resultado (e erros explicitos) de cada tabela
-    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc]]
+    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc],['vendedores_mapeamento',vm]]
       .forEach(([n, r]) => {
         if (r.error) console.error('[carregarDados] ERRO em ' + n + ':', r.error.message, r.error);
         else console.log('[carregarDados] ' + n + ': ' + (r.data?.length || 0) + ' rows');
@@ -2428,6 +2445,8 @@ async function carregarDados() {
     custosFixos  = (!cf.error && cf.data?.length) ? cf.data.map(fromDb('custos_fixos'))    : [];
     products     = (!pr.error && pr.data?.length) ? pr.data.map(fromDb('produtos_precos')) : [];
     sacCasos     = (!sc.error && sc.data)         ? toCamelArr(sc.data)                   : [];
+    vendedoresMapeamento = (!vm.error && vm.data) ? toCamelArr(vm.data)                   : [];
+    _recalcMapaVendedores();
 
     // Seed inicial se a tabela existe mas está vazia
     const seed = async (tbl, target, seedData) => {
@@ -2891,7 +2910,8 @@ function renderDashVendedoresInline(ranking, receitaTotal, periodo) {
 function calcularRankingVendedores(pedidos) {
   var contagem = {};
   pedidos.forEach(function(pedido) {
-    var nome  = (pedido.vendedor && pedido.vendedor.nome) ? pedido.vendedor.nome : 'Sem vendedor';
+    var raw   = (pedido.vendedor && pedido.vendedor.nome) ? pedido.vendedor.nome : 'Sem vendedor';
+    var nome  = normalizarNomeVendedor(raw);
     var valor = pedido.valor || 0;
     if (!contagem[nome]) contagem[nome] = { nome: nome, totalVendas: 0, qtdPedidos: 0 };
     contagem[nome].totalVendas += valor;
@@ -3379,7 +3399,8 @@ async function gerarFechamentoMes() {
     // ── Vendas por vendedor ──
     const porVend = {};
     pedidos.forEach(ped => {
-      const nome = (ped.vendedor && ped.vendedor.nome) || 'Sem vendedor';
+      const raw  = (ped.vendedor && ped.vendedor.nome) || 'Sem vendedor';
+      const nome = normalizarNomeVendedor(raw);
       if (!porVend[nome]) porVend[nome] = { nome, qtd: 0, receita: 0 };
       porVend[nome].qtd     += 1;
       porVend[nome].receita += ped.valor || 0;
@@ -4711,7 +4732,8 @@ function renderizarRankingProdutosVendas(pedidos) {
 function renderizarRankingVendedoresVendas(pedidos) {
   var contagem = {};
   pedidos.forEach(function(pedido) {
-    var nome = (pedido.vendedor && pedido.vendedor.nome) ? pedido.vendedor.nome : 'Sem vendedor';
+    var raw  = (pedido.vendedor && pedido.vendedor.nome) ? pedido.vendedor.nome : 'Sem vendedor';
+    var nome = normalizarNomeVendedor(raw);
     if (!contagem[nome]) contagem[nome] = { nome: nome, total: 0, qtd: 0 };
     contagem[nome].total += pedido.valor || 0;
     contagem[nome].qtd   += 1;
@@ -6700,6 +6722,11 @@ async function renderAdmin() {
   // Atualiza display do código
   const codeEl = document.getElementById('admin-codigo-display');
   if (codeEl) codeEl.textContent = getAcessoCode();
+  // Mapeamento de vendedores (carrega/recarrega ao abrir o admin)
+  try {
+    await recarregarVendedoresMapeamento();
+    renderMapeamentoVendedores();
+  } catch(e) { console.warn('[renderAdmin] mapeamento vendedores falhou:', e.message); }
   const users    = await getUsers();
   const pendente = users.filter(u=>u.status==='pendente');
   const ativo    = users.filter(u=>u.status==='aprovado');
@@ -7830,6 +7857,208 @@ async function testarWhatsApp() {
   const ok = await enviarWhatsApp('⚡ Smart Motors — Teste de notificação funcionando!');
   if (btn) { btn.disabled = false; btn.textContent = '📲 Testar WhatsApp'; }
   smAlert(ok ? 'Mensagem enviada — verifique o WhatsApp.' : 'Falha ao enviar. Veja o console.');
+}
+
+// ══════════════════════════════════════════
+//  MAPEAMENTO DE VENDEDORES
+//  Permite agrupar varios "nomes do Tiny" sob um nome real unico.
+//  Ex: "Rafael Quiosque" e "Rafael Matriz" -> "Rafael" no ranking.
+// ══════════════════════════════════════════
+let vendedoresMapeamento = [];
+let _mapaVendedoresPorNomeTiny = new Map(); // chave: nome_tiny lowercase trim, valor: nome_real
+
+function _recalcMapaVendedores() {
+  _mapaVendedoresPorNomeTiny = new Map();
+  for (const m of vendedoresMapeamento) {
+    const real = (m.nomeReal || '').trim();
+    const arr = Array.isArray(m.nomesTiny) ? m.nomesTiny : [];
+    for (const nt of arr) {
+      const key = (nt || '').trim().toLowerCase();
+      if (key && real) _mapaVendedoresPorNomeTiny.set(key, real);
+    }
+  }
+}
+
+function normalizarNomeVendedor(nome) {
+  if (!nome) return nome;
+  const key = String(nome).trim().toLowerCase();
+  return _mapaVendedoresPorNomeTiny.get(key) || nome;
+}
+
+async function recarregarVendedoresMapeamento() {
+  const { data, error } = await sb.from('vendedores_mapeamento').select('*').order('nome_real');
+  if (error) { console.warn('[vend-map] erro carregar:', error.message); return; }
+  vendedoresMapeamento = toCamelArr(data || []);
+  _recalcMapaVendedores();
+}
+
+function renderMapeamentoVendedores() {
+  const el = document.getElementById('admin-vend-map-list');
+  if (!el) return;
+  if (!vendedoresMapeamento.length) {
+    el.innerHTML = '<div class="empty" style="padding:24px;font-size:11px;">Nenhum mapeamento cadastrado.<br>Clique em "+ Adicionar mapeamento" para começar.</div>';
+    return;
+  }
+  const escAttr = s => (s || '').replace(/"/g,'&quot;');
+  el.innerHTML = vendedoresMapeamento.map(m => {
+    const chips = (m.nomesTiny || []).map(n =>
+      `<span style="display:inline-flex;align-items:center;background:var(--surface3);color:var(--text2);padding:3px 9px;border-radius:10px;font-size:11px;font-weight:600;margin:2px;">${n}</span>`
+    ).join('');
+    return '<div style="display:grid;grid-template-columns:1.4fr 2.4fr auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
+      + `<div style="font-weight:700;color:var(--gold);">${m.nomeReal}</div>`
+      + `<div>${chips || '<span style="color:var(--text3);font-size:11px;">— sem nomes do Tiny associados</span>'}</div>`
+      + `<div style="display:flex;gap:5px;">`
+        + `<button class="action-btn edit-btn" onclick="abrirVendMapModal('${m.id}')">✏</button>`
+        + `<button class="action-btn del-btn" onclick="excluirVendMap('${m.id}')">✕</button>`
+      + `</div>`
+      + '</div>';
+  }).join('');
+}
+
+function abrirVendMapModal(id) {
+  const m = id ? vendedoresMapeamento.find(x => x.id === id) : null;
+  const isEdit = !!m;
+  const escAttr = s => (s || '').replace(/"/g,'&quot;');
+  const old = document.getElementById('vend-map-modal');
+  if (old) old.remove();
+  const shell = document.createElement('div');
+  shell.id = 'vend-map-modal';
+  shell.className = 'modal-overlay open';
+  shell.dataset.editId = isEdit ? m.id : '';
+  shell.dataset.nomesTiny = JSON.stringify(isEdit ? (m.nomesTiny || []) : []);
+  shell.innerHTML =
+      `<div class="modal" style="width:520px;max-width:95vw;">`
+    + `<div class="modal-title">${isEdit?'Editar mapeamento':'Novo <span>mapeamento</span>'}</div>`
+    + `<div class="form-grid">`
+    +   `<div class="form-group full"><label>Nome real <span style="color:var(--red);">*</span></label>`
+    +     `<input class="form-input" id="vm-nome-real" placeholder="Ex: Rafael" value="${escAttr(m && m.nomeReal)}">`
+    +   `</div>`
+    +   `<div class="form-group full"><label>Nomes do Tiny associados</label>`
+    +     `<div style="display:flex;gap:6px;">`
+    +       `<input class="form-input" id="vm-novo-tiny" placeholder="Ex: Rafael Quiosque" onkeydown="if(event.key==='Enter'){event.preventDefault();vmAdicionarChip();}" style="flex:1;">`
+    +       `<button class="btn" onclick="vmAdicionarChip()" type="button" style="white-space:nowrap;">+ Adicionar</button>`
+    +     `</div>`
+    +     `<div id="vm-chips" style="margin-top:10px;min-height:32px;display:flex;flex-wrap:wrap;gap:5px;"></div>`
+    +     `<div style="font-size:10px;color:var(--text3);margin-top:6px;">Tecle Enter ou clique em "+ Adicionar" para virar chip. Clique no ✕ para remover.</div>`
+    +   `</div>`
+    + `</div>`
+    + `<div class="modal-actions">`
+    +   `<button class="btn" onclick="document.getElementById('vend-map-modal').remove();">Cancelar</button>`
+    +   `<button class="btn btn-gold" onclick="salvarVendMap()">${isEdit?'Salvar':'Criar mapeamento'}</button>`
+    + `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+  vmRenderChips();
+}
+
+function vmRenderChips() {
+  const shell = document.getElementById('vend-map-modal');
+  if (!shell) return;
+  const arr = JSON.parse(shell.dataset.nomesTiny || '[]');
+  const box = document.getElementById('vm-chips');
+  if (!box) return;
+  if (!arr.length) {
+    box.innerHTML = '<span style="font-size:11px;color:var(--text3);align-self:center;">Nenhum nome adicionado ainda.</span>';
+    return;
+  }
+  box.innerHTML = arr.map((n, i) =>
+    `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface3);color:var(--text);padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;">`
+    + `<span>${n}</span>`
+    + `<button onclick="vmRemoverChip(${i})" style="background:none;border:none;color:var(--text3);font-size:13px;cursor:pointer;padding:0;line-height:1;" title="Remover">✕</button>`
+    + `</span>`
+  ).join('');
+}
+
+function vmAdicionarChip() {
+  const inp = document.getElementById('vm-novo-tiny');
+  const shell = document.getElementById('vend-map-modal');
+  if (!inp || !shell) return;
+  const novo = inp.value.trim();
+  if (!novo) return;
+  const arr = JSON.parse(shell.dataset.nomesTiny || '[]');
+  // dedup case-insensitive
+  if (arr.some(x => x.trim().toLowerCase() === novo.toLowerCase())) {
+    inp.value = '';
+    return;
+  }
+  arr.push(novo);
+  shell.dataset.nomesTiny = JSON.stringify(arr);
+  inp.value = '';
+  vmRenderChips();
+  inp.focus();
+}
+
+function vmRemoverChip(i) {
+  const shell = document.getElementById('vend-map-modal');
+  if (!shell) return;
+  const arr = JSON.parse(shell.dataset.nomesTiny || '[]');
+  arr.splice(i, 1);
+  shell.dataset.nomesTiny = JSON.stringify(arr);
+  vmRenderChips();
+}
+
+async function salvarVendMap() {
+  const shell = document.getElementById('vend-map-modal');
+  if (!shell) return;
+  const editId = shell.dataset.editId || '';
+  const nomeReal = document.getElementById('vm-nome-real').value.trim();
+  // Se o usuario digitou algo e nao apertou enter, considera no submit
+  const inp = document.getElementById('vm-novo-tiny');
+  if (inp && inp.value.trim()) vmAdicionarChip();
+  const nomesTiny = JSON.parse(shell.dataset.nomesTiny || '[]');
+
+  if (!nomeReal) return smAlert('Preencha o nome real.');
+  if (!nomesTiny.length) return smAlert('Adicione ao menos um nome do Tiny.');
+
+  // Valida que nenhum nome_tiny ja esta mapeado para outro nome_real
+  const conflitos = [];
+  for (const nt of nomesTiny) {
+    const key = nt.trim().toLowerCase();
+    for (const m of vendedoresMapeamento) {
+      if (editId && m.id === editId) continue;
+      if ((m.nomesTiny || []).some(x => x.trim().toLowerCase() === key)) {
+        conflitos.push(`"${nt}" já está em "${m.nomeReal}"`);
+      }
+    }
+  }
+  if (conflitos.length) return smAlert('Conflito de mapeamento:\n' + conflitos.join('\n'));
+
+  const payload = { nome_real: nomeReal, nomes_tiny: nomesTiny };
+  let resp;
+  if (editId) {
+    resp = await sb.from('vendedores_mapeamento').update(payload).eq('id', editId).select().single();
+  } else {
+    resp = await sb.from('vendedores_mapeamento').insert(payload).select().single();
+  }
+  if (resp.error) return smAlert('Erro ao salvar: ' + resp.error.message);
+  // Atualiza estado local
+  if (editId) {
+    const i = vendedoresMapeamento.findIndex(x => x.id === editId);
+    if (i >= 0) vendedoresMapeamento[i] = toCamel(resp.data);
+  } else {
+    vendedoresMapeamento.push(toCamel(resp.data));
+    vendedoresMapeamento.sort((a,b) => (a.nomeReal||'').localeCompare(b.nomeReal||'', 'pt-BR'));
+  }
+  _recalcMapaVendedores();
+  shell.remove();
+  renderMapeamentoVendedores();
+  // Re-renderiza rankings se as paginas estiverem ativas
+  try { if (document.getElementById('page-dashboard')?.classList.contains('active')) carregarFaturamentoDash(); } catch(e) {}
+  try { if (document.getElementById('page-vendas')?.classList.contains('active')) carregarVendasDoMes?.(); } catch(e) {}
+}
+
+async function excluirVendMap(id) {
+  const m = vendedoresMapeamento.find(x => x.id === id);
+  if (!m) return;
+  if (!(await smConfirm(`Remover mapeamento "${m.nomeReal}"?`))) return;
+  const { error } = await sb.from('vendedores_mapeamento').delete().eq('id', id);
+  if (error) { smAlert('Erro: ' + error.message); return; }
+  vendedoresMapeamento = vendedoresMapeamento.filter(x => x.id !== id);
+  _recalcMapaVendedores();
+  renderMapeamentoVendedores();
+  try { if (document.getElementById('page-dashboard')?.classList.contains('active')) carregarFaturamentoDash(); } catch(e) {}
+  try { if (document.getElementById('page-vendas')?.classList.contains('active')) carregarVendasDoMes?.(); } catch(e) {}
 }
 
 // ══════════════════════════════════════════
