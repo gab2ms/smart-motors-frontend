@@ -1346,6 +1346,17 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       </div>
     </div>
 
+    <!-- TEMP: Ferramentas de teste -->
+    <div class="card" style="padding:18px 20px;margin-bottom:20px;border:1px dashed var(--border2);">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-bottom:4px;">Ferramentas de teste (temporário)</div>
+          <div style="font-size:12px;color:var(--text2);">Dispara uma notificação de exemplo via CallMeBot para validar a integração.</div>
+        </div>
+        <button class="btn btn-gold" onclick="testarWhatsApp()" id="btn-testar-wa" style="font-size:11px;">📲 Testar WhatsApp</button>
+      </div>
+    </div>
+
     <!-- Pendentes -->
     <div class="section-gap">
       <div class="card">
@@ -7707,6 +7718,15 @@ async function checarWhatsAppGlobais() {
   try { await checarWhatsAppContasPagar(); }     catch(e) { console.warn('[wa] cp falhou:', e.message); }
   try { await checarWhatsAppOficinaPronto(); }   catch(e) { console.warn('[wa] of falhou:', e.message); }
   try { await checarWhatsAppSacVencido(); }      catch(e) { console.warn('[wa] sac falhou:', e.message); }
+}
+
+// TEMP: botao de teste em Admin > Ferramentas de teste
+async function testarWhatsApp() {
+  const btn = document.getElementById('btn-testar-wa');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
+  const ok = await enviarWhatsApp('⚡ Smart Motors — Teste de notificação funcionando!');
+  if (btn) { btn.disabled = false; btn.textContent = '📲 Testar WhatsApp'; }
+  smAlert(ok ? 'Mensagem enviada — verifique o WhatsApp.' : 'Falha ao enviar. Veja o console.');
 }
 
 // ══════════════════════════════════════════
