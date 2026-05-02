@@ -3645,7 +3645,12 @@ async function carregarFaturamentoDash() {
     var lucroBrutoAnt   = ka.receita * avgMCpct;
     var lucroLiquidoAnt = lucroBrutoAnt - custoFixoMensal;
 
-    var iniDate  = new Date(iniISO);
+    // Parse YYYY-MM-DD em local time (new Date('2026-04-01') eh UTC midnight,
+    // que no Brasil GMT-3 vira 31/03 21h e o toLocaleString mostra "marco").
+    var _ip = (iniISO || '').split('-');
+    var iniDate = _ip.length === 3
+      ? new Date(parseInt(_ip[0]), parseInt(_ip[1]) - 1, parseInt(_ip[2]))
+      : new Date();
     var mesLabel = iniDate.toLocaleString('pt-BR', {month:'long', year:'numeric'});
     dot.style.background = 'var(--green)';
     label.textContent    = 'Faturamento — ' + mesLabel;
