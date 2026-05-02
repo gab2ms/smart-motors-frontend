@@ -4956,22 +4956,29 @@ async function getUsers() {
   return (data || []).map(TABLE_MAP.usuarios.fromDb);
 }
 async function saveUser(u) {
-  // Estrategia de conflito:
-  //  - se ja temos o id, usa onConflict:'id' (update certeiro)
-  //  - senao se tem email, onConflict:'email' (cobre o admin fixo, que entra
-  //    sem id mas precisa upsert para nao dar 409 quando ja existe)
-  //  - senao (sem id, sem email) faz insert puro — usuario criado pelo Admin
-  //    sem email cai aqui na primeira gravacao
+  // Estrategia:
+  //  - com id: upsert por 'id' (PK, indice unique nao parcial — funciona)
+  //  - sem id: INSERT puro. onConflict:'email' nao funciona mais porque o
+  //    indice unique do email agora eh parcial (WHERE email IS NOT NULL)
+  //    e o PostgREST nao consegue casar conflict target em indices parciais.
+  //  - fallback de UPDATE por email so dispara se for o ADMIN_EMAIL: e o
+  //    unico caller que precisa de upsert real (atalho de login do admin
+  //    e garantirAdmin gravam o admin sempre, mesmo se ja existir).
+  //    Demais casos pre-checam unicidade — se chegou aqui com 23505 eh
+  //    bug ou race e devemos retornar erro em vez de sobrescrever.
   const row = TABLE_MAP.usuarios.toDb(u);
   let resp;
   if (u.id) {
     resp = await sb.from('usuarios').upsert(row, { onConflict: 'id' }).select().single();
-  } else if (u.email) {
-    resp = await sb.from('usuarios').upsert(row, { onConflict: 'email' }).select().single();
   } else {
     resp = await sb.from('usuarios').insert(row).select().single();
+    const isAdminUpsert = u.email && u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    if (resp.error && resp.error.code === '23505' && isAdminUpsert) {
+      console.log('[saveUser] admin ja existe — atualizando por email');
+      resp = await sb.from('usuarios').update(row).eq('email', u.email).select().single();
+    }
   }
-  if (resp.error) { console.warn('Erro saveUser:', resp.error.message); return null; }
+  if (resp.error) { console.warn('Erro saveUser:', resp.error.message, resp.error); return null; }
   const merged = TABLE_MAP.usuarios.fromDb(resp.data);
   Object.assign(u, merged);
   return merged;
