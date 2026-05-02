@@ -4795,7 +4795,7 @@ const TODOS_MODULOS = [
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
-  vendedor:    ['dashboard', 'pedidos', 'simulador'],
+  vendedor:    ['dashboard', 'pedidos', 'simulador', 'oficina', 'sac'],
   operacional: ['dashboard', 'precos', 'estoque', 'simulador', 'vendas', 'pedidos', 'oficina', 'sac', 'clientes', 'financeiro', 'contas-pagar', 'custos'],
   customizado: null, // usa user.modulosPermitidos
 };
@@ -6784,7 +6784,7 @@ function _abrirAcessoModal({ mode, user }) {
     +   '<div class="form-group full"><label>Perfil</label>'
     +     '<select class="form-input" id="acm-perfil" onchange="document.getElementById(\'acm-modulos-wrap\').style.display=this.value===\'customizado\'?\'block\':\'none\';">'
     +       '<option value="admin"' + (perfilSel==='admin'?' selected':'') + '>Admin — todos os módulos</option>'
-    +       '<option value="vendedor"' + (perfilSel==='vendedor'?' selected':'') + '>Vendedor — Dashboard, Pedidos, Simulador</option>'
+    +       '<option value="vendedor"' + (perfilSel==='vendedor'?' selected':'') + '>Vendedor — Dashboard, Pedidos, Simulador, Oficina, SAC</option>'
     +       '<option value="operacional"' + (perfilSel==='operacional'?' selected':'') + '>Operacional — tudo menos Admin</option>'
     +       '<option value="customizado"' + (perfilSel==='customizado'?' selected':'') + '>Customizado — escolher módulos</option>'
     +     '</select>'
