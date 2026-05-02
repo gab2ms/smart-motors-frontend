@@ -7787,13 +7787,30 @@ async function checarWhatsAppSacVencido() {
   }
 }
 
+// Converte data do pedido (DD/MM/YYYY do Tiny) para YYYY-MM-DD comparavel.
+function _waPedidoDataISO(p) {
+  const s = (p.data || '').trim();
+  if (!s) return '';
+  if (s.includes('-') && s.length >= 10) return s.slice(0, 10); // ja ISO
+  const d = s.split('/');
+  if (d.length !== 3) return '';
+  return `${d[2]}-${d[1].padStart(2,'0')}-${d[0].padStart(2,'0')}`;
+}
+
 async function checarWhatsAppPedidosFaturados(pedidos) {
   if (!Array.isArray(pedidos) || !pedidos.length) return;
+  // So notifica pedidos com data >= hoje. Pedidos antigos nunca disparam,
+  // independente de qual usuario abriu o sistema (o dedup por localStorage
+  // por usuario fazia novo usuario receber notificacao de tudo o que ja
+  // existia).
+  const hoje = _waHoje();
   for (const p of pedidos) {
     const sit = (p.situacao || '').toLowerCase();
     if (sit && sit !== 'faturado') continue;
     const id = p.id || p.numero;
     if (!id) continue;
+    const dataISO = _waPedidoDataISO(p);
+    if (!dataISO || dataISO < hoje) continue;
     const msg = `💰 Smart Motors — Pedido faturado\n\n#${p.numero||p.id} · ${p.cliente||'—'}\nData: ${p.data||'—'}\nValor: R$ ${(parseFloat(p.valor)||0).toFixed(2).replace('.',',')}`;
     await _waNotificar('ped-fat', id, msg);
   }
