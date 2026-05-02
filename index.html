@@ -1021,7 +1021,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         <span style="color:var(--text3);font-size:11px;">até</span>
         <input type="date" id="dash-fat-fim" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;" onchange="onDashDateChange()">
         <button class="btn" onclick="abrirBuilder()" style="font-size:11px;padding:6px 12px;">⚙ Personalizar</button>
-        <button class="btn btn-gold" onclick="carregarFaturamentoDash()" style="font-size:11px;padding:6px 14px;">⚡ Atualizar</button>
+        <button class="btn btn-gold" onclick="carregarFaturamentoDash(true)" style="font-size:11px;padding:6px 14px;" title="Ignora cache (30min) e busca direto no Tiny">⚡ Atualizar</button>
         <button class="btn" onclick="gerarFechamentoMes()" style="font-size:11px;padding:6px 12px;" title="Exporta DRE + planilhas detalhadas em xlsx">📊 Fechar Mês</button>
       </div>
     </div>
@@ -2958,10 +2958,11 @@ function renderizarRankingVendedores(ranking) {
   el.innerHTML = rows;
 }
 
-function buscarPedidosCompletos(dataInicial, dataFinal) {
+function buscarPedidosCompletos(dataInicial, dataFinal, forcar) {
   var url = API_URL + '/pedidos-completos'
     + '?dataInicial=' + encodeURIComponent(dataInicial)
-    + '&dataFinal='   + encodeURIComponent(dataFinal);
+    + '&dataFinal='   + encodeURIComponent(dataFinal)
+    + (forcar ? '&forcar=true' : '');
   console.log('[pedidos-completos] GET', url);
   return fetch(url)
     .then(function(r){
@@ -3613,7 +3614,7 @@ async function gerarFechamentoMes() {
   }
 }
 
-async function carregarFaturamentoDash() {
+async function carregarFaturamentoDash(forcar) {
   var dot   = document.getElementById('dash-fat-dot');
   var label = document.getElementById('dash-fat-label');
   var kpis  = document.getElementById('dash-fat-kpis');
@@ -3639,8 +3640,8 @@ async function carregarFaturamentoDash() {
     // Período atual + anterior em paralelo
     var anterior = calcPeriodoAnterior(iniISO, fimISO);
     var resultados = await Promise.all([
-      buscarPedidosCompletos(fmtDate(iniISO), fmtDate(fimISO)),
-      buscarPedidosCompletos(fmtDate(anterior.ini), fmtDate(anterior.fim)),
+      buscarPedidosCompletos(fmtDate(iniISO), fmtDate(fimISO), forcar),
+      buscarPedidosCompletos(fmtDate(anterior.ini), fmtDate(anterior.fim), forcar),
     ]);
     var pedidos    = resultados[0];
     var pedidosAnt = resultados[1];
