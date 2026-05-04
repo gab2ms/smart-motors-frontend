@@ -7066,6 +7066,7 @@ function renderOficina() {
       + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
       + `<div style="display:flex;gap:5px;">`
         + (next ? `<button class="btn btn-gold" onclick="ofAvancarStatus('${o.id}')" style="font-size:10px;padding:5px 10px;" title="Avançar para ${nextLabel}">→ ${nextLabel}</button>` : '')
+        + `<button class="action-btn" onclick="ofImprimir('${o.id}')" title="Imprimir OS (A5)">🖨️</button>`
         + `<button class="action-btn edit-btn" onclick="abrirOfModal('${o.id}')">✏</button>`
         + `<button class="action-btn del-btn" onclick="ofExcluir('${o.id}')">✕</button>`
       + `</div>`
@@ -7096,6 +7097,140 @@ async function ofExcluir(id) {
   if (error) { smAlert('Erro: ' + error.message); return; }
   oficinaOrdens = oficinaOrdens.filter(x => x.id !== id);
   renderOficinaKpis(); renderOficina();
+}
+
+function ofImprimir(id) {
+  const o = oficinaOrdens.find(x => x.id === id);
+  if (!o) { smAlert('OS não encontrada.'); return; }
+  const cliente = (o.clienteId && clientesAll) ? clientesAll.find(c => c.id === o.clienteId) : null;
+  const cpf = (cliente && (cliente.cpfCnpj || cliente.cpf)) || '';
+  const esc = s => String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const fmtData = iso => {
+    if (!iso) return '—';
+    const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? (m[3]+'/'+m[2]+'/'+m[1]) : iso;
+  };
+  const valorStr = (o.valorServico || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+  const stMap = { aguardando:'Aguardando', em_andamento:'Em andamento', pronto:'Pronto', entregue:'Entregue' };
+  const statusLabel = stMap[o.status] || (o.status || '—');
+  const numeroStr = String(o.numero || '').padStart(3, '0');
+  const agora = new Date();
+  const dd = String(agora.getDate()).padStart(2,'0');
+  const mm = String(agora.getMonth()+1).padStart(2,'0');
+  const yy = agora.getFullYear();
+  const hh = String(agora.getHours()).padStart(2,'0');
+  const mi = String(agora.getMinutes()).padStart(2,'0');
+  const impressoEm = `${dd}/${mm}/${yy} ${hh}:${mi}`;
+
+  const linhasAnotacao = Array.from({length:9}).map(() =>
+    '<div class="rule-line"></div>').join('');
+
+  const html = `<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<title>OS #${esc(numeroStr)} — Smart Motors</title>
+<style>
+  @page { size: A5 portrait; margin: 8mm; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:#fff; color:#111; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 10.5pt; line-height: 1.35; }
+  .sheet { width: 100%; }
+  .header { display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom: 2px solid #111; padding-bottom: 6px; margin-bottom: 8px; }
+  .brand { display:flex; align-items:center; gap:8px; }
+  .brand-logo { width: 28px; height: 36px; }
+  .brand-name { font-size: 11pt; font-weight: 800; letter-spacing: 0.4px; }
+  .brand-name span { color:#b8860b; }
+  .os-num { font-size: 34pt; font-weight: 900; line-height:1; letter-spacing: -0.5px; }
+  .os-num small { font-size: 11pt; font-weight: 700; color:#666; letter-spacing:0; }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1.5px solid #111; border-radius: 3px; margin-bottom: 6px; }
+  .grid2 .col { padding: 6px 8px; }
+  .grid2 .col + .col { border-left: 1.5px solid #111; }
+  .row4 { display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; border: 1.5px solid #111; border-radius: 3px; margin-bottom: 6px; }
+  .row4 .cell { padding: 5px 8px; }
+  .row4 .cell + .cell { border-left: 1.5px solid #111; }
+  .lbl { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color:#555; margin-bottom: 1px; }
+  .val { font-size: 11pt; font-weight: 600; word-break: break-word; }
+  .val.big { font-size: 12pt; font-weight: 800; }
+  .block { border: 1.5px solid #111; border-radius: 3px; padding: 6px 8px; margin-bottom: 6px; }
+  .block.shaded { background: #ececec; }
+  .block .lbl { margin-bottom: 3px; }
+  .block .body { font-size: 11pt; min-height: 18px; white-space: pre-wrap; }
+  .notes { border: 1.5px solid #111; border-radius: 3px; padding: 6px 8px 4px; margin-bottom: 6px; }
+  .notes .lbl { margin-bottom: 6px; }
+  .rule-line { border-bottom: 1px solid #888; height: 18px; }
+  .footer { display:flex; justify-content:space-between; align-items:center; font-size: 8pt; color:#666; border-top: 1px solid #999; padding-top: 4px; margin-top: 4px; }
+  .footer .center { flex:1; text-align:center; font-weight: 700; color:#333; letter-spacing: 0.5px; }
+  .status-pill { display:inline-block; padding: 1px 8px; border:1.2px solid #111; border-radius: 999px; font-weight:700; font-size: 10pt; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="header">
+      <div class="brand">
+        <svg class="brand-logo" viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M24 2L4 28h14l-4 20L36 22H22L26 2z" stroke="#b8860b" stroke-width="2.5" stroke-linejoin="round" fill="#f5c518"/>
+        </svg>
+        <div class="brand-name">Smart <span>Motors</span></div>
+      </div>
+      <div class="os-num"><small>OS</small> #${esc(numeroStr)}</div>
+    </div>
+
+    <div class="grid2">
+      <div class="col">
+        <div class="lbl">Cliente</div>
+        <div class="val big">${esc(o.clienteNome) || '—'}</div>
+        <div style="margin-top:4px;"><span class="lbl" style="display:inline;">Telefone:</span> <span class="val">${esc(o.clienteTelefone) || '—'}</span></div>
+        <div style="margin-top:2px;"><span class="lbl" style="display:inline;">CPF/CNPJ:</span> <span class="val">${esc(cpf) || '—'}</span></div>
+      </div>
+      <div class="col">
+        <div class="lbl">Scooter</div>
+        <div class="val big">${esc(o.modeloScooter) || '—'}</div>
+        <div style="margin-top:4px;"><span class="lbl" style="display:inline;">Cor:</span> <span class="val">${esc(o.cor) || '—'}</span></div>
+        <div style="margin-top:2px;"><span class="lbl" style="display:inline;">Chassi:</span> <span class="val">${esc(o.chassi) || '—'}</span></div>
+      </div>
+    </div>
+
+    <div class="row4">
+      <div class="cell"><div class="lbl">Entrada</div><div class="val">${esc(fmtData(o.dataEntrada))}</div></div>
+      <div class="cell"><div class="lbl">Previsão</div><div class="val">${esc(fmtData(o.dataPrevisao))}</div></div>
+      <div class="cell"><div class="lbl">Valor serviço</div><div class="val">${esc(valorStr)}</div></div>
+      <div class="cell"><div class="lbl">Status</div><div class="val"><span class="status-pill">${esc(statusLabel)}</span></div></div>
+    </div>
+
+    <div class="block shaded">
+      <div class="lbl">Problema relatado</div>
+      <div class="body">${esc(o.problemaRelatado) || '—'}</div>
+    </div>
+
+    <div class="block">
+      <div class="lbl">Itens deixados</div>
+      <div class="body">${esc(o.itensDeixados) || '—'}</div>
+    </div>
+
+    <div class="notes">
+      <div class="lbl">Anotações do mecânico (diagnóstico, peças, observações)</div>
+      ${linhasAnotacao}
+    </div>
+
+    <div class="footer">
+      <div>Impresso em ${esc(impressoEm)}</div>
+      <div class="center">SMART MOTORS</div>
+      <div>OS #${esc(numeroStr)}</div>
+    </div>
+  </div>
+  <script>
+    window.addEventListener('load', function(){
+      setTimeout(function(){ try { window.focus(); window.print(); } catch(e){} }, 250);
+    });
+  <\/script>
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { smAlert('Permita pop-ups para imprimir a OS.'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
 }
 
 function abrirOfModal(id) {
