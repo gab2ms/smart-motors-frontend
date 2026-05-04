@@ -4828,7 +4828,7 @@ const TODOS_MODULOS = [
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
-  vendedor:    ['dashboard', 'pedidos', 'simulador', 'oficina', 'sac'],
+  vendedor:    ['dashboard', 'pedidos', 'simulador', 'oficina', 'sac', 'clientes'],
   operacional: ['dashboard', 'precos', 'estoque', 'simulador', 'vendas', 'pedidos', 'oficina', 'sac', 'clientes', 'financeiro', 'contas-pagar', 'custos'],
   customizado: null, // usa user.modulosPermitidos
 };
@@ -6822,7 +6822,7 @@ function _abrirAcessoModal({ mode, user }) {
     +   '<div class="form-group full"><label>Perfil</label>'
     +     '<select class="form-input" id="acm-perfil" onchange="document.getElementById(\'acm-modulos-wrap\').style.display=this.value===\'customizado\'?\'block\':\'none\';">'
     +       '<option value="admin"' + (perfilSel==='admin'?' selected':'') + '>Admin — todos os módulos</option>'
-    +       '<option value="vendedor"' + (perfilSel==='vendedor'?' selected':'') + '>Vendedor — Dashboard, Pedidos, Simulador, Oficina, SAC</option>'
+    +       '<option value="vendedor"' + (perfilSel==='vendedor'?' selected':'') + '>Vendedor — Dashboard, Pedidos, Simulador, Oficina, SAC, Clientes</option>'
     +       '<option value="operacional"' + (perfilSel==='operacional'?' selected':'') + '>Operacional — tudo menos Admin</option>'
     +       '<option value="customizado"' + (perfilSel==='customizado'?' selected':'') + '>Customizado — escolher módulos</option>'
     +     '</select>'
@@ -7534,6 +7534,9 @@ function renderClientes() {
   const el  = document.getElementById('cli-lista');
   const sub = document.getElementById('cli-sub');
   if (!el) return;
+  let _u = null;
+  try { _u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
+  const podeDeletar = !(_u && _u.perfil === 'vendedor');
   const fO = document.getElementById('cli-filtro-origem')?.value || '';
   const q  = (document.getElementById('cli-busca')?.value || '').toLowerCase();
   let lista = clientesAll.slice();
@@ -7566,7 +7569,7 @@ function renderClientes() {
       + `<div>${badge}</div>`
       + `<div style="display:flex;gap:5px;">`
         + `<button class="action-btn edit-btn" onclick="abrirCliModal('${c.id}')">✏</button>`
-        + `<button class="action-btn del-btn" onclick="cliExcluir('${c.id}')">✕</button>`
+        + (podeDeletar ? `<button class="action-btn del-btn" onclick="cliExcluir('${c.id}')">✕</button>` : '')
       + `</div>`
       + '</div>';
   }).join('');
@@ -7641,6 +7644,9 @@ async function cliSalvar(editId) {
 }
 
 async function cliExcluir(id) {
+  let _u = null;
+  try { _u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
+  if (_u && _u.perfil === 'vendedor') { smAlert('Sem permissão para remover clientes.'); return; }
   const c = clientesAll.find(x => x.id === id);
   if (!c) return;
   if (!(await smConfirm(`Remover cliente "${c.nome}"?`))) return;
