@@ -6090,6 +6090,9 @@ function openLanModal(tipo) {
   document.getElementById('lan-obs').value = '';
   setLanTipo(tipo||'entrada');
   populateLanConta();
+  // Pré-preenche conta se há filtro de conta específico ativo
+  const contaFiltro = document.getElementById('fin-filtro-conta')?.value || '';
+  if (contaFiltro) document.getElementById('lan-conta').value = contaFiltro;
   document.getElementById('lan-modal').classList.add('open');
 }
 
