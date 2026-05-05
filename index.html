@@ -5479,26 +5479,41 @@ function renderEmprestimoFin() {
 }
 
 async function marcarParcelaPaga(parcelaId) {
-  if (!parcelaId) return;
-  if (!(await smConfirm('Marcar esta parcela como paga?'))) return;
+  console.log('[mpp] called', { parcelaId, type: typeof parcelaId });
+  if (!parcelaId) { console.warn('[mpp] parcelaId vazio — abortando'); return; }
+  const ok = await smConfirm('Marcar esta parcela como paga?');
+  console.log('[mpp] confirm =', ok);
+  if (!ok) return;
   const p = emprestimo.pagamentos.find(x => x.id === parcelaId);
-  if (!p) return;
+  console.log('[mpp] find local =', p);
+  if (!p) { console.warn('[mpp] parcela nao encontrada no array local'); return; }
   // Otimista: atualiza UI
   p.status = 'Pago';
   p.pago = p.valor;
   renderEmprestimoFin();
-  // Persiste
-  const { error } = await sb.from('emprestimo_parcelas')
+  // Persiste — INSTRUMENTADO com .select() pra revelar rows afetadas
+  console.log('[mpp] enviando update id=' + parcelaId + ' valor_pago=' + p.valor);
+  const resp = await sb.from('emprestimo_parcelas')
     .update({ status: 'pago', valor_pago: p.valor })
-    .eq('id', parcelaId);
+    .eq('id', parcelaId)
+    .select();
+  console.log('[mpp] resposta completa:', resp);
+  const { data, error } = resp;
   if (error) {
-    console.error('[marcarParcelaPaga] erro:', error.message);
+    console.error('[mpp] erro do supabase:', error);
     smAlert('Erro ao salvar: ' + error.message);
-    // Reverte
-    p.status = 'Em Aberto';
-    p.pago = 0;
+    p.status = 'Em Aberto'; p.pago = 0;
     renderEmprestimoFin();
+    return;
   }
+  if (!data || data.length === 0) {
+    console.error('[mpp] update retornou 0 linhas — WHERE nao bateu ou bloqueio');
+    smAlert('Update nao afetou nenhuma linha. Veja o console.');
+    p.status = 'Em Aberto'; p.pago = 0;
+    renderEmprestimoFin();
+    return;
+  }
+  console.log('[mpp] sucesso — linhas atualizadas:', data);
 }
 
 // ════════════════════════════════════════
