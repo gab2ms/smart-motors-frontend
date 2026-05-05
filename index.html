@@ -1496,7 +1496,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         <select class="search-input" id="fin-filtro-cat" onchange="aplicarFiltrosLancamentos()" style="max-width:180px;">
           <option value="">Todas categorias</option>
         </select>
-        <select class="search-input" id="fin-filtro-conta" onchange="aplicarFiltrosLancamentos()" style="max-width:180px;">
+        <select class="search-input" id="fin-filtro-conta" onchange="aplicarFiltrosLancamentos();renderContas();" style="max-width:180px;">
           <option value="">Todas as contas</option>
         </select>
         <input type="text" class="search-input" id="fin-search" placeholder="🔍 Buscar descrição..." oninput="aplicarFiltrosLancamentos()">
@@ -5684,21 +5684,22 @@ function renderContas() {
   if (!grid) return;
 
   const totalCaixa = contas.reduce((s,c) => s+c.saldo, 0);
+  const contaSel = document.getElementById('fin-filtro-conta')?.value || '';
 
-  grid.innerHTML = contas.map((c,i) => `
-    <div class="conta-card" style="position:relative;">
-      <div onclick="selecionarConta(${i})" style="cursor:pointer;">
-        <div class="conta-nome">${c.nome}</div>
-        <div class="conta-saldo" style="color:${c.saldo>=0?'var(--green)':'var(--red)'};">${fmt(c.saldo)}</div>
-        <div class="conta-tipo">${c.tipo}</div>
-      </div>
+  grid.innerHTML = contas.map((c,i) => {
+    const sel = contaSel && contaSel === c.nome;
+    return `
+    <div class="conta-card${sel?' selected':''}" style="position:relative;" onclick="selecionarConta(${i})" title="Clique para filtrar lançamentos por esta conta">
+      <div class="conta-nome">${c.nome}</div>
+      <div class="conta-saldo" style="color:${c.saldo>=0?'var(--green)':'var(--red)'};">${fmt(c.saldo)}</div>
+      <div class="conta-tipo">${c.tipo}</div>
       <div style="display:flex;gap:5px;margin-top:10px;">
-        <button class="action-btn edit-btn" onclick="editarSaldoConta(${i})" style="font-size:10px;flex:1;">✏ Editar saldo</button>
-        <button class="action-btn" onclick="editarNomeConta(${i})" style="font-size:10px;flex:1;">⚙ Config</button>
+        <button class="action-btn edit-btn" onclick="event.stopPropagation();editarSaldoConta(${i})" style="font-size:10px;flex:1;">✏ Editar saldo</button>
+        <button class="action-btn" onclick="event.stopPropagation();editarNomeConta(${i})" style="font-size:10px;flex:1;">⚙ Config</button>
       </div>
-    </div>
-  `).join('') + `
-    <div class="conta-card" style="border-color:var(--gold);background:var(--gold-dim);">
+    </div>`;
+  }).join('') + `
+    <div class="conta-card${!contaSel?' selected':''}" onclick="selecionarTotal()" title="Mostrar todas as contas">
       <div class="conta-nome" style="color:var(--gold);">Total do caixa</div>
       <div class="conta-saldo" style="color:${totalCaixa>=0?'var(--gold)':'var(--red)'};">${fmt(totalCaixa)}</div>
       <div class="conta-tipo">Todas as contas</div>
@@ -5707,8 +5708,21 @@ function renderContas() {
 }
 
 function selecionarConta(idx) {
-  document.getElementById('fin-filtro-tipo').value = '';
-  renderLancamentos(contas[idx].nome);
+  const dd = document.getElementById('fin-filtro-conta');
+  if (!dd) return;
+  const nome = contas[idx].nome;
+  dd.value = (dd.value === nome) ? '' : nome;
+  aplicarFiltrosLancamentos();
+  renderContas();
+}
+
+function selecionarTotal() {
+  const dd = document.getElementById('fin-filtro-conta');
+  if (!dd) return;
+  if (dd.value === '') return;
+  dd.value = '';
+  aplicarFiltrosLancamentos();
+  renderContas();
 }
 
 function renderFinKpis() {
