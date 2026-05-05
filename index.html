@@ -1513,7 +1513,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         </div>
       </div>
       <div id="fin-lan-list">
-        <div class="lancamento-row" style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;background:none;border-bottom:1px solid var(--border);">
+        <div id="fin-lan-header" class="lancamento-row" style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;background:none;border-bottom:1px solid var(--border);">
           <span>Data</span><span>Descrição</span><span>Categoria</span><span>Conta</span><span>Valor</span><span>Ações</span>
         </div>
         <div id="fin-lan-tbody"></div>
@@ -5923,6 +5923,35 @@ function filtrarLancamentos() {
 
 const FIN_PAGE_SIZE = 20;
 let finPaginaAtual = 1;
+let finSort = { col: 'data', dir: 'desc' };
+
+function finOrdenarPor(col) {
+  if (col === 'acoes') return;
+  if (finSort.col === col) {
+    finSort.dir = finSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    finSort = { col, dir: 'asc' };
+  }
+  renderLancamentos();
+}
+
+function renderFinHeader() {
+  const el = document.getElementById('fin-lan-header');
+  if (!el) return;
+  const cols = [
+    { key: 'data',      label: 'Data' },
+    { key: 'descricao', label: 'Descrição' },
+    { key: 'categoria', label: 'Categoria' },
+    { key: 'conta',     label: 'Conta' },
+    { key: 'valor',     label: 'Valor' },
+  ];
+  el.innerHTML = cols.map(c => {
+    const ativo = finSort.col === c.key;
+    const ind = ativo ? (finSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+    const cor = ativo ? 'color:var(--gold);' : '';
+    return `<span onclick="finOrdenarPor('${c.key}')" style="cursor:pointer;user-select:none;${cor}" title="Ordenar por ${c.label}">${c.label}${ind}</span>`;
+  }).join('') + '<span>Ações</span>';
+}
 
 function finRangePadrao() {
   const toISO = d => d.toISOString().split('T')[0];
@@ -5977,23 +6006,30 @@ function renderBadgeFiltroData() {
     + '</span>';
 }
 
-function renderLancamentos(contaFiltro) {
-  const q    = (document.getElementById('fin-search')?.value||'').toLowerCase();
-  const tipo = document.getElementById('fin-filtro-tipo')?.value||'';
-  const cat  = document.getElementById('fin-filtro-cat')?.value||'';
-  const ini  = document.getElementById('fin-data-ini')?.value||'';
-  const fim  = document.getElementById('fin-data-fim')?.value||'';
+function renderLancamentos() {
+  const q     = (document.getElementById('fin-search')?.value||'').toLowerCase();
+  const tipo  = document.getElementById('fin-filtro-tipo')?.value||'';
+  const cat   = document.getElementById('fin-filtro-cat')?.value||'';
+  const conta = document.getElementById('fin-filtro-conta')?.value||'';
+  const ini   = document.getElementById('fin-data-ini')?.value||'';
+  const fim   = document.getElementById('fin-data-fim')?.value||'';
 
   renderBadgeFiltroData();
 
   let lista = filtrarPorData(lancamentos, ini, fim);
-  if (tipo)        lista = lista.filter(l=>l.tipo===tipo);
-  if (cat)         lista = lista.filter(l=>l.categoria===cat);
-  if (contaFiltro) lista = lista.filter(l=>l.conta===contaFiltro);
-  if (q)           lista = lista.filter(l=>(l.descricao||'').toLowerCase().includes(q)||(l.categoria||'').toLowerCase().includes(q));
+  if (tipo)  lista = lista.filter(l=>l.tipo===tipo);
+  if (cat)   lista = lista.filter(l=>l.categoria===cat);
+  if (conta) lista = lista.filter(l=>l.conta===conta);
+  if (q)     lista = lista.filter(l=>(l.descricao||'').toLowerCase().includes(q)||(l.categoria||'').toLowerCase().includes(q));
 
-  // Sort by date desc
-  lista = [...lista].sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  // Sort por estado finSort
+  const col = finSort.col, dir = finSort.dir === 'asc' ? 1 : -1;
+  lista = [...lista].sort((a,b) => {
+    if (col === 'valor') return ((a.valor||0) - (b.valor||0)) * dir;
+    if (col === 'data')  return ((a.data||'').localeCompare(b.data||'')) * dir;
+    return ((a[col]||'').localeCompare(b[col]||'', 'pt-BR', {sensitivity:'base'})) * dir;
+  });
+  renderFinHeader();
 
   document.getElementById('fin-lan-count').textContent =
     `${lista.length} lançamento${lista.length!==1?'s':''} · Entradas: ${fmt(lista.filter(l=>l.tipo==='entrada').reduce((s,l)=>s+l.valor,0))} · Saídas: ${fmt(lista.filter(l=>l.tipo==='saida').reduce((s,l)=>s+l.valor,0))}`;
