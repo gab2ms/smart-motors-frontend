@@ -2414,7 +2414,7 @@ async function _enviarParaBanco() {
 async function carregarDados() {
   console.log('[carregarDados] iniciando fetch de todas as tabelas');
   try {
-    const [c, l, cp, cf, pr, sc, vm] = await Promise.all([
+    const [c, l, cp, cf, pr, sc, vm, oo] = await Promise.all([
       sb.from('contas_bancarias').select('*').order('id'),
       sb.from('lancamentos').select('*'),
       sb.from('contas_pagar').select('*'),
@@ -2422,10 +2422,11 @@ async function carregarDados() {
       sb.from('produtos_precos').select('*').order('id'),
       sb.from('sac_casos').select('*').order('numero', { ascending: false }),
       sb.from('vendedores_mapeamento').select('*').order('nome_real'),
+      sb.from('oficina_ordens').select('*').order('numero', { ascending: false }),
     ]);
 
     // Loga resultado (e erros explicitos) de cada tabela
-    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc],['vendedores_mapeamento',vm]]
+    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc],['vendedores_mapeamento',vm],['oficina_ordens',oo]]
       .forEach(([n, r]) => {
         if (r.error) console.error('[carregarDados] ERRO em ' + n + ':', r.error.message, r.error);
         else console.log('[carregarDados] ' + n + ': ' + (r.data?.length || 0) + ' rows');
@@ -2439,6 +2440,7 @@ async function carregarDados() {
     products     = (!pr.error && pr.data?.length) ? pr.data.map(fromDb('produtos_precos')) : [];
     sacCasos     = (!sc.error && sc.data)         ? toCamelArr(sc.data)                   : [];
     vendedoresMapeamento = (!vm.error && vm.data) ? toCamelArr(vm.data)                   : [];
+    oficinaOrdens = (!oo.error && oo.data)        ? toCamelArr(oo.data)                   : [];
     _recalcMapaVendedores();
 
     // Seed inicial se a tabela existe mas está vazia
@@ -3224,12 +3226,13 @@ function _pedidoProdutoLabel(itens) {
     return v > 0;
   });
   if (!validos.length) return '—';
-  const nome = (it => (
+  const nomeRaw = (it => (
     it.descricao
     || (it.item && it.item.descricao)
     || it.produto
     || ''
   ).trim())(validos[0]) || 'Sem nome';
+  const nome = escHtml(nomeRaw);
   if (validos.length === 1) return nome;
   const extras = validos.length - 1;
   return nome + ' <span style="color:var(--text3);font-weight:500;">+ ' + extras + ' iten' + (extras !== 1 ? 's' : '') + '</span>';
@@ -3251,7 +3254,7 @@ function renderDashPedidos(pedidos) {
     <tr>
       <td class="td-mono" style="color:var(--gold);font-weight:700;">#${p.numero || p.id}</td>
       <td class="td-mono">${p.data||'—'}</td>
-      <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.cliente || '—'}</td>
+      <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(p.cliente) || '—'}</td>
       <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_pedidoProdutoLabel(p.itens)}</td>
       <td class="td-mono" style="font-weight:700;color:var(--green);">${fmt(p.valor)}</td>
     </tr>
@@ -3775,8 +3778,8 @@ function renderPrecos(){
   document.getElementById('precos-count').textContent=`${filtered.length} produto${filtered.length!==1?'s':''} encontrado${filtered.length!==1?'s':''}`;
   document.getElementById('precos-table').innerHTML=filtered.length?filtered.map(p=>`
     <tr>
-      <td class="td-model">${p.modelo}</td>
-      <td><span class="td-supplier">${p.fornecedor}</span></td>
+      <td class="td-model">${escHtml(p.modelo)}</td>
+      <td><span class="td-supplier">${escHtml(p.fornecedor)}</span></td>
       <td class="td-mono">${fmt(p.custo)}</td>
       <td class="td-mono">${fmt(ct(p))}</td>
       <td class="td-mono" style="font-weight:700;">${fmt(p.venda)}</td>
@@ -3795,7 +3798,7 @@ function renderPrecos(){
 // ══════════════════════════════════════════
 function openEdit(i){
   const p=products[i];
-  document.getElementById('modal-title').innerHTML=`Editar — <span>${p.modelo}</span>`;
+  document.getElementById('modal-title').innerHTML=`Editar — <span>${escHtml(p.modelo)}</span>`;
   document.getElementById('edit-idx').value=i;
   document.getElementById('edit-modelo').value=p.modelo;
   document.getElementById('edit-fornecedor').value=p.fornecedor;
@@ -4151,7 +4154,7 @@ function renderPedidosTiny() {
     <tr>
       <td class="td-mono" style="color:var(--gold);font-weight:700;">#${p.numero||p.id}</td>
       <td class="td-mono">${p.data||'—'}</td>
-      <td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${p.cliente||''}">${p.cliente||'—'}</td>
+      <td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(p.cliente)}">${escHtml(p.cliente) || '—'}</td>
       <td class="td-mono">${fmt(p.totalProdutos)}</td>
       <td class="td-mono" style="color:var(--text3);">${fmt(p.valorFrete)}</td>
       <td class="td-mono" style="font-weight:700;color:var(--green);">${fmt(p.valor)}</td>
@@ -4182,7 +4185,7 @@ function renderCustos(){
   document.getElementById('custo-por-venda').textContent=fmt(tot/vendasMesInput);
   document.getElementById('custos-lista').innerHTML=custosFixos.map((c,i)=>`
     <div class="custo-row">
-      <span class="custo-name">${c.nome}</span>
+      <span class="custo-name">${escHtml(c.nome)}</span>
       <div style="display:flex;align-items:center;gap:6px;">
         <span class="custo-val">${fmt(c.valor)}</span>
         <button class="action-btn edit-btn" onclick="editCusto(${i})" style="padding:3px 8px;font-size:9px;" title="Editar">✏</button>
@@ -4433,8 +4436,8 @@ function filtrarEstoque() {
     const idStr     = encodeURIComponent(p.id.toString());
     const nomeStr   = encodeURIComponent(p.nome);
     return `<tr>
-      <td class="td-model" style="max-width:220px;white-space:normal;line-height:1.4;cursor:pointer;" onclick="openPricingModal(decodeURIComponent('${idStr}'),decodeURIComponent('${nomeStr}'),${p.precoCusto},${p.preco},${p.estoque})">${p.nome}</td>
-      <td><span class="td-supplier">${p.codigo || '—'}</span></td>
+      <td class="td-model" style="max-width:220px;white-space:normal;line-height:1.4;cursor:pointer;" onclick="openPricingModal(decodeURIComponent('${idStr}'),decodeURIComponent('${nomeStr}'),${p.precoCusto},${p.preco},${p.estoque})">${escHtml(p.nome)}</td>
+      <td><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
       <td>${sitBadge}</td>
       <td class="td-mono" style="font-weight:700;">${fmt(p.preco)}</td>
       <td class="td-mono" style="color:var(--text3);">${p.precoCusto > 0 ? fmt(p.precoCusto) : '—'}</td>
@@ -4732,7 +4735,7 @@ function renderizarRankingProdutosVendas(pedidos) {
   var sub = document.getElementById('vendas-prod-sub');
   if (sub) sub.textContent = ranking.length + ' produtos';
   document.getElementById('vendas-ranking-produtos').innerHTML = ranking.map(function(p) {
-    return '<tr><td class="td-model" style="font-size:12px;">'+p.nome+'</td>'
+    return '<tr><td class="td-model" style="font-size:12px;">'+escHtml(p.nome)+'</td>'
       +'<td class="td-mono">'+p.qtd+' un</td>'
       +'<td class="td-mono" style="color:var(--green);">'+fmt(p.receita)+'</td></tr>';
   }).join('') || '<tr><td colspan="3" class="empty">Sem dados</td></tr>';
@@ -4751,7 +4754,7 @@ function renderizarRankingVendedoresVendas(pedidos) {
   var sub = document.getElementById('vendas-vend-sub');
   if (sub) sub.textContent = ranking.length + ' vendedor' + (ranking.length!==1?'es':'');
   document.getElementById('vendas-ranking-vendedores').innerHTML = ranking.map(function(v) {
-    return '<tr><td class="td-model" style="font-size:12px;">'+v.nome+'</td>'
+    return '<tr><td class="td-model" style="font-size:12px;">'+escHtml(v.nome)+'</td>'
       +'<td class="td-mono">'+v.qtd+' ped.</td>'
       +'<td class="td-mono" style="color:var(--green);">'+fmt(v.total)+'</td></tr>';
   }).join('') || '<tr><td colspan="3" class="empty">Sem dados</td></tr>';
@@ -4765,11 +4768,12 @@ function renderizarPedidosVendas(pedidos) {
     var produtos = (p.itens||[])
       .filter(function(it){ return it.valorUnitario > 0; })
       .map(function(it){ return it.produto; }).join(', ') || '—';
+    var produtosEsc = escHtml(produtos);
     return '<tr>'
       +'<td class="td-mono" style="color:var(--gold);font-weight:700;">#'+p.numero+'</td>'
       +'<td class="td-mono">'+(p.data||'—')+'</td>'
-      +'<td style="font-size:12px;">'+( p.cliente||'—')+'</td>'
-      +'<td style="font-size:11px;color:var(--text3);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+produtos+'">'+produtos+'</td>'
+      +'<td style="font-size:12px;">'+(escHtml(p.cliente)||'—')+'</td>'
+      +'<td style="font-size:11px;color:var(--text3);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+produtosEsc+'">'+produtosEsc+'</td>'
       +'<td class="td-mono" style="color:var(--green);font-weight:700;">'+fmt(p.valor)+'</td>'
       +'</tr>';
   }).join('');
@@ -6145,9 +6149,9 @@ function renderContas() {
     const sel = contaSel && contaSel === c.nome;
     return `
     <div class="conta-card${sel?' selected':''}" style="position:relative;" onclick="selecionarConta(${i})" title="Clique para filtrar lançamentos por esta conta">
-      <div class="conta-nome">${c.nome}</div>
+      <div class="conta-nome">${escHtml(c.nome)}</div>
       <div class="conta-saldo" style="color:${c.saldo>=0?'var(--green)':'var(--red)'};">${fmt(c.saldo)}</div>
-      <div class="conta-tipo">${c.tipo}</div>
+      <div class="conta-tipo">${escHtml(c.tipo)}</div>
       <div style="display:flex;gap:5px;margin-top:10px;">
         <button class="action-btn edit-btn" onclick="event.stopPropagation();editarSaldoConta(${i})" style="font-size:10px;flex:1;">✏ Editar saldo</button>
         <button class="action-btn" onclick="event.stopPropagation();editarNomeConta(${i})" style="font-size:10px;flex:1;">⚙ Config</button>
@@ -6247,7 +6251,7 @@ function renderFinCharts(filtrado) {
     return `
       <div style="margin-bottom:10px;">
         <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;">
-          <span style="font-weight:600;color:var(--text2);max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${cat||'Sem categoria'}</span>
+          <span style="font-weight:600;color:var(--text2);max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(cat)||'Sem categoria'}</span>
           <span style="font-size:10px;color:var(--text3);">${vals.entrada>0?'↑'+fmt(vals.entrada):''}${vals.saida>0?' ↓'+fmt(vals.saida):''}</span>
         </div>
         ${vals.entrada>0?`<div style="height:5px;background:var(--green);border-radius:3px;width:${entW}%;margin-bottom:2px;opacity:0.85;"></div>`:''}
@@ -6279,20 +6283,20 @@ function renderFinInsights(filtrado, entradas, saidas, fluxo) {
   const topSaida = Object.entries(catSaidas).sort((a,b)=>b[1]-a[1])[0];
   if (topSaida && saidas>0) {
     const pct = (topSaida[1]/saidas*100).toFixed(1);
-    insights.push({icon:'📌', color:'var(--orange)', titulo:`"${topSaida[0]}" é seu maior custo`, texto:`Representa ${pct}% de todas as saídas (${fmt(topSaida[1])}). Vale analisar se há margem para redução.`});
+    insights.push({icon:'📌', color:'var(--orange)', titulo:`"${escHtml(topSaida[0])}" é seu maior custo`, texto:`Representa ${pct}% de todas as saídas (${fmt(topSaida[1])}). Vale analisar se há margem para redução.`});
   }
 
   // Insight 3: saldo nas contas
   const contasNegativas = contas.filter(c=>c.saldo<0);
   if (contasNegativas.length>0) {
-    insights.push({icon:'⚠️', color:'var(--red)', titulo:'Conta negativa', texto:`${contasNegativas.map(c=>c.nome).join(', ')} ${contasNegativas.length>1?'estão':'está'} com saldo negativo. Verifique lançamentos pendentes.`});
+    insights.push({icon:'⚠️', color:'var(--red)', titulo:'Conta negativa', texto:`${contasNegativas.map(c=>escHtml(c.nome)).join(', ')} ${contasNegativas.length>1?'estão':'está'} com saldo negativo. Verifique lançamentos pendentes.`});
   }
 
   // Insight 4: distribuição de contas
   if (contas.length>1 && totalCaixa>0) {
     const maior = contas.reduce((a,b)=>a.saldo>b.saldo?a:b);
     const pct   = (maior.saldo/totalCaixa*100).toFixed(0);
-    if (pct>70) insights.push({icon:'💡', color:'var(--gold)', titulo:`${pct}% concentrado em ${maior.nome}`, texto:`Sua liquidez está concentrada em uma conta. Considere distribuir para reduzir riscos.`});
+    if (pct>70) insights.push({icon:'💡', color:'var(--gold)', titulo:`${pct}% concentrado em ${escHtml(maior.nome)}`, texto:`Sua liquidez está concentrada em uma conta. Considere distribuir para reduzir riscos.`});
   }
 
   // Insight 5: frequência
@@ -6510,9 +6514,9 @@ function renderLancamentos() {
   tbody.innerHTML = pageItems.map(l => `
     <div class="lancamento-row">
       <span class="td-mono" style="font-size:11px;">${l.data||'—'}</span>
-      <span style="font-weight:600;font-size:12px;">${l.descricao||'—'}${l.obs?`<span style="color:var(--text3);font-weight:400;"> · ${l.obs}</span>`:''}</span>
-      <span><span class="badge" style="background:var(--surface2);color:var(--text2);">${l.categoria||'—'}</span></span>
-      <span style="font-size:11px;color:var(--text3);">${l.conta||'—'}</span>
+      <span style="font-weight:600;font-size:12px;">${escHtml(l.descricao)||'—'}${l.obs?`<span style="color:var(--text3);font-weight:400;"> · ${escHtml(l.obs)}</span>`:''}</span>
+      <span><span class="badge" style="background:var(--surface2);color:var(--text2);">${escHtml(l.categoria)||'—'}</span></span>
+      <span style="font-size:11px;color:var(--text3);">${escHtml(l.conta)||'—'}</span>
       <span class="td-mono" style="font-weight:700;color:${l.tipo==='entrada'?'var(--green)':'var(--red)'};">
         ${l.tipo==='entrada'?'↑':'↓'} ${fmt(l.valor)}
       </span>
@@ -6574,7 +6578,7 @@ function setLanTipo(tipo) {
 
 function populateLanConta() {
   const sel = document.getElementById('lan-conta');
-  sel.innerHTML = contas.map(c=>`<option value="${c.nome}">${c.nome}</option>`).join('');
+  sel.innerHTML = contas.map(c=>`<option value="${escHtml(c.nome)}">${escHtml(c.nome)}</option>`).join('');
 }
 
 // ── Toast genérico (auto-hide; opcional botão de ação) ──
@@ -6987,7 +6991,7 @@ ${isVencida?'❗ Esta conta está VENCIDA!':'Faltam '+dias+' dia(s) para o venci
         <div style="display:flex;align-items:center;gap:10px;">
           <span style="font-size:18px;">${isVencida?'🚨':'🔔'}</span>
           <div>
-            <div style="font-size:13px;font-weight:700;">${c.nome}</div>
+            <div style="font-size:13px;font-weight:700;">${escHtml(c.nome)}</div>
             <div style="font-size:11px;color:${color};font-weight:700;">${msg} · ${fmt(c.valor)}</div>
           </div>
         </div>
@@ -7034,9 +7038,9 @@ function renderContasPagar() {
     return `
       <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:12px;align-items:center;padding:13px 20px;border-bottom:1px solid var(--border);font-size:13px;" class="">
         <div>
-          <div style="font-weight:700;color:${stColors[st]};">${c.nome}</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:2px;">${c.categoria||'—'} · ${periodoLabel[c.periodicidade]||c.periodicidade}</div>
-          ${c.obs?`<div style="font-size:10px;color:var(--text3);">${c.obs}</div>`:''}
+          <div style="font-weight:700;color:${stColors[st]};">${escHtml(c.nome)}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(c.categoria)||'—'} · ${escHtml(periodoLabel[c.periodicidade]||c.periodicidade)}</div>
+          ${c.obs?`<div style="font-size:10px;color:var(--text3);">${escHtml(c.obs)}</div>`:''}
         </div>
         <div class="td-mono" style="font-weight:700;">${fmt(c.valor)}</div>
         <div>
@@ -7315,7 +7319,7 @@ function renderCPImportList() {
             </div>
           </div>
           ${jaImportada?'<div style="font-size:11px;color:var(--green);margin-top:6px;font-weight:700;">✅ Já importada</div>':''}
-          ${c.fornecedor?`<div style="font-size:10px;color:var(--text3);margin-top:4px;">Fornecedor: ${c.fornecedor}</div>`:''}
+          ${c.fornecedor?`<div style="font-size:10px;color:var(--text3);margin-top:4px;">Fornecedor: ${escHtml(c.fornecedor)}</div>`:''}
         </div>
       </div>
     </div>`;
@@ -7652,6 +7656,15 @@ document.addEventListener('DOMContentLoaded', function() {
 // ══════════════════════════════════════════
 //  OFICINA / SAC — helpers compartilhados
 // ══════════════════════════════════════════
+// Escape HTML — usar em qualquer texto livre interpolado em template literal
+// que vai pra .innerHTML. Sem isso, um '<' no dado quebra silenciosamente o
+// HTML e engole handlers/botões da linha (parser do browser não dispara erro).
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // Status unificado (oficina + sac)
 const OS_STATUS = {
   acao_interna:       { label: '🔧 Ação interna',       cor: 'var(--orange)',     bg: 'var(--orange-dim)' },
@@ -7763,8 +7776,8 @@ function renderOficina() {
     const valorTxt = o.valorServico ? fmt(o.valorServico) : '—';
     return '<div style="display:grid;grid-template-columns:60px 1.7fr 1.3fr 1.3fr 110px 130px auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
       + `<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#${o.numero}</div>`
-      + `<div><div style="font-weight:700;">${o.clienteNome||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${o.modeloScooter||'—'}${o.cor?(' · '+o.cor):''}${o.chassi?(' · '+o.chassi):''}</div></div>`
-      + `<div style="font-size:11px;color:var(--text2);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(o.problemaRelatado||'').replace(/"/g,'&quot;')}">${o.problemaRelatado||'—'}</div>`
+      + `<div><div style="font-weight:700;">${escHtml(o.clienteNome)||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(o.modeloScooter)||'—'}${o.cor?(' · '+escHtml(o.cor)):''}${o.chassi?(' · '+escHtml(o.chassi)):''}</div></div>`
+      + `<div style="font-size:11px;color:var(--text2);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(o.problemaRelatado)}">${escHtml(o.problemaRelatado)||'—'}</div>`
       + `<div style="font-size:10px;color:var(--text3);">Abertura: ${o.dataAbertura||'—'}${o.dataProximoContato?('<br>Próximo: '+o.dataProximoContato):''}</div>`
       + `<div class="td-mono" style="font-weight:700;color:var(--green);">${valorTxt}</div>`
       + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
@@ -7819,11 +7832,10 @@ function renderOficinaEmGarantia() {
   el.innerHTML = lista.map(o => {
     const sac = sacAtivos.get(o.sacDestinoId);
     const sacSt = SAC_STATUS[sac.status] || SAC_STATUS.acao_interna;
-    const escAttr = s => String(s == null ? '' : s).replace(/"/g,'&quot;');
     return '<div style="display:grid;grid-template-columns:60px 1.7fr 1.4fr 1.2fr 130px auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
       + `<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#${o.numero}</div>`
-      + `<div><div style="font-weight:700;">${o.clienteNome||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${o.modeloScooter||'—'}${o.cor?(' · '+o.cor):''}${o.chassi?(' · '+o.chassi):''}</div></div>`
-      + `<div style="font-size:11px;color:var(--text2);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escAttr(o.problemaRelatado)}">${o.problemaRelatado||'—'}</div>`
+      + `<div><div style="font-weight:700;">${escHtml(o.clienteNome)||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(o.modeloScooter)||'—'}${o.cor?(' · '+escHtml(o.cor)):''}${o.chassi?(' · '+escHtml(o.chassi)):''}</div></div>`
+      + `<div style="font-size:11px;color:var(--text2);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(o.problemaRelatado)}">${escHtml(o.problemaRelatado)||'—'}</div>`
       + `<div style="font-size:10px;color:var(--text3);">Abertura: ${o.dataAbertura||'—'}</div>`
       + `<div><span class="badge" style="background:${sacSt.bg};color:${sacSt.cor};">SAC #${sac.numero} · ${sacSt.label}</span></div>`
       + `<div style="display:flex;gap:5px;">`
@@ -8149,7 +8161,7 @@ function ofClienteSugestao() {
   const matches = oficinaClientes.filter(c => (c.nome||'').toLowerCase().includes(q)).slice(0, 6);
   if (!matches.length) { box.style.display = 'none'; return; }
   box.innerHTML = matches.map(c =>
-    `<div onclick="ofSelecionarCliente('${c.id}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px;" onmouseenter="this.style.background='var(--surface3)'" onmouseleave="this.style.background='transparent'"><div style="font-weight:600;">${c.nome}</div>${c.telefone?`<div style="font-size:10px;color:var(--text3);">${c.telefone}</div>`:''}</div>`
+    `<div onclick="ofSelecionarCliente('${c.id}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px;" onmouseenter="this.style.background='var(--surface3)'" onmouseleave="this.style.background='transparent'"><div style="font-weight:600;">${escHtml(c.nome)}</div>${c.telefone?`<div style="font-size:10px;color:var(--text3);">${escHtml(c.telefone)}</div>`:''}</div>`
   ).join('');
   box.style.display = 'block';
 }
@@ -8297,7 +8309,7 @@ function sacClienteSugestao() {
   const matches = clientesAll.filter(c => (c.nome||'').toLowerCase().includes(q)).slice(0, 6);
   if (!matches.length) { box.style.display = 'none'; return; }
   box.innerHTML = matches.map(c =>
-    `<div onclick="sacSelecionarCliente('${c.id}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px;" onmouseenter="this.style.background='var(--surface3)'" onmouseleave="this.style.background='transparent'"><div style="font-weight:600;">${c.nome}</div>${c.telefone?`<div style="font-size:10px;color:var(--text3);">${c.telefone}</div>`:''}</div>`
+    `<div onclick="sacSelecionarCliente('${c.id}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px;" onmouseenter="this.style.background='var(--surface3)'" onmouseleave="this.style.background='transparent'"><div style="font-weight:600;">${escHtml(c.nome)}</div>${c.telefone?`<div style="font-size:10px;color:var(--text3);">${escHtml(c.telefone)}</div>`:''}</div>`
   ).join('');
   box.style.display = 'block';
 }
@@ -8372,8 +8384,8 @@ function renderSac() {
     const tipoTxt = tipoProblemaLabel(c);
     return '<div style="display:grid;grid-template-columns:60px 1.6fr 1.4fr 110px 110px 1fr auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;' + (venc?'background:rgba(255,77,77,0.04);':'') + '">'
       + `<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#${c.numero}</div>`
-      + `<div><div style="font-weight:700;">${c.clienteNome||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${c.modeloScooter||''}${c.fornecedor?(' · '+c.fornecedor):''}</div></div>`
-      + `<div><div style="font-size:11px;font-weight:600;">${tipoTxt}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(c.problemaRelatado||'').replace(/"/g,'&quot;')}">${c.problemaRelatado||''}</div></div>`
+      + `<div><div style="font-weight:700;">${escHtml(c.clienteNome)||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(c.modeloScooter)}${c.fornecedor?(' · '+escHtml(c.fornecedor)):''}</div></div>`
+      + `<div><div style="font-size:11px;font-weight:600;">${escHtml(tipoTxt)}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(c.problemaRelatado)}">${escHtml(c.problemaRelatado)}</div></div>`
       + `<div><span class="badge" style="background:${pr.bg};color:${pr.cor};">${pr.label}</span></div>`
       + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
       + `<div style="font-size:10px;color:var(--text3);">${vencHTML}</div>`
@@ -8711,10 +8723,10 @@ function renderClientes() {
       ? '<span class="badge" style="background:rgba(37,211,102,0.15);color:#25D366;">Tiny</span>'
       : '<span class="badge" style="background:var(--surface3);color:var(--text2);">Manual</span>';
     return '<div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 0.9fr 90px auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
-      + `<div><div style="font-weight:700;">${c.nome||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${c.email||''}</div></div>`
-      + `<div style="font-size:11px;color:var(--text2);">${c.telefone||'—'}</div>`
-      + `<div style="font-size:11px;color:var(--text2);">${c.cpfCnpj||'—'}</div>`
-      + `<div style="font-size:10px;color:var(--text3);">${c.cidade||''}${c.uf?(' / '+c.uf):''}</div>`
+      + `<div><div style="font-weight:700;">${escHtml(c.nome)||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(c.email)}</div></div>`
+      + `<div style="font-size:11px;color:var(--text2);">${escHtml(c.telefone)||'—'}</div>`
+      + `<div style="font-size:11px;color:var(--text2);">${escHtml(c.cpfCnpj)||'—'}</div>`
+      + `<div style="font-size:10px;color:var(--text3);">${escHtml(c.cidade)}${c.uf?(' / '+escHtml(c.uf)):''}</div>`
       + `<div>${badge}</div>`
       + `<div style="display:flex;gap:5px;">`
         + `<button class="action-btn edit-btn" onclick="abrirCliModal('${c.id}')">✏</button>`
@@ -9039,10 +9051,10 @@ function renderMapeamentoVendedores() {
   const escAttr = s => (s || '').replace(/"/g,'&quot;');
   el.innerHTML = vendedoresMapeamento.map(m => {
     const chips = (m.nomesTiny || []).map(n =>
-      `<span style="display:inline-flex;align-items:center;background:var(--surface3);color:var(--text2);padding:3px 9px;border-radius:10px;font-size:11px;font-weight:600;margin:2px;">${n}</span>`
+      `<span style="display:inline-flex;align-items:center;background:var(--surface3);color:var(--text2);padding:3px 9px;border-radius:10px;font-size:11px;font-weight:600;margin:2px;">${escHtml(n)}</span>`
     ).join('');
     return '<div style="display:grid;grid-template-columns:1.4fr 2.4fr auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
-      + `<div style="font-weight:700;color:var(--gold);">${m.nomeReal}</div>`
+      + `<div style="font-weight:700;color:var(--gold);">${escHtml(m.nomeReal)}</div>`
       + `<div>${chips || '<span style="color:var(--text3);font-size:11px;">— sem nomes do Tiny associados</span>'}</div>`
       + `<div style="display:flex;gap:5px;">`
         + `<button class="action-btn edit-btn" onclick="abrirVendMapModal('${m.id}')">✏</button>`
