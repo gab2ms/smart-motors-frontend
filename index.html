@@ -1581,16 +1581,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <div class="card-header"><div><div class="card-sub" id="of-count">—</div></div></div>
       <div id="of-lista"></div>
     </div>
-
-    <div class="card" id="of-garantia-wrap" style="margin-top:18px;border-top:2px solid var(--red);display:none;">
-      <div class="card-header">
-        <div>
-          <div class="card-title">⚠️ Em garantia (SAC)</div>
-          <div class="card-sub" id="of-garantia-sub">—</div>
-        </div>
-      </div>
-      <div id="of-garantia-lista"></div>
-    </div>
   </div>
 
   <!-- ══════════════ SAC ══════════════ -->
@@ -7762,8 +7752,6 @@ function renderOficina() {
   if (sub) sub.textContent = lista.length + ' OS exibida' + (lista.length!==1?'s':'');
   document.getElementById('of-count').textContent = oficinaOrdens.length + ' OS no total';
 
-  renderOficinaEmGarantia();
-
   if (!lista.length) {
     el.innerHTML = '<div class="empty" style="padding:32px;">Nenhuma OS encontrada</div>';
     return;
@@ -7814,36 +7802,6 @@ async function ofExcluir(id) {
   if (error) { smAlert('Erro: ' + error.message); return; }
   oficinaOrdens = oficinaOrdens.filter(x => x.id !== id);
   renderOficinaKpis(); renderOficina();
-}
-
-function renderOficinaEmGarantia() {
-  const wrap = document.getElementById('of-garantia-wrap');
-  const el   = document.getElementById('of-garantia-lista');
-  const sub  = document.getElementById('of-garantia-sub');
-  if (!wrap || !el) return;
-  const sacAtivos = new Map();
-  (sacCasos || []).forEach(c => { if (c.status !== 'finalizado') sacAtivos.set(c.id, c); });
-  const lista = (oficinaOrdens || []).filter(o =>
-    o.sacDestinoId && sacAtivos.has(o.sacDestinoId)
-  );
-  if (!lista.length) { wrap.style.display = 'none'; el.innerHTML = ''; return; }
-  wrap.style.display = '';
-  if (sub) sub.textContent = lista.length + ' OS aguardando retorno do fornecedor';
-  el.innerHTML = lista.map(o => {
-    const sac = sacAtivos.get(o.sacDestinoId);
-    const sacSt = SAC_STATUS[sac.status] || SAC_STATUS.acao_interna;
-    return '<div style="display:grid;grid-template-columns:60px 1.7fr 1.4fr 1.2fr 130px auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
-      + `<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#${o.numero}</div>`
-      + `<div><div style="font-weight:700;">${escHtml(o.clienteNome)||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(o.modeloScooter)||'—'}${o.cor?(' · '+escHtml(o.cor)):''}${o.chassi?(' · '+escHtml(o.chassi)):''}</div></div>`
-      + `<div style="font-size:11px;color:var(--text2);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(o.problemaRelatado)}">${escHtml(o.problemaRelatado)||'—'}</div>`
-      + `<div style="font-size:10px;color:var(--text3);">Abertura: ${o.dataAbertura||'—'}</div>`
-      + `<div><span class="badge" style="background:${sacSt.bg};color:${sacSt.cor};">SAC #${sac.numero} · ${sacSt.label}</span></div>`
-      + `<div style="display:flex;gap:5px;">`
-        + `<button class="btn btn-gold" style="font-size:10px;padding:5px 10px;" onclick="ofAbrirSacDestino('${o.id}')" title="Abrir caso SAC">Abrir SAC</button>`
-        + `<button class="action-btn edit-btn" onclick="abrirOfModal('${o.id}')" title="Ver OS">✏</button>`
-      + `</div>`
-      + '</div>';
-  }).join('');
 }
 
 async function ofMoverParaSac(id) {
@@ -8099,7 +8057,7 @@ function abrirOfModal(id) {
     ? '<div style="margin-bottom:12px;padding:10px 12px;background:rgba(255,77,77,0.10);border:1px solid var(--red);border-radius:var(--r-sm);font-size:11px;line-height:1.5;">'
       + '🛡️ Esta OS foi convertida em <a href="javascript:void(0)" onclick="ofAbrirSacDestino(\'' + o.id + '\')" style="color:var(--gold);font-weight:700;text-decoration:underline;">SAC #' + sacDestino.numero + '</a>'
       + ' — status atual: <strong>' + ((SAC_STATUS[sacDestino.status]||{}).label || sacDestino.status) + '</strong>.'
-      + ' Para retornar pra Oficina, peça ao admin.'
+      + (sacDestino.status === 'finalizado' ? ' Caso SAC já finalizado.' : ' Para retornar pra Oficina, peça ao admin.')
       + '</div>'
     : '';
 
