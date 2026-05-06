@@ -868,6 +868,75 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 .kpi-delta.up    { color: var(--green); text-shadow: 0 0 8px var(--green-glow); }
 .kpi-delta.down  { color: var(--red);   text-shadow: 0 0 8px var(--red-glow); }
 .kpi-delta.flat  { color: var(--text3); font-weight: 600; }
+
+/* ── MODAL BLOCOS (titulos por secao no modal SAC/Oficina) ── */
+.modal-bloco{margin-top:18px;}
+.modal-bloco:first-of-type{margin-top:0;}
+.modal-bloco-titulo{
+  font-size:10px;font-weight:700;letter-spacing:1.2px;
+  text-transform:uppercase;color:var(--gold);
+  border-bottom:1px solid var(--border2);
+  padding-bottom:6px;margin-bottom:10px;
+}
+
+/* ── TIMELINE DE EVENTOS ── */
+.timeline-list{
+  position:relative;padding-left:20px;
+  border-left:2px solid var(--border2);
+  margin-top:8px;
+}
+.timeline-vazio{
+  font-size:12px;color:var(--text3);font-style:italic;
+  padding:12px 0 4px;
+}
+.timeline-item{
+  position:relative;padding-bottom:14px;
+}
+.timeline-item:last-child{padding-bottom:2px;}
+.timeline-bullet{
+  position:absolute;left:-27px;top:3px;
+  width:12px;height:12px;border-radius:50%;
+  background:var(--text3);
+  border:2px solid var(--bg);
+  box-shadow:0 0 0 1px var(--border2);
+}
+.timeline-header{
+  font-size:11px;color:var(--text3);
+  letter-spacing:0.3px;
+}
+.timeline-header strong{color:var(--text2);font-weight:600;}
+.timeline-header strong.sistema{color:var(--text3);font-style:italic;font-weight:500;}
+.timeline-categoria{
+  font-size:13px;font-weight:700;color:var(--text);
+  margin-top:2px;
+}
+.timeline-descricao{
+  font-size:12px;color:var(--text);
+  white-space:pre-line;word-break:break-word;
+  margin-top:4px;line-height:1.4;
+}
+.timeline-edicao-info{
+  font-size:10px;color:var(--text3);font-style:italic;
+  margin-top:3px;
+}
+.timeline-edit-btn{
+  background:none;border:none;
+  color:var(--gold);font-size:11px;
+  cursor:pointer;padding:2px 6px;margin-top:4px;
+  border-radius:4px;font-family:inherit;
+}
+.timeline-edit-btn:hover{background:var(--gold-dim);}
+.timeline-add-btn{
+  background:var(--surface2);border:1px dashed var(--border2);
+  color:var(--gold);font-size:12px;font-weight:700;
+  padding:8px 14px;border-radius:var(--r-sm);
+  cursor:pointer;margin-top:10px;
+  font-family:inherit;
+  display:inline-flex;align-items:center;gap:6px;
+  transition:background .15s,border-color .15s;
+}
+.timeline-add-btn:hover{background:var(--gold-dim);border-color:var(--gold);}
+.timeline-add-btn:disabled{opacity:0.5;cursor:not-allowed;}
 </style>
 </head>
 <body>
@@ -7688,6 +7757,124 @@ function _smHistEntrada(texto, autor) {
 function _smHistAppend(historicoExistente, texto, autor) {
   const nova = _smHistEntrada(texto, autor);
   return historicoExistente ? (historicoExistente + '\n' + nova) : nova;
+}
+
+// ══════════════════════════════════════════
+//  TIMELINE DE EVENTOS (oficina + sac)
+// ══════════════════════════════════════════
+const TIMELINE_CATEGORIAS = {
+  abertura:           { emoji: '🆕', label: 'Abertura',               cor: '#3b82f6' },
+  contato_cliente:    { emoji: '📞', label: 'Contato com cliente',    cor: 'var(--green)' },
+  contato_fornecedor: { emoji: '🏭', label: 'Contato com fornecedor', cor: 'var(--green)' },
+  diagnostico:        { emoji: '🔧', label: 'Diagnóstico',            cor: 'var(--gold)' },
+  reparo:             { emoji: '🛠️', label: 'Reparo / serviço',       cor: 'var(--gold)' },
+  peca_solicitada:    { emoji: '📦', label: 'Peça solicitada',        cor: 'var(--orange)' },
+  peca_recebida:      { emoji: '📥', label: 'Peça recebida',          cor: 'var(--green)' },
+  pendencia:          { emoji: '⚠️', label: 'Pendência',              cor: 'var(--red)' },
+  resolucao:          { emoji: '✅', label: 'Resolução',              cor: 'var(--green)' },
+  observacao:         { emoji: '💬', label: 'Observação',             cor: 'var(--text2)' },
+  outro:              { emoji: '➕', label: 'Outro',                  cor: 'var(--text2)' },
+};
+
+function _smTimelineFmtData(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString('pt-BR', { dateStyle:'short', timeStyle:'short' });
+}
+
+function _smTimelineUsuario() {
+  let u = null;
+  try { u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
+  return {
+    id:   (u && u.id) ? u.id : null,
+    nome: u ? (u.nome || u.email || 'usuário') : 'sistema',
+  };
+}
+
+async function _smTimelineCarregar(casoId, modulo) {
+  if (!casoId || !modulo) return [];
+  const r = await sb.from('timeline_eventos')
+    .select('*')
+    .eq('caso_id', casoId)
+    .eq('modulo', modulo)
+    .order('criado_em', { ascending: false });
+  if (r.error) { console.warn('[timeline] erro carregar:', r.error.message); return []; }
+  return toCamelArr(r.data || []);
+}
+
+async function _smTimelineCriar({ casoId, modulo, categoria, categoriaOutro, descricao }) {
+  const u = _smTimelineUsuario();
+  const payload = {
+    caso_id:         casoId,
+    modulo:          modulo,
+    categoria:       categoria,
+    categoria_outro: (categoria === 'outro' ? (categoriaOutro || null) : null),
+    descricao:       descricao,
+    autor_id:        u.id,
+    autor_nome:      u.nome,
+  };
+  const r = await sb.from('timeline_eventos').insert(payload).select().single();
+  if (r.error) { console.warn('[timeline] erro criar:', r.error.message); return null; }
+  return toCamel(r.data);
+}
+
+async function _smTimelineEditar(eventoId, { categoria, categoriaOutro, descricao }) {
+  const u = _smTimelineUsuario();
+  const payload = {
+    categoria:        categoria,
+    categoria_outro:  (categoria === 'outro' ? (categoriaOutro || null) : null),
+    descricao:        descricao,
+    editado_em:       new Date().toISOString(),
+    editado_por_id:   u.id,
+    editado_por_nome: u.nome,
+  };
+  const r = await sb.from('timeline_eventos').update(payload).eq('id', eventoId).select().single();
+  if (r.error) { console.warn('[timeline] erro editar:', r.error.message); return null; }
+  return toCamel(r.data);
+}
+
+function _smTimelineRender(container, eventos) {
+  if (!container) return;
+  if (!eventos || eventos.length === 0) {
+    container.innerHTML = '<div class="timeline-vazio">Nenhum evento registrado ainda. Clique em + Adicionar evento.</div>';
+    return;
+  }
+  const html = eventos.map(ev => {
+    const cat = TIMELINE_CATEGORIAS[ev.categoria] || TIMELINE_CATEGORIAS.observacao;
+    const labelCat = (ev.categoria === 'outro' && ev.categoriaOutro)
+      ? cat.emoji + ' ' + escHtml(ev.categoriaOutro)
+      : cat.emoji + ' ' + escHtml(cat.label);
+    const sistemaCls = ev.autorId ? '' : ' sistema';
+    let edicao = '';
+    if (ev.editadoEm) {
+      edicao = '<div class="timeline-edicao-info">(editado por '
+        + escHtml(ev.editadoPorNome || 'desconhecido')
+        + ' em ' + escHtml(_smTimelineFmtData(ev.editadoEm)) + ')</div>';
+    }
+    return ''
+      + '<div class="timeline-item">'
+      +   '<div class="timeline-bullet" style="background:' + cat.cor + ';"></div>'
+      +   '<div class="timeline-header">'
+      +     escHtml(_smTimelineFmtData(ev.criadoEm))
+      +     ' · <strong class="autor' + sistemaCls + '">' + escHtml(ev.autorNome) + '</strong>'
+      +   '</div>'
+      +   '<div class="timeline-categoria">' + labelCat + '</div>'
+      +   '<div class="timeline-descricao">' + escHtml(ev.descricao) + '</div>'
+      +   edicao
+      +   '<button type="button" class="timeline-edit-btn" data-evento-id="' + escHtml(ev.id)
+      +     '" data-caso-id="' + escHtml(ev.casoId)
+      +     '" data-modulo="' + escHtml(ev.modulo) + '">editar</button>'
+      + '</div>';
+  }).join('');
+  container.innerHTML = '<div class="timeline-list">' + html + '</div>';
+  container.querySelectorAll('.timeline-edit-btn').forEach(btn => {
+    btn.onclick = () => {
+      if (typeof _smTimelineAbrirEvento === 'function') {
+        _smTimelineAbrirEvento(btn.dataset.casoId, btn.dataset.modulo, btn.dataset.eventoId);
+      }
+    };
+  });
 }
 
 // ══════════════════════════════════════════
