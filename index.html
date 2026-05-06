@@ -1563,13 +1563,12 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="of-sub">—</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <select class="search-input" id="of-filtro-status" onchange="renderOficina()" style="max-width:180px;">
+        <select class="search-input" id="of-filtro-status" onchange="renderOficina()" style="max-width:200px;">
           <option value="">Todos status</option>
-          <option value="aguardando">Aguardando</option>
-          <option value="em_andamento">Em andamento</option>
-          <option value="pronto">Pronto</option>
-          <option value="entregue">Entregue</option>
-          <option value="em_garantia">Em garantia (SAC)</option>
+          <option value="acao_interna">🔧 Ação interna</option>
+          <option value="aguardando_terceiro">⏳ Aguardando terceiro</option>
+          <option value="pronto_entrega">✅ Pronto pra entrega</option>
+          <option value="finalizado">🏁 Finalizado</option>
         </select>
         <input type="text" class="search-input" id="of-busca" placeholder="🔍 Cliente, modelo, chassi..." oninput="renderOficina()" style="min-width:220px;">
         <button class="btn btn-gold" onclick="abrirOfModal()">+ Nova OS</button>
@@ -1602,28 +1601,27 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="sac-sub">—</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <select class="search-input" id="sac-filtro-status" onchange="renderSac()" style="max-width:160px;">
+        <select class="search-input" id="sac-filtro-status" onchange="renderSac()" style="max-width:200px;">
           <option value="">Todos status</option>
-          <option value="aberto">Aberto</option>
-          <option value="em_andamento">Em andamento</option>
-          <option value="aguardando_fornecedor">Aguardando fornecedor</option>
-          <option value="resolvido">Resolvido</option>
+          <option value="acao_interna">🔧 Ação interna</option>
+          <option value="aguardando_terceiro">⏳ Aguardando terceiro</option>
+          <option value="pronto_entrega">✅ Pronto pra entrega</option>
+          <option value="finalizado">🏁 Finalizado</option>
         </select>
         <select class="search-input" id="sac-filtro-prio" onchange="renderSac()" style="max-width:140px;">
           <option value="">Todas prioridades</option>
-          <option value="urgente">Urgente</option>
           <option value="alta">Alta</option>
-          <option value="normal">Normal</option>
+          <option value="media">Média</option>
           <option value="baixa">Baixa</option>
         </select>
-        <select class="search-input" id="sac-filtro-tipo" onchange="renderSac()" style="max-width:170px;">
+        <select class="search-input" id="sac-filtro-tipo" onchange="renderSac()" style="max-width:180px;">
           <option value="">Todos tipos</option>
-          <option value="Bateria">Bateria</option>
-          <option value="Módulo elétrico">Módulo elétrico</option>
-          <option value="Freio">Freio</option>
-          <option value="Motor">Motor</option>
-          <option value="Garantia geral">Garantia geral</option>
-          <option value="Outro">Outro</option>
+          <option value="bateria">Bateria</option>
+          <option value="modulo_eletrico">Módulo elétrico</option>
+          <option value="freio">Freio</option>
+          <option value="motor">Motor</option>
+          <option value="garantia_geral">Garantia geral</option>
+          <option value="outro">Outro</option>
         </select>
         <input type="text" class="search-input" id="sac-busca" placeholder="🔍 Cliente, fornecedor..." oninput="renderSac()" style="min-width:200px;">
         <button class="btn btn-gold" onclick="abrirSacModal()">+ Novo caso</button>
@@ -7652,18 +7650,50 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // ══════════════════════════════════════════
+//  OFICINA / SAC — helpers compartilhados
+// ══════════════════════════════════════════
+// Status unificado (oficina + sac)
+const OS_STATUS = {
+  acao_interna:       { label: '🔧 Ação interna',       cor: 'var(--orange)',     bg: 'var(--orange-dim)' },
+  aguardando_terceiro:{ label: '⏳ Aguardando terceiro', cor: 'var(--gold-bright)',bg: 'var(--gold-dim)' },
+  pronto_entrega:     { label: '✅ Pronto pra entrega',  cor: 'var(--green)',      bg: 'var(--green-dim)' },
+  finalizado:         { label: '🏁 Finalizado',          cor: 'var(--text2)',      bg: 'var(--surface3)' },
+};
+// Tipos de problema unificados
+const TIPOS_PROBLEMA = {
+  bateria:         'Bateria',
+  modulo_eletrico: 'Módulo elétrico',
+  freio:           'Freio',
+  motor:           'Motor',
+  garantia_geral:  'Garantia geral',
+  outro:           'Outro',
+};
+function tipoProblemaLabel(c) {
+  if (!c || !c.tipoProblema) return '—';
+  if (c.tipoProblema === 'outro') return c.tipoProblemaOutro || 'Outro';
+  return TIPOS_PROBLEMA[c.tipoProblema] || c.tipoProblema;
+}
+function _smUsuarioAtual() {
+  let u = null;
+  try { u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
+  return u ? (u.nome || u.email || 'usuário') : 'sistema';
+}
+function _smHistEntrada(texto, autor) {
+  const ts = new Date().toLocaleString('pt-BR', { dateStyle:'short', timeStyle:'short' });
+  return '[' + ts + '] [' + (autor || _smUsuarioAtual()) + '] ' + texto;
+}
+function _smHistAppend(historicoExistente, texto, autor) {
+  const nova = _smHistEntrada(texto, autor);
+  return historicoExistente ? (historicoExistente + '\n' + nova) : nova;
+}
+
+// ══════════════════════════════════════════
 //  OFICINA
 // ══════════════════════════════════════════
 let oficinaClientes = [];
 let oficinaOrdens   = [];
 
-const OF_STATUS = {
-  aguardando:   { label: 'Aguardando',   cor: 'var(--text2)',     bg: 'var(--surface3)' },
-  em_andamento: { label: 'Em andamento', cor: 'var(--orange)',    bg: 'var(--orange-dim)' },
-  pronto:       { label: 'Pronto',       cor: 'var(--gold-bright)',bg: 'var(--gold-dim)' },
-  entregue:     { label: 'Entregue',     cor: 'var(--green)',     bg: 'var(--green-dim)' },
-  em_garantia:  { label: 'Em garantia (SAC)', cor: 'var(--red)',  bg: 'var(--red-dim)' },
-};
+const OF_STATUS = OS_STATUS;
 
 async function initOficina() {
   const [oc, oo] = await Promise.all([
@@ -7685,17 +7715,17 @@ function renderOficinaKpis() {
   const mes  = String(hoje.getMonth() + 1).padStart(2, '0');
   const ano  = hoje.getFullYear();
   const prefMes = ano + '-' + mes;
-  const abertas    = oficinaOrdens.filter(o => o.status === 'aguardando').length;
-  const andamento  = oficinaOrdens.filter(o => o.status === 'em_andamento').length;
-  const prontas    = oficinaOrdens.filter(o => o.status === 'pronto').length;
-  const entregMes  = oficinaOrdens.filter(o => o.status === 'entregue' && (o.dataConclusao || '').startsWith(prefMes)).length;
+  const acaoInterna = oficinaOrdens.filter(o => o.status === 'acao_interna').length;
+  const aguardTerc  = oficinaOrdens.filter(o => o.status === 'aguardando_terceiro').length;
+  const prontas     = oficinaOrdens.filter(o => o.status === 'pronto_entrega').length;
+  const finalMes    = oficinaOrdens.filter(o => o.status === 'finalizado' && (o.dataConclusao || '').startsWith(prefMes)).length;
   const el = document.getElementById('of-kpis');
   if (!el) return;
   el.innerHTML =
-    `<div class="kpi" style="border-top:2px solid var(--text2);"><div class="kpi-label">Aguardando</div><div class="kpi-value" style="color:var(--text);">${abertas}</div><div class="kpi-change">OS abertas</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--orange);"><div class="kpi-label">Em andamento</div><div class="kpi-value" style="color:var(--orange);">${andamento}</div><div class="kpi-change">em serviço</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">Prontas para retirar</div><div class="kpi-value gold">${prontas}</div><div class="kpi-change">aguardando cliente</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Entregues no mês</div><div class="kpi-value green">${entregMes}</div><div class="kpi-change">${hoje.toLocaleString('pt-BR',{month:'long'})}/${ano}</div></div>`;
+    `<div class="kpi" style="border-top:2px solid var(--orange);"><div class="kpi-label">Ação interna</div><div class="kpi-value" style="color:var(--orange);">${acaoInterna}</div><div class="kpi-change">loja precisa agir</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">Aguardando terceiro</div><div class="kpi-value gold">${aguardTerc}</div><div class="kpi-change">cliente / fornecedor / garantia</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Pronto pra entrega</div><div class="kpi-value green">${prontas}</div><div class="kpi-change">aguardando cliente</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--text2);"><div class="kpi-label">Finalizadas no mês</div><div class="kpi-value" style="color:var(--text);">${finalMes}</div><div class="kpi-change">${hoje.toLocaleString('pt-BR',{month:'long'})}/${ano}</div></div>`;
 }
 
 function renderOficina() {
@@ -7705,9 +7735,12 @@ function renderOficina() {
   const filtroStatus = document.getElementById('of-filtro-status')?.value || '';
   const busca        = (document.getElementById('of-busca')?.value || '').toLowerCase();
 
+  // OSes com SAC vinculado ainda não finalizado vão pro card "Em garantia"
+  const sacAtivosIds = new Set((sacCasos || []).filter(c => c.status !== 'finalizado').map(c => c.id));
+
   let lista = oficinaOrdens.slice();
   if (filtroStatus) lista = lista.filter(o => o.status === filtroStatus);
-  else lista = lista.filter(o => o.status !== 'em_garantia');
+  else lista = lista.filter(o => !o.sacDestinoId || !sacAtivosIds.has(o.sacDestinoId));
   if (busca) lista = lista.filter(o =>
     (o.clienteNome||'').toLowerCase().includes(busca)
     || (o.modeloScooter||'').toLowerCase().includes(busca)
@@ -7724,15 +7757,15 @@ function renderOficina() {
   }
 
   el.innerHTML = lista.map(o => {
-    const st = OF_STATUS[o.status] || OF_STATUS.aguardando;
-    const next = { aguardando: 'em_andamento', em_andamento: 'pronto', pronto: 'entregue', entregue: null }[o.status];
+    const st = OF_STATUS[o.status] || OF_STATUS.acao_interna;
+    const next = { acao_interna: 'pronto_entrega', pronto_entrega: 'finalizado' }[o.status];
     const nextLabel = next ? OF_STATUS[next].label : null;
     const valorTxt = o.valorServico ? fmt(o.valorServico) : '—';
     return '<div style="display:grid;grid-template-columns:60px 1.7fr 1.3fr 1.3fr 110px 130px auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
       + `<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#${o.numero}</div>`
       + `<div><div style="font-weight:700;">${o.clienteNome||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${o.modeloScooter||'—'}${o.cor?(' · '+o.cor):''}${o.chassi?(' · '+o.chassi):''}</div></div>`
       + `<div style="font-size:11px;color:var(--text2);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(o.problemaRelatado||'').replace(/"/g,'&quot;')}">${o.problemaRelatado||'—'}</div>`
-      + `<div style="font-size:10px;color:var(--text3);">Entrada: ${o.dataEntrada||'—'}${o.dataPrevisao?('<br>Previsão: '+o.dataPrevisao):''}</div>`
+      + `<div style="font-size:10px;color:var(--text3);">Abertura: ${o.dataAbertura||'—'}${o.dataProximoContato?('<br>Próximo: '+o.dataProximoContato):''}</div>`
       + `<div class="td-mono" style="font-weight:700;color:var(--green);">${valorTxt}</div>`
       + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
       + `<div style="display:flex;gap:5px;">`
@@ -7748,16 +7781,16 @@ function renderOficina() {
 async function ofAvancarStatus(id) {
   const o = oficinaOrdens.find(x => x.id === id);
   if (!o) return;
-  const next = { aguardando: 'em_andamento', em_andamento: 'pronto', pronto: 'entregue' }[o.status];
+  const next = { acao_interna: 'pronto_entrega', pronto_entrega: 'finalizado' }[o.status];
   if (!next) return;
   const update = { status: next, atualizado_em: new Date().toISOString() };
-  if (next === 'entregue') update.data_conclusao = new Date().toISOString().split('T')[0];
+  if (next === 'finalizado') update.data_conclusao = new Date().toISOString().split('T')[0];
   const { error } = await sb.from('oficina_ordens').update(update).eq('id', id);
   if (error) { smAlert('Erro: ' + error.message); return; }
   o.status = next;
-  if (next === 'entregue') o.dataConclusao = update.data_conclusao;
+  if (next === 'finalizado') o.dataConclusao = update.data_conclusao;
   renderOficinaKpis(); renderOficina();
-  if (next === 'pronto') checarWhatsAppOficinaPronto();
+  if (next === 'pronto_entrega') checarWhatsAppOficinaPronto();
 }
 
 async function ofExcluir(id) {
@@ -7776,22 +7809,22 @@ function renderOficinaEmGarantia() {
   const sub  = document.getElementById('of-garantia-sub');
   if (!wrap || !el) return;
   const sacAtivos = new Map();
-  (sacCasos || []).forEach(c => { if (c.status !== 'resolvido') sacAtivos.set(c.id, c); });
+  (sacCasos || []).forEach(c => { if (c.status !== 'finalizado') sacAtivos.set(c.id, c); });
   const lista = (oficinaOrdens || []).filter(o =>
-    o.status === 'em_garantia' && o.sacDestinoId && sacAtivos.has(o.sacDestinoId)
+    o.sacDestinoId && sacAtivos.has(o.sacDestinoId)
   );
   if (!lista.length) { wrap.style.display = 'none'; el.innerHTML = ''; return; }
   wrap.style.display = '';
   if (sub) sub.textContent = lista.length + ' OS aguardando retorno do fornecedor';
   el.innerHTML = lista.map(o => {
     const sac = sacAtivos.get(o.sacDestinoId);
-    const sacSt = SAC_STATUS[sac.status] || SAC_STATUS.aberto;
+    const sacSt = SAC_STATUS[sac.status] || SAC_STATUS.acao_interna;
     const escAttr = s => String(s == null ? '' : s).replace(/"/g,'&quot;');
     return '<div style="display:grid;grid-template-columns:60px 1.7fr 1.4fr 1.2fr 130px auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
       + `<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#${o.numero}</div>`
       + `<div><div style="font-weight:700;">${o.clienteNome||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${o.modeloScooter||'—'}${o.cor?(' · '+o.cor):''}${o.chassi?(' · '+o.chassi):''}</div></div>`
       + `<div style="font-size:11px;color:var(--text2);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escAttr(o.problemaRelatado)}">${o.problemaRelatado||'—'}</div>`
-      + `<div style="font-size:10px;color:var(--text3);">Entrada: ${o.dataEntrada||'—'}</div>`
+      + `<div style="font-size:10px;color:var(--text3);">Abertura: ${o.dataAbertura||'—'}</div>`
       + `<div><span class="badge" style="background:${sacSt.bg};color:${sacSt.cor};">SAC #${sac.numero} · ${sacSt.label}</span></div>`
       + `<div style="display:flex;gap:5px;">`
         + `<button class="btn btn-gold" style="font-size:10px;padding:5px 10px;" onclick="ofAbrirSacDestino('${o.id}')" title="Abrir caso SAC">Abrir SAC</button>`
@@ -7814,26 +7847,36 @@ async function ofMoverParaSac(id) {
     'A OS sai da lista de ativas e vira o caso SAC. Apenas admin pode reverter.'
   );
   if (!ok) return;
-  const ts = new Date().toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'});
   const userNome = _u.nome || _u.email || 'usuário';
-  const histInicial = '[' + ts + '] Caso originado da OS #' + o.numero + ' — convertido por ' + userNome;
+  const histInicial = _smHistEntrada('Caso originado da OS #' + o.numero, userNome);
   const sacPayload = {
     cliente_nome: o.clienteNome,
     cliente_telefone: o.clienteTelefone || null,
+    cliente_cpf: o.clienteCpf || null,
     modelo_scooter: o.modeloScooter || null,
+    cor: o.cor || null,
+    chassi: o.chassi || null,
     fornecedor: null,
-    tipo_problema: 'Garantia geral',
-    prioridade: 'normal',
-    status: 'aberto',
-    proximo_contato: null,
-    prazo_alerta: 3,
-    descricao: o.problemaRelatado || '(sem descrição)',
-    historico: histInicial,
+    tipo_problema: o.tipoProblema || 'garantia_geral',
+    tipo_problema_outro: o.tipoProblemaOutro || null,
+    prioridade: o.prioridade || 'media',
+    status: 'acao_interna',
+    data_abertura: new Date().toISOString().split('T')[0],
+    data_proximo_contato: null,
+    prazo_alerta: o.prazoAlerta || 3,
+    problema_relatado: o.problemaRelatado || '(sem descrição)',
+    historico: o.historico ? (o.historico + '\n' + histInicial) : histInicial,
     os_origem_id: o.id,
   };
   const { data: novoSac, error: errSac } = await sb.from('sac_casos').insert(sacPayload).select().single();
   if (errSac) { smAlert('Erro ao criar caso SAC: ' + errSac.message); return; }
-  const updOs = { status: 'em_garantia', sac_destino_id: novoSac.id, atualizado_em: new Date().toISOString() };
+  const histOs = _smHistAppend(o.historico, 'Movido pro SAC #' + novoSac.numero, userNome);
+  const updOs = {
+    status: 'aguardando_terceiro',
+    sac_destino_id: novoSac.id,
+    historico: histOs,
+    atualizado_em: new Date().toISOString(),
+  };
   const { data: osAtualizada, error: errOs } = await sb.from('oficina_ordens').update(updOs).eq('id', id).select().single();
   if (errOs) {
     sacCasos.unshift(toCamel(novoSac));
@@ -7868,7 +7911,7 @@ function ofImprimir(id) {
   const o = oficinaOrdens.find(x => x.id === id);
   if (!o) { smAlert('OS não encontrada.'); return; }
   const cliente = (o.clienteId && clientesAll) ? clientesAll.find(c => c.id === o.clienteId) : null;
-  const cpf = (cliente && (cliente.cpfCnpj || cliente.cpf)) || '';
+  const cpf = o.clienteCpf || (cliente && (cliente.cpfCnpj || cliente.cpf)) || '';
   const esc = s => String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const fmtData = iso => {
@@ -7877,7 +7920,12 @@ function ofImprimir(id) {
     return m ? (m[3]+'/'+m[2]+'/'+m[1]) : iso;
   };
   const valorStr = (o.valorServico || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
-  const stMap = { aguardando:'Aguardando', em_andamento:'Em andamento', pronto:'Pronto', entregue:'Entregue' };
+  const stMap = {
+    acao_interna:        'Ação interna',
+    aguardando_terceiro: 'Aguardando terceiro',
+    pronto_entrega:      'Pronto p/ entrega',
+    finalizado:          'Finalizado',
+  };
   const statusLabel = stMap[o.status] || (o.status || '—');
   const numeroStr = String(o.numero || '').padStart(3, '0');
   const agora = new Date();
@@ -7957,8 +8005,8 @@ function ofImprimir(id) {
     </div>
 
     <div class="row4">
-      <div class="cell"><div class="lbl">Entrada</div><div class="val">${esc(fmtData(o.dataEntrada))}</div></div>
-      <div class="cell"><div class="lbl">Previsão</div><div class="val">${esc(fmtData(o.dataPrevisao))}</div></div>
+      <div class="cell"><div class="lbl">Abertura</div><div class="val">${esc(fmtData(o.dataAbertura))}</div></div>
+      <div class="cell"><div class="lbl">Próximo contato</div><div class="val">${esc(fmtData(o.dataProximoContato))}</div></div>
       <div class="cell"><div class="lbl">Valor serviço</div><div class="val">${esc(valorStr)}</div></div>
       <div class="cell"><div class="lbl">Status</div><div class="val"><span class="status-pill">${esc(statusLabel)}</span></div></div>
     </div>
@@ -8008,7 +8056,26 @@ function abrirOfModal(id) {
   shell.id = 'of-modal';
   shell.className = 'modal-overlay open';
   const statusOpts = Object.keys(OF_STATUS).map(k =>
-    `<option value="${k}"${(o&&o.status===k)?' selected':''}>${OF_STATUS[k].label}</option>`).join('');
+    `<option value="${k}"${(o?o.status===k:k==='acao_interna')?' selected':''}>${OF_STATUS[k].label}</option>`).join('');
+  const tipoOpts = '<option value="">—</option>' + Object.keys(TIPOS_PROBLEMA).map(k =>
+    `<option value="${k}"${(o&&o.tipoProblema===k)?' selected':''}>${TIPOS_PROBLEMA[k]}</option>`).join('');
+  const prioOpts = ['baixa','media','alta'].map(k =>
+    `<option value="${k}"${(o?o.prioridade===k:k==='media')?' selected':''}>${k.charAt(0).toUpperCase()+k.slice(1)}</option>`).join('');
+
+  // CPF: prefere o que está salvo na OS; fallback no cadastro de clientes
+  let cpfInicial = (o && o.clienteCpf) || '';
+  if (!cpfInicial && o && o.clienteId) {
+    const cli = clientesAll.find(x => x.id === o.clienteId);
+    if (cli) cpfInicial = cli.cpfCnpj || cli.cpf || '';
+  }
+
+  // Histórico
+  const histLinhas = (o && o.historico) ? o.historico.split(/\r?\n/).filter(l => l.trim()) : [];
+  const histHTML = histLinhas.length
+    ? '<div style="max-height:180px;overflow-y:auto;border:1px solid var(--border2);border-radius:var(--r-sm);padding:10px;background:var(--surface2);">'
+      + histLinhas.slice().reverse().map(l => `<div style="font-size:11px;color:var(--text2);padding:4px 0;border-bottom:1px solid var(--border);line-height:1.5;">${l.replace(/</g,'&lt;')}</div>`).join('')
+      + '</div>'
+    : '<div style="font-size:11px;color:var(--text3);padding:6px 0;">Nenhum registro ainda.</div>';
 
   let _u = null;
   try { _u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
@@ -8023,8 +8090,10 @@ function abrirOfModal(id) {
       + '</div>'
     : '';
 
+  const tipoOutroDisplay = (o && o.tipoProblema === 'outro') ? '' : 'display:none;';
+
   shell.innerHTML =
-    `<div class="modal" style="width:680px;max-width:95vw;">`
+    `<div class="modal" style="width:760px;max-width:95vw;">`
     + `<div class="modal-title">${isEdit?('Editar OS #'+o.numero):'Nova <span>OS</span>'}</div>`
     + bannerSac
     + `<div class="form-grid">`
@@ -8033,18 +8102,24 @@ function abrirOfModal(id) {
     +     `<div id="of-cli-sugestoes" style="position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;display:none;"></div>`
     +   `</div>`
     +   `<div class="form-group"><label>Telefone</label><input class="form-input" id="of-cli-tel" value="${escAttr(o&&o.clienteTelefone)}"></div>`
-    +   `<div class="form-group"><label>CPF</label><input class="form-input" id="of-cli-cpf" value=""></div>`
+    +   `<div class="form-group"><label>CPF</label><input class="form-input" id="of-cli-cpf" value="${escAttr(cpfInicial)}"></div>`
     +   `<div class="form-group"><label>Modelo</label><input class="form-input" id="of-modelo" value="${escAttr(o&&o.modeloScooter)}"></div>`
     +   `<div class="form-group"><label>Cor</label><input class="form-input" id="of-cor" value="${escAttr(o&&o.cor)}"></div>`
     +   `<div class="form-group full"><label>Chassi</label><input class="form-input" id="of-chassi" value="${escAttr(o&&o.chassi)}"></div>`
+    +   `<div class="form-group"><label>Tipo do problema</label><select class="form-input" id="of-tipo" onchange="ofTipoOutroToggle()">${tipoOpts}</select></div>`
+    +   `<div class="form-group"><label>Prioridade</label><select class="form-input" id="of-prio">${prioOpts}</select></div>`
+    +   `<div class="form-group full" id="of-tipo-outro-wrap" style="${tipoOutroDisplay}"><label>Especifique o tipo</label><input class="form-input" id="of-tipo-outro" value="${escAttr(o&&o.tipoProblemaOutro)}"></div>`
     +   `<div class="form-group full"><label>Problema relatado</label><textarea class="form-input" id="of-problema" rows="2">${escAttr(o&&o.problemaRelatado)}</textarea></div>`
     +   `<div class="form-group full"><label>Itens deixados</label><input class="form-input" id="of-itens" value="${escAttr(o&&o.itensDeixados)}"></div>`
-    +   `<div class="form-group"><label>Data entrada</label><input class="form-input" id="of-data-ent" type="date" value="${(o&&o.dataEntrada)||new Date().toISOString().split('T')[0]}"></div>`
-    +   `<div class="form-group"><label>Previsão</label><input class="form-input" id="of-data-prev" type="date" value="${(o&&o.dataPrevisao)||''}"></div>`
+    +   `<div class="form-group"><label>Data abertura</label><input class="form-input" id="of-data-abert" type="date" value="${(o&&o.dataAbertura)||new Date().toISOString().split('T')[0]}"></div>`
+    +   `<div class="form-group"><label>Próximo contato</label><input class="form-input" id="of-data-prox" type="date" value="${(o&&o.dataProximoContato)||''}"></div>`
+    +   `<div class="form-group"><label>Prazo alerta (dias)</label><input class="form-input" id="of-prazo" type="number" min="0" value="${(o&&o.prazoAlerta)||3}"></div>`
     +   `<div class="form-group"><label>Status</label><select class="form-input" id="of-status">${statusOpts}</select></div>`
     +   `<div class="form-group"><label>Valor do serviço (R$)</label><input class="form-input" id="of-valor" type="number" step="0.01" value="${(o&&o.valorServico)||0}"></div>`
     +   (isEdit ? `<div class="form-group full"><label>Diagnóstico</label><textarea class="form-input" id="of-diag" rows="2">${escAttr(o.diagnostico)}</textarea></div>` : '')
     +   (isEdit ? `<div class="form-group full"><label>Solução aplicada</label><textarea class="form-input" id="of-sol" rows="2">${escAttr(o.solucao)}</textarea></div>` : '')
+    +   (isEdit ? `<div class="form-group full"><label>Histórico (mais recente em cima)</label>${histHTML}</div>` : '')
+    +   `<div class="form-group full"><label>${isEdit?'Adicionar entrada ao histórico (timestamp e autor serão adicionados)':'Anotação inicial (opcional)'}</label><textarea class="form-input" id="of-hist-novo" rows="2" placeholder="Ex: Cliente trouxe a moto, sem capacete"></textarea></div>`
     + `</div>`
     + `<div class="modal-actions">`
     +   `<button class="btn" onclick="document.getElementById('of-modal').remove();">Cancelar</button>`
@@ -8054,8 +8129,14 @@ function abrirOfModal(id) {
     + `</div>`;
   document.body.appendChild(shell);
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
-  // Pré-preenche telefone se cliente já existir
   if (!isEdit) ofClienteSugestao();
+}
+
+function ofTipoOutroToggle() {
+  const sel = document.getElementById('of-tipo');
+  const wrap = document.getElementById('of-tipo-outro-wrap');
+  if (!sel || !wrap) return;
+  wrap.style.display = (sel.value === 'outro') ? '' : 'none';
 }
 
 function ofClienteSugestao() {
@@ -8082,24 +8163,30 @@ function ofSelecionarCliente(id) {
 }
 
 async function ofSalvar(editId) {
-  const cliNome = document.getElementById('of-cli-nome').value.trim();
-  const cliTel  = document.getElementById('of-cli-tel').value.trim();
-  const cliCpf  = document.getElementById('of-cli-cpf').value.trim();
-  const modelo  = document.getElementById('of-modelo').value.trim();
-  const cor     = document.getElementById('of-cor').value.trim();
-  const chassi  = document.getElementById('of-chassi').value.trim();
-  const problema= document.getElementById('of-problema').value.trim();
-  const itens   = document.getElementById('of-itens').value.trim();
-  const dataEnt = document.getElementById('of-data-ent').value;
-  const dataPrev= document.getElementById('of-data-prev').value;
-  const status  = document.getElementById('of-status').value;
-  const valor   = parseFloat(document.getElementById('of-valor').value) || 0;
-  const diag    = document.getElementById('of-diag')?.value.trim() || null;
-  const sol     = document.getElementById('of-sol')?.value.trim() || null;
+  const cliNome   = document.getElementById('of-cli-nome').value.trim();
+  const cliTel    = document.getElementById('of-cli-tel').value.trim();
+  const cliCpf    = document.getElementById('of-cli-cpf').value.trim();
+  const modelo    = document.getElementById('of-modelo').value.trim();
+  const cor       = document.getElementById('of-cor').value.trim();
+  const chassi    = document.getElementById('of-chassi').value.trim();
+  const tipo      = document.getElementById('of-tipo').value;
+  const tipoOutro = document.getElementById('of-tipo-outro').value.trim();
+  const prio      = document.getElementById('of-prio').value;
+  const problema  = document.getElementById('of-problema').value.trim();
+  const itens     = document.getElementById('of-itens').value.trim();
+  const dataAbert = document.getElementById('of-data-abert').value;
+  const dataProx  = document.getElementById('of-data-prox').value;
+  const prazoAlerta = parseInt(document.getElementById('of-prazo').value) || 3;
+  const status    = document.getElementById('of-status').value;
+  const valor     = parseFloat(document.getElementById('of-valor').value) || 0;
+  const diag      = document.getElementById('of-diag')?.value.trim() || null;
+  const sol       = document.getElementById('of-sol')?.value.trim() || null;
+  const histNovo  = document.getElementById('of-hist-novo').value.trim();
 
   if (!cliNome) return smAlert('Preencha o nome do cliente.');
   if (!modelo)  return smAlert('Preencha o modelo da scooter.');
   if (!problema) return smAlert('Preencha o problema relatado.');
+  if (tipo === 'outro' && !tipoOutro) return smAlert('Especifique o tipo do problema (campo "outro").');
 
   // Cliente: se nome bate exato com alguém do cadastro, usa o id; senão cria
   let clienteId = document.getElementById('of-cli-nome').dataset.clienteId || null;
@@ -8120,20 +8207,37 @@ async function ofSalvar(editId) {
     }
   }
 
+  // Histórico: append da entrada nova com autor
+  let historicoFinal;
+  if (editId) {
+    const oExist = oficinaOrdens.find(x => x.id === editId);
+    historicoFinal = oExist?.historico || '';
+    if (histNovo) historicoFinal = _smHistAppend(historicoFinal, histNovo);
+  } else {
+    historicoFinal = histNovo ? _smHistEntrada(histNovo) : '';
+  }
+
   const payload = {
     cliente_id: clienteId,
     cliente_nome: cliNome,
+    cliente_telefone: cliTel || null,
+    cliente_cpf: cliCpf || null,
     modelo_scooter: modelo,
     cor: cor || null,
     chassi: chassi || null,
+    tipo_problema: tipo || null,
+    tipo_problema_outro: (tipo === 'outro') ? (tipoOutro || null) : null,
+    prioridade: prio || 'media',
+    prazo_alerta: prazoAlerta,
     problema_relatado: problema,
     itens_deixados: itens || null,
+    historico: historicoFinal || null,
     status,
     valor_servico: valor,
-    data_entrada: dataEnt || new Date().toISOString().split('T')[0],
-    data_previsao: dataPrev || null,
+    data_abertura: dataAbert || new Date().toISOString().split('T')[0],
+    data_proximo_contato: dataProx || null,
   };
-  if (status === 'entregue') {
+  if (status === 'finalizado') {
     payload.data_conclusao = new Date().toISOString().split('T')[0];
   }
   if (editId) {
@@ -8158,17 +8262,11 @@ async function ofSalvar(editId) {
 // ══════════════════════════════════════════
 let sacCasos = [];
 
-const SAC_STATUS = {
-  aberto:                 { label: 'Aberto',                 cor: 'var(--text2)',     bg: 'var(--surface3)' },
-  em_andamento:           { label: 'Em andamento',           cor: 'var(--orange)',    bg: 'var(--orange-dim)' },
-  aguardando_fornecedor:  { label: 'Aguardando fornecedor',  cor: 'var(--gold-bright)',bg: 'var(--gold-dim)' },
-  resolvido:              { label: 'Resolvido',              cor: 'var(--green)',     bg: 'var(--green-dim)' },
-};
+const SAC_STATUS = OS_STATUS;
 const SAC_PRIO = {
-  baixa:   { label: 'Baixa',   cor: 'var(--text3)',       bg: 'var(--surface3)' },
-  normal:  { label: 'Normal',  cor: 'var(--text2)',       bg: 'var(--surface3)' },
-  alta:    { label: 'Alta',    cor: 'var(--orange)',      bg: 'var(--orange-dim)' },
-  urgente: { label: 'Urgente', cor: 'var(--red)',         bg: 'var(--red-dim)' },
+  baixa: { label: 'Baixa', cor: 'var(--text3)',  bg: 'var(--surface3)' },
+  media: { label: 'Média', cor: 'var(--text2)',  bg: 'var(--surface3)' },
+  alta:  { label: 'Alta',  cor: 'var(--red)',    bg: 'var(--red-dim)' },
 };
 
 async function initSac() {
@@ -8209,6 +8307,8 @@ function sacSelecionarCliente(id) {
   document.getElementById('sac-cli').value = c.nome || '';
   const tel = document.getElementById('sac-tel');
   if (tel && !tel.value) tel.value = c.telefone || '';
+  const cpf = document.getElementById('sac-cpf');
+  if (cpf && !cpf.value) cpf.value = c.cpfCnpj || c.cpf || '';
   document.getElementById('sac-cli-sugestoes').style.display = 'none';
 }
 
@@ -8217,8 +8317,8 @@ function atualizarDotSac() {
   if (!dot) return;
   const hoje = new Date().toISOString().split('T')[0];
   const alerta = sacCasos.some(c =>
-    c.status !== 'resolvido' &&
-    ((c.proximoContato && c.proximoContato <= hoje) || c.prioridade === 'urgente')
+    c.status !== 'finalizado' &&
+    ((c.dataProximoContato && c.dataProximoContato <= hoje) || c.prioridade === 'alta')
   );
   dot.style.background = alerta ? 'var(--red)' : 'var(--border2)';
   dot.style.display = alerta ? 'block' : 'none';
@@ -8227,15 +8327,15 @@ function atualizarDotSac() {
 function renderSacKpis() {
   const hoje = new Date().toISOString().split('T')[0];
   const mesPref = hoje.slice(0, 7);
-  const abertos = sacCasos.filter(c => c.status !== 'resolvido').length;
-  const urgentes = sacCasos.filter(c => c.status !== 'resolvido' && c.prioridade === 'urgente').length;
-  const vencidos = sacCasos.filter(c => c.status !== 'resolvido' && c.proximoContato && c.proximoContato <= hoje).length;
-  const resolvMes = sacCasos.filter(c => c.status === 'resolvido' && (c.dataResolucao || '').startsWith(mesPref)).length;
+  const abertos    = sacCasos.filter(c => c.status !== 'finalizado').length;
+  const altas      = sacCasos.filter(c => c.status !== 'finalizado' && c.prioridade === 'alta').length;
+  const vencidos   = sacCasos.filter(c => c.status !== 'finalizado' && c.dataProximoContato && c.dataProximoContato <= hoje).length;
+  const finalMes   = sacCasos.filter(c => c.status === 'finalizado' && (c.dataResolucao || '').startsWith(mesPref)).length;
   document.getElementById('sac-kpis').innerHTML =
     `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">Casos abertos</div><div class="kpi-value gold">${abertos}</div><div class="kpi-change">em aberto</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">Urgentes</div><div class="kpi-value red">${urgentes}</div><div class="kpi-change">prioridade alta</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">Prioridade alta</div><div class="kpi-value red">${altas}</div><div class="kpi-change">requer atenção</div></div>`
     + `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">Contato vencido</div><div class="kpi-value red">${vencidos}</div><div class="kpi-change">precisa retornar hoje</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Resolvidos no mês</div><div class="kpi-value green">${resolvMes}</div><div class="kpi-change">${new Date().toLocaleString('pt-BR',{month:'long'})}</div></div>`;
+    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Finalizados no mês</div><div class="kpi-value green">${finalMes}</div><div class="kpi-change">${new Date().toLocaleString('pt-BR',{month:'long'})}</div></div>`;
 }
 
 function renderSac() {
@@ -8253,7 +8353,7 @@ function renderSac() {
   if (q)  lista = lista.filter(c =>
     (c.clienteNome||'').toLowerCase().includes(q)
     || (c.fornecedor||'').toLowerCase().includes(q)
-    || (c.descricao||'').toLowerCase().includes(q));
+    || (c.problemaRelatado||'').toLowerCase().includes(q));
 
   if (sub) sub.textContent = lista.length + ' caso' + (lista.length!==1?'s':'') + ' exibido' + (lista.length!==1?'s':'');
   document.getElementById('sac-count').textContent = sacCasos.length + ' casos no total';
@@ -8264,14 +8364,15 @@ function renderSac() {
   }
   const hoje = new Date().toISOString().split('T')[0];
   el.innerHTML = lista.map(c => {
-    const st = SAC_STATUS[c.status] || SAC_STATUS.aberto;
-    const pr = SAC_PRIO[c.prioridade] || SAC_PRIO.normal;
-    const venc = c.proximoContato && c.proximoContato <= hoje && c.status !== 'resolvido';
-    const vencHTML = venc ? `<span style="color:var(--red);font-weight:700;">⚠ contato vencido</span>` : (c.proximoContato ? `próximo: ${c.proximoContato}` : '');
+    const st = SAC_STATUS[c.status] || SAC_STATUS.acao_interna;
+    const pr = SAC_PRIO[c.prioridade] || SAC_PRIO.media;
+    const venc = c.dataProximoContato && c.dataProximoContato <= hoje && c.status !== 'finalizado';
+    const vencHTML = venc ? `<span style="color:var(--red);font-weight:700;">⚠ contato vencido</span>` : (c.dataProximoContato ? `próximo: ${c.dataProximoContato}` : '');
+    const tipoTxt = tipoProblemaLabel(c);
     return '<div style="display:grid;grid-template-columns:60px 1.6fr 1.4fr 110px 110px 1fr auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;' + (venc?'background:rgba(255,77,77,0.04);':'') + '">'
       + `<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#${c.numero}</div>`
       + `<div><div style="font-weight:700;">${c.clienteNome||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${c.modeloScooter||''}${c.fornecedor?(' · '+c.fornecedor):''}</div></div>`
-      + `<div><div style="font-size:11px;font-weight:600;">${c.tipoProblema||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(c.descricao||'').replace(/"/g,'&quot;')}">${c.descricao||''}</div></div>`
+      + `<div><div style="font-size:11px;font-weight:600;">${tipoTxt}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(c.problemaRelatado||'').replace(/"/g,'&quot;')}">${c.problemaRelatado||''}</div></div>`
       + `<div><span class="badge" style="background:${pr.bg};color:${pr.cor};">${pr.label}</span></div>`
       + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
       + `<div style="font-size:10px;color:var(--text3);">${vencHTML}</div>`
@@ -8292,13 +8393,12 @@ function abrirSacModal(id) {
   const shell = document.createElement('div');
   shell.id = 'sac-modal';
   shell.className = 'modal-overlay open';
-  const tipos = ['Bateria','Módulo elétrico','Freio','Motor','Garantia geral','Outro'];
   const statusOpts = Object.keys(SAC_STATUS).map(k =>
-    `<option value="${k}"${(c&&c.status===k)?' selected':''}>${SAC_STATUS[k].label}</option>`).join('');
+    `<option value="${k}"${(c?c.status===k:k==='acao_interna')?' selected':''}>${SAC_STATUS[k].label}</option>`).join('');
   const prioOpts = Object.keys(SAC_PRIO).map(k =>
-    `<option value="${k}"${(c&&c.prioridade===k)?' selected':''}>${SAC_PRIO[k].label}</option>`).join('');
-  const tipoOpts = tipos.map(t =>
-    `<option value="${t}"${(c&&c.tipoProblema===t)?' selected':''}>${t}</option>`).join('');
+    `<option value="${k}"${(c?c.prioridade===k:k==='media')?' selected':''}>${SAC_PRIO[k].label}</option>`).join('');
+  const tipoOpts = '<option value="">—</option>' + Object.keys(TIPOS_PROBLEMA).map(k =>
+    `<option value="${k}"${(c&&c.tipoProblema===k)?' selected':''}>${TIPOS_PROBLEMA[k]}</option>`).join('');
 
   // Histórico parsing — newest first na exibicao
   const histLinhas = (c && c.historico) ? c.historico.split(/\r?\n/).filter(l => l.trim()) : [];
@@ -8313,7 +8413,7 @@ function abrirSacModal(id) {
   const isAdminUser = _u && (_u.role === 'admin' || _u.perfil === 'admin');
   const osOrigem = (isEdit && c && c.osOrigemId)
     ? (oficinaOrdens || []).find(x => x.id === c.osOrigemId) : null;
-  const camposVazios = isEdit && c && c.osOrigemId && (!c.fornecedor || !c.proximoContato);
+  const camposVazios = isEdit && c && c.osOrigemId && (!c.fornecedor || !c.dataProximoContato);
   const bannerOrigem = (isEdit && c && c.osOrigemId)
     ? '<div style="margin-bottom:12px;padding:10px 12px;background:rgba(245,197,24,0.10);border:1px solid var(--gold);border-radius:var(--r-sm);font-size:11px;line-height:1.5;">'
       + '🔄 Originado da '
@@ -8323,10 +8423,18 @@ function abrirSacModal(id) {
       + '.' + (camposVazios ? ' <strong>Preencha os campos de garantia abaixo (fornecedor, próximo contato).</strong>' : '')
       + '</div>'
     : '';
-  const podeReverter = isEdit && c && c.osOrigemId && isAdminUser && c.status !== 'resolvido';
+  const podeReverter = isEdit && c && c.osOrigemId && isAdminUser && c.status !== 'finalizado';
+
+  // CPF: prefere o que está no caso; fallback no cadastro de clientes
+  let cpfInicial = (c && c.clienteCpf) || '';
+  if (!cpfInicial && c && c.clienteNome) {
+    const cli = clientesAll.find(x => (x.nome||'').toLowerCase() === c.clienteNome.toLowerCase());
+    if (cli) cpfInicial = cli.cpfCnpj || cli.cpf || '';
+  }
+  const tipoOutroDisplay = (c && c.tipoProblema === 'outro') ? '' : 'display:none;';
 
   shell.innerHTML =
-    `<div class="modal" style="width:680px;max-width:95vw;">`
+    `<div class="modal" style="width:760px;max-width:95vw;">`
     + `<div class="modal-title">${isEdit?('Caso #'+c.numero):'Novo <span>caso</span>'}</div>`
     + bannerOrigem
     + `<div class="form-grid">`
@@ -8335,16 +8443,21 @@ function abrirSacModal(id) {
     +     `<div id="sac-cli-sugestoes" style="position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;display:none;"></div>`
     +   `</div>`
     +   `<div class="form-group"><label>Telefone</label><input class="form-input" id="sac-tel" value="${escAttr(c&&c.clienteTelefone)}"></div>`
+    +   `<div class="form-group"><label>CPF</label><input class="form-input" id="sac-cpf" value="${escAttr(cpfInicial)}"></div>`
     +   `<div class="form-group"><label>Modelo</label><input class="form-input" id="sac-modelo" value="${escAttr(c&&c.modeloScooter)}"></div>`
+    +   `<div class="form-group"><label>Cor</label><input class="form-input" id="sac-cor" value="${escAttr(c&&c.cor)}"></div>`
+    +   `<div class="form-group"><label>Chassi</label><input class="form-input" id="sac-chassi" value="${escAttr(c&&c.chassi)}"></div>`
     +   `<div class="form-group"><label>Fornecedor</label><input class="form-input" id="sac-forn" value="${escAttr(c&&c.fornecedor)}"></div>`
-    +   `<div class="form-group"><label>Tipo do problema</label><select class="form-input" id="sac-tipo">${tipoOpts}</select></div>`
+    +   `<div class="form-group"><label>Tipo do problema</label><select class="form-input" id="sac-tipo" onchange="sacTipoOutroToggle()">${tipoOpts}</select></div>`
+    +   `<div class="form-group full" id="sac-tipo-outro-wrap" style="${tipoOutroDisplay}"><label>Especifique o tipo</label><input class="form-input" id="sac-tipo-outro" value="${escAttr(c&&c.tipoProblemaOutro)}"></div>`
     +   `<div class="form-group"><label>Prioridade</label><select class="form-input" id="sac-prio">${prioOpts}</select></div>`
     +   `<div class="form-group"><label>Status</label><select class="form-input" id="sac-status">${statusOpts}</select></div>`
-    +   `<div class="form-group"><label>Próximo contato</label><input class="form-input" id="sac-prox" type="date" value="${(c&&c.proximoContato)||''}"></div>`
+    +   `<div class="form-group"><label>Data abertura</label><input class="form-input" id="sac-data-abert" type="date" value="${(c&&c.dataAbertura)||new Date().toISOString().split('T')[0]}"></div>`
+    +   `<div class="form-group"><label>Próximo contato</label><input class="form-input" id="sac-prox" type="date" value="${(c&&c.dataProximoContato)||''}"></div>`
     +   `<div class="form-group"><label>Prazo alerta (dias)</label><input class="form-input" id="sac-alerta" type="number" min="0" value="${(c&&c.prazoAlerta)||3}"></div>`
-    +   `<div class="form-group full"><label>Descrição</label><textarea class="form-input" id="sac-desc" rows="3">${escAttr(c&&c.descricao)}</textarea></div>`
+    +   `<div class="form-group full"><label>Problema relatado</label><textarea class="form-input" id="sac-desc" rows="3">${escAttr(c&&c.problemaRelatado)}</textarea></div>`
     +   (isEdit ? `<div class="form-group full"><label>Histórico (mais recente em cima)</label>${histHTML}</div>` : '')
-    +   `<div class="form-group full"><label>${isEdit?'Adicionar entrada ao histórico (timestamp será adicionado)':'Anotação inicial (opcional)'}</label><textarea class="form-input" id="sac-hist-novo" rows="2" placeholder="Ex: Liguei pro fornecedor, prazo 5 dias úteis"></textarea></div>`
+    +   `<div class="form-group full"><label>${isEdit?'Adicionar entrada ao histórico (timestamp e autor serão adicionados)':'Anotação inicial (opcional)'}</label><textarea class="form-input" id="sac-hist-novo" rows="2" placeholder="Ex: Liguei pro fornecedor, prazo 5 dias úteis"></textarea></div>`
     + `</div>`
     + `<div class="modal-actions">`
     +   `<button class="btn" onclick="document.getElementById('sac-modal').remove();">Cancelar</button>`
@@ -8356,54 +8469,65 @@ function abrirSacModal(id) {
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
 }
 
+function sacTipoOutroToggle() {
+  const sel = document.getElementById('sac-tipo');
+  const wrap = document.getElementById('sac-tipo-outro-wrap');
+  if (!sel || !wrap) return;
+  wrap.style.display = (sel.value === 'outro') ? '' : 'none';
+}
+
 async function sacSalvar(editId) {
   const clienteNome     = document.getElementById('sac-cli').value.trim();
   const clienteTelefone = document.getElementById('sac-tel').value.trim();
+  const clienteCpf      = document.getElementById('sac-cpf').value.trim();
   const modelo          = document.getElementById('sac-modelo').value.trim();
+  const cor             = document.getElementById('sac-cor').value.trim();
+  const chassi          = document.getElementById('sac-chassi').value.trim();
   const fornecedor      = document.getElementById('sac-forn').value.trim();
   const tipoProblema    = document.getElementById('sac-tipo').value;
+  const tipoOutro       = document.getElementById('sac-tipo-outro').value.trim();
   const prioridade      = document.getElementById('sac-prio').value;
   const status          = document.getElementById('sac-status').value;
+  const dataAbertura    = document.getElementById('sac-data-abert').value;
   const proximoContato  = document.getElementById('sac-prox').value;
   const prazoAlerta     = parseInt(document.getElementById('sac-alerta').value) || 3;
-  const descricao       = document.getElementById('sac-desc').value.trim();
+  const problemaRelatado= document.getElementById('sac-desc').value.trim();
   const histNovo        = document.getElementById('sac-hist-novo').value.trim();
 
   if (!clienteNome) return smAlert('Preencha o nome do cliente.');
   if (!tipoProblema) return smAlert('Selecione o tipo do problema.');
-  if (!descricao) return smAlert('Preencha a descrição.');
+  if (tipoProblema === 'outro' && !tipoOutro) return smAlert('Especifique o tipo do problema (campo "outro").');
+  if (!problemaRelatado) return smAlert('Preencha o problema relatado.');
 
-  // Append no historico se houver entrada nova
+  // Histórico: append da entrada nova com autor
   let historicoFinal;
   if (editId) {
     const cExist = sacCasos.find(x => x.id === editId);
     historicoFinal = cExist?.historico || '';
-    if (histNovo) {
-      const ts = new Date().toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'});
-      historicoFinal = (historicoFinal ? historicoFinal + '\n' : '') + '[' + ts + '] ' + histNovo;
-    }
+    if (histNovo) historicoFinal = _smHistAppend(historicoFinal, histNovo);
   } else {
-    historicoFinal = '';
-    if (histNovo) {
-      const ts = new Date().toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'});
-      historicoFinal = '[' + ts + '] ' + histNovo;
-    }
+    historicoFinal = histNovo ? _smHistEntrada(histNovo) : '';
   }
 
   const payload = {
     cliente_nome: clienteNome,
     cliente_telefone: clienteTelefone || null,
+    cliente_cpf: clienteCpf || null,
     modelo_scooter: modelo || null,
+    cor: cor || null,
+    chassi: chassi || null,
     fornecedor: fornecedor || null,
     tipo_problema: tipoProblema,
+    tipo_problema_outro: (tipoProblema === 'outro') ? (tipoOutro || null) : null,
     prioridade,
     status,
-    proximo_contato: proximoContato || null,
+    data_abertura: dataAbertura || new Date().toISOString().split('T')[0],
+    data_proximo_contato: proximoContato || null,
     prazo_alerta: prazoAlerta,
-    descricao,
+    problema_relatado: problemaRelatado,
     historico: historicoFinal || null,
   };
-  if (status === 'resolvido') {
+  if (status === 'finalizado') {
     payload.data_resolucao = new Date().toISOString().split('T')[0];
   }
   if (editId) {
@@ -8430,10 +8554,10 @@ async function sacExcluir(id) {
   let osOrigem = null;
   if (c.osOrigemId) {
     osOrigem = (oficinaOrdens || []).find(x => x.id === c.osOrigemId);
-    if (osOrigem && osOrigem.status === 'em_garantia') {
+    if (osOrigem && osOrigem.status === 'aguardando_terceiro' && osOrigem.sacDestinoId === id) {
       voltarOs = await smConfirm(
         'Este caso veio da OS #' + osOrigem.numero + '.\n\n' +
-        'Voltar a OS pra "Aguardando" agora?'
+        'Voltar a OS pra "Ação interna" agora?'
       );
     }
   }
@@ -8445,7 +8569,7 @@ async function sacExcluir(id) {
   (oficinaOrdens || []).forEach(o => { if (o.sacDestinoId === id) o.sacDestinoId = null; });
 
   if (voltarOs && osOrigem) {
-    const updOs = { status: 'aguardando', atualizado_em: new Date().toISOString() };
+    const updOs = { status: 'acao_interna', atualizado_em: new Date().toISOString() };
     const { data: osData, error: errOs } = await sb.from('oficina_ordens').update(updOs).eq('id', osOrigem.id).select().single();
     if (errOs) {
       smAlert('Caso SAC removido, mas falha ao voltar a OS:\n' + errOs.message);
@@ -8467,32 +8591,36 @@ async function sacVoltarParaOficina(id) {
   const c = sacCasos.find(x => x.id === id);
   if (!c) return;
   if (!c.osOrigemId) { smAlert('Este caso não veio de uma OS.'); return; }
-  if (c.status === 'resolvido') { smAlert('Caso já está resolvido — não pode ser revertido.'); return; }
+  if (c.status === 'finalizado') { smAlert('Caso já está finalizado — não pode ser revertido.'); return; }
   const osOrigem = (oficinaOrdens || []).find(x => x.id === c.osOrigemId);
   const numeroOs = osOrigem ? osOrigem.numero : '?';
   const ok = await smConfirm(
     'Voltar OS #' + numeroOs + ' pra Oficina?\n\n' +
-    'A OS volta pra status "Aguardando" e o caso SAC fica marcado como resolvido (com nota).'
+    'A OS volta pra status "Ação interna" e o caso SAC fica marcado como finalizado (com nota).'
   );
   if (!ok) return;
 
-  // 1) Atualiza OS: status aguardando + zera sac_destino_id
+  const userNome = _u.nome || _u.email || 'admin';
+
+  // 1) Atualiza OS: status acao_interna + zera sac_destino_id + log no histórico
   if (osOrigem) {
-    const updOs = { status: 'aguardando', sac_destino_id: null, atualizado_em: new Date().toISOString() };
+    const histOs = _smHistAppend(osOrigem.historico, 'Revertido do SAC #' + c.numero, userNome);
+    const updOs = {
+      status: 'acao_interna',
+      sac_destino_id: null,
+      historico: histOs,
+      atualizado_em: new Date().toISOString(),
+    };
     const { data: osData, error: errOs } = await sb.from('oficina_ordens').update(updOs).eq('id', c.osOrigemId).select().single();
     if (errOs) { smAlert('Erro ao atualizar OS: ' + errOs.message); return; }
     const iOs = oficinaOrdens.findIndex(x => x.id === c.osOrigemId);
     if (iOs >= 0) oficinaOrdens[iOs] = toCamel(osData);
   }
 
-  // 2) Marca SAC como resolvido + nota no histórico
-  const ts = new Date().toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'});
-  const userNome = _u.nome || _u.email || 'admin';
-  const novaEntrada = '[' + ts + '] [Revertido pra Oficina] por ' + userNome;
-  const histAtual = c.historico || '';
-  const histFinal = histAtual ? histAtual + '\n' + novaEntrada : novaEntrada;
+  // 2) Marca SAC como finalizado + nota no histórico
+  const histFinal = _smHistAppend(c.historico, 'Revertido pra Oficina', userNome);
   const updSac = {
-    status: 'resolvido',
+    status: 'finalizado',
     historico: histFinal,
     data_resolucao: new Date().toISOString().split('T')[0],
     atualizado_em: new Date().toISOString(),
@@ -8808,7 +8936,7 @@ async function checarWhatsAppContasPagar() {
 async function checarWhatsAppOficinaPronto() {
   if (!Array.isArray(oficinaOrdens) || !oficinaOrdens.length) return;
   for (const o of oficinaOrdens) {
-    if (o.status !== 'pronto') continue;
+    if (o.status !== 'pronto_entrega') continue;
     const msg = `🛠️ Smart Motors — OS pronta para retirada\n\n#${o.numero} · ${o.clienteNome||'—'}\n${o.modeloScooter||''}${o.cor?(' · '+o.cor):''}\n${o.clienteTelefone?('☎ '+o.clienteTelefone):''}`;
     await _waNotificar('of-pronto', o.id, msg);
   }
@@ -8818,9 +8946,10 @@ async function checarWhatsAppSacVencido() {
   if (!Array.isArray(sacCasos) || !sacCasos.length) return;
   const hoje = _waHoje();
   for (const c of sacCasos) {
-    if (c.status === 'resolvido') continue;
-    if (!c.proximoContato || c.proximoContato > hoje) continue;
-    const msg = `📞 Smart Motors — Caso SAC com prazo vencido\n\n#${c.numero} · ${c.clienteNome||'—'}\n${c.tipoProblema||''}${c.fornecedor?(' · '+c.fornecedor):''}\nPróximo contato: ${(c.proximoContato||'').split('-').reverse().join('/')}`;
+    if (c.status === 'finalizado') continue;
+    if (!c.dataProximoContato || c.dataProximoContato > hoje) continue;
+    const tipoTxt = tipoProblemaLabel(c);
+    const msg = `📞 Smart Motors — Caso SAC com prazo vencido\n\n#${c.numero} · ${c.clienteNome||'—'}\n${tipoTxt}${c.fornecedor?(' · '+c.fornecedor):''}\nPróximo contato: ${(c.dataProximoContato||'').split('-').reverse().join('/')}`;
     await _waNotificar('sac-venc', c.id, msg);
   }
 }
