@@ -2230,18 +2230,8 @@ let custosFixos = [];
 const VENDAS_MES_CONFIG_NOME = 'vendas_mes_config';
 let vendasMesConfig = { nome: VENDAS_MES_CONFIG_NOME, valor: 40 };
 
-let emprestimo = {
-  valor:65050,custo:4767.13,total:69817.13,parcelas:7,
-  pagamentos:[
-    {num:1,venc:"25/12/2025",valor:9973.88,pago:9973.88,status:"Pago"},
-    {num:2,venc:"25/01/2026",valor:9973.88,pago:9974.00,status:"Pago"},
-    {num:3,venc:"25/02/2026",valor:9973.88,pago:9973.88,status:"Pago"},
-    {num:4,venc:"25/03/2026",valor:9973.88,pago:9974.00,status:"Pago"},
-    {num:5,venc:"25/04/2026",valor:9973.88,pago:0,status:"Em Aberto"},
-    {num:6,venc:"25/05/2026",valor:9973.88,pago:0,status:"Em Aberto"},
-    {num:7,venc:"25/06/2026",valor:9973.88,pago:0,status:"Em Aberto"},
-  ]
-};
+let emprestimos = [];
+let emprestimoSelecionadoId = null;
 
 // ══════════════════════════════════════════
 //  HELPERS
@@ -2816,8 +2806,9 @@ function esconderBootLoader() {
 function renderDashInternal(){
   const avgMC      = products.length ? products.reduce((s,p)=>s+mcp(p),0)/products.length : 0;
   const lowCount   = products.filter(p=>mcp(p)<15).length;
-  const aberto     = emprestimo.pagamentos.filter(p=>p.status!=='Pago').reduce((s,p)=>s+p.valor,0);
-  const parcelasAbertas = emprestimo.pagamentos.filter(p=>p.status!=='Pago').length;
+  const todasParc = (emprestimos||[]).flatMap(e => e.pagamentos);
+  const aberto     = todasParc.filter(p=>p.status!=='pago').reduce((s,p)=>s+p.valor,0);
+  const parcelasAbertas = todasParc.filter(p=>p.status!=='pago').length;
 
   document.getElementById('dash-int-kpis').innerHTML = `
     <div class="kpi" onclick="showPage('precos')" style="cursor:pointer;" onmouseenter="this.style.borderColor='var(--gold)'" onmouseleave="this.style.borderColor='var(--border)'">
@@ -4204,17 +4195,31 @@ function renderCustos(){
       <button class="btn btn-gold" onclick="addCusto()" style="width:100%;font-size:12px;">+ Adicionar despesa</button>
     </div>`;
 
-  const pago=emprestimo.pagamentos.filter(p=>p.status==='Pago').reduce((s,p)=>s+p.pago,0);
-  const em=emprestimo.pagamentos.filter(p=>p.status!=='Pago');
-  document.getElementById('emprestimo-info').innerHTML=`
+  // Card "Controle de empréstimos" agregado de todos os ativos
+  const ativos = (emprestimos||[]).filter(e => e.pagamentos.length && !e.pagamentos.every(p => p.status === 'pago'));
+  const totalOrig  = ativos.reduce((s,e) => s + (e.valorOriginal||0), 0);
+  const totalJuros = ativos.reduce((s,e) => s + (e.totalComJuros||0), 0);
+  const todasParc  = ativos.flatMap(e => e.pagamentos);
+  const pago       = todasParc.filter(p => p.status === 'pago').reduce((s,p) => s + (p.valorPago || p.valor), 0);
+  const emAberto   = todasParc.filter(p => p.status !== 'pago');
+  const totalEmAberto = emAberto.reduce((s,p) => s + p.valor, 0);
+  const proximas = emAberto.slice().sort((a,b) => (a.vencimento||'').localeCompare(b.vencimento||'')).slice(0, 5);
+  const empInfoEl = document.getElementById('emprestimo-info');
+  if (!empInfoEl) return;
+  if (!ativos.length) {
+    empInfoEl.innerHTML = '<div class="empty" style="padding:20px;font-size:11px;">Nenhum empréstimo ativo. Cadastre na aba Financeiro → Empréstimos.</div>';
+    return;
+  }
+  empInfoEl.innerHTML=`
+    <div style="font-size:10px;color:var(--text3);margin-bottom:8px;">${ativos.length} empréstimo${ativos.length!==1?'s':''} ativo${ativos.length!==1?'s':''}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
       <div style="padding:12px;background:var(--surface2);border-radius:var(--r-sm);">
         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Valor original</div>
-        <div style="font-size:15px;font-weight:800;font-family:var(--mono,monospace);margin-top:4px;">${fmt(emprestimo.valor)}</div>
+        <div style="font-size:15px;font-weight:800;font-family:var(--mono,monospace);margin-top:4px;">${fmt(totalOrig)}</div>
       </div>
       <div style="padding:12px;background:var(--surface2);border-radius:var(--r-sm);">
         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Total c/ juros</div>
-        <div style="font-size:15px;font-weight:800;font-family:var(--mono,monospace);margin-top:4px;">${fmt(emprestimo.total)}</div>
+        <div style="font-size:15px;font-weight:800;font-family:var(--mono,monospace);margin-top:4px;">${fmt(totalJuros)}</div>
       </div>
       <div style="padding:12px;background:var(--green-dim);border-radius:var(--r-sm);">
         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Pago</div>
@@ -4222,13 +4227,13 @@ function renderCustos(){
       </div>
       <div style="padding:12px;background:var(--red-dim);border-radius:var(--r-sm);">
         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Em aberto</div>
-        <div style="font-size:15px;font-weight:800;font-family:var(--mono,monospace);color:var(--red);margin-top:4px;">${fmt(em.reduce((s,p)=>s+p.valor,0))}</div>
+        <div style="font-size:15px;font-weight:800;font-family:var(--mono,monospace);color:var(--red);margin-top:4px;">${fmt(totalEmAberto)}</div>
       </div>
     </div>
-    <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Parcelas em aberto</div>
-    ${em.map(p=>`
+    <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Próximas ${Math.min(proximas.length, 5)} parcelas</div>
+    ${proximas.map(p=>`
     <div style="display:flex;justify-content:space-between;padding:9px 12px;background:var(--red-dim);border-radius:var(--r-sm);margin-bottom:6px;font-size:12px;font-weight:600;">
-      <span style="color:var(--text2);">Parcela ${p.num} · ${p.venc}</span>
+      <span style="color:var(--text2);">Parcela ${p.numero} · ${p.venc}</span>
       <span style="font-family:var(--mono,monospace);color:var(--red);">${fmt(p.valor)}</span>
     </div>`).join('')}
   `;
@@ -5335,7 +5340,7 @@ async function initFinanceiro() {
   renderContas();
   renderFinKpis();
   renderLancamentos();
-  await carregarEmprestimo();
+  await carregarEmprestimos();
   renderEmprestimoFin();
   // Tenta usar cache de IA se ainda válido (não dispara chamada)
   hidratarAnaliseFinanceiraCacheada();
@@ -5362,158 +5367,596 @@ function switchFinTab(tabId) {
   try { localStorage.setItem('sm_fin_tab', tabId); } catch(e) {}
 }
 
-// ── Carrega emprestimo + parcelas do Supabase ──
-async function carregarEmprestimo() {
+// ════════════════════════════════════════════
+//  EMPRÉSTIMOS — múltiplos
+// ════════════════════════════════════════════
+function _empMapParcela(p) {
+  return {
+    id:        p.id,
+    numero:    p.numero,
+    vencimento:p.vencimento || '',
+    venc:      p.vencimento ? p.vencimento.split('-').reverse().join('/') : '',
+    valor:     +p.valor,
+    valorPago: +(p.valor_pago || 0),
+    status:    p.status || 'pendente',
+  };
+}
+
+function _empMapEmprestimo(e, parcelas) {
+  return {
+    id:                  e.id,
+    nome:                e.nome || '(sem nome)',
+    valorOriginal:       +e.valor_original,
+    totalComJuros:       +e.total_com_juros,
+    jurosPct:            +(e.juros_pct || 0),
+    dataPrimeiraParcela: e.data_primeira_parcela || '',
+    observacoes:         e.observacoes || '',
+    criadoEm:            e.criado_em,
+    pagamentos:          parcelas,
+  };
+}
+
+async function carregarEmprestimos() {
+  emprestimos = [];
   try {
-    const [emp, parc] = await Promise.all([
-      sb.from('emprestimo').select('*').order('criado_em', { ascending: false }).limit(1).maybeSingle(),
+    const [emps, parc] = await Promise.all([
+      sb.from('emprestimo').select('*').order('criado_em', { ascending: false }),
       sb.from('emprestimo_parcelas').select('*').order('numero'),
     ]);
-    if (!emp.error && emp.data) {
-      emprestimo.id    = emp.data.id;
-      emprestimo.valor = +emp.data.valor_original;
-      emprestimo.total = +emp.data.total_com_juros;
-      emprestimo.custo = emprestimo.total - emprestimo.valor;
+    if (emps.error) { console.warn('[emprestimos] erro:', emps.error.message); return; }
+    if (parc.error) { console.warn('[emprestimo_parcelas] erro:', parc.error.message); return; }
+    const porEmp = new Map();
+    for (const p of (parc.data || [])) {
+      const key = p.emprestimo_id || '_orfas_';
+      if (!porEmp.has(key)) porEmp.set(key, []);
+      porEmp.get(key).push(_empMapParcela(p));
     }
-    if (!parc.error && parc.data && parc.data.length) {
-      // Filtra só as parcelas deste emprestimo (caso haja varios)
-      const filhas = emprestimo.id
-        ? parc.data.filter(p => !p.emprestimo_id || p.emprestimo_id === emprestimo.id)
-        : parc.data;
-      emprestimo.pagamentos = filhas.map(p => ({
-        id:     p.id,
-        num:    p.numero,
-        venc:   p.vencimento ? p.vencimento.split('-').reverse().join('/') : '',
-        vencISO:p.vencimento || '',
-        valor:  +p.valor,
-        pago:   +(p.valor_pago || 0),
-        status: p.status === 'pago' ? 'Pago' : 'Em Aberto',
-      }));
-      emprestimo.parcelas = emprestimo.pagamentos.length;
-    }
-    console.log('[carregarEmprestimo] valor=' + emprestimo.valor
-      + ' total=' + emprestimo.total
-      + ' parcelas=' + emprestimo.pagamentos.length);
+    emprestimos = (emps.data || []).map(e => _empMapEmprestimo(e, porEmp.get(e.id) || []));
+    console.log('[carregarEmprestimos] total=' + emprestimos.length);
   } catch (e) {
-    console.warn('[carregarEmprestimo] erro:', e.message);
+    console.warn('[carregarEmprestimos] excecao:', e.message);
+    emprestimos = [];
   }
 }
 
+function getEmprestimoAtual() { return emprestimos.find(e => e.id === emprestimoSelecionadoId); }
+function isEmprestimoQuitado(e) {
+  return e.pagamentos.length > 0 && e.pagamentos.every(p => p.status === 'pago');
+}
+function _empUser() {
+  try { return JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) { return null; }
+}
+function podeMexerEmprestimo() {
+  const u = _empUser();
+  if (!u) return false;
+  if (u.role === 'admin' || u.perfil === 'admin') return true;
+  return u.perfil === 'operacional';
+}
+function podeMarcarParcela() {
+  const u = _empUser();
+  if (!u) return false;
+  return Array.isArray(modulosPermitidos(u)) && modulosPermitidos(u).includes('financeiro');
+}
+
+// ── Dispatcher ──
 function renderEmprestimoFin() {
+  if (emprestimoSelecionadoId) {
+    const e = getEmprestimoAtual();
+    if (!e) { emprestimoSelecionadoId = null; return renderEmprestimoFin(); }
+    return renderEmprestimoDetalhe(e);
+  }
+  return renderEmprestimosLista();
+}
+
+function abrirDetalheEmp(id) {
+  emprestimoSelecionadoId = id;
+  renderEmprestimoFin();
+}
+function voltarListaEmp() {
+  emprestimoSelecionadoId = null;
+  renderEmprestimoFin();
+}
+function toggleEmpQuitados() {
+  const list = document.getElementById('emp-quitados-list');
+  const arrow = document.getElementById('emp-quitados-arrow');
+  if (!list) return;
+  const aberto = list.style.display !== 'none';
+  list.style.display = aberto ? 'none' : 'flex';
+  if (arrow) arrow.textContent = aberto ? '▼' : '▲';
+}
+
+// ── Lista (dashboard geral + lista compacta + quitados colapsado) ──
+function renderEmprestimosLista() {
   const el  = document.getElementById('emp-fin-content');
   const sub = document.getElementById('emp-fin-sub');
   if (!el) return;
-  if (!emprestimo.pagamentos || !emprestimo.pagamentos.length) {
-    if (sub) sub.textContent = 'Sem dados de empréstimo';
-    el.innerHTML = '<div class="empty" style="padding:18px;">Nenhum empréstimo cadastrado.</div>';
+
+  const ativos   = emprestimos.filter(e => !isEmprestimoQuitado(e));
+  const quitados = emprestimos.filter(e =>  isEmprestimoQuitado(e));
+
+  const somPago = e => e.pagamentos.filter(p => p.status === 'pago').reduce((s,p) => s + (p.valorPago || p.valor), 0);
+  const totalOrig    = ativos.reduce((s,e) => s + (e.valorOriginal||0), 0);
+  const totalJuros   = ativos.reduce((s,e) => s + (e.totalComJuros||0), 0);
+  const totalPago    = ativos.reduce((s,e) => s + somPago(e), 0);
+  const totalSaldo   = totalJuros - totalPago;
+  const todasParc    = ativos.flatMap(e => e.pagamentos);
+  const pagasGeral   = todasParc.filter(p => p.status === 'pago').length;
+  const pctGeral     = totalJuros > 0 ? (totalPago/totalJuros)*100 : 0;
+
+  if (sub) sub.textContent = ativos.length === 0
+    ? 'Nenhum empréstimo ativo'
+    : ativos.length + ' empréstimo' + (ativos.length!==1?'s':'') + ' ativo' + (ativos.length!==1?'s':'')
+      + ' · ' + pagasGeral + '/' + todasParc.length + ' parcelas pagas no total · ' + pctGeral.toFixed(0) + '% quitado geral';
+
+  const podeMexer = podeMexerEmprestimo();
+
+  let html =
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px;">'
+  + '<div style="padding:14px;background:var(--surface2);border-radius:var(--r-sm);"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Valor original</div><div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);margin-top:5px;">' + fmt(totalOrig) + '</div></div>'
+  + '<div style="padding:14px;background:var(--surface2);border-radius:var(--r-sm);"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Total c/ juros</div><div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);margin-top:5px;">' + fmt(totalJuros) + '</div></div>'
+  + '<div style="padding:14px;background:var(--green-dim);border-radius:var(--r-sm);"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Pago</div><div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);color:var(--green);margin-top:5px;">' + fmt(totalPago) + '</div></div>'
+  + '<div style="padding:14px;background:var(--red-dim);border-radius:var(--r-sm);"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Saldo restante</div><div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);color:var(--red);margin-top:5px;">' + fmt(totalSaldo) + '</div></div>'
+  + '</div>';
+
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px;flex-wrap:wrap;">'
+        + '<div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;">📋 Empréstimos</div>'
+        + (podeMexer ? '<button class="btn btn-gold" onclick="abrirEmpModal()" style="font-size:11px;padding:6px 14px;">+ Novo Empréstimo</button>' : '')
+        + '</div>';
+
+  if (!ativos.length) {
+    html += '<div class="empty" style="padding:24px;border:1px dashed var(--border);border-radius:var(--r-sm);">Nenhum empréstimo ativo. ' + (podeMexer ? 'Clique em "+ Novo Empréstimo" para começar.' : '') + '</div>';
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+    for (const e of ativos) {
+      const pagas = e.pagamentos.filter(p => p.status === 'pago').length;
+      const pago  = somPago(e);
+      const saldo = (e.totalComJuros||0) - pago;
+      const pct   = e.totalComJuros > 0 ? Math.round((pago/e.totalComJuros)*100) : 0;
+      const prox  = e.pagamentos.filter(p => p.status !== 'pago').slice().sort((a,b) => (a.vencimento||'').localeCompare(b.vencimento||''))[0];
+      const proxTxt = prox ? prox.venc : '—';
+      html += '<div onclick="abrirDetalheEmp(\'' + e.id + '\')" style="cursor:pointer;display:grid;grid-template-columns:1.4fr 110px 130px 130px 90px;gap:14px;align-items:center;padding:14px 16px;background:var(--surface2);border-radius:var(--r-sm);transition:background .15s;" onmouseenter="this.style.background=\'var(--surface3)\'" onmouseleave="this.style.background=\'var(--surface2)\'">'
+            + '<div style="font-weight:700;font-size:13px;">→ ' + (e.nome || '(sem nome)') + '</div>'
+            + '<div style="font-size:11px;color:var(--gold);font-weight:700;">' + pct + '% quitado</div>'
+            + '<div style="font-size:11px;color:var(--text3);">próx: ' + proxTxt + '</div>'
+            + '<div style="font-family:var(--mono,monospace);font-weight:700;color:var(--red);font-size:12px;">' + fmt(saldo) + '</div>'
+            + '<div style="font-size:10px;color:var(--text3);text-align:right;">' + pagas + '/' + e.pagamentos.length + ' pagas</div>'
+            + '</div>';
+    }
+    html += '</div>';
+  }
+
+  if (quitados.length) {
+    html += '<div style="margin-top:18px;">'
+          + '<button onclick="toggleEmpQuitados()" style="width:100%;background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 14px;color:var(--text2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
+          + '<span>✓ Quitados (' + quitados.length + ')</span><span id="emp-quitados-arrow">▼</span>'
+          + '</button>'
+          + '<div id="emp-quitados-list" style="display:none;flex-direction:column;gap:6px;margin-top:8px;">';
+    for (const e of quitados) {
+      const pago = e.pagamentos.reduce((s,p) => s + (p.valorPago || p.valor), 0);
+      html += '<div onclick="abrirDetalheEmp(\'' + e.id + '\')" style="cursor:pointer;display:grid;grid-template-columns:1.5fr 110px 1fr;gap:14px;align-items:center;padding:10px 14px;background:var(--green-dim);border-radius:var(--r-sm);opacity:0.85;">'
+            + '<div style="font-weight:700;font-size:12px;">' + (e.nome||'(sem nome)') + '</div>'
+            + '<div style="font-size:10px;color:var(--green);font-weight:700;">100% quitado</div>'
+            + '<div style="font-family:var(--mono,monospace);font-size:11px;color:var(--text2);text-align:right;">' + fmt(pago) + '</div>'
+            + '</div>';
+    }
+    html += '</div></div>';
+  }
+
+  el.innerHTML = html;
+}
+
+// ── Detalhe ──
+function renderEmprestimoDetalhe(e) {
+  const el  = document.getElementById('emp-fin-content');
+  const sub = document.getElementById('emp-fin-sub');
+  if (!el) return;
+
+  const pagas = e.pagamentos.filter(p => p.status === 'pago');
+  const totalPago = pagas.reduce((s,p) => s + (p.valorPago || p.valor), 0);
+  const saldoRestante = (e.totalComJuros||0) - totalPago;
+  const pctPago = e.totalComJuros > 0 ? (totalPago/e.totalComJuros)*100 : 0;
+  const proxima = e.pagamentos.filter(p => p.status !== 'pago').slice().sort((a,b) => (a.vencimento||'').localeCompare(b.vencimento||''))[0];
+  const proxId = proxima ? proxima.id : null;
+
+  if (sub) sub.textContent = pagas.length + '/' + e.pagamentos.length + ' parcelas pagas · ' + pctPago.toFixed(0) + '% quitado';
+
+  const podeMexer = podeMexerEmprestimo();
+  const podeMarcar = podeMarcarParcela();
+  const quitado = isEmprestimoQuitado(e);
+
+  let html =
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px;">'
+  + '<div style="display:flex;align-items:center;gap:10px;">'
+  +   '<button class="btn" onclick="voltarListaEmp()" style="font-size:11px;padding:6px 10px;">← Voltar</button>'
+  +   '<div style="font-size:14px;font-weight:800;">' + (e.nome||'(sem nome)') + '</div>'
+  + '</div>'
+  + '<div style="display:flex;gap:6px;flex-wrap:wrap;">'
+  +   (podeMexer ? '<button class="btn" onclick="abrirEmpModal(\'' + e.id + '\')" style="font-size:11px;padding:6px 12px;">✏ Editar</button>' : '')
+  +   (podeMexer && !quitado ? '<button class="btn" onclick="quitarEmprestimo(\'' + e.id + '\')" style="font-size:11px;padding:6px 12px;border-color:var(--green);color:var(--green);">✓ Quitar</button>' : '')
+  +   (podeMexer ? '<button class="btn" onclick="excluirEmprestimo(\'' + e.id + '\')" style="font-size:11px;padding:6px 12px;border-color:var(--red);color:var(--red);">🗑 Excluir</button>' : '')
+  + '</div>'
+  + '</div>';
+
+  if (e.observacoes) {
+    html += '<div style="background:var(--surface2);border-radius:var(--r-sm);padding:10px 14px;font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.5;">📝 ' + String(e.observacoes).replace(/</g,'&lt;') + '</div>';
+  }
+
+  html +=
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px;">'
+  + '<div style="padding:14px;background:var(--surface2);border-radius:var(--r-sm);"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Valor original</div><div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);margin-top:5px;">' + fmt(e.valorOriginal||0) + '</div></div>'
+  + '<div style="padding:14px;background:var(--surface2);border-radius:var(--r-sm);"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Total c/ juros</div><div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);margin-top:5px;">' + fmt(e.totalComJuros||0) + '</div></div>'
+  + '<div style="padding:14px;background:var(--green-dim);border-radius:var(--r-sm);"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Pago</div><div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);color:var(--green);margin-top:5px;">' + fmt(totalPago) + '</div></div>'
+  + '<div style="padding:14px;background:var(--red-dim);border-radius:var(--r-sm);"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Saldo restante</div><div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);color:var(--red);margin-top:5px;">' + fmt(saldoRestante) + '</div></div>'
+  + '</div>';
+
+  html +=
+    '<div style="margin-bottom:16px;">'
+  + '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">'
+  + '<span>Progresso</span><span>' + pctPago.toFixed(1) + '% quitado</span></div>'
+  + '<div style="height:8px;background:var(--surface3);border-radius:4px;overflow:hidden;">'
+  + '<div style="height:100%;width:' + Math.min(pctPago,100) + '%;background:linear-gradient(90deg,var(--gold),var(--gold-bright));border-radius:4px;box-shadow:0 0 14px var(--gold-glow);transition:width .5s var(--ease);"></div>'
+  + '</div></div>';
+
+  html += '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Parcelas</div>'
+        + '<div style="display:flex;flex-direction:column;gap:6px;">';
+  for (const p of e.pagamentos) {
+    const isPaga = p.status === 'pago';
+    const isProx = !isPaga && p.id === proxId;
+    const bg = isPaga ? 'var(--green-dim)' : (isProx ? 'var(--gold-dim)' : 'var(--surface2)');
+    const cor = isPaga ? 'var(--green)' : (isProx ? 'var(--gold-bright)' : 'var(--text2)');
+    const badge = isPaga
+      ? '<span class="badge badge-green">✓ Paga</span>'
+      : isProx
+        ? '<span class="badge badge-gold">🔔 Próxima</span>'
+        : '<span class="badge" style="background:var(--surface3);color:var(--text3);">Pendente</span>';
+    let actions = '';
+    if (!isPaga && podeMarcar) actions += '<button class="btn btn-gold" style="font-size:10px;padding:5px 12px;" onclick="marcarParcelaPaga(\'' + p.id + '\')">Marcar paga</button>';
+    if (podeMexer) actions += '<button class="action-btn edit-btn" onclick="abrirParcelaEditModal(\'' + p.id + '\')" title="Editar parcela" style="font-size:10px;">✏</button>';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;background:' + bg + ';border-radius:var(--r-sm);font-size:12px;">'
+          + '<div style="display:flex;align-items:center;gap:10px;">'
+          +   '<span style="font-family:var(--mono,monospace);font-weight:700;color:' + cor + ';min-width:30px;">' + String(p.numero).padStart(2,'0') + '</span>'
+          +   '<span style="color:var(--text2);">' + p.venc + '</span>'
+          +   badge
+          + '</div>'
+          + '<div style="display:flex;align-items:center;gap:8px;">'
+          +   '<span style="font-family:var(--mono,monospace);font-weight:700;color:' + cor + ';">' + fmt(p.valor) + '</span>'
+          +   actions
+          + '</div>'
+          + '</div>';
+  }
+  html += '</div>';
+
+  el.innerHTML = html;
+}
+
+// ── Helper de data: vencimento mensal com fallback último dia do mês ──
+function _empAddMonthSafe(iso, n) {
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  const target = new Date(y, mo - 1 + n, d);
+  if (target.getDate() !== d) target.setDate(0); // dia não existe → último do mês alvo
+  const yy = target.getFullYear();
+  const mm = String(target.getMonth()+1).padStart(2,'0');
+  const dd = String(target.getDate()).padStart(2,'0');
+  return yy + '-' + mm + '-' + dd;
+}
+
+// ── Modal Novo/Editar Empréstimo ──
+function abrirEmpModal(id) {
+  if (!podeMexerEmprestimo()) { smAlert('Sem permissão.'); return; }
+  const e = id ? emprestimos.find(x => x.id === id) : null;
+  const isEdit = !!e;
+  const escAttr = s => String(s == null ? '' : s).replace(/"/g,'&quot;');
+  const old = document.getElementById('emp-modal');
+  if (old) old.remove();
+  const shell = document.createElement('div');
+  shell.id = 'emp-modal';
+  shell.className = 'modal-overlay open';
+
+  const valorOriginal = isEdit ? e.valorOriginal : '';
+  const totalAtual    = isEdit ? e.totalComJuros : '';
+  const nParcAtual    = isEdit ? e.pagamentos.length : '';
+  const valorParcAtual= (isEdit && e.pagamentos.length) ? (e.totalComJuros / e.pagamentos.length).toFixed(2) : '';
+  const jurosAtual    = isEdit ? e.jurosPct : '';
+  const data1aAtual   = isEdit ? e.dataPrimeiraParcela : '';
+  const obsAtual      = isEdit ? e.observacoes : '';
+
+  shell.innerHTML =
+    '<div class="modal" style="width:640px;max-width:96vw;">'
+  + '<div class="modal-title">' + (isEdit ? 'Editar empréstimo' : 'Novo <span>empréstimo</span>') + '</div>'
+  + (isEdit
+      ? '<div style="background:var(--orange-dim);border:1px solid var(--orange);border-radius:var(--r-sm);padding:10px 12px;font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.5;">⚠️ Editar valor, número de parcelas ou juros não regenera as parcelas existentes — atualiza só os campos do empréstimo. Para refazer parcelas, exclua e crie de novo.</div>'
+      : '')
+  + '<div class="form-grid">'
+  +   '<div class="form-group full"><label>Nome / descrição</label><input class="form-input" id="emp-nome" value="' + escAttr(isEdit ? e.nome : '') + '" placeholder="Ex: Empréstimo JRD"></div>'
+  +   '<div class="form-group"><label>Valor original (R$)</label><input class="form-input" id="emp-valor-original" type="number" step="0.01" value="' + escAttr(valorOriginal) + '" oninput="_empCalcCross(\'juros\')"></div>'
+  +   '<div class="form-group"><label>Nº parcelas</label><input class="form-input" id="emp-n-parcelas" type="number" min="1" value="' + escAttr(nParcAtual) + '"' + (isEdit ? ' disabled' : ' oninput="_empCalcCross(\'juros\')"') + '></div>'
+  +   '<div class="form-group"><label>Valor da parcela (R$)</label><input class="form-input" id="emp-valor-parcela" type="number" step="0.01" value="' + escAttr(valorParcAtual) + '"' + (isEdit ? ' disabled title="Editar parcelas individualmente na tela de detalhe"' : ' onchange="_empCalcCross(\'parcela\')"') + '></div>'
+  +   '<div class="form-group"><label>Juros (%)</label><input class="form-input" id="emp-juros" type="number" step="0.01" value="' + escAttr(jurosAtual) + '" onchange="_empCalcCross(\'juros\')"></div>'
+  +   '<div class="form-group"><label>Data 1ª parcela</label><input class="form-input" id="emp-data-1a" type="date" value="' + escAttr(data1aAtual) + '"' + (isEdit ? ' disabled' : '') + '></div>'
+  +   '<div class="form-group"><label>Total c/ juros (R$)</label><input class="form-input" id="emp-total" type="number" step="0.01" value="' + escAttr(totalAtual) + '" disabled style="opacity:0.7;"></div>'
+  +   '<div class="form-group full"><label>Observações</label><textarea class="form-input" id="emp-obs" rows="2">' + escAttr(obsAtual) + '</textarea></div>'
+  + '</div>'
+  + '<div class="modal-actions">'
+  +   '<button class="btn" onclick="document.getElementById(\'emp-modal\').remove();">Cancelar</button>'
+  +   '<button class="btn btn-gold" onclick="salvarEmp(\'' + (isEdit ? e.id : '') + '\')">' + (isEdit ? 'Salvar' : 'Cadastrar empréstimo') + '</button>'
+  + '</div>'
+  + '</div>';
+  document.body.appendChild(shell);
+  shell.addEventListener('click', ev => { if (ev.target === shell) shell.remove(); });
+  // Recalcula total ao abrir, baseado nos valores existentes
+  _empCalcCross('juros');
+}
+
+// Cálculo cruzado: source 'juros' → recalcula parcela; source 'parcela' → recalcula juros
+let _empCalcLock = false;
+function _empCalcCross(source) {
+  if (_empCalcLock) return;
+  _empCalcLock = true;
+  try {
+    const elVal   = document.getElementById('emp-valor-original');
+    const elN     = document.getElementById('emp-n-parcelas');
+    const elPar   = document.getElementById('emp-valor-parcela');
+    const elJur   = document.getElementById('emp-juros');
+    const elTot   = document.getElementById('emp-total');
+    if (!elVal || !elN) return;
+    const val = parseFloat(elVal.value) || 0;
+    const n   = parseInt(elN.value) || 0;
+    if (val <= 0 || n <= 0) return;
+    if (source === 'parcela') {
+      const par = parseFloat(elPar.value) || 0;
+      if (par <= 0) return;
+      const total = par * n;
+      const juros = ((total / val) - 1) * 100;
+      elJur.value = juros.toFixed(2);
+      elTot.value = total.toFixed(2);
+    } else {
+      const juros = parseFloat(elJur.value) || 0;
+      const total = val * (1 + juros/100);
+      elPar.value = (total / n).toFixed(2);
+      elTot.value = total.toFixed(2);
+    }
+  } finally {
+    _empCalcLock = false;
+  }
+}
+
+async function salvarEmp(id) {
+  if (!podeMexerEmprestimo()) { smAlert('Sem permissão.'); return; }
+  const nome   = document.getElementById('emp-nome').value.trim();
+  const valOrig= parseFloat(document.getElementById('emp-valor-original').value) || 0;
+  const nParc  = parseInt(document.getElementById('emp-n-parcelas').value) || 0;
+  const valPar = parseFloat(document.getElementById('emp-valor-parcela').value) || 0;
+  const juros  = parseFloat(document.getElementById('emp-juros').value) || 0;
+  const data1a = document.getElementById('emp-data-1a').value;
+  const obs    = document.getElementById('emp-obs').value.trim();
+
+  if (!nome) return smAlert('Preencha o nome.');
+  if (valOrig <= 0) return smAlert('Valor original inválido.');
+
+  const isEdit = !!id;
+  const totalCalc = valPar > 0 ? valPar * nParc : valOrig * (1 + juros/100);
+
+  if (isEdit) {
+    // EDIT — só atualiza campos do empréstimo (não regenera parcelas)
+    const upd = {
+      nome,
+      valor_original: valOrig,
+      total_com_juros: totalCalc,
+      juros_pct: juros,
+      observacoes: obs || null,
+    };
+    const { data, error } = await sb.from('emprestimo').update(upd).eq('id', id).select().single();
+    if (error) return smAlert('Erro ao salvar: ' + error.message);
+    const e = emprestimos.find(x => x.id === id);
+    if (e) {
+      e.nome = nome;
+      e.valorOriginal = valOrig;
+      e.totalComJuros = totalCalc;
+      e.jurosPct = juros;
+      e.observacoes = obs;
+    }
+    document.getElementById('emp-modal').remove();
+    renderEmprestimoFin();
     return;
   }
 
-  const pagas = emprestimo.pagamentos.filter(p => p.status === 'Pago');
-  const abertas = emprestimo.pagamentos.filter(p => p.status !== 'Pago');
-  const totalPago = pagas.reduce((s, p) => s + (p.pago || p.valor), 0);
-  const saldoRestante = (emprestimo.total || 0) - totalPago;
-  const pctPago = emprestimo.total > 0 ? (totalPago / emprestimo.total) * 100 : 0;
-  const proxima = abertas
-    .slice()
-    .sort((a, b) => (a.vencISO || '').localeCompare(b.vencISO || ''))[0];
-  if (sub) sub.textContent = pagas.length + '/' + emprestimo.pagamentos.length + ' parcelas pagas · ' + pctPago.toFixed(0) + '% quitado';
+  // CREATE
+  if (nParc < 1) return smAlert('Número de parcelas inválido.');
+  if (!data1a) return smAlert('Preencha a data da 1ª parcela.');
 
-  const proxId = proxima ? proxima.id : null;
-  el.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px;">
-      <div style="padding:14px;background:var(--surface2);border-radius:var(--r-sm);">
-        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Valor original</div>
-        <div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);margin-top:5px;">${fmt(emprestimo.valor || 0)}</div>
-      </div>
-      <div style="padding:14px;background:var(--surface2);border-radius:var(--r-sm);">
-        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Total c/ juros</div>
-        <div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);margin-top:5px;">${fmt(emprestimo.total || 0)}</div>
-      </div>
-      <div style="padding:14px;background:var(--green-dim);border-radius:var(--r-sm);">
-        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Pago</div>
-        <div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);color:var(--green);margin-top:5px;">${fmt(totalPago)}</div>
-      </div>
-      <div style="padding:14px;background:var(--red-dim);border-radius:var(--r-sm);">
-        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Saldo restante</div>
-        <div style="font-size:16px;font-weight:800;font-family:var(--mono,monospace);color:var(--red);margin-top:5px;">${fmt(saldoRestante)}</div>
-      </div>
-    </div>
-    <div style="margin-bottom:16px;">
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">
-        <span>Progresso</span><span>${pctPago.toFixed(1)}% quitado</span>
-      </div>
-      <div style="height:8px;background:var(--surface3);border-radius:4px;overflow:hidden;">
-        <div style="height:100%;width:${Math.min(pctPago,100)}%;background:linear-gradient(90deg,var(--gold),var(--gold-bright));border-radius:4px;box-shadow:0 0 14px var(--gold-glow);transition:width .5s var(--ease);"></div>
-      </div>
-    </div>
-    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Parcelas</div>
-    <div style="display:flex;flex-direction:column;gap:6px;">
-      ${emprestimo.pagamentos.map(p => {
-        const isPaga = p.status === 'Pago';
-        const isProx = !isPaga && p.id === proxId;
-        const bg = isPaga ? 'var(--green-dim)' : (isProx ? 'var(--gold-dim)' : 'var(--surface2)');
-        const cor = isPaga ? 'var(--green)' : (isProx ? 'var(--gold-bright)' : 'var(--text2)');
-        const badge = isPaga
-          ? '<span class="badge badge-green">✓ Paga</span>'
-          : isProx
-            ? '<span class="badge badge-gold">🔔 Próxima</span>'
-            : '<span class="badge" style="background:var(--surface3);color:var(--text3);">Pendente</span>';
-        const action = isPaga
-          ? ''
-          : '<button class="btn btn-gold" style="font-size:10px;padding:5px 12px;" onclick="marcarParcelaPaga(\'' + p.id + '\')">Marcar paga</button>';
-        return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;background:${bg};border-radius:var(--r-sm);font-size:12px;">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-family:var(--mono,monospace);font-weight:700;color:${cor};min-width:30px;">${String(p.num).padStart(2,'0')}</span>
-            <span style="color:var(--text2);">${p.venc}</span>
-            ${badge}
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-family:var(--mono,monospace);font-weight:700;color:${cor};">${fmt(p.valor)}</span>
-            ${action}
-          </div>
-        </div>`;
-      }).join('')}
-    </div>
-  `;
+  const empPayload = {
+    nome,
+    valor_original: valOrig,
+    total_com_juros: totalCalc,
+    juros_pct: juros,
+    data_primeira_parcela: data1a,
+    observacoes: obs || null,
+  };
+  const empResp = await sb.from('emprestimo').insert(empPayload).select().single();
+  if (empResp.error) return smAlert('Erro ao criar empréstimo: ' + empResp.error.message);
+  const novo = empResp.data;
+
+  // Gera parcelas
+  const valParcFinal = valPar > 0 ? valPar : (totalCalc / nParc);
+  const parcRows = [];
+  for (let i = 0; i < nParc; i++) {
+    parcRows.push({
+      emprestimo_id: novo.id,
+      numero: i + 1,
+      vencimento: _empAddMonthSafe(data1a, i),
+      valor: +valParcFinal.toFixed(2),
+      valor_pago: 0,
+      status: 'pendente',
+    });
+  }
+  const parcResp = await sb.from('emprestimo_parcelas').insert(parcRows).select();
+  if (parcResp.error) {
+    // Rollback manual
+    await sb.from('emprestimo').delete().eq('id', novo.id);
+    return smAlert('Erro ao gerar parcelas: ' + parcResp.error.message + '\nO empréstimo não foi salvo.');
+  }
+
+  emprestimos.unshift(_empMapEmprestimo(novo, (parcResp.data || []).map(_empMapParcela)));
+  document.getElementById('emp-modal').remove();
+  emprestimoSelecionadoId = novo.id; // abre direto no detalhe
+  renderEmprestimoFin();
 }
 
-async function marcarParcelaPaga(parcelaId) {
-  console.log('[mpp] called', { parcelaId, type: typeof parcelaId });
-  if (!parcelaId) { console.warn('[mpp] parcelaId vazio — abortando'); return; }
-  const ok = await smConfirm('Marcar esta parcela como paga?');
-  console.log('[mpp] confirm =', ok);
-  if (!ok) return;
-  const p = emprestimo.pagamentos.find(x => x.id === parcelaId);
-  console.log('[mpp] find local =', p);
-  if (!p) { console.warn('[mpp] parcela nao encontrada no array local'); return; }
-  // Otimista: atualiza UI
-  p.status = 'Pago';
-  p.pago = p.valor;
+// ── Modal Editar Parcela individual ──
+function abrirParcelaEditModal(parcelaId) {
+  if (!podeMexerEmprestimo()) { smAlert('Sem permissão.'); return; }
+  if (!parcelaId || parcelaId === 'undefined' || parcelaId === 'null') return;
+  let p = null, emp = null;
+  for (const e of emprestimos) {
+    const f = e.pagamentos.find(x => x.id === parcelaId);
+    if (f) { p = f; emp = e; break; }
+  }
+  if (!p) return smAlert('Parcela não encontrada.');
+  const old = document.getElementById('emp-parcela-modal');
+  if (old) old.remove();
+  const shell = document.createElement('div');
+  shell.id = 'emp-parcela-modal';
+  shell.className = 'modal-overlay open';
+  shell.innerHTML =
+    '<div class="modal" style="width:440px;max-width:96vw;">'
+  + '<div class="modal-title">Parcela #' + p.numero + ' · ' + (emp.nome||'') + '</div>'
+  + '<div class="form-grid">'
+  +   '<div class="form-group"><label>Vencimento</label><input class="form-input" id="emp-parc-venc" type="date" value="' + (p.vencimento || '') + '"></div>'
+  +   '<div class="form-group"><label>Valor (R$)</label><input class="form-input" id="emp-parc-valor" type="number" step="0.01" value="' + p.valor + '"></div>'
+  + '</div>'
+  + '<div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.5;">Status atual: <strong>' + (p.status === 'pago' ? 'Paga' : 'Pendente') + '</strong>. Para mudar status, use "Marcar paga" na lista.</div>'
+  + '<div class="modal-actions">'
+  +   '<button class="btn" onclick="document.getElementById(\'emp-parcela-modal\').remove();">Cancelar</button>'
+  +   '<button class="btn btn-gold" onclick="salvarParcelaEdit(\'' + parcelaId + '\')">Salvar</button>'
+  + '</div>'
+  + '</div>';
+  document.body.appendChild(shell);
+  shell.addEventListener('click', ev => { if (ev.target === shell) shell.remove(); });
+}
+
+async function salvarParcelaEdit(parcelaId) {
+  if (!podeMexerEmprestimo()) { smAlert('Sem permissão.'); return; }
+  const venc  = document.getElementById('emp-parc-venc').value;
+  const valor = parseFloat(document.getElementById('emp-parc-valor').value) || 0;
+  if (!venc) return smAlert('Preencha a data.');
+  if (valor <= 0) return smAlert('Valor inválido.');
+  const resp = await sb.from('emprestimo_parcelas')
+    .update({ vencimento: venc, valor: valor })
+    .eq('id', parcelaId)
+    .select();
+  if (resp.error) return smAlert('Erro: ' + resp.error.message);
+  if (!resp.data || !resp.data.length) return smAlert('Nada foi atualizado.');
+  // Atualiza local
+  for (const e of emprestimos) {
+    const p = e.pagamentos.find(x => x.id === parcelaId);
+    if (p) {
+      p.vencimento = venc;
+      p.venc       = venc.split('-').reverse().join('/');
+      p.valor      = valor;
+      break;
+    }
+  }
+  document.getElementById('emp-parcela-modal').remove();
   renderEmprestimoFin();
-  // Persiste — INSTRUMENTADO com .select() pra revelar rows afetadas
-  console.log('[mpp] enviando update id=' + parcelaId + ' valor_pago=' + p.valor);
+}
+
+// ── Quitar empréstimo (admin/operacional) ──
+async function quitarEmprestimo(id) {
+  if (!podeMexerEmprestimo()) { smAlert('Sem permissão.'); return; }
+  const e = emprestimos.find(x => x.id === id);
+  if (!e) return;
+  const restantes = e.pagamentos.filter(p => p.status !== 'pago');
+  if (!restantes.length) return smAlert('Empréstimo já está quitado.');
+  const hoje = new Date();
+  const dd = String(hoje.getDate()).padStart(2,'0');
+  const mm = String(hoje.getMonth()+1).padStart(2,'0');
+  const yy = hoje.getFullYear();
+  const ok = await smConfirm(
+    'Tem certeza que deseja quitar o empréstimo "' + (e.nome||'') + '"?\n\n'
+    + 'Todas as ' + restantes.length + ' parcela' + (restantes.length!==1?'s':'') + ' restante' + (restantes.length!==1?'s':'')
+    + ' serão marcadas como pagas com data de hoje (' + dd + '/' + mm + '/' + yy + ').'
+  );
+  if (!ok) return;
+  // Update batch via in-list
+  const ids = restantes.map(p => p.id);
+  const resp = await sb.from('emprestimo_parcelas')
+    .update({ status: 'pago' })
+    .in('id', ids)
+    .select();
+  if (resp.error) return smAlert('Erro: ' + resp.error.message);
+  // valor_pago precisa refletir cada valor — segundo update por linha (ou loop)
+  // Como o update batch acima não permite valor_pago=valor por linha, faço loop
+  for (const p of restantes) {
+    await sb.from('emprestimo_parcelas')
+      .update({ valor_pago: p.valor })
+      .eq('id', p.id);
+    p.status = 'pago';
+    p.valorPago = p.valor;
+  }
+  renderEmprestimoFin();
+  smToast('Empréstimo "' + (e.nome||'') + '" quitado.');
+}
+
+// ── Excluir empréstimo (admin/operacional) ──
+async function excluirEmprestimo(id) {
+  if (!podeMexerEmprestimo()) { smAlert('Sem permissão.'); return; }
+  const e = emprestimos.find(x => x.id === id);
+  if (!e) return;
+  const pagas = e.pagamentos.filter(p => p.status === 'pago').length;
+  const ok = await smConfirm(
+    '⚠️ Tem certeza que deseja EXCLUIR o empréstimo "' + (e.nome||'') + '"?\n\n'
+    + 'Esta ação remove o empréstimo e todas as ' + e.pagamentos.length + ' parcelas '
+    + '(' + pagas + ' já paga' + (pagas!==1?'s':'') + ').\n\n'
+    + 'Não pode ser desfeita.'
+  );
+  if (!ok) return;
+  // Delete parcelas primeiro, depois empréstimo
+  const delParc = await sb.from('emprestimo_parcelas').delete().eq('emprestimo_id', id);
+  if (delParc.error) return smAlert('Erro ao excluir parcelas: ' + delParc.error.message);
+  const delEmp = await sb.from('emprestimo').delete().eq('id', id);
+  if (delEmp.error) return smAlert('Parcelas excluídas, mas falha ao excluir empréstimo: ' + delEmp.error.message);
+  emprestimos = emprestimos.filter(x => x.id !== id);
+  if (emprestimoSelecionadoId === id) emprestimoSelecionadoId = null;
+  renderEmprestimoFin();
+}
+
+// ── Marcar parcela individual como paga ──
+async function marcarParcelaPaga(parcelaId) {
+  if (!parcelaId || parcelaId === 'undefined' || parcelaId === 'null') {
+    console.warn('[marcarParcelaPaga] id invalido:', parcelaId);
+    return;
+  }
+  if (!podeMarcarParcela()) { smAlert('Sem permissão para marcar parcelas.'); return; }
+  if (!(await smConfirm('Marcar esta parcela como paga?'))) return;
+  // Acha parcela em qualquer empréstimo
+  let p = null;
+  for (const e of emprestimos) {
+    const f = e.pagamentos.find(x => x.id === parcelaId);
+    if (f) { p = f; break; }
+  }
+  if (!p) return smAlert('Parcela não encontrada.');
+
+  const oldStatus = p.status, oldValorPago = p.valorPago;
+  p.status = 'pago';
+  p.valorPago = p.valor;
+  renderEmprestimoFin();
+
   const resp = await sb.from('emprestimo_parcelas')
     .update({ status: 'pago', valor_pago: p.valor })
     .eq('id', parcelaId)
     .select();
-  console.log('[mpp] resposta completa:', resp);
-  const { data, error } = resp;
-  if (error) {
-    console.error('[mpp] erro do supabase:', error);
-    smAlert('Erro ao salvar: ' + error.message);
-    p.status = 'Em Aberto'; p.pago = 0;
+  if (resp.error) {
+    p.status = oldStatus; p.valorPago = oldValorPago;
     renderEmprestimoFin();
-    return;
+    return smAlert('Erro ao salvar: ' + resp.error.message);
   }
-  if (!data || data.length === 0) {
-    console.error('[mpp] update retornou 0 linhas — WHERE nao bateu ou bloqueio');
-    smAlert('Update nao afetou nenhuma linha. Veja o console.');
-    p.status = 'Em Aberto'; p.pago = 0;
+  if (!resp.data || resp.data.length === 0) {
+    p.status = oldStatus; p.valorPago = oldValorPago;
     renderEmprestimoFin();
-    return;
+    return smAlert('Nenhuma linha atualizada — id inválido ou bloqueio.');
   }
-  console.log('[mpp] sucesso — linhas atualizadas:', data);
 }
 
 // ════════════════════════════════════════
@@ -5544,8 +5987,10 @@ function buildDadosSaudeFinanceira() {
   const saldoTotal = (contas || []).reduce((s, c) => s + c.saldo, 0);
   const custoFixoMensal = (custosFixos || []).reduce((s, c) => s + c.valor, 0);
 
-  const parcelasAbertas = (emprestimo.pagamentos || []).filter(p => p.status !== 'Pago');
-  const saldoDevedor = parcelasAbertas.reduce((s, p) => s + p.valor, 0);
+  const todasParcelas   = (emprestimos || []).flatMap(e => e.pagamentos);
+  const parcelasAbertas = todasParcelas.filter(p => p.status !== 'pago');
+  const saldoDevedor    = parcelasAbertas.reduce((s, p) => s + p.valor, 0);
+  const totalContratado = (emprestimos || []).reduce((s, e) => s + (e.totalComJuros || 0), 0);
 
   const em30 = new Date(hoje.getTime() + 30 * 86400000);
   const em30ISO = toISO(em30);
@@ -5562,7 +6007,7 @@ function buildDadosSaudeFinanceira() {
     emprestimo: {
       saldoDevedor:        saldoDevedor,
       parcelasRestantes:   parcelasAbertas.length,
-      valorTotalContratado:emprestimo.total || 0,
+      valorTotalContratado:totalContratado,
     },
     contasPagar: {
       vencidas:        { qtd: cpVencidas.length,  total: cpVencidas.reduce((s,c)=>s+c.valor,0) },
