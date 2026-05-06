@@ -7764,9 +7764,9 @@ function renderOficina() {
     const valorTxt = o.valorServico ? fmt(o.valorServico) : '—';
     return '<div style="display:grid;grid-template-columns:60px 1.7fr 1.3fr 1.3fr 110px 130px auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
       + `<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#${o.numero}</div>`
-      + `<div><div style="font-weight:700;">${escHtml(o.clienteNome)||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(o.modeloScooter)||'—'}${o.cor?(' · '+escHtml(o.cor)):''}${o.chassi?(' · '+escHtml(o.chassi)):''}</div></div>`
-      + `<div style="font-size:11px;color:var(--text2);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(o.problemaRelatado)}">${escHtml(o.problemaRelatado)||'—'}</div>`
-      + `<div style="font-size:10px;color:var(--text3);">Abertura: ${o.dataAbertura||'—'}${o.dataProximoContato?('<br>Próximo: '+o.dataProximoContato):''}</div>`
+      + `<div style="min-width:0;overflow:hidden;"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(o.clienteNome)||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(o.modeloScooter)||'—'}${o.cor?(' · '+escHtml(o.cor)):''}${o.chassi?(' · '+escHtml(o.chassi)):''}</div></div>`
+      + `<div style="min-width:0;font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(o.problemaRelatado)}">${escHtml(o.problemaRelatado)||'—'}</div>`
+      + `<div style="min-width:0;font-size:10px;color:var(--text3);overflow:hidden;">Abertura: ${o.dataAbertura||'—'}${o.dataProximoContato?('<br>Próximo: '+o.dataProximoContato):''}</div>`
       + `<div class="td-mono" style="font-weight:700;color:var(--green);">${valorTxt}</div>`
       + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
       + `<div style="display:flex;gap:5px;">`
@@ -8342,8 +8342,8 @@ function renderSac() {
     const tipoTxt = tipoProblemaLabel(c);
     return '<div style="display:grid;grid-template-columns:60px 1.6fr 1.4fr 110px 110px 1fr auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;' + (venc?'background:rgba(255,77,77,0.04);':'') + '">'
       + `<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#${c.numero}</div>`
-      + `<div><div style="font-weight:700;">${escHtml(c.clienteNome)||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(c.modeloScooter)}${c.fornecedor?(' · '+escHtml(c.fornecedor)):''}</div></div>`
-      + `<div><div style="font-size:11px;font-weight:600;">${escHtml(tipoTxt)}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(c.problemaRelatado)}">${escHtml(c.problemaRelatado)}</div></div>`
+      + `<div style="min-width:0;overflow:hidden;"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(c.clienteNome)||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(c.modeloScooter)}${c.fornecedor?(' · '+escHtml(c.fornecedor)):''}</div></div>`
+      + `<div style="min-width:0;overflow:hidden;"><div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(tipoTxt)}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(c.problemaRelatado)}">${escHtml(c.problemaRelatado)}</div></div>`
       + `<div><span class="badge" style="background:${pr.bg};color:${pr.cor};">${pr.label}</span></div>`
       + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
       + `<div style="font-size:10px;color:var(--text3);">${vencHTML}</div>`
