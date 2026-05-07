@@ -8849,14 +8849,6 @@ function abrirSacModal(id) {
   const tipoOpts = '<option value="">—</option>' + Object.keys(TIPOS_PROBLEMA).map(k =>
     `<option value="${k}"${(c&&c.tipoProblema===k)?' selected':''}>${TIPOS_PROBLEMA[k]}</option>`).join('');
 
-  // Histórico parsing — newest first na exibicao
-  const histLinhas = (c && c.historico) ? c.historico.split(/\r?\n/).filter(l => l.trim()) : [];
-  const histHTML = histLinhas.length
-    ? '<div style="max-height:180px;overflow-y:auto;border:1px solid var(--border2);border-radius:var(--r-sm);padding:10px;background:var(--surface2);">'
-      + histLinhas.slice().reverse().map(l => `<div style="font-size:11px;color:var(--text2);padding:4px 0;border-bottom:1px solid var(--border);line-height:1.5;">${l.replace(/</g,'&lt;')}</div>`).join('')
-      + '</div>'
-    : '<div style="font-size:11px;color:var(--text3);padding:6px 0;">Nenhum registro ainda.</div>';
-
   let _u = null;
   try { _u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
   const isAdminUser = _u && (_u.role === 'admin' || _u.perfil === 'admin');
@@ -8882,32 +8874,71 @@ function abrirSacModal(id) {
   }
   const tipoOutroDisplay = (c && c.tipoProblema === 'outro') ? '' : 'display:none;';
 
+  const blocoTimelineHTML = isEdit
+    ? '<div class="timeline-header-actions">'
+      +   '<button type="button" class="timeline-add-btn" onclick="_smTimelineAbrirEvento(\'' + c.id + '\', \'sac\')">+ Adicionar evento</button>'
+      +   (isAdminUser ? '<button type="button" class="timeline-toggle-excluidos" id="sac-tl-toggle" onclick="_sacToggleExcluidos(\'' + c.id + '\')">👁 Mostrar excluídos</button>' : '')
+      + '</div>'
+      + '<div id="sac-timeline" class="timeline-vazio">Carregando...</div>'
+    : '<div class="timeline-vazio">Salve o caso pra começar a registrar eventos na timeline.</div>';
+
   shell.innerHTML =
     `<div class="modal" style="width:760px;max-width:95vw;">`
     + `<div class="modal-title">${isEdit?('Caso #'+c.numero):'Novo <span>caso</span>'}</div>`
     + bannerOrigem
-    + `<div class="form-grid">`
-    +   `<div class="form-group" style="position:relative;"><label>Cliente</label>`
-    +     `<input class="form-input" id="sac-cli" value="${escAttr(c&&c.clienteNome)}" autocomplete="off" oninput="sacClienteSugestao()">`
-    +     `<div id="sac-cli-sugestoes" style="position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;display:none;"></div>`
+    // ── Bloco 1 — Cliente ──
+    + `<div class="modal-bloco">`
+    +   `<div class="modal-bloco-titulo">🧑 Cliente</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group full" style="position:relative;"><label>Cliente</label>`
+    +       `<input class="form-input" id="sac-cli" value="${escAttr(c&&c.clienteNome)}" autocomplete="off" oninput="sacClienteSugestao()">`
+    +       `<div id="sac-cli-sugestoes" style="position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;display:none;"></div>`
+    +     `</div>`
+    +     `<div class="form-group"><label>Telefone</label><input class="form-input" id="sac-tel" value="${escAttr(c&&c.clienteTelefone)}"></div>`
+    +     `<div class="form-group"><label>CPF</label><input class="form-input" id="sac-cpf" value="${escAttr(cpfInicial)}"></div>`
     +   `</div>`
-    +   `<div class="form-group"><label>Telefone</label><input class="form-input" id="sac-tel" value="${escAttr(c&&c.clienteTelefone)}"></div>`
-    +   `<div class="form-group"><label>CPF</label><input class="form-input" id="sac-cpf" value="${escAttr(cpfInicial)}"></div>`
-    +   `<div class="form-group"><label>Modelo</label><input class="form-input" id="sac-modelo" value="${escAttr(c&&c.modeloScooter)}"></div>`
-    +   `<div class="form-group"><label>Cor</label><input class="form-input" id="sac-cor" value="${escAttr(c&&c.cor)}"></div>`
-    +   `<div class="form-group"><label>Chassi</label><input class="form-input" id="sac-chassi" value="${escAttr(c&&c.chassi)}"></div>`
-    +   `<div class="form-group"><label>Fornecedor</label><input class="form-input" id="sac-forn" value="${escAttr(c&&c.fornecedor)}"></div>`
-    +   `<div class="form-group"><label>Tipo do problema</label><select class="form-input" id="sac-tipo" onchange="sacTipoOutroToggle()">${tipoOpts}</select></div>`
-    +   `<div class="form-group full" id="sac-tipo-outro-wrap" style="${tipoOutroDisplay}"><label>Especifique o tipo</label><input class="form-input" id="sac-tipo-outro" value="${escAttr(c&&c.tipoProblemaOutro)}"></div>`
-    +   `<div class="form-group"><label>Prioridade</label><select class="form-input" id="sac-prio">${prioOpts}</select></div>`
-    +   `<div class="form-group"><label>Status</label><select class="form-input" id="sac-status">${statusOpts}</select></div>`
-    +   `<div class="form-group"><label>Data abertura</label><input class="form-input" id="sac-data-abert" type="date" value="${(c&&c.dataAbertura)||new Date().toISOString().split('T')[0]}"></div>`
-    +   `<div class="form-group"><label>Próximo contato</label><input class="form-input" id="sac-prox" type="date" value="${(c&&c.dataProximoContato)||''}"></div>`
-    +   `<div class="form-group"><label>Prazo alerta (dias)</label><input class="form-input" id="sac-alerta" type="number" min="0" value="${(c&&c.prazoAlerta)||3}"></div>`
-    +   `<div class="form-group full"><label>Problema relatado</label><textarea class="form-input" id="sac-desc" rows="3">${escAttr(c&&c.problemaRelatado)}</textarea></div>`
-    +   `<div class="form-group full"><label>Itens deixados</label><input class="form-input" id="sac-itens" value="${escAttr(c&&c.itensDeixados)}"></div>`
-    +   (isEdit ? `<div class="form-group full"><label>Histórico (mais recente em cima)</label>${histHTML}</div>` : '')
-    +   `<div class="form-group full"><label>${isEdit?'Adicionar entrada ao histórico (timestamp e autor serão adicionados)':'Anotação inicial (opcional)'}</label><textarea class="form-input" id="sac-hist-novo" rows="2" placeholder="Ex: Liguei pro fornecedor, prazo 5 dias úteis"></textarea></div>`
+    + `</div>`
+    // ── Bloco 2 — Veículo ──
+    + `<div class="modal-bloco">`
+    +   `<div class="modal-bloco-titulo">🛵 Veículo</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group"><label>Modelo</label><input class="form-input" id="sac-modelo" value="${escAttr(c&&c.modeloScooter)}"></div>`
+    +     `<div class="form-group"><label>Cor</label><input class="form-input" id="sac-cor" value="${escAttr(c&&c.cor)}"></div>`
+    +     `<div class="form-group full"><label>Chassi</label><input class="form-input" id="sac-chassi" value="${escAttr(c&&c.chassi)}"></div>`
+    +   `</div>`
+    + `</div>`
+    // ── Bloco 3 — Problema ──
+    + `<div class="modal-bloco">`
+    +   `<div class="modal-bloco-titulo">⚠️ Problema</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group"><label>Tipo do problema</label><select class="form-input" id="sac-tipo" onchange="sacTipoOutroToggle()">${tipoOpts}</select></div>`
+    +     `<div class="form-group" id="sac-tipo-outro-wrap" style="${tipoOutroDisplay}"><label>Especifique o tipo</label><input class="form-input" id="sac-tipo-outro" value="${escAttr(c&&c.tipoProblemaOutro)}"></div>`
+    +     `<div class="form-group"><label>Prioridade</label><select class="form-input" id="sac-prio">${prioOpts}</select></div>`
+    +     `<div class="form-group full"><label>Problema relatado</label><textarea class="form-input" id="sac-desc" rows="3">${escAttr(c&&c.problemaRelatado)}</textarea></div>`
+    +   `</div>`
+    + `</div>`
+    // ── Bloco 4 — Tratamento (Status | Fornecedor) ──
+    + `<div class="modal-bloco">`
+    +   `<div class="modal-bloco-titulo">🛠️ Tratamento</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group"><label>Status</label><select class="form-input" id="sac-status">${statusOpts}</select></div>`
+    +     `<div class="form-group"><label>Fornecedor</label><input class="form-input" id="sac-forn" value="${escAttr(c&&c.fornecedor)}"></div>`
+    +     `<div class="form-group full"><label>Itens deixados</label><input class="form-input" id="sac-itens" value="${escAttr(c&&c.itensDeixados)}"></div>`
+    +   `</div>`
+    + `</div>`
+    // ── Bloco 5 — Prazos ──
+    + `<div class="modal-bloco">`
+    +   `<div class="modal-bloco-titulo">📅 Prazos</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group"><label>Data abertura</label><input class="form-input" id="sac-data-abert" type="date" value="${(c&&c.dataAbertura)||new Date().toISOString().split('T')[0]}"></div>`
+    +     `<div class="form-group"><label>Próximo contato</label><input class="form-input" id="sac-prox" type="date" value="${(c&&c.dataProximoContato)||''}"></div>`
+    +     `<div class="form-group"><label>Prazo alerta (dias)</label><input class="form-input" id="sac-alerta" type="number" min="0" value="${(c&&c.prazoAlerta)||3}"></div>`
+    +   `</div>`
+    + `</div>`
+    // ── Bloco 6 — Timeline ──
+    + `<div class="modal-bloco">`
+    +   `<div class="modal-bloco-titulo">📍 Timeline de eventos</div>`
+    +   blocoTimelineHTML
     + `</div>`
     + `<div class="modal-actions">`
     +   `<button class="btn" onclick="document.getElementById('sac-modal').remove();">Cancelar</button>`
@@ -8917,6 +8948,46 @@ function abrirSacModal(id) {
     + `</div>`;
   document.body.appendChild(shell);
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+
+  // Carrega timeline e listener de update (auto-cleanup quando modal sai do DOM)
+  if (isEdit) {
+    const updHandler = (ev) => {
+      if (!document.body.contains(shell)) {
+        document.removeEventListener('timeline:updated', updHandler);
+        return;
+      }
+      if (!ev.detail || ev.detail.casoId !== c.id || ev.detail.modulo !== 'sac') return;
+      _sacRecarregarTimeline(c.id);
+    };
+    document.addEventListener('timeline:updated', updHandler);
+    _sacRecarregarTimeline(c.id);
+  }
+}
+
+async function _sacRecarregarTimeline(casoId) {
+  const cont = document.getElementById('sac-timeline');
+  if (!cont) return;
+  const shell = document.getElementById('sac-modal');
+  const incluirExcluidos = !!(shell && shell.dataset.tlIncluirExcluidos === '1');
+  const eventos = await _smTimelineCarregar(casoId, 'sac', { incluirExcluidos });
+  _smTimelineRender(cont, eventos);
+}
+
+function _sacToggleExcluidos(casoId) {
+  const shell = document.getElementById('sac-modal');
+  const btn = document.getElementById('sac-tl-toggle');
+  if (!shell || !btn) return;
+  const ativo = shell.dataset.tlIncluirExcluidos === '1';
+  if (ativo) {
+    delete shell.dataset.tlIncluirExcluidos;
+    btn.textContent = '👁 Mostrar excluídos';
+    btn.classList.remove('ativo');
+  } else {
+    shell.dataset.tlIncluirExcluidos = '1';
+    btn.textContent = '🙈 Esconder excluídos';
+    btn.classList.add('ativo');
+  }
+  _sacRecarregarTimeline(casoId);
 }
 
 function sacTipoOutroToggle() {
@@ -8943,22 +9014,11 @@ async function sacSalvar(editId) {
   const prazoAlerta     = parseInt(document.getElementById('sac-alerta').value) || 3;
   const problemaRelatado= document.getElementById('sac-desc').value.trim();
   const itensDeixados   = document.getElementById('sac-itens').value.trim();
-  const histNovo        = document.getElementById('sac-hist-novo').value.trim();
 
   if (!clienteNome) return smAlert('Preencha o nome do cliente.');
   if (!tipoProblema) return smAlert('Selecione o tipo do problema.');
   if (tipoProblema === 'outro' && !tipoOutro) return smAlert('Especifique o tipo do problema (campo "outro").');
   if (!problemaRelatado) return smAlert('Preencha o problema relatado.');
-
-  // Histórico: append da entrada nova com autor
-  let historicoFinal;
-  if (editId) {
-    const cExist = sacCasos.find(x => x.id === editId);
-    historicoFinal = cExist?.historico || '';
-    if (histNovo) historicoFinal = _smHistAppend(historicoFinal, histNovo);
-  } else {
-    historicoFinal = histNovo ? _smHistEntrada(histNovo) : '';
-  }
 
   const payload = {
     cliente_nome: clienteNome,
@@ -8977,7 +9037,6 @@ async function sacSalvar(editId) {
     prazo_alerta: prazoAlerta,
     problema_relatado: problemaRelatado,
     itens_deixados: itensDeixados || null,
-    historico: historicoFinal || null,
   };
   if (status === 'finalizado') {
     payload.data_resolucao = new Date().toISOString().split('T')[0];
@@ -8991,7 +9050,14 @@ async function sacSalvar(editId) {
   } else {
     const { data, error } = await sb.from('sac_casos').insert(payload).select().single();
     if (error) return smAlert('Erro ao salvar: ' + error.message);
-    sacCasos.unshift(toCamel(data));
+    const novoCaso = toCamel(data);
+    sacCasos.unshift(novoCaso);
+    await _smTimelineCriar({
+      casoId: novoCaso.id,
+      modulo: 'sac',
+      categoria: 'abertura',
+      descricao: 'Caso aberto',
+    });
   }
   document.getElementById('sac-modal').remove();
   renderSacKpis(); renderSac(); atualizarDotSac();
