@@ -5937,19 +5937,29 @@ function abrirParcelaEditModal(parcelaId) {
   const shell = document.createElement('div');
   shell.id = 'emp-parcela-modal';
   shell.className = 'modal-overlay open';
+  const isPaga = p.status === 'pago';
   shell.innerHTML =
     '<div class="modal" style="width:440px;max-width:96vw;">'
   + '<div class="modal-title">Parcela #' + p.numero + ' · ' + (emp.nome||'') + '</div>'
   + '<div class="form-grid">'
   +   '<div class="form-group"><label>Vencimento</label><input class="form-input" id="emp-parc-venc" type="date" value="' + (p.vencimento || '') + '"></div>'
   +   '<div class="form-group"><label>Valor (R$)</label><input class="form-input" id="emp-parc-valor" type="number" step="0.01" value="' + p.valor + '"></div>'
+  +   '<div class="form-group">'
+  +     '<label>Status</label>'
+  +     '<select class="form-input" id="emp-parc-status" onchange="_empParcStatusToggle(true)">'
+  +       '<option value="pago"' + (isPaga ? ' selected' : '') + '>Paga</option>'
+  +       '<option value="pendente"' + (!isPaga ? ' selected' : '') + '>Pendente</option>'
+  +     '</select>'
+  +   '</div>'
+  +   '<div class="form-group">'
+  +     '<label>Valor pago (R$)</label>'
+  +     '<input class="form-input" id="emp-parc-vpgo" type="number" step="0.01" value="' + (p.valorPago || 0) + '">'
+  +   '</div>'
   +   '<div class="form-group full">'
   +     '<label>Data de pagamento</label>'
   +     '<input class="form-input" id="emp-parc-dpgto" type="date" value="' + (p.dataPagamento || '') + '">'
-  +     '<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.4;">Use só quando a parcela estiver paga.</div>'
   +   '</div>'
   + '</div>'
-  + '<div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.5;">Status atual: <strong>' + (p.status === 'pago' ? 'Paga' : 'Pendente') + '</strong>. Para mudar status, use "Marcar paga" na lista.</div>'
   + '<div class="modal-actions">'
   +   '<button class="btn" onclick="document.getElementById(\'emp-parcela-modal\').remove();">Cancelar</button>'
   +   '<button class="btn btn-gold" onclick="salvarParcelaEdit(\'' + parcelaId + '\')">Salvar</button>'
@@ -5957,33 +5967,101 @@ function abrirParcelaEditModal(parcelaId) {
   + '</div>';
   document.body.appendChild(shell);
   shell.addEventListener('click', ev => { if (ev.target === shell) shell.remove(); });
+  // Sincroniza disabled inicial (sem auto-fill — preserva valores atuais)
+  _empParcStatusToggle(false);
+}
+
+function _empParcStatusToggle(autoFill) {
+  const stEl = document.getElementById('emp-parc-status');
+  if (!stEl) return;
+  const st    = stEl.value;
+  const dpgto = document.getElementById('emp-parc-dpgto');
+  const vpgo  = document.getElementById('emp-parc-vpgo');
+  if (!dpgto || !vpgo) return;
+  if (st === 'pago') {
+    dpgto.disabled = false;
+    vpgo.disabled  = false;
+    if (autoFill) {
+      if (!dpgto.value) {
+        const venc = document.getElementById('emp-parc-venc').value;
+        if (venc) dpgto.value = venc;
+      }
+      if ((parseFloat(vpgo.value) || 0) === 0) {
+        const valorBase = parseFloat(document.getElementById('emp-parc-valor').value) || 0;
+        if (valorBase > 0) vpgo.value = valorBase.toFixed(2);
+      }
+    }
+  } else {
+    // pendente — desabilita mas mantém valores visíveis (user vê o que vai perder)
+    dpgto.disabled = true;
+    vpgo.disabled  = true;
+  }
 }
 
 async function salvarParcelaEdit(parcelaId) {
   if (!podeMexerEmprestimo()) { smAlert('Sem permissão.'); return; }
-  const venc  = document.getElementById('emp-parc-venc').value;
-  const valor = parseFloat(document.getElementById('emp-parc-valor').value) || 0;
-  const dpgto = document.getElementById('emp-parc-dpgto').value || null;
+  const venc      = document.getElementById('emp-parc-venc').value;
+  const valor     = parseFloat(document.getElementById('emp-parc-valor').value) || 0;
+  const newStatus = document.getElementById('emp-parc-status').value;
+  const dpgto     = document.getElementById('emp-parc-dpgto').value || null;
+  const vpgo      = parseFloat(document.getElementById('emp-parc-vpgo').value) || 0;
   if (!venc) return smAlert('Preencha a data.');
   if (valor <= 0) return smAlert('Valor inválido.');
+
+  // Acha estado original pra detectar reversao paga -> pendente
+  let pAtual = null;
+  for (const e of emprestimos) {
+    const f = e.pagamentos.find(x => x.id === parcelaId);
+    if (f) { pAtual = f; break; }
+  }
+  if (!pAtual) return smAlert('Parcela não encontrada.');
+  const oldStatus = pAtual.status;
+
+  // Monta payload por cenario
+  let payload;
+  if (newStatus === 'pago') {
+    // Cenarios 1 (paga -> paga) e 3 (pendente -> paga). Sem confirmacao.
+    payload = {
+      vencimento:     venc,
+      valor:          valor,
+      status:         'pago',
+      valor_pago:     vpgo,
+      data_pagamento: dpgto,
+    };
+  } else {
+    // Cenarios 2 (pendente -> pendente) e 4 (paga -> pendente).
+    if (oldStatus === 'pago') {
+      const ok = await smConfirm(
+        'Tem certeza que quer voltar a parcela #' + pAtual.numero + ' para pendente?\n\n' +
+        'O valor pago e a data de pagamento serão apagados.'
+      );
+      if (!ok) return; // modal continua aberto
+    }
+    payload = {
+      vencimento:     venc,
+      valor:          valor,
+      status:         'pendente',
+      valor_pago:     0,
+      data_pagamento: null,
+    };
+  }
+
   const resp = await sb.from('emprestimo_parcelas')
-    .update({ vencimento: venc, valor: valor, data_pagamento: dpgto })
+    .update(payload)
     .eq('id', parcelaId)
     .select();
   if (resp.error) return smAlert('Erro: ' + resp.error.message);
   if (!resp.data || !resp.data.length) return smAlert('Nada foi atualizado.');
-  // Atualiza local
-  for (const e of emprestimos) {
-    const p = e.pagamentos.find(x => x.id === parcelaId);
-    if (p) {
-      p.vencimento     = venc;
-      p.venc           = venc.split('-').reverse().join('/');
-      p.valor          = valor;
-      p.dataPagamento  = dpgto || '';
-      p.dataPgtoFmt    = _empFmtDataIsoBr(dpgto || '');
-      break;
-    }
-  }
+
+  // Atualiza estado local
+  pAtual.vencimento    = venc;
+  pAtual.venc          = venc.split('-').reverse().join('/');
+  pAtual.valor         = valor;
+  pAtual.status        = payload.status;
+  pAtual.valorPago     = payload.valor_pago;
+  pAtual.dataPagamento = payload.data_pagamento || '';
+  pAtual.dataPgtoFmt   = _empFmtDataIsoBr(payload.data_pagamento || '');
+
   document.getElementById('emp-parcela-modal').remove();
   renderEmprestimoFin();
 }
