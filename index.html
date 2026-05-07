@@ -8338,14 +8338,6 @@ function abrirOfModal(id) {
     if (cli) cpfInicial = cli.cpfCnpj || cli.cpf || '';
   }
 
-  // Histórico
-  const histLinhas = (o && o.historico) ? o.historico.split(/\r?\n/).filter(l => l.trim()) : [];
-  const histHTML = histLinhas.length
-    ? '<div style="max-height:180px;overflow-y:auto;border:1px solid var(--border2);border-radius:var(--r-sm);padding:10px;background:var(--surface2);">'
-      + histLinhas.slice().reverse().map(l => `<div style="font-size:11px;color:var(--text2);padding:4px 0;border-bottom:1px solid var(--border);line-height:1.5;">${l.replace(/</g,'&lt;')}</div>`).join('')
-      + '</div>'
-    : '<div style="font-size:11px;color:var(--text3);padding:6px 0;">Nenhum registro ainda.</div>';
-
   let _u = null;
   try { _u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
   const podeMover = isEdit && o && !o.sacDestinoId && _u && modulosPermitidos(_u).includes('sac');
@@ -8361,34 +8353,70 @@ function abrirOfModal(id) {
 
   const tipoOutroDisplay = (o && o.tipoProblema === 'outro') ? '' : 'display:none;';
 
+  const blocoTimelineHTML = isEdit
+    ? '<div id="of-timeline" class="timeline-vazio">Carregando...</div>'
+      + '<button type="button" class="timeline-add-btn" onclick="_smTimelineAbrirEvento(\'' + o.id + '\', \'oficina\')">+ Adicionar evento</button>'
+    : '<div class="timeline-vazio">Salve o caso pra começar a registrar eventos na timeline.</div>';
+
   shell.innerHTML =
     `<div class="modal" style="width:760px;max-width:95vw;">`
     + `<div class="modal-title">${isEdit?('Editar OS #'+o.numero):'Nova <span>OS</span>'}</div>`
     + bannerSac
-    + `<div class="form-grid">`
-    +   `<div class="form-group full" style="position:relative;"><label>Cliente</label>`
-    +     `<input class="form-input" id="of-cli-nome" value="${escAttr(o&&o.clienteNome)}" autocomplete="off" oninput="ofClienteSugestao()">`
-    +     `<div id="of-cli-sugestoes" style="position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;display:none;"></div>`
+    // ── Bloco 1 — Cliente ──
+    + `<div class="modal-bloco">`
+    +   `<div class="modal-bloco-titulo">🧑 Cliente</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group full" style="position:relative;"><label>Cliente</label>`
+    +       `<input class="form-input" id="of-cli-nome" value="${escAttr(o&&o.clienteNome)}" autocomplete="off" oninput="ofClienteSugestao()">`
+    +       `<div id="of-cli-sugestoes" style="position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;display:none;"></div>`
+    +     `</div>`
+    +     `<div class="form-group"><label>Telefone</label><input class="form-input" id="of-cli-tel" value="${escAttr(o&&o.clienteTelefone)}"></div>`
+    +     `<div class="form-group"><label>CPF</label><input class="form-input" id="of-cli-cpf" value="${escAttr(cpfInicial)}"></div>`
     +   `</div>`
-    +   `<div class="form-group"><label>Telefone</label><input class="form-input" id="of-cli-tel" value="${escAttr(o&&o.clienteTelefone)}"></div>`
-    +   `<div class="form-group"><label>CPF</label><input class="form-input" id="of-cli-cpf" value="${escAttr(cpfInicial)}"></div>`
-    +   `<div class="form-group"><label>Modelo</label><input class="form-input" id="of-modelo" value="${escAttr(o&&o.modeloScooter)}"></div>`
-    +   `<div class="form-group"><label>Cor</label><input class="form-input" id="of-cor" value="${escAttr(o&&o.cor)}"></div>`
-    +   `<div class="form-group full"><label>Chassi</label><input class="form-input" id="of-chassi" value="${escAttr(o&&o.chassi)}"></div>`
-    +   `<div class="form-group"><label>Tipo do problema</label><select class="form-input" id="of-tipo" onchange="ofTipoOutroToggle()">${tipoOpts}</select></div>`
-    +   `<div class="form-group"><label>Prioridade</label><select class="form-input" id="of-prio">${prioOpts}</select></div>`
-    +   `<div class="form-group full" id="of-tipo-outro-wrap" style="${tipoOutroDisplay}"><label>Especifique o tipo</label><input class="form-input" id="of-tipo-outro" value="${escAttr(o&&o.tipoProblemaOutro)}"></div>`
-    +   `<div class="form-group full"><label>Problema relatado</label><textarea class="form-input" id="of-problema" rows="2">${escAttr(o&&o.problemaRelatado)}</textarea></div>`
-    +   `<div class="form-group full"><label>Itens deixados</label><input class="form-input" id="of-itens" value="${escAttr(o&&o.itensDeixados)}"></div>`
-    +   `<div class="form-group"><label>Data abertura</label><input class="form-input" id="of-data-abert" type="date" value="${(o&&o.dataAbertura)||new Date().toISOString().split('T')[0]}"></div>`
-    +   `<div class="form-group"><label>Próximo contato</label><input class="form-input" id="of-data-prox" type="date" value="${(o&&o.dataProximoContato)||''}"></div>`
-    +   `<div class="form-group"><label>Prazo alerta (dias)</label><input class="form-input" id="of-prazo" type="number" min="0" value="${(o&&o.prazoAlerta)||3}"></div>`
-    +   `<div class="form-group"><label>Status</label><select class="form-input" id="of-status">${statusOpts}</select></div>`
-    +   `<div class="form-group"><label>Valor do serviço (R$)</label><input class="form-input" id="of-valor" type="number" step="0.01" value="${(o&&o.valorServico)||0}"></div>`
-    +   (isEdit ? `<div class="form-group full"><label>Diagnóstico</label><textarea class="form-input" id="of-diag" rows="2">${escAttr(o.diagnostico)}</textarea></div>` : '')
-    +   (isEdit ? `<div class="form-group full"><label>Solução aplicada</label><textarea class="form-input" id="of-sol" rows="2">${escAttr(o.solucao)}</textarea></div>` : '')
-    +   (isEdit ? `<div class="form-group full"><label>Histórico (mais recente em cima)</label>${histHTML}</div>` : '')
-    +   `<div class="form-group full"><label>${isEdit?'Adicionar entrada ao histórico (timestamp e autor serão adicionados)':'Anotação inicial (opcional)'}</label><textarea class="form-input" id="of-hist-novo" rows="2" placeholder="Ex: Cliente trouxe a moto, sem capacete"></textarea></div>`
+    + `</div>`
+    // ── Bloco 2 — Veículo ──
+    + `<div class="modal-bloco">`
+    +   `<div class="modal-bloco-titulo">🛵 Veículo</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group"><label>Modelo</label><input class="form-input" id="of-modelo" value="${escAttr(o&&o.modeloScooter)}"></div>`
+    +     `<div class="form-group"><label>Cor</label><input class="form-input" id="of-cor" value="${escAttr(o&&o.cor)}"></div>`
+    +     `<div class="form-group full"><label>Chassi</label><input class="form-input" id="of-chassi" value="${escAttr(o&&o.chassi)}"></div>`
+    +   `</div>`
+    + `</div>`
+    // ── Bloco 3 — Problema ──
+    + `<div class="modal-bloco">`
+    +   `<div class="modal-bloco-titulo">⚠️ Problema</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group"><label>Tipo do problema</label><select class="form-input" id="of-tipo" onchange="ofTipoOutroToggle()">${tipoOpts}</select></div>`
+    +     `<div class="form-group" id="of-tipo-outro-wrap" style="${tipoOutroDisplay}"><label>Especifique o tipo</label><input class="form-input" id="of-tipo-outro" value="${escAttr(o&&o.tipoProblemaOutro)}"></div>`
+    +     `<div class="form-group"><label>Prioridade</label><select class="form-input" id="of-prio">${prioOpts}</select></div>`
+    +     `<div class="form-group full"><label>Problema relatado</label><textarea class="form-input" id="of-problema" rows="2">${escAttr(o&&o.problemaRelatado)}</textarea></div>`
+    +   `</div>`
+    + `</div>`
+    // ── Bloco 4 — Tratamento ──
+    + `<div class="modal-bloco">`
+    +   `<div class="modal-bloco-titulo">🛠️ Tratamento</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group"><label>Status</label><select class="form-input" id="of-status">${statusOpts}</select></div>`
+    +     `<div class="form-group"><label>Valor do serviço (R$)</label><input class="form-input" id="of-valor" type="number" step="0.01" value="${(o&&o.valorServico)||0}"></div>`
+    +     `<div class="form-group full"><label>Itens deixados</label><input class="form-input" id="of-itens" value="${escAttr(o&&o.itensDeixados)}"></div>`
+    +     (isEdit ? `<div class="form-group full"><label>Diagnóstico</label><textarea class="form-input" id="of-diag" rows="2">${escAttr(o.diagnostico)}</textarea></div>` : '')
+    +     (isEdit ? `<div class="form-group full"><label>Solução aplicada</label><textarea class="form-input" id="of-sol" rows="2">${escAttr(o.solucao)}</textarea></div>` : '')
+    +   `</div>`
+    + `</div>`
+    // ── Bloco 5 — Prazos ──
+    + `<div class="modal-bloco">`
+    +   `<div class="modal-bloco-titulo">📅 Prazos</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group"><label>Data abertura</label><input class="form-input" id="of-data-abert" type="date" value="${(o&&o.dataAbertura)||new Date().toISOString().split('T')[0]}"></div>`
+    +     `<div class="form-group"><label>Próximo contato</label><input class="form-input" id="of-data-prox" type="date" value="${(o&&o.dataProximoContato)||''}"></div>`
+    +     `<div class="form-group"><label>Prazo alerta (dias)</label><input class="form-input" id="of-prazo" type="number" min="0" value="${(o&&o.prazoAlerta)||3}"></div>`
+    +   `</div>`
+    + `</div>`
+    // ── Bloco 6 — Timeline ──
+    + `<div class="modal-bloco">`
+    +   `<div class="modal-bloco-titulo">📍 Timeline de eventos</div>`
+    +   blocoTimelineHTML
     + `</div>`
     + `<div class="modal-actions">`
     +   `<button class="btn" onclick="document.getElementById('of-modal').remove();">Cancelar</button>`
@@ -8399,6 +8427,27 @@ function abrirOfModal(id) {
   document.body.appendChild(shell);
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
   if (!isEdit) ofClienteSugestao();
+
+  // Carrega timeline e registra listener de update (auto-cleanup quando modal sai do DOM)
+  if (isEdit) {
+    const updHandler = (ev) => {
+      if (!document.body.contains(shell)) {
+        document.removeEventListener('timeline:updated', updHandler);
+        return;
+      }
+      if (!ev.detail || ev.detail.casoId !== o.id || ev.detail.modulo !== 'oficina') return;
+      _ofRecarregarTimeline(o.id);
+    };
+    document.addEventListener('timeline:updated', updHandler);
+    _ofRecarregarTimeline(o.id);
+  }
+}
+
+async function _ofRecarregarTimeline(casoId) {
+  const cont = document.getElementById('of-timeline');
+  if (!cont) return;
+  const eventos = await _smTimelineCarregar(casoId, 'oficina');
+  _smTimelineRender(cont, eventos);
 }
 
 function ofTipoOutroToggle() {
@@ -8450,7 +8499,6 @@ async function ofSalvar(editId) {
   const valor     = parseFloat(document.getElementById('of-valor').value) || 0;
   const diag      = document.getElementById('of-diag')?.value.trim() || null;
   const sol       = document.getElementById('of-sol')?.value.trim() || null;
-  const histNovo  = document.getElementById('of-hist-novo').value.trim();
 
   if (!cliNome) return smAlert('Preencha o nome do cliente.');
   if (!modelo)  return smAlert('Preencha o modelo da scooter.');
@@ -8476,16 +8524,6 @@ async function ofSalvar(editId) {
     }
   }
 
-  // Histórico: append da entrada nova com autor
-  let historicoFinal;
-  if (editId) {
-    const oExist = oficinaOrdens.find(x => x.id === editId);
-    historicoFinal = oExist?.historico || '';
-    if (histNovo) historicoFinal = _smHistAppend(historicoFinal, histNovo);
-  } else {
-    historicoFinal = histNovo ? _smHistEntrada(histNovo) : '';
-  }
-
   const payload = {
     cliente_id: clienteId,
     cliente_nome: cliNome,
@@ -8500,7 +8538,6 @@ async function ofSalvar(editId) {
     prazo_alerta: prazoAlerta,
     problema_relatado: problema,
     itens_deixados: itens || null,
-    historico: historicoFinal || null,
     status,
     valor_servico: valor,
     data_abertura: dataAbert || new Date().toISOString().split('T')[0],
@@ -8520,7 +8557,14 @@ async function ofSalvar(editId) {
   } else {
     const { data, error } = await sb.from('oficina_ordens').insert(payload).select().single();
     if (error) return smAlert('Erro ao salvar: ' + error.message);
-    oficinaOrdens.unshift(toCamel(data));
+    const novoCaso = toCamel(data);
+    oficinaOrdens.unshift(novoCaso);
+    await _smTimelineCriar({
+      casoId: novoCaso.id,
+      modulo: 'oficina',
+      categoria: 'abertura',
+      descricao: 'Caso aberto',
+    });
   }
   document.getElementById('of-modal').remove();
   renderOficinaKpis(); renderOficina();
