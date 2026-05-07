@@ -930,13 +930,54 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
   background:var(--surface2);border:1px dashed var(--border2);
   color:var(--gold);font-size:12px;font-weight:700;
   padding:8px 14px;border-radius:var(--r-sm);
-  cursor:pointer;margin-top:10px;
+  cursor:pointer;
   font-family:inherit;
   display:inline-flex;align-items:center;gap:6px;
   transition:background .15s,border-color .15s;
 }
 .timeline-add-btn:hover{background:var(--gold-dim);border-color:var(--gold);}
 .timeline-add-btn:disabled{opacity:0.5;cursor:not-allowed;}
+
+/* ── TIMELINE — soft delete ── */
+.timeline-header-actions{
+  display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;
+}
+.timeline-toggle-excluidos{
+  background:transparent;border:1px solid var(--border2);
+  color:var(--text2);font-size:11px;font-weight:600;
+  padding:7px 12px;border-radius:var(--r-sm);
+  cursor:pointer;font-family:inherit;
+  transition:background .15s,border-color .15s,color .15s;
+}
+.timeline-toggle-excluidos:hover{
+  background:var(--surface2);color:var(--text);
+}
+.timeline-toggle-excluidos.ativo{
+  background:var(--gold-dim);border-color:var(--gold);color:var(--gold);
+}
+.timeline-item.excluido{opacity:0.55;}
+.timeline-item.excluido .timeline-categoria,
+.timeline-item.excluido .timeline-descricao{
+  text-decoration:line-through;
+}
+.timeline-exclusao-info{
+  font-size:10px;color:var(--red);font-style:italic;
+  margin-top:3px;
+}
+.timeline-delete-btn{
+  background:none;border:none;
+  color:var(--red);font-size:11px;
+  cursor:pointer;padding:2px 6px;margin-top:4px;margin-left:4px;
+  border-radius:4px;font-family:inherit;
+}
+.timeline-delete-btn:hover{background:var(--red-dim);}
+.timeline-restore-btn{
+  background:none;border:none;
+  color:var(--green);font-size:11px;
+  cursor:pointer;padding:2px 6px;margin-top:4px;
+  border-radius:4px;font-family:inherit;
+}
+.timeline-restore-btn:hover{background:var(--green-dim);}
 </style>
 </head>
 <body>
@@ -7792,13 +7833,15 @@ function _smTimelineUsuario() {
   };
 }
 
-async function _smTimelineCarregar(casoId, modulo) {
+async function _smTimelineCarregar(casoId, modulo, opts) {
   if (!casoId || !modulo) return [];
-  const r = await sb.from('timeline_eventos')
+  const incluirExcluidos = !!(opts && opts.incluirExcluidos);
+  let q = sb.from('timeline_eventos')
     .select('*')
     .eq('caso_id', casoId)
-    .eq('modulo', modulo)
-    .order('criado_em', { ascending: false });
+    .eq('modulo', modulo);
+  if (!incluirExcluidos) q = q.is('excluido_em', null);
+  const r = await q.order('criado_em', { ascending: false });
   if (r.error) { console.warn('[timeline] erro carregar:', r.error.message); return []; }
   return toCamelArr(r.data || []);
 }
@@ -7834,26 +7877,91 @@ async function _smTimelineEditar(eventoId, { categoria, categoriaOutro, descrica
   return toCamel(r.data);
 }
 
+async function _smTimelineExcluir(eventoId) {
+  const u = _smTimelineUsuario();
+  const payload = {
+    excluido_em:       new Date().toISOString(),
+    excluido_por_id:   u.id,
+    excluido_por_nome: u.nome,
+  };
+  const r = await sb.from('timeline_eventos').update(payload).eq('id', eventoId).select().single();
+  if (r.error) { console.warn('[timeline] erro excluir:', r.error.message); return null; }
+  return toCamel(r.data);
+}
+
+async function _smTimelineRestaurar(eventoId) {
+  if (!_isAdminUser()) {
+    smAlert('Apenas administradores podem restaurar eventos excluídos.');
+    return null;
+  }
+  const payload = {
+    excluido_em:       null,
+    excluido_por_id:   null,
+    excluido_por_nome: null,
+  };
+  const r = await sb.from('timeline_eventos').update(payload).eq('id', eventoId).select().single();
+  if (r.error) { console.warn('[timeline] erro restaurar:', r.error.message); return null; }
+  return toCamel(r.data);
+}
+
+async function _smConfirmExcluirEvento(eventoId, casoId, modulo) {
+  const ok = await smConfirm('Tem certeza que quer excluir este evento?');
+  if (!ok) return;
+  const r = await _smTimelineExcluir(eventoId);
+  if (!r) { smAlert('Falha ao excluir evento. Veja console.'); return; }
+  document.dispatchEvent(new CustomEvent('timeline:updated', { detail: { casoId, modulo } }));
+}
+
+async function _smRestaurarEvento(eventoId, casoId, modulo) {
+  const r = await _smTimelineRestaurar(eventoId);
+  if (!r) return;
+  document.dispatchEvent(new CustomEvent('timeline:updated', { detail: { casoId, modulo } }));
+}
+
 function _smTimelineRender(container, eventos) {
   if (!container) return;
   if (!eventos || eventos.length === 0) {
     container.innerHTML = '<div class="timeline-vazio">Nenhum evento registrado ainda. Clique em + Adicionar evento.</div>';
     return;
   }
+  const isAdmin = _isAdminUser();
   const html = eventos.map(ev => {
     const cat = TIMELINE_CATEGORIAS[ev.categoria] || TIMELINE_CATEGORIAS.observacao;
     const labelCat = (ev.categoria === 'outro' && ev.categoriaOutro)
       ? cat.emoji + ' ' + escHtml(ev.categoriaOutro)
       : cat.emoji + ' ' + escHtml(cat.label);
     const sistemaCls = ev.autorId ? '' : ' sistema';
+    const isExcluido = !!ev.excluidoEm;
+    const itemCls = 'timeline-item' + (isExcluido ? ' excluido' : '');
     let edicao = '';
     if (ev.editadoEm) {
       edicao = '<div class="timeline-edicao-info">(editado por '
         + escHtml(ev.editadoPorNome || 'desconhecido')
         + ' em ' + escHtml(_smTimelineFmtData(ev.editadoEm)) + ')</div>';
     }
+    let exclusaoInfo = '';
+    if (isExcluido) {
+      exclusaoInfo = '<div class="timeline-exclusao-info">(excluído por '
+        + escHtml(ev.excluidoPorNome || 'desconhecido')
+        + ' em ' + escHtml(_smTimelineFmtData(ev.excluidoEm)) + ')</div>';
+    }
+    let actions = '';
+    if (isExcluido) {
+      if (isAdmin) {
+        actions = '<button type="button" class="timeline-restore-btn" data-evento-id="' + escHtml(ev.id)
+          + '" data-caso-id="' + escHtml(ev.casoId)
+          + '" data-modulo="' + escHtml(ev.modulo) + '">↶ Restaurar</button>';
+      }
+    } else {
+      actions = '<button type="button" class="timeline-edit-btn" data-evento-id="' + escHtml(ev.id)
+        + '" data-caso-id="' + escHtml(ev.casoId)
+        + '" data-modulo="' + escHtml(ev.modulo) + '">✏ Editar</button>'
+        + '<button type="button" class="timeline-delete-btn" data-evento-id="' + escHtml(ev.id)
+        + '" data-caso-id="' + escHtml(ev.casoId)
+        + '" data-modulo="' + escHtml(ev.modulo) + '">🗑 Excluir</button>';
+    }
     return ''
-      + '<div class="timeline-item">'
+      + '<div class="' + itemCls + '">'
       +   '<div class="timeline-bullet" style="background:' + cat.cor + ';"></div>'
       +   '<div class="timeline-header">'
       +     escHtml(_smTimelineFmtData(ev.criadoEm))
@@ -7862,9 +7970,8 @@ function _smTimelineRender(container, eventos) {
       +   '<div class="timeline-categoria">' + labelCat + '</div>'
       +   '<div class="timeline-descricao">' + escHtml(ev.descricao) + '</div>'
       +   edicao
-      +   '<button type="button" class="timeline-edit-btn" data-evento-id="' + escHtml(ev.id)
-      +     '" data-caso-id="' + escHtml(ev.casoId)
-      +     '" data-modulo="' + escHtml(ev.modulo) + '">editar</button>'
+      +   exclusaoInfo
+      +   actions
       + '</div>';
   }).join('');
   container.innerHTML = '<div class="timeline-list">' + html + '</div>';
@@ -7874,6 +7981,12 @@ function _smTimelineRender(container, eventos) {
         _smTimelineAbrirEvento(btn.dataset.casoId, btn.dataset.modulo, btn.dataset.eventoId);
       }
     };
+  });
+  container.querySelectorAll('.timeline-delete-btn').forEach(btn => {
+    btn.onclick = () => _smConfirmExcluirEvento(btn.dataset.eventoId, btn.dataset.casoId, btn.dataset.modulo);
+  });
+  container.querySelectorAll('.timeline-restore-btn').forEach(btn => {
+    btn.onclick = () => _smRestaurarEvento(btn.dataset.eventoId, btn.dataset.casoId, btn.dataset.modulo);
   });
 }
 
@@ -8352,10 +8465,14 @@ function abrirOfModal(id) {
     : '';
 
   const tipoOutroDisplay = (o && o.tipoProblema === 'outro') ? '' : 'display:none;';
+  const ofIsAdmin = _isAdminUser();
 
   const blocoTimelineHTML = isEdit
-    ? '<div id="of-timeline" class="timeline-vazio">Carregando...</div>'
-      + '<button type="button" class="timeline-add-btn" onclick="_smTimelineAbrirEvento(\'' + o.id + '\', \'oficina\')">+ Adicionar evento</button>'
+    ? '<div class="timeline-header-actions">'
+      +   '<button type="button" class="timeline-add-btn" onclick="_smTimelineAbrirEvento(\'' + o.id + '\', \'oficina\')">+ Adicionar evento</button>'
+      +   (ofIsAdmin ? '<button type="button" class="timeline-toggle-excluidos" id="of-tl-toggle" onclick="_ofToggleExcluidos(\'' + o.id + '\')">👁 Mostrar excluídos</button>' : '')
+      + '</div>'
+      + '<div id="of-timeline" class="timeline-vazio">Carregando...</div>'
     : '<div class="timeline-vazio">Salve o caso pra começar a registrar eventos na timeline.</div>';
 
   shell.innerHTML =
@@ -8446,8 +8563,27 @@ function abrirOfModal(id) {
 async function _ofRecarregarTimeline(casoId) {
   const cont = document.getElementById('of-timeline');
   if (!cont) return;
-  const eventos = await _smTimelineCarregar(casoId, 'oficina');
+  const shell = document.getElementById('of-modal');
+  const incluirExcluidos = !!(shell && shell.dataset.tlIncluirExcluidos === '1');
+  const eventos = await _smTimelineCarregar(casoId, 'oficina', { incluirExcluidos });
   _smTimelineRender(cont, eventos);
+}
+
+function _ofToggleExcluidos(casoId) {
+  const shell = document.getElementById('of-modal');
+  const btn = document.getElementById('of-tl-toggle');
+  if (!shell || !btn) return;
+  const ativo = shell.dataset.tlIncluirExcluidos === '1';
+  if (ativo) {
+    delete shell.dataset.tlIncluirExcluidos;
+    btn.textContent = '👁 Mostrar excluídos';
+    btn.classList.remove('ativo');
+  } else {
+    shell.dataset.tlIncluirExcluidos = '1';
+    btn.textContent = '🙈 Esconder excluídos';
+    btn.classList.add('ativo');
+  }
+  _ofRecarregarTimeline(casoId);
 }
 
 function ofTipoOutroToggle() {
