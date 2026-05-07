@@ -7877,6 +7877,117 @@ function _smTimelineRender(container, eventos) {
   });
 }
 
+function _smTimelineCriarShell() {
+  if (document.getElementById('sm-timeline-modal-shell')) return;
+  const opts = Object.keys(TIMELINE_CATEGORIAS).map(k => {
+    const c = TIMELINE_CATEGORIAS[k];
+    return '<option value="' + k + '">' + c.emoji + ' ' + c.label + '</option>';
+  }).join('');
+  const shell = document.createElement('div');
+  shell.id = 'sm-timeline-modal-shell';
+  shell.className = 'modal-overlay';
+  shell.style.zIndex = '200';
+  shell.innerHTML =
+    '<div class="modal" style="width:480px;">' +
+      '<div class="modal-title" id="sm-tl-title">Adicionar evento</div>' +
+      '<div class="form-grid">' +
+        '<div class="form-group full">' +
+          '<label>Categoria</label>' +
+          '<select class="form-input" id="sm-tl-categoria">' + opts + '</select>' +
+        '</div>' +
+        '<div class="form-group full" id="sm-tl-outro-wrap" style="display:none;">' +
+          '<label>Categoria personalizada</label>' +
+          '<input class="form-input" id="sm-tl-outro" type="text" maxlength="60" placeholder="Nome da categoria">' +
+        '</div>' +
+        '<div class="form-group full">' +
+          '<label>Descrição</label>' +
+          '<textarea class="form-input" id="sm-tl-descricao" rows="4" placeholder="Mínimo 5 caracteres" style="resize:vertical;min-height:90px;font-family:inherit;"></textarea>' +
+        '</div>' +
+      '</div>' +
+      '<div class="modal-actions">' +
+        '<button type="button" class="btn" id="sm-tl-cancel">Cancelar</button>' +
+        '<button type="button" class="btn btn-gold" id="sm-tl-save">Salvar</button>' +
+      '</div>' +
+    '</div>';
+  (document.body || document.documentElement).appendChild(shell);
+}
+
+async function _smTimelineAbrirEvento(casoId, modulo, eventoExistenteId) {
+  if (!casoId || !modulo) {
+    console.warn('[timeline] _smTimelineAbrirEvento sem casoId/modulo');
+    return false;
+  }
+  let eventoExistente = null;
+  if (eventoExistenteId) {
+    const r = await sb.from('timeline_eventos').select('*').eq('id', eventoExistenteId).single();
+    if (r.error) { smAlert('Erro ao carregar evento: ' + r.error.message); return false; }
+    eventoExistente = toCamel(r.data);
+  }
+  return new Promise(resolve => {
+    _smTimelineCriarShell();
+    const shell     = document.getElementById('sm-timeline-modal-shell');
+    const titleEl   = document.getElementById('sm-tl-title');
+    const catEl     = document.getElementById('sm-tl-categoria');
+    const outroWrap = document.getElementById('sm-tl-outro-wrap');
+    const outroEl   = document.getElementById('sm-tl-outro');
+    const descEl    = document.getElementById('sm-tl-descricao');
+    const cancelBtn = document.getElementById('sm-tl-cancel');
+    const saveBtn   = document.getElementById('sm-tl-save');
+
+    titleEl.textContent = eventoExistente ? 'Editar evento' : 'Adicionar evento';
+    catEl.value   = eventoExistente ? eventoExistente.categoria : 'observacao';
+    outroEl.value = eventoExistente ? (eventoExistente.categoriaOutro || '') : '';
+    descEl.value  = eventoExistente ? eventoExistente.descricao : '';
+    saveBtn.disabled = false;
+    cancelBtn.disabled = false;
+
+    const refreshOutro = () => {
+      outroWrap.style.display = (catEl.value === 'outro') ? '' : 'none';
+    };
+    refreshOutro();
+    catEl.onchange = refreshOutro;
+
+    shell.classList.add('open');
+    setTimeout(() => descEl.focus(), 0);
+
+    const cleanup = (ok) => {
+      shell.classList.remove('open');
+      catEl.onchange = null;
+      cancelBtn.onclick = null;
+      saveBtn.onclick = null;
+      document.removeEventListener('keydown', escHandler);
+      resolve(ok);
+    };
+    const escHandler = (e) => { if (e.key === 'Escape') cleanup(false); };
+    document.addEventListener('keydown', escHandler);
+    cancelBtn.onclick = () => cleanup(false);
+
+    saveBtn.onclick = async () => {
+      const categoria = catEl.value;
+      const categoriaOutro = (categoria === 'outro') ? outroEl.value.trim() : null;
+      const descricao = descEl.value.trim();
+      if (!categoria) { smAlert('Selecione uma categoria.'); return; }
+      if (categoria === 'outro' && (!categoriaOutro || categoriaOutro.length < 2)) {
+        smAlert('Quando a categoria é Outro, preencha o nome (mín. 2 caracteres).'); return;
+      }
+      if (!descricao || descricao.length < 5) {
+        smAlert('Descrição precisa ter no mínimo 5 caracteres.'); return;
+      }
+      saveBtn.disabled = true; cancelBtn.disabled = true;
+      const salvo = eventoExistenteId
+        ? await _smTimelineEditar(eventoExistenteId, { categoria, categoriaOutro, descricao })
+        : await _smTimelineCriar({ casoId, modulo, categoria, categoriaOutro, descricao });
+      if (!salvo) {
+        smAlert('Falha ao salvar evento. Veja console.');
+        saveBtn.disabled = false; cancelBtn.disabled = false;
+        return;
+      }
+      document.dispatchEvent(new CustomEvent('timeline:updated', { detail: { casoId, modulo } }));
+      cleanup(true);
+    };
+  });
+}
+
 // ══════════════════════════════════════════
 //  OFICINA
 // ══════════════════════════════════════════
