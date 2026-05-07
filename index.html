@@ -5151,10 +5151,11 @@ async function fazerLogin() {
   // Atalho admin fixo: garante existência e loga
   if (identificador === ADMIN_EMAIL && senha === 'Ma49721106') {
     const adminUser = { nome:'Gabriel', email:ADMIN_EMAIL, role:'admin', perfil:'admin', status:'aprovado' };
-    await saveUser({ ...adminUser, senha: hashSenha(senha), criadoEm: new Date().toISOString() });
-    localStorage.setItem('sm_user', JSON.stringify({ ...adminUser, loggedAt: Date.now() }));
+    const salvo = await saveUser({ ...adminUser, senha: hashSenha(senha), criadoEm: new Date().toISOString() });
+    const userPersist = salvo || adminUser;
+    localStorage.setItem('sm_user', JSON.stringify({ ...userPersist, loggedAt: Date.now() }));
     hideLoginOverlay();
-    atualizarUserDisplay(adminUser);
+    atualizarUserDisplay(userPersist);
     return;
   }
 
