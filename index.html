@@ -8228,8 +8228,6 @@ async function ofMoverParaSac(id) {
     'A OS sai da lista de ativas e vira o caso SAC. Apenas admin pode reverter.'
   );
   if (!ok) return;
-  const userNome = _u.nome || _u.email || 'usuário';
-  const histInicial = _smHistEntrada('Caso originado da OS #' + o.numero, userNome);
   const sacPayload = {
     cliente_nome: o.clienteNome,
     cliente_telefone: o.clienteTelefone || null,
@@ -8247,16 +8245,19 @@ async function ofMoverParaSac(id) {
     prazo_alerta: o.prazoAlerta || 3,
     problema_relatado: o.problemaRelatado || '(sem descrição)',
     itens_deixados: o.itensDeixados || null,
-    historico: o.historico ? (o.historico + '\n' + histInicial) : histInicial,
     os_origem_id: o.id,
   };
   const { data: novoSac, error: errSac } = await sb.from('sac_casos').insert(sacPayload).select().single();
   if (errSac) { smAlert('Erro ao criar caso SAC: ' + errSac.message); return; }
-  const histOs = _smHistAppend(o.historico, 'Movido pro SAC #' + novoSac.numero, userNome);
+  await _smTimelineCriar({
+    casoId: novoSac.id,
+    modulo: 'sac',
+    categoria: 'abertura',
+    descricao: 'Caso originado da OS #' + o.numero,
+  });
   const updOs = {
     status: 'aguardando_terceiro',
     sac_destino_id: novoSac.id,
-    historico: histOs,
     atualizado_em: new Date().toISOString(),
   };
   const { data: osAtualizada, error: errOs } = await sb.from('oficina_ordens').update(updOs).eq('id', id).select().single();
@@ -8266,6 +8267,12 @@ async function ofMoverParaSac(id) {
     smAlert('Caso SAC #' + novoSac.numero + ' criado, mas falha ao atualizar a OS:\n' + errOs.message + '\n\nVerifique manualmente.');
     return;
   }
+  await _smTimelineCriar({
+    casoId: o.id,
+    modulo: 'oficina',
+    categoria: 'observacao',
+    descricao: 'Movido pro SAC #' + novoSac.numero,
+  });
   const i = oficinaOrdens.findIndex(x => x.id === id);
   if (i >= 0) oficinaOrdens[i] = toCamel(osAtualizada);
   sacCasos.unshift(toCamel(novoSac));
@@ -9118,30 +9125,30 @@ async function sacVoltarParaOficina(id) {
   );
   if (!ok) return;
 
-  const userNome = _u.nome || _u.email || 'admin';
-
-  // 1) Atualiza OS: status acao_interna + zera sac_destino_id + log no histórico
-  //    + copia itens_deixados do SAC (pode ter sido editado durante o caso)
+  // 1) Atualiza OS: status acao_interna + zera sac_destino_id +
+  //    copia itens_deixados do SAC (pode ter sido editado durante o caso)
   if (osOrigem) {
-    const histOs = _smHistAppend(osOrigem.historico, 'Revertido do SAC #' + c.numero, userNome);
     const updOs = {
       status: 'acao_interna',
       sac_destino_id: null,
       itens_deixados: c.itensDeixados || null,
-      historico: histOs,
       atualizado_em: new Date().toISOString(),
     };
     const { data: osData, error: errOs } = await sb.from('oficina_ordens').update(updOs).eq('id', c.osOrigemId).select().single();
     if (errOs) { smAlert('Erro ao atualizar OS: ' + errOs.message); return; }
     const iOs = oficinaOrdens.findIndex(x => x.id === c.osOrigemId);
     if (iOs >= 0) oficinaOrdens[iOs] = toCamel(osData);
+    await _smTimelineCriar({
+      casoId: c.osOrigemId,
+      modulo: 'oficina',
+      categoria: 'observacao',
+      descricao: 'OS revertida do SAC #' + c.numero,
+    });
   }
 
-  // 2) Marca SAC como finalizado + nota no histórico
-  const histFinal = _smHistAppend(c.historico, 'Revertido pra Oficina', userNome);
+  // 2) Marca SAC como finalizado
   const updSac = {
     status: 'finalizado',
-    historico: histFinal,
     data_resolucao: new Date().toISOString().split('T')[0],
     atualizado_em: new Date().toISOString(),
   };
@@ -9151,6 +9158,12 @@ async function sacVoltarParaOficina(id) {
   } else {
     const iSac = sacCasos.findIndex(x => x.id === id);
     if (iSac >= 0) sacCasos[iSac] = toCamel(sacData);
+    await _smTimelineCriar({
+      casoId: id,
+      modulo: 'sac',
+      categoria: 'observacao',
+      descricao: 'Revertido pra Oficina',
+    });
   }
 
   document.getElementById('sac-modal')?.remove();
