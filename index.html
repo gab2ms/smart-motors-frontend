@@ -1075,6 +1075,10 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-icon">👥</span> Clientes
       <span class="nav-dot"></span>
     </button>
+    <button class="nav-item" onclick="showPage('contratos')">
+      <span class="nav-icon">📄</span> Contrato
+      <span class="nav-dot"></span>
+    </button>
 
     <div class="nav-label">Financeiro</div>
     <button class="nav-item" onclick="showPage('financeiro')">
@@ -1768,6 +1772,58 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     </div>
   </div>
 
+  <!-- ══════════════ CONTRATO ══════════════ -->
+  <div class="page content" id="page-contratos">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;">Contratos de garantia</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">Geração e histórico</div>
+      </div>
+    </div>
+
+    <!-- ABAS -->
+    <div class="fin-tabs">
+      <button class="fin-tab-btn active" data-contratotab="gerar"     onclick="switchContratoTab('gerar')">📝 Gerar Contrato</button>
+      <button class="fin-tab-btn"        data-contratotab="historico" onclick="switchContratoTab('historico')">📋 Histórico</button>
+    </div>
+
+    <!-- ════════ ABA: GERAR ════════ -->
+    <div class="fin-tab-content" id="contrato-tab-gerar">
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">Gerar Contrato</div></div></div>
+        <div style="padding:24px 20px;color:var(--text3);font-size:12px;">
+          Em construção — fluxo de busca de pedido virá no próximo commit.
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ ABA: HISTÓRICO ════════ -->
+    <div class="fin-tab-content" id="contrato-tab-historico" style="display:none;">
+      <div class="card">
+        <div class="card-header">
+          <div><div class="card-title">Histórico de Contratos Gerados</div></div>
+          <div id="contrato-hist-admin-actions" style="display:none;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);cursor:pointer;">
+              <input type="checkbox" id="contrato-hist-mostrar-excluidos"> Mostrar excluídos
+            </label>
+          </div>
+        </div>
+        <div style="padding:0 20px 16px;">
+          <div style="display:grid;grid-template-columns:130px 1.6fr 110px 1.2fr 100px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);">
+            <div>Data</div>
+            <div>Cliente</div>
+            <div>Pedido nº</div>
+            <div>Gerado por</div>
+            <div>Ações</div>
+          </div>
+          <div id="contrato-hist-lista" style="padding:24px 0;text-align:center;color:var(--text3);font-size:12px;">
+            Nenhum contrato gerado ainda.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
     <!-- ══════════════ CONTAS A PAGAR ══════════════ -->
   <div class="page content" id="page-contas-pagar">
 
@@ -2369,6 +2425,7 @@ const pageMeta={
   oficina:['Oficina','Ordens de serviço e cadastro de clientes'],
   sac:['SAC','Atendimento pós-venda, garantias e contatos com fornecedores'],
   clientes:['Clientes','Cadastro central — manuais e sincronizados com Tiny'],
+  contratos:['Contrato','Geração e histórico de contratos de garantia'],
   admin:['Administração','Gerenciar usuários e aprovações de acesso'],
   financeiro:['Caixa Atual','Controle de caixa, contas e lançamentos'],
   'contas-pagar':['Contas a Pagar','Gerencie vencimentos e nunca esqueça um pagamento'],
@@ -2430,6 +2487,7 @@ function showPage(id, opts){
   if(id==='oficina')initOficina();
   if(id==='sac')initSac();
   if(id==='clientes')initClientes();
+  if(id==='contratos')initContratos();
 }
 
 // Detecta voltar/avançar do navegador
@@ -4949,6 +5007,7 @@ const TODOS_MODULOS = [
   { id: 'oficina',      nome: 'Oficina' },
   { id: 'sac',          nome: 'SAC' },
   { id: 'clientes',     nome: 'Clientes' },
+  { id: 'contratos',    nome: 'Contrato' },
   { id: 'admin',        nome: 'Administração' },
   { id: 'financeiro',   nome: 'Financeiro' },
   { id: 'contas-pagar', nome: 'Contas a Pagar' },
@@ -4956,8 +5015,8 @@ const TODOS_MODULOS = [
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
-  vendedor:    ['dashboard', 'pedidos', 'simulador', 'oficina', 'sac', 'clientes'],
-  operacional: ['dashboard', 'precos', 'estoque', 'simulador', 'vendas', 'pedidos', 'oficina', 'sac', 'clientes', 'financeiro', 'contas-pagar', 'custos'],
+  vendedor:    ['dashboard', 'pedidos', 'simulador', 'oficina', 'sac', 'clientes', 'contratos'],
+  operacional: ['dashboard', 'precos', 'estoque', 'simulador', 'vendas', 'pedidos', 'oficina', 'sac', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'custos'],
   customizado: null, // usa user.modulosPermitidos
 };
 function modulosPermitidos(user) {
@@ -9519,6 +9578,29 @@ async function sincronizarClientesTiny() {
     btn.disabled = false;
     btn.textContent = '⚡ Sincronizar com Tiny';
   }
+}
+
+// ══════════════════════════════════════════
+//  CONTRATO (geração + histórico)
+// ══════════════════════════════════════════
+function initContratos() {
+  const adminActions = document.getElementById('contrato-hist-admin-actions');
+  if (adminActions) adminActions.style.display = _isAdminUser() ? '' : 'none';
+  const savedTab = localStorage.getItem('sm_contrato_tab') || 'gerar';
+  switchContratoTab(savedTab);
+}
+
+function switchContratoTab(tabId) {
+  const tabs = ['gerar', 'historico'];
+  if (!tabs.includes(tabId)) tabId = 'gerar';
+  tabs.forEach(t => {
+    const content = document.getElementById('contrato-tab-' + t);
+    if (content) content.style.display = (t === tabId) ? '' : 'none';
+  });
+  document.querySelectorAll('.fin-tab-btn[data-contratotab]').forEach(b => {
+    b.classList.toggle('active', b.dataset.contratotab === tabId);
+  });
+  try { localStorage.setItem('sm_contrato_tab', tabId); } catch(e) {}
 }
 
 // ══════════════════════════════════════════
