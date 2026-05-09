@@ -8445,8 +8445,14 @@ function ofImprimir(id) {
   const mi = String(agora.getMinutes()).padStart(2,'0');
   const impressoEm = `${dd}/${mm}/${yy} ${hh}:${mi}`;
 
-  const linhasAnotacao = Array.from({length:9}).map(() =>
-    '<div class="rule-line"></div>').join('');
+  const diagTxt = (o.diagnostico || '').trim();
+  const solTxt  = (o.solucao || '').trim();
+  const blocoDiag = diagTxt
+    ? `<div class="block shaded"><div class="lbl">Diagnóstico</div><div class="body">${esc(diagTxt)}</div></div>`
+    : '';
+  const blocoSol = solTxt
+    ? `<div class="block shaded"><div class="lbl">Solução aplicada</div><div class="body">${esc(solTxt)}</div></div>`
+    : '';
 
   const html = `<!doctype html>
 <html lang="pt-BR"><head>
@@ -8530,10 +8536,7 @@ function ofImprimir(id) {
       <div class="body">${esc(o.itensDeixados) || '—'}</div>
     </div>
 
-    <div class="notes">
-      <div class="lbl">Anotações do mecânico (diagnóstico, peças, observações)</div>
-      ${linhasAnotacao}
-    </div>
+    ${blocoDiag}${blocoSol}
 
     <div class="footer">
       <div>Impresso em ${esc(impressoEm)}</div>
