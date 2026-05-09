@@ -1789,10 +1789,76 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 
     <!-- ════════ ABA: GERAR ════════ -->
     <div class="fin-tab-content" id="contrato-tab-gerar">
-      <div class="card">
-        <div class="card-header"><div><div class="card-title">Gerar Contrato</div></div></div>
-        <div style="padding:24px 20px;color:var(--text3);font-size:12px;">
-          Em construção — fluxo de busca de pedido virá no próximo commit.
+      <!-- ── Estado 1: BUSCA DE PEDIDO ── -->
+      <div id="contrato-busca-state">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
+          <input type="text" class="search-input" id="contrato-busca" placeholder="🔍 Buscar pedido por nome do cliente..." oninput="_contratoFiltrarPedidos()" style="flex:1;min-width:240px;">
+          <button class="btn" id="btn-contrato-atualizar" onclick="_contratoCarregarPedidos(true)" title="Ignora cache (30min) e busca direto no Tiny">⚡ Atualizar</button>
+        </div>
+        <div class="card">
+          <div class="card-header"><div><div class="card-sub" id="contrato-busca-sub">Carregando pedidos...</div></div></div>
+          <div id="contrato-pedidos-lista"></div>
+        </div>
+      </div>
+
+      <!-- ── Estado 2: FORM DO CONTRATO ── -->
+      <div id="contrato-form-state" style="display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div style="font-size:13px;font-weight:700;" id="contrato-form-header">—</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="contrato-form-sub">—</div>
+          </div>
+          <div>
+            <button class="btn" onclick="_contratoVoltarBusca()">← Voltar pra busca</button>
+          </div>
+        </div>
+
+        <div class="card" style="padding:18px 20px;">
+          <!-- Bloco 1: CLIENTE -->
+          <div class="modal-bloco">
+            <div class="modal-bloco-titulo">🧑 Cliente</div>
+            <div class="form-grid">
+              <div class="form-group full"><label>Nome</label><input class="form-input" id="ct-cli-nome"></div>
+              <div class="form-group"><label>CPF / CNPJ</label><input class="form-input" id="ct-cli-cpf"></div>
+              <div class="form-group"><label>Telefone</label><input class="form-input" id="ct-cli-tel"></div>
+              <div class="form-group full"><label>Endereço</label><textarea class="form-input" id="ct-cli-end" rows="2"></textarea></div>
+            </div>
+          </div>
+
+          <!-- Bloco 2: PRODUTO -->
+          <div class="modal-bloco">
+            <div class="modal-bloco-titulo">🛵 Produto</div>
+            <div class="form-grid">
+              <div class="form-group full"><label>Modelo da Scooter</label><input class="form-input" id="ct-prod-modelo"></div>
+              <div class="form-group"><label>Cor</label><input class="form-input" id="ct-prod-cor"></div>
+              <div class="form-group"><label>Número de Série / Chassi</label><input class="form-input" id="ct-prod-chassi"></div>
+              <div class="form-group full"><label>Data da Compra</label><input class="form-input" id="ct-prod-data" type="date"></div>
+            </div>
+          </div>
+
+          <!-- Bloco 3: NOTA FISCAL -->
+          <div class="modal-bloco">
+            <div class="modal-bloco-titulo">🧾 Nota Fiscal</div>
+            <div class="form-grid">
+              <div class="form-group full"><label>Empresa emissora</label><input class="form-input" id="ct-nf-empresa"></div>
+              <div class="form-group"><label>CNPJ emissora</label><input class="form-input" id="ct-nf-cnpj"></div>
+              <div class="form-group"><label>Número da NF</label><input class="form-input" id="ct-nf-numero"></div>
+            </div>
+          </div>
+
+          <!-- Bloco 4: LOCAL/DATA -->
+          <div class="modal-bloco">
+            <div class="modal-bloco-titulo">📍 Local / Data</div>
+            <div class="form-grid">
+              <div class="form-group"><label>Cidade</label><input class="form-input" id="ct-local-cidade" placeholder="Onde o contrato está sendo assinado"></div>
+              <div class="form-group"><label>Data</label><input class="form-input" id="ct-local-data" type="date"></div>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button class="btn" onclick="_contratoVoltarBusca()">Cancelar</button>
+            <button class="btn btn-gold" id="btn-contrato-gerar" onclick="_contratoGerarPdf()">📄 Gerar Contrato PDF</button>
+          </div>
         </div>
       </div>
     </div>
@@ -9583,11 +9649,85 @@ async function sincronizarClientesTiny() {
 // ══════════════════════════════════════════
 //  CONTRATO (geração + histórico)
 // ══════════════════════════════════════════
-function initContratos() {
+const _CONTRATO_LOJA = {
+  cnpj:     '64.020.071/0001-39',
+  endereco: 'Rua Monteiro Mendes, Centro de Itaguaí, nº 76 - RJ',
+  telefone: '(21) 96562-8800',
+};
+
+// Cláusulas em estrutura: cada parte é { t: 'p'|'ul', x: string|string[] }.
+// Salvo no snapshot_json pra Commit 4 reimprimir mesmo se o texto mudar depois.
+const _CONTRATO_CLAUSULAS = [
+  { titulo: '1. OBJETO', partes: [
+    { t: 'p', x: 'O presente termo tem como finalidade registrar a ciência do cliente quanto às condições de utilização, garantia, assistência técnica e responsabilidades relacionadas à scooter elétrica adquirida através da SMART MOTORS, podendo a nota fiscal de venda ser emitida por parceiro comercial, fornecedor, distribuidor ou fabricante vinculado à operação.' },
+  ]},
+  { titulo: '2. GARANTIA', partes: [
+    { t: 'p', x: 'A garantia cobre exclusivamente defeitos de fabricação, conforme prazo legal e/ou política do fabricante ou empresa emissora da Nota Fiscal.' },
+    { t: 'p', x: 'A SMART MOTORS poderá atuar como intermediadora do atendimento e suporte técnico, sem que isso implique responsabilidade direta por defeitos de fabricação quando não for a emissora da nota fiscal.' },
+    { t: 'p', x: 'A garantia NÃO cobre:' },
+    { t: 'ul', x: [
+      'Mau uso, negligência ou utilização inadequada;',
+      'Quedas, colisões, acidentes ou impactos;',
+      'Contato com água, chuva, enchentes, maresia, lavagem com mangueira ou pressão;',
+      'Oxidação ou corrosão;',
+      'Uso fora das especificações do fabricante;',
+      'Sobrecarga de peso acima do limite permitido;',
+      'Instalação de acessórios ou peças não originais;',
+      'Alterações elétricas, mecânicas ou estruturais;',
+      'Uso de carregador não original;',
+      'Danos causados por oscilações elétricas;',
+      'Danos causados por terceiros;',
+      'Uso comercial inadequado, aluguel, competição ou manobras;',
+      'Desgaste natural de peças consumíveis.',
+    ]},
+  ]},
+  { titulo: '3. BATERIA E CARREGAMENTO', partes: [
+    { t: 'ul', x: [
+      'A autonomia da bateria pode variar conforme peso do condutor, terreno, velocidade e modo de utilização;',
+      'A bateria possui desgaste natural com o tempo e ciclos de recarga;',
+      'O carregamento deve ser realizado exclusivamente com carregador original;',
+      'O produto não deve permanecer descarregado por longos períodos;',
+      'Danos causados por uso inadequado da bateria não serão cobertos pela garantia.',
+    ]},
+  ]},
+  { titulo: '4. UTILIZAÇÃO E RESPONSABILIDADE', partes: [
+    { t: 'p', x: 'O cliente declara ter recebido o produto em perfeito estado de funcionamento e orientações básicas de uso e segurança.' },
+    { t: 'p', x: 'O cliente assume total responsabilidade pela condução e utilização da scooter, incluindo danos pessoais, materiais ou a terceiros decorrentes do uso do produto.' },
+    { t: 'p', x: 'O cliente declara estar ciente de que a SMART MOTORS poderá atuar apenas como intermediadora comercial da operação, podendo o faturamento, garantia ou fornecimento do produto ocorrer através de parceiros, fornecedores ou fabricantes terceiros.' },
+  ]},
+  { titulo: '5. ASSISTÊNCIA TÉCNICA', partes: [
+    { t: 'p', x: 'Qualquer manutenção, reparo ou modificação realizada por terceiros não autorizados poderá resultar na perda imediata da garantia.' },
+    { t: 'p', x: 'Produtos enviados para análise técnica poderão passar por vistoria para identificação de defeito de fabricação ou indícios de mau uso.' },
+  ]},
+  { titulo: '6. TROCAS E DEVOLUÇÕES', partes: [
+    { t: 'p', x: 'Trocas e devoluções seguirão as disposições do Código de Defesa do Consumidor.' },
+    { t: 'p', x: 'Produtos com sinais de mau uso, violação, queda, oxidação ou modificação poderão ter a garantia recusada após análise técnica.' },
+  ]},
+  { titulo: '7. CONDIÇÕES GERAIS', partes: [
+    { t: 'p', x: 'A scooter elétrica não é considerada à prova d\'água, salvo indicação expressa do fabricante.' },
+    { t: 'p', x: 'A autonomia divulgada pelo fabricante é baseada em condições ideais de uso e pode sofrer variações.' },
+    { t: 'p', x: 'A assinatura deste termo não substitui nem altera os direitos previstos no Código de Defesa do Consumidor.' },
+  ]},
+  { titulo: '8. DECLARAÇÃO FINAL', partes: [
+    { t: 'p', x: 'Declaro que recebi o produto descrito acima em perfeitas condições de funcionamento, acompanhado dos acessórios correspondentes e da respectiva Nota Fiscal.' },
+    { t: 'p', x: 'Declaro ainda que li, compreendi e concordo integralmente com todas as cláusulas deste termo.' },
+  ]},
+];
+
+let _contratoPedidos = [];
+let _contratoPedidoSelecionado = null;
+
+async function initContratos() {
   const adminActions = document.getElementById('contrato-hist-admin-actions');
   if (adminActions) adminActions.style.display = _isAdminUser() ? '' : 'none';
   const savedTab = localStorage.getItem('sm_contrato_tab') || 'gerar';
   switchContratoTab(savedTab);
+  // Garante clientes carregados (rede de seguranca pra match de cliente)
+  if (!Array.isArray(clientesAll) || clientesAll.length === 0) {
+    try { await initClientes(); } catch(e) { console.warn('[contrato] initClientes falhou:', e); }
+  }
+  // Carrega pedidos so na primeira entrada (botao Atualizar refaz)
+  if (!_contratoPedidos.length) _contratoCarregarPedidos(false);
 }
 
 function switchContratoTab(tabId) {
@@ -9601,6 +9741,370 @@ function switchContratoTab(tabId) {
     b.classList.toggle('active', b.dataset.contratotab === tabId);
   });
   try { localStorage.setItem('sm_contrato_tab', tabId); } catch(e) {}
+}
+
+function _normalizarNomeCliente(s) {
+  return (s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+async function _contratoCarregarPedidos(forcar) {
+  const sub = document.getElementById('contrato-busca-sub');
+  const btn = document.getElementById('btn-contrato-atualizar');
+  if (sub) sub.textContent = 'Carregando pedidos...';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Atualizando...'; }
+  try {
+    const hoje = new Date();
+    const ini  = new Date(hoje.getFullYear(), hoje.getMonth() - 6, hoje.getDate());
+    const fmt  = d => String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
+    const arr  = await buscarPedidosCompletos(fmt(ini), fmt(hoje), !!forcar);
+    _contratoPedidos = (arr || []).slice().sort((a, b) => {
+      const da = (a.data || '').split('/').reverse().join('-');
+      const db = (b.data || '').split('/').reverse().join('-');
+      return db.localeCompare(da);
+    });
+    _contratoRenderListaPedidos();
+  } catch (e) {
+    console.error('[contrato] erro ao carregar pedidos:', e);
+    if (sub) sub.textContent = 'Erro ao carregar pedidos.';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⚡ Atualizar'; }
+  }
+}
+
+function _contratoFiltrarPedidos() { _contratoRenderListaPedidos(); }
+
+function _contratoRenderListaPedidos() {
+  const cont = document.getElementById('contrato-pedidos-lista');
+  const sub  = document.getElementById('contrato-busca-sub');
+  if (!cont) return;
+  const q = (document.getElementById('contrato-busca')?.value || '').toLowerCase().trim();
+  const lista = q
+    ? _contratoPedidos.filter(p => (p.cliente || '').toLowerCase().includes(q))
+    : _contratoPedidos;
+  if (sub) sub.textContent = lista.length + ' pedido' + (lista.length !== 1 ? 's' : '') + ' (últimos 6 meses)';
+  if (!lista.length) {
+    cont.innerHTML = '<div style="padding:24px 20px;text-align:center;color:var(--text3);font-size:12px;">Nenhum pedido encontrado.</div>';
+    return;
+  }
+  const fmtMoeda = v => (v || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+  cont.innerHTML = lista.map(p => {
+    const principal = _contratoExtrairProdutoPrincipal(p.itens);
+    const nomeProd  = principal ? (principal.descricao || (principal.item && principal.item.descricao) || principal.produto || '—') : '—';
+    const idx = _contratoPedidos.indexOf(p);
+    return '<div onclick="_contratoSelecionarPedido(' + idx + ')" style="display:grid;grid-template-columns:90px 1.6fr 1fr 110px;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background=\'var(--surface2)\'" onmouseout="this.style.background=\'\'">'
+      + '<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#' + escHtml(String(p.numero || p.id || '—')) + '</div>'
+      + '<div style="min-width:0;overflow:hidden;"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (escHtml(p.cliente) || '—') + '</div><div style="font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(nomeProd) + '</div></div>'
+      + '<div style="font-size:11px;color:var(--text3);">' + escHtml(p.data || '—') + '</div>'
+      + '<div style="font-family:var(--mono,monospace);font-weight:700;color:var(--green);text-align:right;">' + fmtMoeda(p.valor) + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function _contratoExtrairProdutoPrincipal(itens) {
+  if (!Array.isArray(itens) || !itens.length) return null;
+  const validos = itens.filter(it => +(it.valorUnitario || 0) > 0);
+  if (!validos.length) return null;
+  return validos.slice().sort((a, b) => +(b.valorUnitario || 0) - +(a.valorUnitario || 0))[0];
+}
+
+// Heurística por keywords. Ordem importa: 'AZUL CAMALEÃO' antes de 'AZUL'.
+function _contratoExtrairCor(produtoNome) {
+  const upper = (produtoNome || '').toUpperCase();
+  const cores = [
+    [['AZUL CAMALEÃO', 'AZUL CAMALEAO'], 'Azul Camaleão'],
+    [['VERMELHA', 'VERMELHO'],            'Vermelha'],
+    [['PRETA', 'PRETO'],                  'Preta'],
+    [['BRANCA', 'BRANCO'],                'Branca'],
+    [['VERDE'],                           'Verde'],
+    [['AMARELA', 'AMARELO'],              'Amarela'],
+    [['ROSA'],                            'Rosa'],
+    [['CINZA'],                           'Cinza'],
+    [['PRATA'],                           'Prata'],
+    [['LARANJA'],                         'Laranja'],
+    [['AZUL'],                            'Azul'],
+  ];
+  for (const [keywords, label] of cores) {
+    if (keywords.some(k => upper.includes(k))) return label;
+  }
+  return '';
+}
+
+function _contratoMatchCliente(nomeRaw) {
+  const norm = _normalizarNomeCliente(nomeRaw);
+  if (!norm) return null;
+  return (clientesAll || []).find(c => _normalizarNomeCliente(c.nome) === norm) || null;
+}
+
+function _contratoSelecionarPedido(idx) {
+  const p = _contratoPedidos[idx];
+  if (!p) return;
+  _contratoPedidoSelecionado = p;
+  _contratoMontarFormFromPedido(p);
+  document.getElementById('contrato-busca-state').style.display = 'none';
+  document.getElementById('contrato-form-state').style.display  = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function _contratoVoltarBusca() {
+  _contratoPedidoSelecionado = null;
+  document.getElementById('contrato-form-state').style.display  = 'none';
+  document.getElementById('contrato-busca-state').style.display = '';
+}
+
+function _contratoConverterDataBR(brDate) {
+  if (!brDate) return '';
+  const m = String(brDate).match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  return m ? (m[3] + '-' + m[2] + '-' + m[1]) : '';
+}
+
+function _contratoFmtDataBR(isoDate) {
+  if (!isoDate) return '';
+  const m = String(isoDate).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? (m[3] + '/' + m[2] + '/' + m[1]) : isoDate;
+}
+
+function _contratoDataPorExtenso(isoDate) {
+  if (!isoDate) return '';
+  const m = String(isoDate).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return isoDate;
+  const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  return Number(m[3]) + ' de ' + meses[Number(m[2])-1] + ' de ' + m[1];
+}
+
+function _contratoMontarFormFromPedido(p) {
+  // Reset
+  ['ct-cli-nome','ct-cli-cpf','ct-cli-tel','ct-cli-end',
+   'ct-prod-modelo','ct-prod-cor','ct-prod-chassi','ct-prod-data',
+   'ct-nf-empresa','ct-nf-cnpj','ct-nf-numero',
+   'ct-local-cidade','ct-local-data'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
+  document.getElementById('contrato-form-header').textContent = 'Pedido #' + (p.numero || p.id || '—');
+  document.getElementById('contrato-form-sub').textContent    = (p.cliente || '—') + ' · ' + (p.data || '—');
+
+  // Bloco 1 — Cliente (auto-fill se casar em clientesAll)
+  const cli = _contratoMatchCliente(p.cliente);
+  document.getElementById('ct-cli-nome').value = (cli && cli.nome) || p.cliente || '';
+  if (cli) {
+    document.getElementById('ct-cli-cpf').value = cli.cpfCnpj || cli.cpf || '';
+    document.getElementById('ct-cli-tel').value = cli.telefone || '';
+    document.getElementById('ct-cli-end').value = cli.endereco || '';
+  }
+
+  // Bloco 2 — Produto
+  const principal = _contratoExtrairProdutoPrincipal(p.itens);
+  const nomeProd  = principal ? (principal.descricao || (principal.item && principal.item.descricao) || principal.produto || '') : '';
+  document.getElementById('ct-prod-modelo').value = nomeProd;
+  document.getElementById('ct-prod-cor').value    = _contratoExtrairCor(nomeProd);
+  document.getElementById('ct-prod-data').value   = _contratoConverterDataBR(p.data);
+
+  // Bloco 4 — Local/Data (cidade do cliente se match achou, senão vazio; data = hoje)
+  if (cli && cli.cidade) document.getElementById('ct-local-cidade').value = cli.cidade;
+  const hoje = new Date();
+  const hojeISO = hoje.getFullYear() + '-' + String(hoje.getMonth()+1).padStart(2,'0') + '-' + String(hoje.getDate()).padStart(2,'0');
+  document.getElementById('ct-local-data').value = hojeISO;
+}
+
+function _contratoColetarFormData() {
+  const v = id => (document.getElementById(id)?.value || '').trim();
+  return {
+    cliente: {
+      nome:     v('ct-cli-nome'),
+      cpfCnpj:  v('ct-cli-cpf'),
+      telefone: v('ct-cli-tel'),
+      endereco: v('ct-cli-end'),
+    },
+    produto: {
+      modelo:     v('ct-prod-modelo'),
+      cor:        v('ct-prod-cor'),
+      chassi:     v('ct-prod-chassi'),
+      dataCompra: v('ct-prod-data'),
+    },
+    notaFiscal: {
+      empresa: v('ct-nf-empresa'),
+      cnpj:    v('ct-nf-cnpj'),
+      numero:  v('ct-nf-numero'),
+    },
+    local: {
+      cidade: v('ct-local-cidade'),
+      data:   v('ct-local-data'),
+    },
+  };
+}
+
+function _contratoMontarHtmlContrato(form) {
+  const e = s => escHtml(s);
+  const dataExtenso  = _contratoDataPorExtenso(form.local.data);
+  const dataCompraBR = _contratoFmtDataBR(form.produto.dataCompra);
+  const localData    = e(form.local.cidade) + ', ' + e(dataExtenso) + '.';
+
+  const clausulasHtml = _CONTRATO_CLAUSULAS.map(c => {
+    const partes = c.partes.map(part => {
+      if (part.t === 'p')  return '<p>' + e(part.x) + '</p>';
+      if (part.t === 'ul') return '<ul>' + part.x.map(li => '<li>' + e(li) + '</li>').join('') + '</ul>';
+      return '';
+    }).join('');
+    return '<h3 class="clausula-tit">' + e(c.titulo) + '</h3>' + partes;
+  }).join('');
+
+  return `<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<title>Contrato Smart Motors — ${e(form.cliente.nome || 'Cliente')}</title>
+<style>
+  @page { size: A4 portrait; margin: 18mm; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:#fff; color:#111; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 10.5pt; line-height: 1.45; }
+  .header { display:flex; align-items:center; gap:14px; border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
+  .brand-logo { width: 36px; height: 46px; flex-shrink:0; }
+  .header-text { flex:1; text-align:center; }
+  .header-text .titulo { font-size: 13pt; font-weight: 800; letter-spacing: 0.4px; }
+  .header-text .sub { font-size: 9.5pt; color:#555; margin-top:3px; }
+  .header-text .sub strong { color:#b8860b; }
+  .bloco { border: 1.2px solid #111; border-radius: 3px; padding: 8px 10px; margin-bottom: 8px; }
+  .bloco-titulo { font-size: 8.5pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; color:#555; margin-bottom: 5px; }
+  .bloco .row { display:flex; gap:18px; flex-wrap:wrap; font-size: 10pt; }
+  .bloco .row > div { min-width: 0; }
+  .bloco .row .lbl { font-weight: 700; color:#333; }
+  .clausulas { margin-top: 10px; }
+  .clausula-tit { font-size: 10.5pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; margin: 14px 0 4px; color:#111; }
+  .clausulas p { margin: 4px 0; text-align: justify; }
+  .clausulas ul { margin: 4px 0 4px 22px; padding: 0; }
+  .clausulas li { margin: 2px 0; text-align: justify; }
+  .local-data { margin-top: 26px; font-size: 11pt; }
+  .assinaturas { display:grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 60px; }
+  .assinaturas .col { text-align: center; }
+  .assinaturas .linha { border-top: 1px solid #111; padding-top: 4px; font-size: 9pt; font-weight: 700; letter-spacing: 0.5px; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+  <div class="header">
+    <svg class="brand-logo" viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M24 2L4 28h14l-4 20L36 22H22L26 2z" stroke="#b8860b" stroke-width="2.5" stroke-linejoin="round" fill="#f5c518"/>
+    </svg>
+    <div class="header-text">
+      <div class="titulo">CONTRATO DE CIÊNCIA, GARANTIA E RESPONSABILIDADE</div>
+      <div class="sub"><strong>SMART MOTORS</strong> · Mobilidade Inteligente</div>
+    </div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-titulo">Loja</div>
+    <div class="row">
+      <div><span class="lbl">CNPJ:</span> ${e(_CONTRATO_LOJA.cnpj)}</div>
+      <div><span class="lbl">Telefone/WhatsApp:</span> ${e(_CONTRATO_LOJA.telefone)}</div>
+    </div>
+    <div class="row" style="margin-top:3px;">
+      <div style="flex:1 1 100%;"><span class="lbl">Endereço:</span> ${e(_CONTRATO_LOJA.endereco)}</div>
+    </div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-titulo">Dados do cliente</div>
+    <div class="row">
+      <div style="flex:1 1 100%;"><span class="lbl">Nome:</span> ${e(form.cliente.nome) || '—'}</div>
+    </div>
+    <div class="row" style="margin-top:3px;">
+      <div><span class="lbl">CPF/CNPJ:</span> ${e(form.cliente.cpfCnpj) || '—'}</div>
+      <div><span class="lbl">Telefone:</span> ${e(form.cliente.telefone) || '—'}</div>
+    </div>
+    <div class="row" style="margin-top:3px;">
+      <div style="flex:1 1 100%;"><span class="lbl">Endereço:</span> ${e(form.cliente.endereco) || '—'}</div>
+    </div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-titulo">Dados do produto</div>
+    <div class="row">
+      <div style="flex:1 1 100%;"><span class="lbl">Modelo da Scooter:</span> ${e(form.produto.modelo) || '—'}</div>
+    </div>
+    <div class="row" style="margin-top:3px;">
+      <div><span class="lbl">Cor:</span> ${e(form.produto.cor) || '—'}</div>
+      <div><span class="lbl">Nº de Série/Chassi:</span> ${e(form.produto.chassi) || '—'}</div>
+      <div><span class="lbl">Data da Compra:</span> ${e(dataCompraBR) || '—'}</div>
+    </div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-titulo">Dados da Nota Fiscal</div>
+    <div class="row">
+      <div style="flex:1 1 100%;"><span class="lbl">Empresa emissora:</span> ${e(form.notaFiscal.empresa) || '—'}</div>
+    </div>
+    <div class="row" style="margin-top:3px;">
+      <div><span class="lbl">CNPJ:</span> ${e(form.notaFiscal.cnpj) || '—'}</div>
+      <div><span class="lbl">Nº da NF:</span> ${e(form.notaFiscal.numero) || '—'}</div>
+    </div>
+  </div>
+
+  <div class="clausulas">${clausulasHtml}</div>
+
+  <div class="local-data">${localData}</div>
+
+  <div class="assinaturas">
+    <div class="col"><div class="linha">ASSINATURA DO CLIENTE</div></div>
+    <div class="col"><div class="linha">ASSINATURA DA SMART MOTORS</div></div>
+  </div>
+
+  <script>
+    window.addEventListener('load', function(){
+      setTimeout(function(){ try { window.focus(); window.print(); } catch(e){} }, 250);
+    });
+  <\/script>
+</body></html>`;
+}
+
+async function _contratoGerarPdf() {
+  const form = _contratoColetarFormData();
+  if (!form.cliente.nome) { smAlert('Preencha o nome do cliente.'); return; }
+  if (!form.local.cidade) { smAlert('Preencha a cidade onde o contrato está sendo assinado.'); return; }
+  if (!form.local.data)   { smAlert('Preencha a data do contrato.'); return; }
+
+  const btn = document.getElementById('btn-contrato-gerar');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando...'; }
+  try {
+    // 1) Abre janela com o contrato pra impressão / Salvar como PDF
+    const html = _contratoMontarHtmlContrato(form);
+    const w = window.open('', '_blank');
+    if (!w) { smAlert('Permita pop-ups para gerar o contrato.'); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+
+    // 2) INSERT em contratos (snapshot self-contained pra reimprimir no Commit 4)
+    let user = null;
+    try { user = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
+    const cliMatch = _contratoMatchCliente(form.cliente.nome);
+    const ped = _contratoPedidoSelecionado || {};
+    const payload = {
+      cliente_id:      cliMatch ? cliMatch.id : null,
+      cliente_nome:    form.cliente.nome,
+      pedido_tiny_id:  ped.id ? String(ped.id) : null,
+      pedido_numero:   ped.numero ? String(ped.numero) : null,
+      gerado_por_id:   (user && user.id) || null,
+      gerado_por_nome: (user && (user.nome || user.email)) || 'Desconhecido',
+      snapshot_json: {
+        form,
+        loja:         _CONTRATO_LOJA,
+        clausulas:    _CONTRATO_CLAUSULAS,
+        pedidoOrigem: ped,
+      },
+    };
+    const { error } = await sb.from('contratos').insert(payload).select().single();
+    if (error) {
+      console.error('[contrato] erro INSERT:', error);
+      smAlert('Contrato impresso, mas falhou ao salvar no histórico: ' + error.message);
+      return;
+    }
+    smAlert('Contrato gerado e salvo no histórico.');
+    _contratoVoltarBusca();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📄 Gerar Contrato PDF'; }
+  }
 }
 
 // ══════════════════════════════════════════
