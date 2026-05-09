@@ -2645,7 +2645,7 @@ async function carregarDados() {
   try {
     const [c, l, cp, cf, pr, sc, vm, oo] = await Promise.all([
       sb.from('contas_bancarias').select('*').order('id'),
-      sb.from('lancamentos').select('*'),
+      sb.from('lancamentos').select('*').order('data', { ascending: false }).order('id', { ascending: false }),
       sb.from('contas_pagar').select('*'),
       sb.from('custos_fixos').select('*').order('id'),
       sb.from('produtos_precos').select('*').order('id'),
@@ -3782,8 +3782,9 @@ async function gerarFechamentoMes() {
     XLSX.utils.book_append_sheet(wb, ws4, 'Custos Fixos');
 
     // ════════ ABA 5: LANÇAMENTOS FINANCEIROS ════════
-    const entradas = lancFiltrados.filter(l => l.tipo === 'entrada').sort((a, b) => a.data.localeCompare(b.data));
-    const saidas   = lancFiltrados.filter(l => l.tipo === 'saida').sort((a, b) => a.data.localeCompare(b.data));
+    const _lanCmp = (a, b) => (a.data||'').localeCompare(b.data||'') || (a.id||'').localeCompare(b.id||'');
+    const entradas = lancFiltrados.filter(l => l.tipo === 'entrada').sort(_lanCmp);
+    const saidas   = lancFiltrados.filter(l => l.tipo === 'saida').sort(_lanCmp);
     const lancRows = [
       ['Data', 'Descrição', 'Categoria', 'Tipo', 'Valor', 'Conta'].map(h => ({ v: h, s: HEADER })),
       [{ v: 'ENTRADAS', s: SECTION }],
@@ -6828,12 +6829,16 @@ function renderLancamentos() {
   if (conta) lista = lista.filter(l=>l.conta===conta);
   if (q)     lista = lista.filter(l=>(l.descricao||'').toLowerCase().includes(q)||(l.categoria||'').toLowerCase().includes(q));
 
-  // Sort por estado finSort
+  // Sort por estado finSort. Tiebreaker: id desc (mais recente primeiro) —
+  // id é timestamp em ms (text), sort lexicográfico equivale ao cronológico.
   const col = finSort.col, dir = finSort.dir === 'asc' ? 1 : -1;
   lista = [...lista].sort((a,b) => {
-    if (col === 'valor') return ((a.valor||0) - (b.valor||0)) * dir;
-    if (col === 'data')  return ((a.data||'').localeCompare(b.data||'')) * dir;
-    return ((a[col]||'').localeCompare(b[col]||'', 'pt-BR', {sensitivity:'base'})) * dir;
+    let cmp;
+    if      (col === 'valor') cmp = (a.valor||0) - (b.valor||0);
+    else if (col === 'data')  cmp = (a.data||'').localeCompare(b.data||'');
+    else                      cmp = (a[col]||'').localeCompare(b[col]||'', 'pt-BR', {sensitivity:'base'});
+    if (cmp !== 0) return cmp * dir;
+    return (a.id||'') < (b.id||'') ? 1 : -1;
   });
   renderFinHeader();
 
