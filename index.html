@@ -9655,6 +9655,11 @@ const _CONTRATO_LOJA = {
   telefone: '(21) 96562-8800',
 };
 
+// Emissor padrão da NF (Smart Motors). Cliente pode trocar no form se a NF
+// veio de parceiro/fornecedor (cf. cláusulas 1, 2 e 4 do contrato).
+const _CONTRATO_NF_EMISSOR_PADRAO_NOME = 'Gabriel Robaina Silva da Costa';
+const _CONTRATO_NF_EMISSOR_PADRAO_CNPJ = '63.852.128/0001-01';
+
 // Cláusulas em estrutura: cada parte é { t: 'p'|'ul', x: string|string[] }.
 // Salvo no snapshot_json pra Commit 4 reimprimir mesmo se o texto mudar depois.
 const _CONTRATO_CLAUSULAS = [
@@ -9901,6 +9906,10 @@ function _contratoMontarFormFromPedido(p) {
   document.getElementById('ct-prod-modelo').value = nomeProd;
   document.getElementById('ct-prod-cor').value    = _contratoExtrairCor(nomeProd);
   document.getElementById('ct-prod-data').value   = _contratoConverterDataBR(p.data);
+
+  // Bloco 3 — Nota Fiscal (emissor padrão Smart Motors; numero NF fica vazio pra input manual)
+  document.getElementById('ct-nf-empresa').value = _CONTRATO_NF_EMISSOR_PADRAO_NOME;
+  document.getElementById('ct-nf-cnpj').value    = _CONTRATO_NF_EMISSOR_PADRAO_CNPJ;
 
   // Bloco 4 — Local/Data (cidade do cliente se match achou, senão vazio; data = hoje)
   if (cli && cli.cidade) document.getElementById('ct-local-cidade').value = cli.cidade;
