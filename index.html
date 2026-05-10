@@ -300,7 +300,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 .order-total-val{font-size:18px;font-weight:800;color:var(--gold);font-family:'JetBrains Mono',monospace;}
 
 /* CUSTOS */
-.custos-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
 .custo-row{
   display:flex;justify-content:space-between;align-items:center;
   padding:9px 0;border-bottom:1px solid var(--border);
@@ -323,7 +322,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
   .backdrop.open{display:block;}
   .form-grid{grid-template-columns:1fr;}
   .sim-wrap{grid-template-columns:1fr;}
-  .custos-grid{grid-template-columns:1fr;}
   .order-item-row{grid-template-columns:1fr 1fr;}
   .content{padding:14px;}
   .topbar{padding:12px 14px;}
@@ -2048,15 +2046,9 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         </div>
       </div>
     </div>
-    <div class="custos-grid">
-      <div class="card" style="padding:20px;">
-        <div class="card-title" style="margin-bottom:14px;">Despesas mensais</div>
-        <div id="custos-lista"></div>
-      </div>
-      <div class="card" style="padding:20px;">
-        <div class="card-title" style="margin-bottom:14px;">Controle do empréstimo</div>
-        <div id="emprestimo-info"></div>
-      </div>
+    <div class="card" style="padding:20px;">
+      <div class="card-title" style="margin-bottom:14px;">Despesas mensais</div>
+      <div id="custos-lista"></div>
     </div>
   </div>
 </div><!-- /main -->
@@ -2495,7 +2487,7 @@ const pageMeta={
   admin:['Administração','Gerenciar usuários e aprovações de acesso'],
   financeiro:['Caixa Atual','Controle de caixa, contas e lançamentos'],
   'contas-pagar':['Contas a Pagar','Gerencie vencimentos e nunca esqueça um pagamento'],
-  custos:['Custos Fixos','Despesas mensais e controle do empréstimo'],
+  custos:['Custos Fixos','Despesas mensais'],
 };
 // opts.fromHistory=true → veio do popstate, NÃO empilha (evita loop)
 // opts.replace=true     → primeira navegação, replaceState em vez de pushState
@@ -4425,49 +4417,6 @@ function renderCustos(){
     <div style="margin-top:12px;">
       <button class="btn btn-gold" onclick="addCusto()" style="width:100%;font-size:12px;">+ Adicionar despesa</button>
     </div>`;
-
-  // Card "Controle de empréstimos" agregado de todos os ativos
-  const ativos = (emprestimos||[]).filter(e => e.pagamentos.length && !e.pagamentos.every(p => p.status === 'pago'));
-  const totalOrig  = ativos.reduce((s,e) => s + (e.valorOriginal||0), 0);
-  const totalJuros = ativos.reduce((s,e) => s + (e.totalComJuros||0), 0);
-  const todasParc  = ativos.flatMap(e => e.pagamentos);
-  const pago       = todasParc.filter(p => p.status === 'pago').reduce((s,p) => s + (p.valorPago || p.valor), 0);
-  const emAberto   = todasParc.filter(p => p.status !== 'pago');
-  const totalEmAberto = emAberto.reduce((s,p) => s + p.valor, 0);
-  const proximas = emAberto.slice().sort((a,b) => (a.vencimento||'').localeCompare(b.vencimento||'')).slice(0, 5);
-  const empInfoEl = document.getElementById('emprestimo-info');
-  if (!empInfoEl) return;
-  if (!ativos.length) {
-    empInfoEl.innerHTML = '<div class="empty" style="padding:20px;font-size:11px;">Nenhum empréstimo ativo. Cadastre na aba Financeiro → Empréstimos.</div>';
-    return;
-  }
-  empInfoEl.innerHTML=`
-    <div style="font-size:10px;color:var(--text3);margin-bottom:8px;">${ativos.length} empréstimo${ativos.length!==1?'s':''} ativo${ativos.length!==1?'s':''}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
-      <div style="padding:12px;background:var(--surface2);border-radius:var(--r-sm);">
-        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Valor original</div>
-        <div style="font-size:15px;font-weight:800;font-family:var(--mono,monospace);margin-top:4px;">${fmt(totalOrig)}</div>
-      </div>
-      <div style="padding:12px;background:var(--surface2);border-radius:var(--r-sm);">
-        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Total c/ juros</div>
-        <div style="font-size:15px;font-weight:800;font-family:var(--mono,monospace);margin-top:4px;">${fmt(totalJuros)}</div>
-      </div>
-      <div style="padding:12px;background:var(--green-dim);border-radius:var(--r-sm);">
-        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Pago</div>
-        <div style="font-size:15px;font-weight:800;font-family:var(--mono,monospace);color:var(--green);margin-top:4px;">${fmt(pago)}</div>
-      </div>
-      <div style="padding:12px;background:var(--red-dim);border-radius:var(--r-sm);">
-        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Em aberto</div>
-        <div style="font-size:15px;font-weight:800;font-family:var(--mono,monospace);color:var(--red);margin-top:4px;">${fmt(totalEmAberto)}</div>
-      </div>
-    </div>
-    <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Próximas ${Math.min(proximas.length, 5)} parcelas</div>
-    ${proximas.map(p=>`
-    <div style="display:flex;justify-content:space-between;padding:9px 12px;background:var(--red-dim);border-radius:var(--r-sm);margin-bottom:6px;font-size:12px;font-weight:600;">
-      <span style="color:var(--text2);">Parcela ${p.numero} · ${p.venc}</span>
-      <span style="font-family:var(--mono,monospace);color:var(--red);">${fmt(p.valor)}</span>
-    </div>`).join('')}
-  `;
 }
 
 // Persiste o valor de "vendas/mês" no Supabase como uma row especial em
