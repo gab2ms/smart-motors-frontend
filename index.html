@@ -1898,12 +1898,8 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         <div style="font-size:11px;color:var(--text3);margin-top:2px;">Nunca esqueça um pagamento</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <select class="search-input" id="cp-filtro" onchange="renderContasPagar()" style="max-width:150px;">
-          <option value="">Todas</option>
-          <option value="pendente">Pendentes</option>
-          <option value="vencida">Vencidas</option>
-          <option value="paga">Pagas</option>
-        </select>
+        <select class="search-input" id="cp-mes-filtro" onchange="onCpMesChange(this.value)" style="max-width:170px;"></select>
+        <button class="btn" id="cp-limpar-filtro" onclick="onCpMesChange('')" style="display:none;">✕ Limpar</button>
         <button class="btn" onclick="importarContasTiny()" id="btn-import-cp">⚡ Importar do Tiny</button>
         <button class="btn btn-gold" onclick="openCPModal()">+ Nova conta</button>
       </div>
@@ -7186,7 +7182,49 @@ function clearAISugestao() {
 let contasPagar = [];
 const WHATSAPP_NUMBER = ''; // deixa vazio, usuário preenche por conta
 
+// Filtro de mês: null = nunca renderizado (vai pegar mês atual no 1º render);
+// '' = "Todos os meses"; 'YYYY-MM' = mês específico.
+let cpMesFiltro = null;
+const CP_MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+function _cpFmtMes(yyyymm) {
+  if (!yyyymm) return 'Todos os meses';
+  const [y, m] = yyyymm.split('-');
+  return CP_MESES_PT[+m-1] + ' ' + y;
+}
+
+function _cpMesesDisponiveis() {
+  const set = new Set();
+  for (const c of contasPagar) {
+    if (c.vencimento) set.add(c.vencimento.slice(0,7));
+    if (c.pagaEm)     set.add(c.pagaEm.slice(0,7));
+  }
+  return [...set].sort();
+}
+
+function renderCpFiltroMes() {
+  const sel = document.getElementById('cp-mes-filtro');
+  if (!sel) return;
+  const meses = _cpMesesDisponiveis();
+  const hoje = new Date().toISOString().slice(0,7);
+  // Mês atual sempre aparece, mesmo sem dado.
+  if (!meses.includes(hoje)) { meses.push(hoje); meses.sort(); }
+  if (cpMesFiltro === null) cpMesFiltro = meses.includes(hoje) ? hoje : (meses[0] || '');
+  sel.innerHTML =
+    `<option value="">Todos os meses</option>` +
+    meses.map(m => `<option value="${m}" ${m===cpMesFiltro?'selected':''}>${_cpFmtMes(m)}</option>`).join('');
+  const limpar = document.getElementById('cp-limpar-filtro');
+  if (limpar) limpar.style.display = cpMesFiltro ? '' : 'none';
+}
+
+function onCpMesChange(v) {
+  cpMesFiltro = v;
+  renderCpFiltroMes();
+  renderContasPagar();
+}
+
 function initContasPagar() {
+  renderCpFiltroMes();
   renderContasPagarKpis();
   renderContasPagarAlertas();
   renderContasPagar();
@@ -7303,9 +7341,8 @@ ${isVencida?'❗ Esta conta está VENCIDA!':'Faltam '+dias+' dia(s) para o venci
 }
 
 function renderContasPagar() {
-  const filtro = document.getElementById('cp-filtro')?.value||'';
   let lista = [...contasPagar];
-  if (filtro) lista = lista.filter(c=>statusConta(c)===filtro);
+  if (cpMesFiltro) lista = lista.filter(c => (c.vencimento||'').slice(0,7) === cpMesFiltro);
   lista.sort((a,b)=>a.vencimento.localeCompare(b.vencimento));
 
   document.getElementById('cp-count').textContent = `${lista.length} conta${lista.length!==1?'s':''}`;
