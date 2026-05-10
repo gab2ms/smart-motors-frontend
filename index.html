@@ -7216,21 +7216,31 @@ function switchCpTab(t) {
 }
 
 // Abre o empréstimo correspondente à parcela vinculada à conta_pagar.
-// Se emprestimos[] estiver vazio (módulo nunca carregado), faz um carregamento
-// preguiçoso primeiro. Se mesmo assim não achar (ex: parcela órfã), navega
-// até a aba de Empréstimos sem abrir nada — usuário escolhe na lista.
+//
+// Race resolvida aqui: showPage('financeiro') dispara initFinanceiro() async,
+// que faz `emprestimos = []` síncrono antes do await carregarEmprestimos().
+// Se chamássemos abrirDetalheEmp logo em seguida, getEmprestimoAtual() acharia
+// a lista vazia e renderEmprestimoFin auto-resetaria emprestimoSelecionadoId
+// pra null (index.html:5650), caindo na lista. Solução: garantir emprestimos
+// populado ANTES do showPage. abrirDetalheEmp roda com array intacto e seta
+// id; depois o reload async do initFinanceiro re-renderiza com id ainda setado
+// (mostra detalhe de novo, idempotente).
+//
+// Race secundária: initFinanceiro termina chamando switchFinTab(savedTab),
+// onde savedTab = localStorage 'sm_fin_tab' ?? 'caixa'. Se o usuário nunca
+// abriu Financeiro, isso jogaria pra Caixa depois do nosso switchFinTab.
+// Fix: setar 'sm_fin_tab' = 'emprestimos' ANTES do showPage.
 async function _cpAbrirEmprestimo(parcelaId) {
   if (!parcelaId) return;
-  if (!Array.isArray(emprestimos) || !emprestimos.length) {
-    try { await carregarEmprestimos(); } catch(e) {}
-  }
+  try { await carregarEmprestimos(); } catch(e) {}
   const emp = (emprestimos || []).find(e => (e.pagamentos||[]).some(p => p.id === parcelaId));
+  try { localStorage.setItem('sm_fin_tab', 'emprestimos'); } catch(e) {}
   showPage('financeiro');
   switchFinTab('emprestimos');
   if (emp && typeof abrirDetalheEmp === 'function') {
     abrirDetalheEmp(emp.id);
-  } else if (typeof renderEmprestimoFin === 'function') {
-    renderEmprestimoFin();
+  } else if (typeof smAlert === 'function') {
+    smAlert('Não foi possível abrir o empréstimo automaticamente. Selecione na lista.');
   }
 }
 
