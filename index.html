@@ -7217,17 +7217,19 @@ function switchCpTab(t) {
 
 // Abre o empréstimo correspondente à parcela vinculada à conta_pagar.
 //
-// Race resolvida aqui: showPage('financeiro') dispara initFinanceiro() async,
-// que faz `emprestimos = []` síncrono antes do await carregarEmprestimos().
-// Se chamássemos abrirDetalheEmp logo em seguida, getEmprestimoAtual() acharia
-// a lista vazia e renderEmprestimoFin auto-resetaria emprestimoSelecionadoId
-// pra null (index.html:5650), caindo na lista. Solução: garantir emprestimos
-// populado ANTES do showPage. abrirDetalheEmp roda com array intacto e seta
-// id; depois o reload async do initFinanceiro re-renderiza com id ainda setado
-// (mostra detalhe de novo, idempotente).
+// Race #1: showPage('financeiro') dispara initFinanceiro() async, que chama
+// carregarEmprestimos() — função que faz `emprestimos = []` SÍNCRONO antes
+// do await Promise.all do fetch. Se abrirDetalheEmp rodasse depois do
+// showPage, cairia nesse intervalo de array vazio, getEmprestimoAtual()
+// retornaria undefined, e renderEmprestimoFin auto-resetaria
+// emprestimoSelecionadoId pra null (index.html:5650), caindo na lista.
+// Solução: chamar abrirDetalheEmp ANTES do showPage, com emprestimos já
+// populado pela nossa própria carregarEmprestimos. O id fica setado, e
+// quando o reload async do initFinanceiro terminar e chamar
+// renderEmprestimoFin, o id continua válido contra a lista repopulada.
 //
-// Race secundária: initFinanceiro termina chamando switchFinTab(savedTab),
-// onde savedTab = localStorage 'sm_fin_tab' ?? 'caixa'. Se o usuário nunca
+// Race #2: initFinanceiro termina chamando switchFinTab(savedTab), onde
+// savedTab = localStorage 'sm_fin_tab' ?? 'caixa'. Se o usuário nunca
 // abriu Financeiro, isso jogaria pra Caixa depois do nosso switchFinTab.
 // Fix: setar 'sm_fin_tab' = 'emprestimos' ANTES do showPage.
 async function _cpAbrirEmprestimo(parcelaId) {
@@ -7235,11 +7237,12 @@ async function _cpAbrirEmprestimo(parcelaId) {
   try { await carregarEmprestimos(); } catch(e) {}
   const emp = (emprestimos || []).find(e => (e.pagamentos||[]).some(p => p.id === parcelaId));
   try { localStorage.setItem('sm_fin_tab', 'emprestimos'); } catch(e) {}
-  showPage('financeiro');
-  switchFinTab('emprestimos');
   if (emp && typeof abrirDetalheEmp === 'function') {
     abrirDetalheEmp(emp.id);
-  } else if (typeof smAlert === 'function') {
+  }
+  showPage('financeiro');
+  switchFinTab('emprestimos');
+  if (!emp && typeof smAlert === 'function') {
     smAlert('Não foi possível abrir o empréstimo automaticamente. Selecione na lista.');
   }
 }
