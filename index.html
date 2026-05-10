@@ -2032,6 +2032,18 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     </div>
   </div>
 
+  <!-- MODAL: AVISO DE VÍNCULO COM EMPRÉSTIMO (editar/deletar) -->
+  <div class="modal-overlay" id="cp-emp-warn-modal">
+    <div class="modal" style="width:480px;max-width:96vw;">
+      <div class="modal-title" id="cp-warn-title">Vinculado a empréstimo</div>
+      <div id="cp-warn-body" style="font-size:12px;color:var(--text2);line-height:1.6;"></div>
+      <div class="modal-actions" style="margin-top:18px;">
+        <button class="btn" onclick="closeCpEmpWarn()">Cancelar</button>
+        <button class="btn btn-gold" id="cp-warn-confirm-btn">Continuar</button>
+      </div>
+    </div>
+  </div>
+
     <!-- ══════════════ CUSTOS ══════════════ -->
   <div class="page content" id="page-custos">
     <div class="kpi-grid" style="max-width:600px;margin-bottom:24px;">
@@ -7511,39 +7523,42 @@ function salvarContaPagar() {
   salvarDados();
 }
 
-function pagarConta(id) {
+async function pagarConta(id) {
   const c = contasPagar.find(x=>x.id===id);
   if (!c) return;
   c.paga = true;
   c.pagaEm = new Date().toISOString().split('T')[0];
 
-  // Se for recorrente, cria próximo vencimento automaticamente
-  if (c.periodicidade !== 'unico') {
+  // Recorrência só vale pra contas avulsas. Empréstimo já tem todas as
+  // parcelas pré-cadastradas — criar próxima geraria duplicata órfã.
+  if (c.periodicidade !== 'unico' && !c.emprestimoParcelaId) {
     const venc = new Date(c.vencimento+'T00:00:00');
     const add = {semanal:7,mensal:30,bimestral:60,trimestral:90,semestral:180,anual:365};
     venc.setDate(venc.getDate()+(add[c.periodicidade]||30));
-    contasPagar.push({
-      ...c, id:Date.now().toString(),
+    const nova = {...c, id:Date.now().toString(),
       vencimento: venc.toISOString().split('T')[0],
-      paga:false, pagaEm:undefined,
-    });
+      paga:false, pagaEm:undefined};
+    delete nova.emprestimoParcelaId; // safety: nunca herdar vínculo de empréstimo
+    contasPagar.push(nova);
   }
   renderContasPagarKpis();
   renderContasPagarAlertas();
   renderContasPagar();
   atualizarDotContasPagar();
   salvarDados();
+  // Trigger Lado B atualizou emprestimo_parcelas no banco; recarrega o
+  // espelho local pra UI do módulo Empréstimos não ficar stale.
+  if (c.emprestimoParcelaId) { try { await carregarEmprestimos(); } catch(e) {} }
 }
 
-function despagarConta(id) {
+async function despagarConta(id) {
   const c = contasPagar.find(x=>x.id===id);
   if (c) { c.paga=false; delete c.pagaEm; }
   renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar(); atualizarDotContasPagar(); salvarDados();
+  if (c && c.emprestimoParcelaId) { try { await carregarEmprestimos(); } catch(e) {} }
 }
 
-function editarContaPagar(id) {
-  const c = contasPagar.find(x=>x.id===id);
-  if (!c) return;
+function _editarContaPagarReal(c) {
   document.getElementById('cp-edit-id').value     = c.id;
   document.getElementById('cp-modal-title').innerHTML = 'Editar <span>conta</span>';
   document.getElementById('cp-nome').value         = c.nome;
@@ -7557,13 +7572,73 @@ function editarContaPagar(id) {
   document.getElementById('cp-modal').classList.add('open');
 }
 
+function editarContaPagar(id) {
+  const c = contasPagar.find(x=>x.id===id);
+  if (!c) return;
+  if (c.emprestimoParcelaId) return _cpEmpWarn(c, 'editar', () => _editarContaPagarReal(c));
+  _editarContaPagarReal(c);
+}
+
+async function _deletarContaPagarReal(c) {
+  await sb.from('contas_pagar').delete().eq('id', c.id);
+  contasPagar = contasPagar.filter(x=>x.id!==c.id);
+  renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar(); atualizarDotContasPagar(); salvarDados();
+  // FK ON DELETE CASCADE em contas_pagar.emprestimo_parcela_id já apagou a
+  // parcela no banco; refresca local pra UI do módulo Empréstimos.
+  if (c.emprestimoParcelaId) { try { await carregarEmprestimos(); } catch(e) {} }
+}
+
 async function deletarContaPagar(id) {
   const c = contasPagar.find(x=>x.id===id);
-  if (!c||!(await smConfirm(`Remover "${c.nome}"?`))) return;
-  sb.from('contas_pagar').delete().eq('id', id);
-  contasPagar = contasPagar.filter(x=>x.id!==id);
-  renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar(); atualizarDotContasPagar(); salvarDados();
+  if (!c) return;
+  if (c.emprestimoParcelaId) return _cpEmpWarn(c, 'deletar', () => _deletarContaPagarReal(c));
+  if (!(await smConfirm(`Remover "${c.nome}"?`))) return;
+  _deletarContaPagarReal(c);
 }
+
+// Modal de preview pra ações em contas vinculadas a empréstimo. Mostra
+// detalhes da parcela e explica o efeito colateral (sync via trigger ou
+// CASCADE) antes de confirmar.
+function _cpEmpWarn(c, acao, onConfirm) {
+  const emp  = (emprestimos || []).find(e => (e.pagamentos||[]).some(p => p.id === c.emprestimoParcelaId));
+  const parc = emp?.pagamentos.find(p => p.id === c.emprestimoParcelaId);
+  const total = emp?.pagamentos.length ?? '?';
+  const titulo = acao === 'editar'
+    ? 'Esta conta está vinculada a um empréstimo'
+    : 'Vai deletar a parcela do empréstimo também';
+  const corpo = acao === 'editar'
+    ? `<p>Alterações em <b>valor</b>, <b>vencimento</b> ou <b>status</b> serão refletidas automaticamente na <b>Parcela ${parc?.numero}/${total}</b> do empréstimo <b>${escHtml(emp?.nome||'?')}</b> via trigger no banco.</p>`
+    : `<p>Deletar esta conta vai <b>apagar a Parcela ${parc?.numero}/${total}</b> do empréstimo <b>${escHtml(emp?.nome||'?')}</b> via FK CASCADE. Operação irreversível.</p>`;
+  const parcelaBox = parc ? `
+    <div style="background:var(--surface2);padding:10px 14px;border-radius:6px;margin-top:10px;font-size:11px;line-height:1.7;">
+      <div style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;">Parcela atual</div>
+      <div><b>Número:</b> ${parc.numero}/${total}</div>
+      <div><b>Valor:</b> ${fmt(parc.valor)}</div>
+      <div><b>Vencimento:</b> ${parc.venc}</div>
+      <div><b>Status:</b> ${parc.status === 'pago' ? '✅ Pago' : '⏳ Pendente'}</div>
+    </div>` : '';
+  document.getElementById('cp-warn-title').textContent = titulo;
+  document.getElementById('cp-warn-body').innerHTML = corpo + parcelaBox;
+  const btn = document.getElementById('cp-warn-confirm-btn');
+  if (acao === 'editar') {
+    btn.textContent = 'Continuar editando';
+    btn.className = 'btn btn-gold';
+    btn.style.background = '';
+    btn.style.borderColor = '';
+    btn.style.color = '';
+  } else {
+    btn.textContent = '🗑 Deletar ambos';
+    btn.className = 'btn';
+    btn.style.background = 'var(--red)';
+    btn.style.borderColor = 'var(--red)';
+    btn.style.color = '#fff';
+  }
+  btn.onclick = () => { closeCpEmpWarn(); onConfirm(); };
+  document.getElementById('cp-emp-warn-modal').classList.add('open');
+}
+
+function closeCpEmpWarn() { document.getElementById('cp-emp-warn-modal').classList.remove('open'); }
+document.getElementById('cp-emp-warn-modal')?.addEventListener('click', function(e){ if(e.target===this) closeCpEmpWarn(); });
 
 document.getElementById('cp-modal')?.addEventListener('click',function(e){if(e.target===this)closeCPModal();});
 
