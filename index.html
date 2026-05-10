@@ -1911,10 +1911,17 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     <!-- Alertas WhatsApp -->
     <div id="cp-alertas" style="margin-bottom:16px;"></div>
 
+    <!-- ABAS -->
+    <div class="fin-tabs">
+      <button class="fin-tab-btn active" data-cptab="avencer"   onclick="switchCpTab('avencer')">📅 A Vencer (<span id="cp-cnt-avencer">0</span>)</button>
+      <button class="fin-tab-btn"        data-cptab="pagas"     onclick="switchCpTab('pagas')">✅ Pagas (<span id="cp-cnt-pagas">0</span>)</button>
+      <button class="fin-tab-btn"        data-cptab="atrasadas" onclick="switchCpTab('atrasadas')">🚨 Atrasadas (<span id="cp-cnt-atrasadas">0</span>)</button>
+    </div>
+
     <!-- Lista -->
     <div class="card">
       <div class="card-header">
-        <div><div class="card-title">Contas cadastradas</div><div class="card-sub" id="cp-count">—</div></div>
+        <div><div class="card-title" id="cp-list-title">Contas cadastradas</div><div class="card-sub" id="cp-count">—</div></div>
       </div>
       <div id="cp-lista"></div>
     </div>
@@ -7185,7 +7192,15 @@ const WHATSAPP_NUMBER = ''; // deixa vazio, usuário preenche por conta
 // Filtro de mês: null = nunca renderizado (vai pegar mês atual no 1º render);
 // '' = "Todos os meses"; 'YYYY-MM' = mês específico.
 let cpMesFiltro = null;
+let cpAbaAtiva = 'avencer'; // 'avencer' | 'pagas' | 'atrasadas'
 const CP_MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+function switchCpTab(t) {
+  if (!['avencer','pagas','atrasadas'].includes(t)) return;
+  cpAbaAtiva = t;
+  document.querySelectorAll('.fin-tab-btn[data-cptab]').forEach(b => b.classList.toggle('active', b.dataset.cptab === t));
+  renderContasPagar();
+}
 
 function _cpFmtMes(yyyymm) {
   if (!yyyymm) return 'Todos os meses';
@@ -7341,15 +7356,43 @@ ${isVencida?'❗ Esta conta está VENCIDA!':'Faltam '+dias+' dia(s) para o venci
 }
 
 function renderContasPagar() {
-  let lista = [...contasPagar];
-  if (cpMesFiltro) lista = lista.filter(c => (c.vencimento||'').slice(0,7) === cpMesFiltro);
-  lista.sort((a,b)=>a.vencimento.localeCompare(b.vencimento));
+  const hojeISO = new Date().toISOString().slice(0,10);
+  const noMes = (iso, mes) => !mes || (iso && iso.slice(0,7) === mes);
 
-  document.getElementById('cp-count').textContent = `${lista.length} conta${lista.length!==1?'s':''}`;
+  // A Vencer: pendentes com venc >= hoje (filtra por mês de vencimento se ativo)
+  // Pagas: pagas (filtra por mês de pagaEm — útil pra "o que paguei em maio")
+  // Atrasadas: pendentes com venc < hoje (transversal — ignora filtro de mês)
+  const tieValor = (a,b) => b.valor - a.valor;
+  const avencer = contasPagar
+    .filter(c => !c.paga && c.vencimento >= hojeISO && noMes(c.vencimento, cpMesFiltro))
+    .sort((a,b) => a.vencimento.localeCompare(b.vencimento) || tieValor(a,b));
+  const pagas = contasPagar
+    .filter(c => c.paga && noMes(c.pagaEm, cpMesFiltro))
+    .sort((a,b) => (b.pagaEm||'').localeCompare(a.pagaEm||'') || tieValor(a,b));
+  const atrasadas = contasPagar
+    .filter(c => !c.paga && c.vencimento < hojeISO)
+    .sort((a,b) => a.vencimento.localeCompare(b.vencimento) || tieValor(a,b));
+
+  // Atualiza contadores nos botões de tab
+  const elAv = document.getElementById('cp-cnt-avencer');   if (elAv) elAv.textContent = avencer.length;
+  const elPg = document.getElementById('cp-cnt-pagas');     if (elPg) elPg.textContent = pagas.length;
+  const elAt = document.getElementById('cp-cnt-atrasadas'); if (elAt) elAt.textContent = atrasadas.length;
+
+  // Pega a lista da aba ativa
+  const lista = cpAbaAtiva === 'pagas' ? pagas : cpAbaAtiva === 'atrasadas' ? atrasadas : avencer;
+  const tituloAba = { avencer:'A vencer', pagas:'Pagas', atrasadas:'Atrasadas' }[cpAbaAtiva];
+  const escopoMes = cpAbaAtiva === 'atrasadas' ? '' : (cpMesFiltro ? ' em ' + _cpFmtMes(cpMesFiltro) : '');
+  document.getElementById('cp-list-title').textContent = tituloAba;
+  document.getElementById('cp-count').textContent = `${lista.length} conta${lista.length!==1?'s':''}${escopoMes}`;
 
   const el = document.getElementById('cp-lista');
   if (!lista.length) {
-    el.innerHTML = '<div class="empty" style="padding:32px;">Nenhuma conta cadastrada. Clique em "+ Nova conta" para começar!</div>';
+    const msgVazio = cpAbaAtiva === 'avencer'
+      ? `Nenhuma conta a vencer${escopoMes}.`
+      : cpAbaAtiva === 'pagas'
+        ? `Nenhuma conta paga${escopoMes}.`
+        : 'Nenhuma conta atrasada — em dia! 🎉';
+    el.innerHTML = `<div class="empty" style="padding:32px;">${msgVazio}</div>`;
     return;
   }
 
