@@ -204,6 +204,7 @@ tbody td{padding:12px 16px;font-size:13px;}
 .badge-red{background:var(--red-dim);color:var(--red);}
 .badge-orange{background:var(--orange-dim);color:var(--orange);}
 .badge-gold{background:var(--gold-dim);color:var(--gold);}
+.badge-purple{background:rgba(139,92,246,0.15);color:#a78bfa;}
 
 /* SEARCH BAR */
 .search-bar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
@@ -7202,6 +7203,25 @@ function switchCpTab(t) {
   renderContasPagar();
 }
 
+// Abre o empréstimo correspondente à parcela vinculada à conta_pagar.
+// Se emprestimos[] estiver vazio (módulo nunca carregado), faz um carregamento
+// preguiçoso primeiro. Se mesmo assim não achar (ex: parcela órfã), navega
+// até a aba de Empréstimos sem abrir nada — usuário escolhe na lista.
+async function _cpAbrirEmprestimo(parcelaId) {
+  if (!parcelaId) return;
+  if (!Array.isArray(emprestimos) || !emprestimos.length) {
+    try { await carregarEmprestimos(); } catch(e) {}
+  }
+  const emp = (emprestimos || []).find(e => (e.pagamentos||[]).some(p => p.id === parcelaId));
+  showPage('financeiro');
+  switchFinTab('emprestimos');
+  if (emp && typeof abrirDetalheEmp === 'function') {
+    abrirDetalheEmp(emp.id);
+  } else if (typeof renderEmprestimoFin === 'function') {
+    renderEmprestimoFin();
+  }
+}
+
 function _cpFmtMes(yyyymm) {
   if (!yyyymm) return 'Todos os meses';
   const [y, m] = yyyymm.split('-');
@@ -7406,6 +7426,11 @@ function renderContasPagar() {
       vencida:'<span class="badge badge-red">🚨 Vencida</span>',
     };
     const periodoLabel = {unico:'Único',semanal:'Semanal',mensal:'Mensal',bimestral:'Bimestral',trimestral:'Trimestral',semestral:'Semestral',anual:'Anual'};
+    const eparcId = c.emprestimoParcelaId;
+    const empBadge = eparcId
+      ? `<span class="badge badge-purple" style="cursor:pointer;margin-right:6px;" onclick="event.stopPropagation();_cpAbrirEmprestimo('${eparcId}')" title="Abrir empréstimo">💰 Empréstimo</span>`
+      : '';
+    const empIcone = eparcId ? ' <span style="color:var(--text3);font-size:11px;" title="Vinculado a empréstimo — alterações sincronizam com a parcela">🔗</span>' : '';
     const waNum = c.whatsapp||'';
     const waMsg = encodeURIComponent(`⚡ Smart Motors
 
@@ -7417,7 +7442,7 @@ function renderContasPagar() {
     return `
       <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:12px;align-items:center;padding:13px 20px;border-bottom:1px solid var(--border);font-size:13px;" class="">
         <div>
-          <div style="font-weight:700;color:${stColors[st]};">${escHtml(c.nome)}</div>
+          <div style="font-weight:700;color:${stColors[st]};">${empBadge}${escHtml(c.nome)}${empIcone}</div>
           <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(c.categoria)||'—'} · ${escHtml(periodoLabel[c.periodicidade]||c.periodicidade)}</div>
           ${c.obs?`<div style="font-size:10px;color:var(--text3);">${escHtml(c.obs)}</div>`:''}
         </div>
