@@ -8488,18 +8488,10 @@ async function pagarConta(id) {
   c.paga = true;
   c.pagaEm = new Date().toISOString().split('T')[0];
 
-  // Recorrência só vale pra contas avulsas. Empréstimo já tem todas as
-  // parcelas pré-cadastradas — criar próxima geraria duplicata órfã.
-  if (c.periodicidade !== 'unico' && !c.emprestimoParcelaId) {
-    const venc = new Date(c.vencimento+'T00:00:00');
-    const add = {semanal:7,mensal:30,bimestral:60,trimestral:90,semestral:180,anual:365};
-    venc.setDate(venc.getDate()+(add[c.periodicidade]||30));
-    const nova = {...c, id:Date.now().toString(),
-      vencimento: venc.toISOString().split('T')[0],
-      paga:false, pagaEm:undefined};
-    delete nova.emprestimoParcelaId; // safety: nunca herdar vínculo de empréstimo
-    contasPagar.push(nova);
-  }
+  // Recorrência já é pré-gerada na criação (salvarContaPagar) — não gera
+  // mais on-pay. Lógica antiga (que somava dias e criava 1 próxima)
+  // estava aqui e foi removida pra evitar duplicata com a pré-geração.
+
   renderContasPagarKpis();
   renderContasPagarAlertas();
   renderContasPagar();
