@@ -8729,9 +8729,48 @@ async function pagarConta(id) {
 
 async function despagarConta(id) {
   const c = contasPagar.find(x=>x.id===id);
-  if (c) { c.paga=false; delete c.pagaEm; }
+  if (!c) return;
+  // Se há lançamento vinculado (paga foi marcada via "Marcar paga + lançar"),
+  // pede confirmação e reverte tudo: lançamento + saldo + status.
+  const lanc = (lancamentos || []).find(l => l.contaPagarId === c.id);
+  if (lanc) return _cpReverterPagamentoModal(c, lanc);
+  // Despagar simples (caso "Só marcar como paga" — sem lançamento).
+  c.paga = false; delete c.pagaEm;
   renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar(); atualizarDotContasPagar(); salvarDados();
-  if (c && c.emprestimoParcelaId) { try { await carregarEmprestimos(); } catch(e) {} }
+  if (c.emprestimoParcelaId) { try { await carregarEmprestimos(); } catch(e) {} }
+}
+
+// Reverte pagamento que gerou lançamento no caixa. Confirmação via smConfirm
+// porque a operação tem 3 efeitos colaterais e o usuário precisa ver todos.
+async function _cpReverterPagamentoModal(c, lanc) {
+  const dataBR = (lanc.data || '').split('-').reverse().join('/');
+  const ok = await smConfirm(
+    `⚠️ Reverter pagamento\n\n` +
+    `"${c.nome}" foi marcada como paga com lançamento no caixa em ${dataBR} (${lanc.conta}, ${fmt(lanc.valor)}).\n\n` +
+    `Reverter vai:\n` +
+    ` - Remover o lançamento do caixa\n` +
+    ` - Restaurar ${fmt(lanc.valor)} no saldo de ${lanc.conta}\n` +
+    ` - Voltar a conta pra "pendente"\n\n` +
+    `Continuar?`
+  );
+  if (!ok) return;
+  // 1. Restaura saldo (lançamento era saída — devolve o valor).
+  const ctBanco = contas.find(b => b.nome === lanc.conta);
+  if (ctBanco) ctBanco.saldo += lanc.valor;
+  // 2. Deleta lançamento no banco e do array local.
+  await sb.from('lancamentos').delete().eq('id', lanc.id);
+  lancamentos = lancamentos.filter(l => l.id !== lanc.id);
+  // 3. Desmarca conta como paga (trigger empréstimo reverte parcela automaticamente).
+  c.paga = false; delete c.pagaEm;
+  // 4. Re-render dos consumidores.
+  renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar(); atualizarDotContasPagar();
+  if (typeof populateFinCatFilter === 'function') populateFinCatFilter();
+  if (typeof populateFinContaFilter === 'function') populateFinContaFilter();
+  if (typeof renderContas === 'function')      renderContas();
+  if (typeof renderFinKpis === 'function')     renderFinKpis();
+  if (typeof renderLancamentos === 'function') renderLancamentos();
+  salvarDados();
+  if (c.emprestimoParcelaId) { try { await carregarEmprestimos(); } catch(e) {} }
 }
 
 function _editarContaPagarReal(c) {
