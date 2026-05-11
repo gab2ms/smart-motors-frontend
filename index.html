@@ -8400,6 +8400,48 @@ function openCPModal(id) {
 
 function closeCPModal() { document.getElementById('cp-modal').classList.remove('open'); }
 
+// ── Recorrência: pré-geração de N ocorrências ──
+// Cada periodicidade tem horizonte próprio (1 ano pra semanal/quinzenal/mensal,
+// 2 anos pra bimestral/trimestral/semestral, 3 anos pra anual). Carga similar
+// no banco (~ 12-52 registros por série).
+const CP_REC_QTD = { semanal:52, quinzenal:26, mensal:12, bimestral:12, trimestral:8, semestral:4, anual:3 };
+
+// Soma N dias (date-only YYYY-MM-DD em timezone local pra evitar UTC drift).
+function _cpAddDias(iso, dias) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + dias);
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+}
+
+// Soma N meses preservando o dia. Edge case: dia inexistente no mês destino
+// (ex: 31/01 + 1 mês) → último dia do mês destino (28/02 ou 29/02).
+function _cpAddMeses(iso, meses) {
+  const [y, m, d] = iso.split('-').map(Number);
+  // 1º do mês destino (evita overflow nativo do setMonth)
+  const novaData = new Date(y, m - 1 + meses, 1);
+  const ultimoDia = new Date(novaData.getFullYear(), novaData.getMonth() + 1, 0).getDate();
+  novaData.setDate(Math.min(d, ultimoDia));
+  return `${novaData.getFullYear()}-${String(novaData.getMonth()+1).padStart(2,'0')}-${String(novaData.getDate()).padStart(2,'0')}`;
+}
+
+// Retorna array de vencimentos das ocorrências FUTURAS (N-1 a partir do base).
+// O base não entra — ele já é a 1ª ocorrência da série.
+function _cpGerarVencimentosFuturos(baseISO, periodicidade) {
+  const qtd = CP_REC_QTD[periodicidade];
+  if (!qtd) return [];
+  const out = [];
+  for (let i = 1; i < qtd; i++) {
+    if (periodicidade === 'semanal')        out.push(_cpAddDias(baseISO, i * 7));
+    else if (periodicidade === 'quinzenal') out.push(_cpAddDias(baseISO, i * 14));
+    else if (periodicidade === 'mensal')    out.push(_cpAddMeses(baseISO, i));
+    else if (periodicidade === 'bimestral') out.push(_cpAddMeses(baseISO, i * 2));
+    else if (periodicidade === 'trimestral')out.push(_cpAddMeses(baseISO, i * 3));
+    else if (periodicidade === 'semestral') out.push(_cpAddMeses(baseISO, i * 6));
+    else if (periodicidade === 'anual')     out.push(_cpAddMeses(baseISO, i * 12));
+  }
+  return out;
+}
+
 function salvarContaPagar() {
   const nome         = document.getElementById('cp-nome').value.trim();
   const valor        = parseFloat(document.getElementById('cp-valor').value)||0;
@@ -8416,8 +8458,19 @@ function salvarContaPagar() {
   if (!vencimento) { smAlert('Preencha o vencimento'); return; }
 
   if (editId) {
+    // Edição de ocorrência recorrente é tratada num modal próprio (commit 5).
+    // Aqui só lida com edição "simples" (ocorrência única ou só esta da série).
     const c = contasPagar.find(x=>x.id===editId);
     if (c) Object.assign(c, {nome,valor,vencimento,periodicidade,categoria,avisar,whatsapp,obs});
+  } else if (periodicidade !== 'unico') {
+    // Criação de série recorrente: gera N ocorrências compartilhando recorrenciaId.
+    const recId = crypto.randomUUID();
+    const baseTs = Date.now();
+    contasPagar.push({id: String(baseTs), nome, valor, vencimento, periodicidade, categoria, avisar, whatsapp, obs, paga: false, recorrenciaId: recId});
+    const futuros = _cpGerarVencimentosFuturos(vencimento, periodicidade);
+    futuros.forEach((v, i) => {
+      contasPagar.push({id: String(baseTs + i + 1), nome, valor, vencimento: v, periodicidade, categoria, avisar, whatsapp, obs, paga: false, recorrenciaId: recId});
+    });
   } else {
     contasPagar.push({id:Date.now().toString(),nome,valor,vencimento,periodicidade,categoria,avisar,whatsapp,obs,paga:false});
   }
