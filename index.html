@@ -239,6 +239,32 @@ select.search-input{cursor:pointer;}
 .action-btn.edit-btn:hover{border-color:var(--gold);color:var(--gold);}
 .action-btn.del-btn:hover{border-color:var(--red);color:var(--red);}
 
+/* HOVER STATES — feedback visual em elementos clicáveis (Sprint UI) */
+.badge[onclick]{transition:filter 120ms ease;}
+.badge[onclick]:hover{filter:brightness(1.15);}
+
+.kpi[onclick]{transition:border-color 120ms ease, background 120ms ease;}
+.kpi[onclick]:hover{border-color:var(--gold);background:var(--surface2);}
+
+/* Linhas da lista de Contas a Pagar (.lancamento-row já tem hover próprio) */
+.cp-row{transition:background 120ms ease;}
+.cp-row:hover{background:var(--surface2);}
+
+#cp-table-header [data-col]{transition:color 120ms ease, background 120ms ease;}
+#cp-table-header [data-col]:hover{color:var(--text);background:var(--surface3);}
+
+.card-header[onclick]{transition:background 120ms ease;}
+.card-header[onclick]:hover{background:var(--surface2);}
+
+/* Sticky-hover guard pra touch devices: desfaz hover quando não há mouse real */
+@media (hover:none){
+  .badge[onclick]:hover,
+  .kpi[onclick]:hover,
+  .cp-row:hover,
+  #cp-table-header [data-col]:hover,
+  .card-header[onclick]:hover{background:initial;filter:none;border-color:var(--border);color:inherit;}
+}
+
 /* MODAL */
 .modal-overlay{
   display:none;position:fixed;inset:0;
@@ -8253,7 +8279,7 @@ function renderContasPagar() {
     const waLink = waNum?`https://wa.me/${waNum}?text=${waMsg}`:`https://wa.me/?text=${waMsg}`;
 
     return `
-      <div style="border-bottom:1px solid var(--border);">
+      <div class="cp-row" style="border-bottom:1px solid var(--border);">
         <div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1fr minmax(150px, auto);gap:12px;align-items:center;padding:13px 20px;font-size:13px;">
           <div style="font-weight:700;color:${stColors[st]};min-width:0;overflow:hidden;text-overflow:ellipsis;">${empBadge}${escHtml(c.nome)}${empIcone}${obsIcone}</div>
           <div style="font-size:11px;color:var(--text3);min-width:0;">${escHtml(c.categoria)||'—'} · ${escHtml(periodoLabel[c.periodicidade]||c.periodicidade)}</div>
