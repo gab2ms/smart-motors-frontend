@@ -1914,8 +1914,12 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       </div>
     </div>
 
-    <!-- KPIs -->
-    <div class="kpi-grid" id="cp-kpis" style="margin-bottom:20px;"></div>
+    <!-- KPIs operacionais (totais gerais) -->
+    <div class="kpi-grid" id="cp-kpis" style="margin-bottom:14px;"></div>
+
+    <!-- Resumo financeiro do mês (reativo ao filtro) -->
+    <div id="cp-kpis-mes-titulo" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin:6px 0 8px 2px;">Resumo do mês</div>
+    <div class="kpi-grid" id="cp-kpis-mes" style="margin-bottom:20px;"></div>
 
     <!-- Alertas WhatsApp -->
     <div id="cp-alertas" style="margin-bottom:16px;"></div>
@@ -2753,6 +2757,7 @@ async function carregarDados() {
 var DB_WIDGETS_DEF = [
   { id:'kpis-fat',     nome:'KPIs de faturamento',    desc:'Receita, pedidos, ticket, lucro',   icone:'💰', tamanhos:['full','half'], defaultSize:'full' },
   { id:'kpis-int',     nome:'KPIs internos',           desc:'Produtos, MC%, empréstimo, caixa',  icone:'📋', tamanhos:['full','half'], defaultSize:'full' },
+  { id:'resumo-cp',    nome:'Resumo de contas a pagar', desc:'Total/pago/pendente do mês + atrasado', icone:'📅', tamanhos:['full','half'], defaultSize:'full' },
   { id:'vendedores',   nome:'Vendas por vendedor',     desc:'Ranking de vendedores do período',  icone:'👤', tamanhos:['full','half'], defaultSize:'half' },
   { id:'scooters',     nome:'Scooters mais vendidas',  desc:'Ranking de produtos vendidos',      icone:'🏆', tamanhos:['full','half'], defaultSize:'half' },
   { id:'grafico-dia',  nome:'Faturamento por dia',     desc:'Gráfico de barras diário',          icone:'📊', tamanhos:['full','half'], defaultSize:'full' },
@@ -2765,6 +2770,7 @@ var DB_LAYOUT_KEY = 'sm_dash_layout_v1';
 var DB_DEFAULT = [
   { id:'kpis-fat',    ativo:true,  size:'full' },
   { id:'kpis-int',    ativo:true,  size:'full' },
+  { id:'resumo-cp',   ativo:true,  size:'full' },
   { id:'vendedores',  ativo:true,  size:'half' },
   { id:'scooters',    ativo:true,  size:'half' },
   { id:'grafico-dia', ativo:true,  size:'full' },
@@ -2781,6 +2787,14 @@ function getLayout() {
     if (saved) dbLayout = JSON.parse(saved);
   } catch(e) {}
   if (!dbLayout) dbLayout = JSON.parse(JSON.stringify(DB_DEFAULT));
+  // Migração: append widgets novos (que não estavam no layout salvo) usando
+  // o default. Garante que features novas apareçam pra usuários existentes
+  // sem precisar resetar layout.
+  DB_DEFAULT.forEach(function(def) {
+    if (!dbLayout.some(function(w) { return w.id === def.id; })) {
+      dbLayout.push(JSON.parse(JSON.stringify(def)));
+    }
+  });
   return dbLayout;
 }
 
@@ -2926,6 +2940,15 @@ function renderWidgetHTML(id) {
 
     case 'kpis-int':
       return '<div class="kpi-grid" id="dash-int-kpis" style="margin-bottom:0;"></div>';
+
+    case 'resumo-cp':
+      return '<div class="card" id="dash-resumo-cp-card">'
+        +'<div class="card-header"><div>'
+        +'<div class="card-title">📅 Resumo de contas a pagar</div>'
+        +'<div class="card-sub" id="dash-resumo-cp-sub">—</div>'
+        +'</div></div>'
+        +'<div class="kpi-grid" id="dash-resumo-cp" style="padding:16px 20px;margin-bottom:0;"></div>'
+        +'</div>';
 
     case 'vendedores':
       return '<div class="card" id="dash-vendedores-card">'
@@ -4013,7 +4036,71 @@ function renderDashboard(){
   initFaturamentoDash();
   setTimeout(function() {
     renderDashInternal();
+    renderDashResumoCp();
   }, 150);
+}
+
+// Bloco "Resumo de contas a pagar" no Dashboard. Sempre mês corrente
+// (sem filtro do usuário). Cada card é clicável e leva para a aba
+// Contas a Pagar com filtro/tab correspondentes.
+function renderDashResumoCp() {
+  const wrap = document.getElementById('dash-resumo-cp');
+  if (!wrap) return;
+  const hoje = new Date();
+  const mesAtual = hoje.getFullYear() + '-' + String(hoje.getMonth()+1).padStart(2,'0');
+  const hojeISO = hoje.toISOString().slice(0,10);
+  const inMes = (iso) => iso && iso.slice(0,7) === mesAtual;
+
+  const lista = contasPagar || [];
+  const totalMes    = lista.filter(c => c.vencimento && inMes(c.vencimento));
+  const pagoMes     = lista.filter(c => c.pagaEm && inMes(c.pagaEm));
+  const pendenteMes = lista.filter(c => !c.paga && c.vencimento && inMes(c.vencimento));
+  const atrasado    = lista.filter(c => !c.paga && c.vencimento && c.vencimento < hojeISO);
+  const sum = (arr) => arr.reduce((s,c) => s + (c.valor||0), 0);
+  const cnt = (n) => n + ' conta' + (n!==1 ? 's' : '');
+
+  const sub = document.getElementById('dash-resumo-cp-sub');
+  if (sub && typeof _cpFmtMes === 'function') sub.textContent = _cpFmtMes(mesAtual);
+
+  // Atrasado é transversal: passa '' (string vazia) pra LIMPAR o filtro
+  // de mês. null seria reinterpretado como "default = mês atual" por
+  // renderCpFiltroMes (ver init); '' significa "Todos os meses".
+  const goMes   = `_cpDashGo('avencer',   '${mesAtual}')`;
+  const goPagas = `_cpDashGo('pagas',     '${mesAtual}')`;
+  const goAtr   = `_cpDashGo('atrasadas', '')`;
+
+  wrap.innerHTML = `
+    <div class="kpi" onclick="${goMes}" style="border-top:2px solid var(--gold);cursor:pointer;" title="Abrir contas a pagar — mês corrente">
+      <div class="kpi-label">Total do mês</div>
+      <div class="kpi-value gold">${fmt(sum(totalMes))}</div>
+      <div class="kpi-change">${cnt(totalMes.length)}</div>
+    </div>
+    <div class="kpi" onclick="${goPagas}" style="border-top:2px solid var(--green);cursor:pointer;" title="Abrir aba Pagas">
+      <div class="kpi-label">Pago no mês</div>
+      <div class="kpi-value green">${fmt(sum(pagoMes))}</div>
+      <div class="kpi-change">${cnt(pagoMes.length)}</div>
+    </div>
+    <div class="kpi" onclick="${goMes}" style="border-top:2px solid var(--orange);cursor:pointer;" title="Abrir aba A Vencer">
+      <div class="kpi-label">Pendente no mês</div>
+      <div class="kpi-value" style="color:var(--orange);">${fmt(sum(pendenteMes))}</div>
+      <div class="kpi-change">${cnt(pendenteMes.length)}</div>
+    </div>
+    <div class="kpi" onclick="${goAtr}" style="border-top:2px solid var(--red);cursor:pointer;" title="Abrir aba Atrasadas">
+      <div class="kpi-label">Atrasado</div>
+      <div class="kpi-value red">${fmt(sum(atrasado))}</div>
+      <div class="kpi-change">${cnt(atrasado.length)}</div>
+    </div>
+  `;
+}
+
+// Navega do Dashboard pra Contas a Pagar com filtro/tab pré-aplicados.
+// Setamos as variáveis ANTES do showPage — initContasPagar respeita o
+// cpMesFiltro existente (renderCpFiltroMes só seta default se for null).
+// switchCpTab depois do showPage atualiza visual dos botões de aba.
+function _cpDashGo(tab, mes) {
+  if (typeof cpMesFiltro !== 'undefined') cpMesFiltro = mes; // null = sem filtro
+  showPage('contas-pagar');
+  if (typeof switchCpTab === 'function') switchCpTab(tab);
 }
 
 
@@ -7468,6 +7555,56 @@ function renderContasPagarKpis() {
   `;
 }
 
+// Linha 2 — resumo financeiro do mês. Reage a `cpMesFiltro`:
+//  - filtro ativo: cards mostram TOTAL/PAGO/PENDENTE do mês selecionado
+//  - filtro vazio ("Todos os meses"): cards mostram totais GERAIS
+// Atrasado é sempre transversal: vencimento < hoje E ainda não pago.
+// Conta paga em atraso "sai da régua" (status=pago) — comportamento operacional padrão.
+function renderContasPagarKpisMes() {
+  const wrap = document.getElementById('cp-kpis-mes');
+  if (!wrap) return;
+  const filtroAtivo = !!cpMesFiltro;
+  const hojeISO = new Date().toISOString().slice(0,10);
+  const inMes = (iso) => !filtroAtivo || (iso && iso.slice(0,7) === cpMesFiltro);
+
+  const totalMes    = contasPagar.filter(c => c.vencimento && inMes(c.vencimento));
+  const pagoMes     = contasPagar.filter(c => c.pagaEm && inMes(c.pagaEm));
+  const pendenteMes = contasPagar.filter(c => !c.paga && c.vencimento && inMes(c.vencimento));
+  const atrasado    = contasPagar.filter(c => !c.paga && c.vencimento && c.vencimento < hojeISO);
+  const sum = (arr) => arr.reduce((s,c) => s + (c.valor || 0), 0);
+
+  const tit = document.getElementById('cp-kpis-mes-titulo');
+  if (tit) tit.textContent = filtroAtivo ? `Resumo de ${_cpFmtMes(cpMesFiltro)}` : 'Resumo geral';
+
+  const lblTotal = filtroAtivo ? 'Total do mês'    : 'Total geral';
+  const lblPago  = filtroAtivo ? 'Pago no mês'     : 'Pago geral';
+  const lblPend  = filtroAtivo ? 'Pendente no mês' : 'Pendente geral';
+  const cnt = (n) => `${n} conta${n!==1?'s':''}`;
+
+  wrap.innerHTML = `
+    <div class="kpi" style="border-top:2px solid var(--gold);">
+      <div class="kpi-label">${lblTotal}</div>
+      <div class="kpi-value gold">${fmt(sum(totalMes))}</div>
+      <div class="kpi-change">${cnt(totalMes.length)}</div>
+    </div>
+    <div class="kpi" style="border-top:2px solid var(--green);">
+      <div class="kpi-label">${lblPago}</div>
+      <div class="kpi-value green">${fmt(sum(pagoMes))}</div>
+      <div class="kpi-change">${cnt(pagoMes.length)}</div>
+    </div>
+    <div class="kpi" style="border-top:2px solid var(--orange);">
+      <div class="kpi-label">${lblPend}</div>
+      <div class="kpi-value" style="color:var(--orange);">${fmt(sum(pendenteMes))}</div>
+      <div class="kpi-change">${cnt(pendenteMes.length)}</div>
+    </div>
+    <div class="kpi" style="border-top:2px solid var(--red);">
+      <div class="kpi-label">Atrasado</div>
+      <div class="kpi-value red">${fmt(sum(atrasado))}</div>
+      <div class="kpi-change">${cnt(atrasado.length)}</div>
+    </div>
+  `;
+}
+
 function renderContasPagarAlertas() {
   const el = document.getElementById('cp-alertas');
   if (!el) return;
@@ -7517,6 +7654,9 @@ ${isVencida?'❗ Esta conta está VENCIDA!':'Faltam '+dias+' dia(s) para o venci
 }
 
 function renderContasPagar() {
+  // Linha 2 KPIs reage ao filtro de mês — re-renderiza junto. Único hook
+  // central: switchCpTab/onCpMesChange/save/delete/import já passam por aqui.
+  renderContasPagarKpisMes();
   const hojeISO = new Date().toISOString().slice(0,10);
   const noMes = (iso, mes) => !mes || (iso && iso.slice(0,7) === mes);
 
