@@ -3124,9 +3124,45 @@ function esconderBootLoader() {
 function renderDashInternal(){
   const avgMC      = products.length ? products.reduce((s,p)=>s+mcp(p),0)/products.length : 0;
   const lowCount   = products.filter(p=>mcp(p)<15).length;
-  const todasParc = (emprestimos||[]).flatMap(e => e.pagamentos);
-  const aberto     = todasParc.filter(p=>p.status!=='pago').reduce((s,p)=>s+p.valor,0);
+  // Achata parcelas mantendo referência ao credor pra título/click.
+  const todasParc = (emprestimos||[]).flatMap(e =>
+    (e.pagamentos||[]).map(p => ({ ...p, _credor: e.nome }))
+  );
+  const aberto         = todasParc.filter(p=>p.status!=='pago').reduce((s,p)=>s+p.valor,0);
   const parcelasAbertas = todasParc.filter(p=>p.status!=='pago').length;
+  // Próxima parcela: status=pendente, sort por vencimento ASC, pega 1ª.
+  // Cobre atrasada (vencimento < hoje E pendente — destaca em vermelho).
+  const proxima = todasParc
+    .filter(p => p.status === 'pendente' && p.vencimento)
+    .sort((a,b) => a.vencimento.localeCompare(b.vencimento))[0];
+
+  let proxCard;
+  if (!proxima) {
+    proxCard = `
+      <div class="kpi" style="cursor:default;">
+        <div class="kpi-label">Próxima parcela</div>
+        <div class="kpi-value green">✅ Em dia</div>
+        <div class="kpi-change">Nenhuma pendente</div>
+      </div>`;
+  } else {
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const venc = new Date(proxima.vencimento + 'T00:00:00');
+    const dias = Math.round((venc - hoje) / (1000*60*60*24));
+    const atrasada = dias < 0;
+    const dataBR = proxima.vencimento.split('-').reverse().join('/');
+    const corCls = atrasada ? 'red' : '';
+    const corStyle = (!atrasada && dias <= 7) ? 'color:var(--orange);' : (!atrasada ? 'color:var(--gold);' : '');
+    const txtDias = atrasada
+      ? `venceu há ${Math.abs(dias)} dia${Math.abs(dias)!==1?'s':''}`
+      : dias === 0 ? 'vence hoje'
+      : `vence em ${dias} dia${dias!==1?'s':''}`;
+    proxCard = `
+      <div class="kpi" onclick="_cpAbrirEmprestimo('${proxima.id}')" style="cursor:pointer;" onmouseenter="this.style.borderColor='var(--gold)'" onmouseleave="this.style.borderColor='var(--border)'">
+        <div class="kpi-label">Próxima parcela</div>
+        <div class="kpi-value ${corCls}" style="${corStyle}">${fmt(proxima.valor)}</div>
+        <div class="kpi-change">${escHtml(proxima._credor)} #${proxima.numero} · ${txtDias} (${dataBR})</div>
+      </div>`;
+  }
 
   document.getElementById('dash-int-kpis').innerHTML = `
     <div class="kpi" onclick="showPage('precos')" style="cursor:pointer;" onmouseenter="this.style.borderColor='var(--gold)'" onmouseleave="this.style.borderColor='var(--border)'">
@@ -3139,6 +3175,7 @@ function renderDashInternal(){
       <div class="kpi-value red">${fmt(aberto)}</div>
       <div class="kpi-change">${parcelasAbertas} parcela${parcelasAbertas!==1?'s':''} restante${parcelasAbertas!==1?'s':''}</div>
     </div>
+    ${proxCard}
   `;
 }
 
