@@ -2112,6 +2112,19 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     </div>
   </div>
 
+  <!-- MODAL: AÇÃO EM CONTA RECORRENTE (cancelar / editar — 3 opções) -->
+  <div class="modal-overlay" id="cp-rec-modal">
+    <div class="modal" style="width:520px;max-width:96vw;">
+      <div class="modal-title" id="cp-rec-title">Conta recorrente</div>
+      <div id="cp-rec-body" style="font-size:12px;color:var(--text2);line-height:1.6;"></div>
+      <div class="modal-actions" style="margin-top:18px;flex-direction:column;gap:8px;">
+        <button class="btn" id="cp-rec-btn-a" style="width:100%;"></button>
+        <button class="btn" id="cp-rec-btn-b" style="width:100%;"></button>
+        <button class="btn" onclick="closeCpRecModal()" style="width:100%;">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
     <!-- ══════════════ CUSTOS ══════════════ -->
   <div class="page content" id="page-custos">
     <div class="kpi-grid" style="max-width:600px;margin-bottom:24px;">
@@ -8543,9 +8556,55 @@ async function deletarContaPagar(id) {
   const c = contasPagar.find(x=>x.id===id);
   if (!c) return;
   if (c.emprestimoParcelaId) return _cpEmpWarn(c, 'deletar', () => _deletarContaPagarReal(c));
+  if (c.recorrenciaId)       return _cpRecCancelModal(c);
   if (!(await smConfirm(`Remover "${c.nome}"?`))) return;
   _deletarContaPagarReal(c);
 }
+
+// Modal de cancelar série recorrente (3 opções). Pagas são sempre
+// preservadas como histórico. "Esta + futuras" só toca status='pendente'
+// E vencimento >= o desta.
+function _cpRecCancelModal(c) {
+  const periodLabel = {semanal:'Semanal',quinzenal:'Quinzenal',mensal:'Mensal',bimestral:'Bimestral',trimestral:'Trimestral',semestral:'Semestral',anual:'Anual'};
+  const futurasPendentes = contasPagar.filter(x =>
+    x.recorrenciaId === c.recorrenciaId && !x.paga && x.vencimento >= c.vencimento
+  );
+  const N = futurasPendentes.length;
+  const dataBR = c.vencimento.split('-').reverse().join('/');
+  document.getElementById('cp-rec-title').textContent = '⚠️ Esta é uma conta recorrente';
+  document.getElementById('cp-rec-body').innerHTML = `
+    <p><b>"${escHtml(c.nome)}" · ${periodLabel[c.periodicidade] || c.periodicidade}</b></p>
+    <p style="margin-top:8px;">Esta ocorrência (${dataBR}) e mais ${N-1} ocorrência${N-1!==1?'s':''} futura${N-1!==1?'s':''} pendente${N-1!==1?'s':''} podem ser apagadas.</p>
+    <p style="margin-top:8px;color:var(--text3);">Ocorrências já pagas são mantidas como histórico.</p>
+  `;
+  const btnA = document.getElementById('cp-rec-btn-a');
+  const btnB = document.getElementById('cp-rec-btn-b');
+  btnA.textContent = 'Apagar só esta (1)';
+  btnA.className = 'btn';
+  btnA.onclick = () => { closeCpRecModal(); _deletarContaPagarReal(c); };
+  btnB.textContent = `🗑 Apagar esta + futuras (${N})`;
+  btnB.className = 'btn';
+  btnB.style.background = 'var(--red)';
+  btnB.style.borderColor = 'var(--red)';
+  btnB.style.color = '#fff';
+  btnB.onclick = async () => {
+    closeCpRecModal();
+    // Delete em massa no banco
+    await sb.from('contas_pagar').delete()
+      .eq('recorrencia_id', c.recorrenciaId)
+      .gte('vencimento', c.vencimento)
+      .eq('status', 'pendente');
+    // Remove do array local pelos mesmos critérios
+    const idsRemover = new Set(futurasPendentes.map(x => x.id));
+    contasPagar = contasPagar.filter(x => !idsRemover.has(x.id));
+    renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar();
+    atualizarDotContasPagar(); salvarDados();
+  };
+  document.getElementById('cp-rec-modal').classList.add('open');
+}
+
+function closeCpRecModal() { document.getElementById('cp-rec-modal').classList.remove('open'); }
+document.getElementById('cp-rec-modal')?.addEventListener('click', function(e){ if(e.target===this) closeCpRecModal(); });
 
 // Modal de preview pra ações em contas vinculadas a empréstimo. Mostra
 // detalhes da parcela e explica o efeito colateral (sync via trigger ou
