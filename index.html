@@ -8487,12 +8487,34 @@ function _cpAddMeses(iso, meses) {
   return `${novaData.getFullYear()}-${String(novaData.getMonth()+1).padStart(2,'0')}-${String(novaData.getDate()).padStart(2,'0')}`;
 }
 
+// Calcula próxima ocorrência do dia da semana fixo APÓS uma data base.
+// Se base já é o dia fixo: +7 (não repete na mesma semana).
+// Senão: dias até o próximo dia fixo (1..6).
+function _cpProximoDiaSemana(baseISO, diaSemana) {
+  const [y, m, d] = baseISO.split('-').map(Number);
+  const baseDia = new Date(y, m-1, d).getDay();
+  const diff = baseDia === diaSemana ? 7 : ((diaSemana - baseDia + 7) % 7);
+  return _cpAddDias(baseISO, diff);
+}
+
 // Retorna array de vencimentos das ocorrências FUTURAS (N-1 a partir do base).
 // O base não entra — ele já é a 1ª ocorrência da série.
-function _cpGerarVencimentosFuturos(baseISO, periodicidade) {
+// Para semanal/quinzenal com dia da semana fixo: 1ª ocorrência usa a data
+// escolhida pelo usuário (mesmo que não bata no dia fixo); a 2ª ajusta pro
+// dia fixo; demais somam intervalo simples (7 ou 14 dias).
+function _cpGerarVencimentosFuturos(baseISO, periodicidade, diaSemanaFixo) {
   const qtd = CP_REC_QTD[periodicidade];
   if (!qtd) return [];
   const out = [];
+  const temDiaFixo = (periodicidade === 'semanal' || periodicidade === 'quinzenal')
+                  && diaSemanaFixo != null && diaSemanaFixo !== '';
+  if (temDiaFixo) {
+    const dia = +diaSemanaFixo;
+    const intervalo = periodicidade === 'semanal' ? 7 : 14;
+    out.push(_cpProximoDiaSemana(baseISO, dia));
+    for (let i = 2; i < qtd; i++) out.push(_cpAddDias(out[out.length-1], intervalo));
+    return out;
+  }
   for (let i = 1; i < qtd; i++) {
     if (periodicidade === 'semanal')        out.push(_cpAddDias(baseISO, i * 7));
     else if (periodicidade === 'quinzenal') out.push(_cpAddDias(baseISO, i * 14));
@@ -8515,6 +8537,11 @@ function salvarContaPagar() {
   const whatsapp     = document.getElementById('cp-whatsapp').value.trim().replace(/\D/g,'');
   const obs          = document.getElementById('cp-obs').value.trim();
   const editId       = document.getElementById('cp-edit-id').value;
+  const diaSemRaw    = document.getElementById('cp-dia-semana')?.value || '';
+  // Só persiste dia fixo se a periodicidade é elegível (semanal/quinzenal).
+  // Nas outras, _cpPeriodicidadeChange já limpou o valor, mas defesa extra.
+  const diaSemanaFixo = (diaSemRaw !== '' && (periodicidade === 'semanal' || periodicidade === 'quinzenal'))
+    ? +diaSemRaw : null;
 
   if (!nome)       { smAlert('Preencha o nome'); return; }
   if (!valor)      { smAlert('Preencha o valor'); return; }
@@ -8529,24 +8556,31 @@ function salvarContaPagar() {
       smAlert('Pra mudar a periodicidade, cancele esta série (apagar esta + futuras) e crie uma nova com a nova periodicidade.');
       return;
     }
+    // Mudança de dia da semana fixo: mesma regra (regerar série inteira no
+    // meio do caminho é complicado, melhor cancelar e criar nova).
+    const diaSemFixoAntigo = c.diaSemanaFixo != null ? +c.diaSemanaFixo : null;
+    if (c.recorrenciaId && diaSemanaFixo !== diaSemFixoAntigo) {
+      smAlert('Pra mudar o dia da semana fixo, cancele esta série (apagar esta + futuras) e crie uma nova.');
+      return;
+    }
     // Conta recorrente → abre modal "só esta vs todas pendentes"
     if (c.recorrenciaId) {
-      const novosCampos = {nome,valor,vencimento,periodicidade,categoria,avisar,whatsapp,obs};
+      const novosCampos = {nome,valor,vencimento,periodicidade,categoria,avisar,whatsapp,obs,diaSemanaFixo};
       _cpRecEditModal(c, novosCampos);
       return;
     }
-    Object.assign(c, {nome,valor,vencimento,periodicidade,categoria,avisar,whatsapp,obs});
+    Object.assign(c, {nome,valor,vencimento,periodicidade,categoria,avisar,whatsapp,obs,diaSemanaFixo});
   } else if (periodicidade !== 'unico') {
     // Criação de série recorrente: gera N ocorrências compartilhando recorrenciaId.
     const recId = crypto.randomUUID();
     const baseTs = Date.now();
-    contasPagar.push({id: String(baseTs), nome, valor, vencimento, periodicidade, categoria, avisar, whatsapp, obs, paga: false, recorrenciaId: recId});
-    const futuros = _cpGerarVencimentosFuturos(vencimento, periodicidade);
+    contasPagar.push({id: String(baseTs), nome, valor, vencimento, periodicidade, categoria, avisar, whatsapp, obs, paga: false, recorrenciaId: recId, diaSemanaFixo});
+    const futuros = _cpGerarVencimentosFuturos(vencimento, periodicidade, diaSemanaFixo);
     futuros.forEach((v, i) => {
-      contasPagar.push({id: String(baseTs + i + 1), nome, valor, vencimento: v, periodicidade, categoria, avisar, whatsapp, obs, paga: false, recorrenciaId: recId});
+      contasPagar.push({id: String(baseTs + i + 1), nome, valor, vencimento: v, periodicidade, categoria, avisar, whatsapp, obs, paga: false, recorrenciaId: recId, diaSemanaFixo});
     });
   } else {
-    contasPagar.push({id:Date.now().toString(),nome,valor,vencimento,periodicidade,categoria,avisar,whatsapp,obs,paga:false});
+    contasPagar.push({id:Date.now().toString(),nome,valor,vencimento,periodicidade,categoria,avisar,whatsapp,obs,paga:false, diaSemanaFixo});
   }
   closeCPModal();
   renderContasPagarKpis();
