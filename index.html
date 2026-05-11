@@ -2759,6 +2759,7 @@ var DB_WIDGETS_DEF = [
   { id:'kpis-int',     nome:'KPIs internos',           desc:'Produtos, MC%, empréstimo, caixa',  icone:'📋', tamanhos:['full','half'], defaultSize:'full' },
   { id:'saldo-caixa',     nome:'Saldo em caixa',          desc:'Total disponível com detalhamento por conta', icone:'💳', tamanhos:['full','half'], defaultSize:'full' },
   { id:'caixa-real-mes',  nome:'Caixa real do mês',       desc:'Entradas/saídas/resultado dos lançamentos do mês', icone:'💸', tamanhos:['full','half'], defaultSize:'full' },
+  { id:'dre-mes',         nome:'DRE do mês',               desc:'Receita, CPV, despesas e resultado (regime de competência)', icone:'📊', tamanhos:['full','half'], defaultSize:'full' },
   { id:'resumo-cp',       nome:'Resumo de contas a pagar', desc:'Total/pago/pendente do mês + atrasado', icone:'📅', tamanhos:['full','half'], defaultSize:'full' },
   { id:'vendedores',   nome:'Vendas por vendedor',     desc:'Ranking de vendedores do período',  icone:'👤', tamanhos:['full','half'], defaultSize:'half' },
   { id:'scooters',     nome:'Scooters mais vendidas',  desc:'Ranking de produtos vendidos',      icone:'🏆', tamanhos:['full','half'], defaultSize:'half' },
@@ -2774,6 +2775,7 @@ var DB_DEFAULT = [
   { id:'kpis-int',       ativo:true,  size:'full' },
   { id:'saldo-caixa',    ativo:true,  size:'full' },
   { id:'caixa-real-mes', ativo:true,  size:'full' },
+  { id:'dre-mes',        ativo:true,  size:'full' },
   { id:'resumo-cp',      ativo:true,  size:'full' },
   { id:'vendedores',     ativo:true,  size:'half' },
   { id:'scooters',       ativo:true,  size:'half' },
@@ -2968,6 +2970,22 @@ function renderWidgetHTML(id) {
         +'<div class="card-sub">Entradas e saídas dos lançamentos manuais (não inclui transferências)</div>'
         +'</div></div>'
         +'<div class="kpi-grid" id="dash-caixa-real" style="padding:16px 20px;margin-bottom:0;"></div>'
+        +'</div>';
+
+    case 'dre-mes':
+      return '<div class="card" id="dash-dre-mes-card">'
+        +'<div class="card-header" onclick="toggleDashDreMes()" style="cursor:pointer;user-select:none;">'
+        +'<div><div class="card-title">📊 DRE do mês</div>'
+        +'<div class="card-sub" id="dash-dre-mes-sub">Demonstração do Resultado simplificada (regime de competência)</div></div>'
+        +'<span id="dash-dre-mes-arrow" style="font-size:14px;color:var(--text3);">▾</span>'
+        +'</div>'
+        +'<div id="dash-dre-mes-resumo" class="kpi-grid" style="padding:16px 20px;margin-bottom:0;">'
+        +'<div class="kpi" style="border-top:2px solid var(--gold);">'
+        +'<div class="kpi-label">Resultado do mês</div>'
+        +'<div class="kpi-value" id="dash-dre-mes-resultado-valor">—</div>'
+        +'<div class="kpi-change" id="dash-dre-mes-resultado-pct">calculando…</div>'
+        +'</div></div>'
+        +'<div id="dash-dre-mes-detalhe" style="display:none;border-top:1px solid var(--border);padding:14px 22px 18px;"></div>'
         +'</div>';
 
     case 'resumo-cp':
@@ -4104,6 +4122,7 @@ function renderDashboard(){
     renderDashInternal();
     renderDashSaldoCaixa();
     renderDashCaixaRealMes();
+    renderDashDreMes();
     renderDashResumoCp();
   }, 150);
   // emprestimos só é carregado pelo initFinanceiro. Pra "Próxima parcela"
@@ -4280,6 +4299,180 @@ function _dashCaixaRealGo(tipo, mesAtual) {
     const ini = document.getElementById('fin-data-ini');
     const fim = document.getElementById('fin-data-fim');
     if (tipoSel) tipoSel.value = tipo;
+    if (ini) ini.value = mesAtual + '-01';
+    if (fim) {
+      const [y,m] = mesAtual.split('-').map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      fim.value = `${mesAtual}-${String(lastDay).padStart(2,'0')}`;
+    }
+    if (typeof aplicarFiltrosLancamentos === 'function') aplicarFiltrosLancamentos();
+  }, 80);
+}
+
+// ── DRE simplificada do mês ──
+// Receita por regime de competência (faturamento Tiny do mês corrente).
+// Despesas por caixa REAL (lancamentos do mês, exceto transferências).
+// Custos fixos da tabela viram referência comparativa, não dedução.
+let dashDreMesExpandido = false;
+
+async function renderDashDreMes() {
+  const wrap = document.getElementById('dash-dre-mes-card');
+  if (!wrap) return;
+
+  const hoje = new Date();
+  const yyyy = hoje.getFullYear();
+  const mm   = String(hoje.getMonth()+1).padStart(2,'0');
+  const mesAtual = `${yyyy}-${mm}`;
+  const lastDay = new Date(yyyy, hoje.getMonth()+1, 0).getDate();
+  const iniBR = `01/${mm}/${yyyy}`;
+  const fimBR = `${String(lastDay).padStart(2,'0')}/${mm}/${yyyy}`;
+  const mesLabel = hoje.toLocaleString('pt-BR', { month:'long', year:'numeric' });
+  const mesLabelCap = mesLabel.charAt(0).toUpperCase() + mesLabel.slice(1);
+
+  // Atualiza subtítulo do widget com o mês corrente.
+  const subEl = document.getElementById('dash-dre-mes-sub');
+  if (subEl) subEl.textContent = `Demonstração do Resultado simplificada (regime de competência) · ${mesLabelCap}`;
+
+  // ── Receita: fetch Tiny mês corrente (cache 30min compartilhado com kpis-fat) ──
+  let receita = 0;
+  try {
+    const peds = await buscarPedidosCompletos(iniBR, fimBR, false);
+    receita = (peds || []).reduce((s,p) => s + (p.valor || 0), 0);
+  } catch(e) {
+    console.warn('[renderDashDreMes] falha ao buscar pedidos:', e.message);
+  }
+
+  // ── CPV via avgMCpct dos products (mesma fórmula do kpis-fat) ──
+  const avgMCpct = (products && products.length)
+    ? products.reduce((s,p) => s + mcp(p), 0) / products.length / 100
+    : 0;
+  const cpv = receita * (1 - avgMCpct);
+  const lucroBruto = receita - cpv;
+  const pctLB = receita > 0 ? (lucroBruto / receita * 100) : 0;
+
+  // ── Despesas operacionais reais: lancamentos do mês ex-transferências ──
+  const inMes = (d) => d && d.slice(0,7) === mesAtual;
+  const desp = (lancamentos || []).filter(l =>
+    l.tipo === 'saida' && inMes(l.data) && !l.transferenciaId && l.categoria !== 'Transferência'
+  );
+  const despReal = desp.reduce((s,l) => s + (l.valor || 0), 0);
+  const despCount = desp.length;
+
+  // ── Despesas planejadas: SUM(custos_fixos) ex-Empréstimo ex-vendas_mes_config ──
+  const planejado = (custosFixos || [])
+    .filter(c => c.nome !== 'Empréstimo' && c.nome !== 'vendas_mes_config')
+    .reduce((s,c) => s + (c.valor || 0), 0);
+
+  // ── Empréstimos pagos no mês ──
+  const todasParc = (emprestimos || []).flatMap(e => e.pagamentos || []);
+  const empPagos = todasParc.filter(p => p.status === 'pago' && inMes(p.dataPagamento));
+  const empValor = empPagos.reduce((s,p) => s + (p.valorPago || p.valor || 0), 0);
+  const empCount = empPagos.length;
+
+  // ── Resultado ──
+  const resultado = lucroBruto - despReal - empValor;
+  const pctRes = receita > 0 ? (resultado / receita * 100) : 0;
+  const resCls = resultado > 0 ? 'green' : resultado < 0 ? 'red' : '';
+  const resStyle = resultado === 0 ? 'color:var(--text2);' : '';
+  const resIcon = resultado > 0 ? '🟢' : resultado < 0 ? '🔴' : '⚪';
+  const resLabel = resultado > 0 ? 'margem' : resultado < 0 ? 'prejuízo' : 'equilíbrio';
+  const resSign = resultado > 0 ? '+ ' : resultado < 0 ? '− ' : '';
+
+  // ── KPI grande do estado colapsado ──
+  const valEl = document.getElementById('dash-dre-mes-resultado-valor');
+  const pctEl = document.getElementById('dash-dre-mes-resultado-pct');
+  if (valEl) {
+    valEl.className = 'kpi-value ' + resCls;
+    valEl.style.cssText = resStyle;
+    valEl.textContent = resSign + fmt(Math.abs(resultado));
+  }
+  if (pctEl) pctEl.textContent = receita > 0
+    ? `${resIcon} ${Math.abs(pctRes).toFixed(0)}% ${resLabel}`
+    : `${resIcon} sem receita no mês`;
+
+  // ── Detalhe expandido — 7 linhas + tooltips + click handlers ──
+  const det = document.getElementById('dash-dre-mes-detalhe');
+  if (det) {
+    const linha = (label, valor, opts = {}) => {
+      const op = opts || {};
+      const valorTxt = (op.sign||'') + fmt(Math.abs(valor));
+      const valorStyle = op.color ? `color:${op.color};` : '';
+      const click = op.onclick ? `onclick="event.stopPropagation();${op.onclick}"` : '';
+      const cursor = op.onclick ? 'cursor:pointer;' : '';
+      const title = op.title ? `title="${escHtml(op.title)}"` : '';
+      const pct = op.pct != null ? `<span style="margin-left:8px;color:var(--text3);font-size:11px;">${op.pct}</span>` : '';
+      return `
+        <div ${click} ${title} style="display:flex;justify-content:space-between;padding:8px 0;${cursor}">
+          <span style="font-size:13px;${op.bold?'font-weight:700;':''}">${label}${pct}</span>
+          <span class="td-mono" style="font-weight:${op.bold?'700':'600'};${valorStyle}font-size:13px;">${valorTxt}</span>
+        </div>`;
+    };
+    const sublinha = (texto) => `<div style="font-size:11px;color:var(--text3);margin:-4px 0 6px 0;padding-left:12px;">${escHtml(texto)}</div>`;
+    const sep = '<div style="height:1px;background:var(--border);margin:6px 0;"></div>';
+
+    det.innerHTML = `
+      ${linha('Receita (faturamento Tiny)', receita, { onclick: `_dashDreIrPedidos()` })}
+      ${linha('(−) Custo dos produtos vendidos', cpv, {
+        title: 'CPV = Receita × (1 − MC% médio dos produtos). Estimativa baseada em produtos[].mcp.'
+      })}
+      ${sep}
+      ${linha('= Lucro bruto', lucroBruto, {
+        bold: true,
+        pct: receita > 0 ? `${pctLB.toFixed(0)}% da receita` : '',
+        title: 'Receita − CPV. Lucro antes das despesas operacionais.'
+      })}
+      <div style="height:8px;"></div>
+      ${linha('(−) Despesas operacionais', despReal, {
+        onclick: `_dashDreIrDespesas('${mesAtual}')`,
+      })}
+      ${sublinha(`real do mês (${despCount} lançamento${despCount!==1?'s':''})`)}
+      ${sublinha(`${fmt(planejado)} planejados em custos fixos`)}
+      ${linha('(−) Empréstimos pagos', empValor, {
+        onclick: `_dashDreIrEmprestimos()`,
+      })}
+      ${sublinha(`${empCount} parcela${empCount!==1?'s':''} paga${empCount!==1?'s':''} em ${mesLabel.split(' ')[0]}`)}
+      ${sep}
+      ${linha('= RESULTADO DO MÊS', resultado, {
+        bold: true,
+        sign: resSign,
+        color: resultado > 0 ? 'var(--green)' : resultado < 0 ? 'var(--red)' : 'var(--text2)',
+        pct: receita > 0 ? `${resIcon} ${Math.abs(pctRes).toFixed(0)}% ${resLabel}` : '',
+        title: 'Lucro bruto − Despesas operacionais − Empréstimos.'
+      })}
+    `;
+  }
+
+  // Aplica estado de expansão (colapsado mostra resumo, expandido mostra detalhe)
+  _dashDreAplicaEstado();
+}
+
+function _dashDreAplicaEstado() {
+  const det = document.getElementById('dash-dre-mes-detalhe');
+  const resumo = document.getElementById('dash-dre-mes-resumo');
+  const arrow = document.getElementById('dash-dre-mes-arrow');
+  if (det)    det.style.display    = dashDreMesExpandido ? 'block' : 'none';
+  if (resumo) resumo.style.display = dashDreMesExpandido ? 'none'  : 'grid';
+  if (arrow)  arrow.textContent    = dashDreMesExpandido ? '▴'    : '▾';
+}
+
+function toggleDashDreMes() {
+  dashDreMesExpandido = !dashDreMesExpandido;
+  _dashDreAplicaEstado();
+}
+
+function _dashDreIrPedidos() { showPage('pedidos'); }
+function _dashDreIrEmprestimos() {
+  try { localStorage.setItem('sm_fin_tab', 'emprestimos'); } catch(e) {}
+  showPage('financeiro');
+  if (typeof switchFinTab === 'function') switchFinTab('emprestimos');
+}
+function _dashDreIrDespesas(mesAtual) {
+  showPage('financeiro');
+  setTimeout(() => {
+    const tipoSel = document.getElementById('fin-filtro-tipo');
+    const ini = document.getElementById('fin-data-ini');
+    const fim = document.getElementById('fin-data-fim');
+    if (tipoSel) tipoSel.value = 'saida';
     if (ini) ini.value = mesAtual + '-01';
     if (fim) {
       const [y,m] = mesAtual.split('-').map(Number);
