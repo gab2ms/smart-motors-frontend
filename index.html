@@ -2757,8 +2757,9 @@ async function carregarDados() {
 var DB_WIDGETS_DEF = [
   { id:'kpis-fat',     nome:'KPIs de faturamento',    desc:'Receita, pedidos, ticket, lucro',   icone:'💰', tamanhos:['full','half'], defaultSize:'full' },
   { id:'kpis-int',     nome:'KPIs internos',           desc:'Produtos, MC%, empréstimo, caixa',  icone:'📋', tamanhos:['full','half'], defaultSize:'full' },
-  { id:'saldo-caixa',  nome:'Saldo em caixa',          desc:'Total disponível com detalhamento por conta', icone:'💳', tamanhos:['full','half'], defaultSize:'full' },
-  { id:'resumo-cp',    nome:'Resumo de contas a pagar', desc:'Total/pago/pendente do mês + atrasado', icone:'📅', tamanhos:['full','half'], defaultSize:'full' },
+  { id:'saldo-caixa',     nome:'Saldo em caixa',          desc:'Total disponível com detalhamento por conta', icone:'💳', tamanhos:['full','half'], defaultSize:'full' },
+  { id:'caixa-real-mes',  nome:'Caixa real do mês',       desc:'Entradas/saídas/resultado dos lançamentos do mês', icone:'💸', tamanhos:['full','half'], defaultSize:'full' },
+  { id:'resumo-cp',       nome:'Resumo de contas a pagar', desc:'Total/pago/pendente do mês + atrasado', icone:'📅', tamanhos:['full','half'], defaultSize:'full' },
   { id:'vendedores',   nome:'Vendas por vendedor',     desc:'Ranking de vendedores do período',  icone:'👤', tamanhos:['full','half'], defaultSize:'half' },
   { id:'scooters',     nome:'Scooters mais vendidas',  desc:'Ranking de produtos vendidos',      icone:'🏆', tamanhos:['full','half'], defaultSize:'half' },
   { id:'grafico-dia',  nome:'Faturamento por dia',     desc:'Gráfico de barras diário',          icone:'📊', tamanhos:['full','half'], defaultSize:'full' },
@@ -2772,6 +2773,7 @@ var DB_DEFAULT = [
   { id:'kpis-fat',       ativo:true,  size:'full' },
   { id:'kpis-int',       ativo:true,  size:'full' },
   { id:'saldo-caixa',    ativo:true,  size:'full' },
+  { id:'caixa-real-mes', ativo:true,  size:'full' },
   { id:'resumo-cp',      ativo:true,  size:'full' },
   { id:'vendedores',     ativo:true,  size:'half' },
   { id:'scooters',       ativo:true,  size:'half' },
@@ -2957,6 +2959,15 @@ function renderWidgetHTML(id) {
         +'<div class="kpi-change" id="dash-saldo-caixa-cnt">—</div>'
         +'</div></div>'
         +'<div id="dash-saldo-caixa-detalhe" style="display:none;border-top:1px solid var(--border);padding:12px 20px 16px;"></div>'
+        +'</div>';
+
+    case 'caixa-real-mes':
+      return '<div class="card" id="dash-caixa-real-card">'
+        +'<div class="card-header"><div>'
+        +'<div class="card-title">💸 Caixa real do mês</div>'
+        +'<div class="card-sub">Entradas e saídas dos lançamentos manuais (não inclui transferências)</div>'
+        +'</div></div>'
+        +'<div class="kpi-grid" id="dash-caixa-real" style="padding:16px 20px;margin-bottom:0;"></div>'
         +'</div>';
 
     case 'resumo-cp':
@@ -4055,6 +4066,7 @@ function renderDashboard(){
   setTimeout(function() {
     renderDashInternal();
     renderDashSaldoCaixa();
+    renderDashCaixaRealMes();
     renderDashResumoCp();
   }, 150);
 }
@@ -4170,6 +4182,66 @@ function _dashSaldoIrConta(nome) {
       sel.value = nome;
       if (typeof aplicarFiltrosLancamentos === 'function') aplicarFiltrosLancamentos();
     }
+  }, 80);
+}
+
+// Bloco "Caixa real do mês" no Dashboard. Sempre mês corrente (não
+// respeita filtro de período do dashboard — diferença de escopo).
+// Excluir transferências em 2 condições (defesa em profundidade):
+// transferenciaId set OU categoria === 'Transferência'.
+function renderDashCaixaRealMes() {
+  const wrap = document.getElementById('dash-caixa-real');
+  if (!wrap) return;
+  const hoje = new Date();
+  const mesAtual = hoje.getFullYear() + '-' + String(hoje.getMonth()+1).padStart(2,'0');
+  const inMes = (d) => d && d.slice(0,7) === mesAtual;
+
+  const lancs = (lancamentos || []).filter(l =>
+    inMes(l.data) && !l.transferenciaId && l.categoria !== 'Transferência'
+  );
+  const ents = lancs.filter(l => l.tipo === 'entrada');
+  const sais = lancs.filter(l => l.tipo === 'saida');
+  const totalE = ents.reduce((s,l) => s + (l.valor||0), 0);
+  const totalS = sais.reduce((s,l) => s + (l.valor||0), 0);
+  const result = totalE - totalS;
+  const resCls = result > 0 ? 'green' : result < 0 ? 'red' : '';
+  const resStyle = result === 0 ? 'color:var(--text2);' : '';
+  const resIcon = result > 0 ? '+' : result < 0 ? '−' : '·';
+  const resBorda = result > 0 ? 'var(--green)' : result < 0 ? 'var(--red)' : 'var(--gold)';
+
+  wrap.innerHTML = `
+    <div class="kpi" onclick="_dashCaixaRealGo('entrada', '${mesAtual}')" style="border-top:2px solid var(--green);cursor:pointer;">
+      <div class="kpi-label">Entradas do mês</div>
+      <div class="kpi-value green">${fmt(totalE)}</div>
+      <div class="kpi-change">↗ ${ents.length} lançamento${ents.length!==1?'s':''}</div>
+    </div>
+    <div class="kpi" onclick="_dashCaixaRealGo('saida', '${mesAtual}')" style="border-top:2px solid var(--red);cursor:pointer;">
+      <div class="kpi-label">Saídas do mês</div>
+      <div class="kpi-value red">${fmt(totalS)}</div>
+      <div class="kpi-change">↘ ${sais.length} lançamento${sais.length!==1?'s':''}</div>
+    </div>
+    <div class="kpi" style="border-top:2px solid ${resBorda};">
+      <div class="kpi-label">Resultado</div>
+      <div class="kpi-value ${resCls}" style="${resStyle}">${resIcon} ${fmt(Math.abs(result))}</div>
+      <div class="kpi-change">${result>=0?'superávit':'déficit'} no mês</div>
+    </div>
+  `;
+}
+
+function _dashCaixaRealGo(tipo, mesAtual) {
+  showPage('financeiro');
+  setTimeout(() => {
+    const tipoSel = document.getElementById('fin-filtro-tipo');
+    const ini = document.getElementById('fin-data-ini');
+    const fim = document.getElementById('fin-data-fim');
+    if (tipoSel) tipoSel.value = tipo;
+    if (ini) ini.value = mesAtual + '-01';
+    if (fim) {
+      const [y,m] = mesAtual.split('-').map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      fim.value = `${mesAtual}-${String(lastDay).padStart(2,'0')}`;
+    }
+    if (typeof aplicarFiltrosLancamentos === 'function') aplicarFiltrosLancamentos();
   }, 80);
 }
 
