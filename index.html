@@ -6998,18 +6998,35 @@ function setLanTipo(tipo) {
   document.getElementById('lan-tipo').value = tipo;
   const btnE = document.getElementById('lan-btn-entrada');
   const btnS = document.getElementById('lan-btn-saida');
-  if (tipo==='entrada') {
-    btnE.style.cssText='flex:1;padding:10px;border-radius:var(--r-sm);border:2px solid var(--green);background:var(--green-dim);color:var(--green);font-family:"Montserrat",sans-serif;font-size:12px;font-weight:700;cursor:pointer;';
-    btnS.style.cssText='flex:1;padding:10px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface2);color:var(--text3);font-family:"Montserrat",sans-serif;font-size:12px;font-weight:700;cursor:pointer;';
-  } else {
-    btnS.style.cssText='flex:1;padding:10px;border-radius:var(--r-sm);border:2px solid var(--red);background:var(--red-dim);color:var(--red);font-family:"Montserrat",sans-serif;font-size:12px;font-weight:700;cursor:pointer;';
-    btnE.style.cssText='flex:1;padding:10px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface2);color:var(--text3);font-family:"Montserrat",sans-serif;font-size:12px;font-weight:700;cursor:pointer;';
+  const btnT = document.getElementById('lan-btn-transf');
+  const base = 'flex:1;padding:10px;border-radius:var(--r-sm);font-family:"Montserrat",sans-serif;font-size:12px;font-weight:700;cursor:pointer;';
+  const inativo = base + 'border:1px solid var(--border2);background:var(--surface2);color:var(--text3);';
+  btnE.style.cssText = inativo;
+  btnS.style.cssText = inativo;
+  btnT.style.cssText = inativo;
+  if (tipo === 'entrada') {
+    btnE.style.cssText = base + 'border:2px solid var(--green);background:var(--green-dim);color:var(--green);';
+  } else if (tipo === 'saida') {
+    btnS.style.cssText = base + 'border:2px solid var(--red);background:var(--red-dim);color:var(--red);';
+  } else if (tipo === 'transferencia') {
+    btnT.style.cssText = base + 'border:2px solid var(--gold);background:var(--surface3);color:var(--gold);';
   }
+  // Mostra/esconde campos por modo
+  const transfMode = (tipo === 'transferencia');
+  document.querySelectorAll('#lan-modal .lan-mode-normal').forEach(el => el.style.display = transfMode ? 'none' : '');
+  document.querySelectorAll('#lan-modal .lan-mode-transf').forEach(el => el.style.display = transfMode ? '' : 'none');
 }
 
 function populateLanConta() {
+  const opts = contas.map(c=>`<option value="${escHtml(c.nome)}">${escHtml(c.nome)}</option>`).join('');
   const sel = document.getElementById('lan-conta');
-  sel.innerHTML = contas.map(c=>`<option value="${escHtml(c.nome)}">${escHtml(c.nome)}</option>`).join('');
+  if (sel) sel.innerHTML = opts;
+  // Selects da transferência: opção placeholder no topo pra forçar escolha consciente.
+  const placeholder = '<option value="">Selecione...</option>';
+  const selO = document.getElementById('lan-conta-origem');
+  if (selO) selO.innerHTML = placeholder + opts;
+  const selD = document.getElementById('lan-conta-destino');
+  if (selD) selD.innerHTML = placeholder + opts;
 }
 
 // ── Toast genérico (auto-hide; opcional botão de ação) ──
@@ -7052,6 +7069,7 @@ function smToast(html, opts) {
 
 function salvarLancamento() {
   const tipo      = document.getElementById('lan-tipo').value;
+  if (tipo === 'transferencia') return _salvarTransferencia();
   const descricao = document.getElementById('lan-descricao').value.trim();
   const valor     = parseFloat(document.getElementById('lan-valor').value)||0;
   const data      = document.getElementById('lan-data').value;
@@ -7111,6 +7129,82 @@ function salvarLancamento() {
       }
     );
   }
+}
+
+// ── Transferência entre contas ──
+// Modelo: par de lançamentos com mesmo transferenciaId (saída + entrada).
+// Categoria fixa = 'Transferência'. Saldos são mantidos no array `contas`
+// (mesma convenção do resto do projeto — sem trigger no banco).
+function _transfPar(lanId) {
+  const l = lancamentos.find(x => x.id === lanId);
+  if (!l || !l.transferenciaId) return null;
+  const par = lancamentos.filter(x => x.transferenciaId === l.transferenciaId);
+  if (par.length !== 2) return null;
+  return {
+    saida:   par.find(x => x.tipo === 'saida'),
+    entrada: par.find(x => x.tipo === 'entrada'),
+    transferenciaId: l.transferenciaId,
+  };
+}
+
+function _salvarTransferencia() {
+  const valor   = parseFloat(document.getElementById('lan-valor').value)||0;
+  const data    = document.getElementById('lan-data').value;
+  const origem  = document.getElementById('lan-conta-origem').value;
+  const destino = document.getElementById('lan-conta-destino').value;
+  const obs     = document.getElementById('lan-obs').value.trim();
+
+  if (!valor)   { smAlert('Preencha o valor'); return; }
+  if (!data)    { smAlert('Preencha a data'); return; }
+  if (!origem)  { smAlert('Selecione a conta de origem'); return; }
+  if (!destino) { smAlert('Selecione a conta de destino'); return; }
+  if (origem === destino) { smAlert('Origem e destino devem ser contas diferentes'); return; }
+
+  const ctO = contas.find(c => c.nome === origem);
+  const ctD = contas.find(c => c.nome === destino);
+  if (!ctO || !ctD) { smAlert('Conta inválida'); return; }
+
+  // Saldo "efetivo" da origem na hora de validar:
+  // - criando: saldo atual
+  // - editando E origem mudou: saldo atual da nova origem (a antiga vai ser revertida)
+  // - editando E origem é a mesma: saldo atual + valor antigo (que vai ser estornado)
+  const editando = !!editLanId && _transfPar(editLanId);
+  let saldoOrigemEfetivo = ctO.saldo;
+  if (editando) {
+    if (editando.saida.conta === origem) saldoOrigemEfetivo = ctO.saldo + editando.saida.valor;
+  }
+  if (saldoOrigemEfetivo < valor) {
+    smAlert(`Saldo insuficiente. ${origem} tem ${fmt(saldoOrigemEfetivo)} e você está tentando transferir ${fmt(valor)}.`);
+    return;
+  }
+
+  const desc = `Transferência de ${origem} para ${destino}`;
+
+  if (editando) {
+    // Reverte saldos antigos
+    const oldO = contas.find(c => c.nome === editando.saida.conta);
+    const oldD = contas.find(c => c.nome === editando.entrada.conta);
+    if (oldO) oldO.saldo += editando.saida.valor;
+    if (oldD) oldD.saldo -= editando.entrada.valor;
+    // Atualiza in-place os 2 lançamentos do par (mantém transferenciaId e ids)
+    Object.assign(editando.saida,   { descricao: desc, valor, data, conta: origem,  contaId: ctO.id, obs });
+    Object.assign(editando.entrada, { descricao: desc, valor, data, conta: destino, contaId: ctD.id, obs });
+  } else {
+    const transfId = crypto.randomUUID();
+    const ts = Date.now();
+    lancamentos.push(
+      { id: String(ts),     tipo:'saida',   descricao:desc, valor, data, categoria:'Transferência', conta:origem,  contaId:ctO.id, obs, transferenciaId:transfId },
+      { id: String(ts + 1), tipo:'entrada', descricao:desc, valor, data, categoria:'Transferência', conta:destino, contaId:ctD.id, obs, transferenciaId:transfId },
+    );
+  }
+
+  ctO.saldo -= valor;
+  ctD.saldo += valor;
+
+  closeLanModal();
+  populateFinCatFilter(); populateFinContaFilter();
+  renderContas(); renderFinKpis(); renderLancamentos();
+  salvarDados();
 }
 
 function editarLancamento(id) {
@@ -10965,10 +11059,14 @@ renderDashboard();
             style="flex:1;padding:10px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface2);color:var(--text3);font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;cursor:pointer;">
             ↓ Saída
           </button>
+          <button id="lan-btn-transf" onclick="setLanTipo('transferencia')"
+            style="flex:1;padding:10px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface2);color:var(--text3);font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;cursor:pointer;">
+            ⇄ Transferência
+          </button>
         </div>
         <input type="hidden" id="lan-tipo" value="entrada">
       </div>
-      <div class="form-group full">
+      <div class="form-group full lan-mode-normal">
         <label>Descrição</label>
         <input class="form-input" id="lan-descricao" type="text" placeholder="Ex: Venda scooter Lee, Aluguel, Tráfego pago...">
       </div>
@@ -10980,7 +11078,7 @@ renderDashboard();
         <label>Data</label>
         <input class="form-input" id="lan-data" type="date">
       </div>
-      <div class="form-group">
+      <div class="form-group lan-mode-normal">
         <label>Categoria</label>
         <select class="form-input" id="lan-categoria">
           <option value="">Selecionar...</option>
@@ -11020,11 +11118,22 @@ renderDashboard();
             <option value="Bloqueado">Bloqueado</option>
             <option value="Outros">Outros</option>
           </optgroup>
+          <optgroup label="Movimentação interna">
+            <option value="Transferência" disabled>Transferência (use o botão ⇄)</option>
+          </optgroup>
         </select>
       </div>
-      <div class="form-group">
+      <div class="form-group lan-mode-normal">
         <label>Conta</label>
         <select class="form-input" id="lan-conta"></select>
+      </div>
+      <div class="form-group lan-mode-transf" style="display:none;">
+        <label>De (origem)</label>
+        <select class="form-input" id="lan-conta-origem"></select>
+      </div>
+      <div class="form-group lan-mode-transf" style="display:none;">
+        <label>Para (destino)</label>
+        <select class="form-input" id="lan-conta-destino"></select>
       </div>
       <div class="form-group full">
         <label>Observação (opcional)</label>
