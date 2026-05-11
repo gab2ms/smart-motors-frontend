@@ -11,6 +11,10 @@ Notas e convenções para triggers PL/pgSQL no Supabase deste projeto. Migration
 
 Link: `contas_pagar.emprestimo_parcela_id UUID REFERENCES emprestimo_parcelas(id) ON DELETE CASCADE`.
 
+## Migrations recentes
+
+- `lancamentos.transferencia_id UUID NULL` + `idx_lancamentos_transferencia` (parcial, WHERE transferencia_id IS NOT NULL) — vincula par de lançamentos que representam uma transferência entre contas. Convenções na seção "Lançamentos" abaixo.
+
 ---
 
 ## Armadilha #1 — `pg_trigger_depth()` na cláusula WHEN
