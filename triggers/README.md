@@ -79,6 +79,40 @@ Guardar **só o nome do credor**, sem o prefixo `"Empréstimo "`. O prefixo é r
 
 ---
 
+## Convenções — `lancamentos`
+
+### Transferência entre contas — par com `transferencia_id`
+
+Uma transferência entre contas bancárias é representada por **2 registros** em `lancamentos` que compartilham o mesmo `transferencia_id` (UUID):
+
+- 1 registro `tipo='saida'`, `conta_nome=<origem>`
+- 1 registro `tipo='entrada'`, `conta_nome=<destino>`
+- ambos com `categoria='Transferência'` e descrição `'Transferência de {origem} para {destino}'`
+
+Criação acontece via UI dedicada (botão `⇄ Transferência` no modal de lançamento). Edição/delete sempre tratam o par junto:
+- Editar qualquer um dos 2 abre o modal em modo transferência e altera os 2 lançamentos.
+- Deletar qualquer um dos 2 dispara confirmação e deleta o par via `WHERE transferencia_id = <uuid>`.
+
+KPIs Entradas/Saídas/Fluxo/Margem **excluem** transferências (movimentação interna ≠ receita/despesa). Lista, gráfico de categorias e evolução temporal continuam mostrando.
+
+### Dívida técnica — `lancamentos.conta_id`
+
+Coluna `conta_id UUID` existe no schema desde sempre, mas **só é populada para transferências** (criadas a partir desta feature). Lançamentos antigos têm `conta_id = NULL` — match com `contas_bancarias` continua via `conta_nome` (string).
+
+**Consequência:** renomear uma conta bancária quebra o vínculo de lançamentos antigos com a conta. Saldos no JS são recalculados por `conta_nome`, então renames também precisam atualizar todos os lançamentos antigos manualmente (ou popular `conta_id` num backfill).
+
+Backfill possível (não aplicado):
+```sql
+UPDATE lancamentos l
+SET conta_id = cb.id
+FROM contas_bancarias cb
+WHERE l.conta_id IS NULL AND l.conta_nome = cb.nome;
+```
+
+Não foi rodado porque o app ainda lê pelo `conta_nome`. Quando migrar a leitura pra `conta_id`, fazer o backfill antes de remover a leitura por nome.
+
+---
+
 ## Tradeoff conhecido — C1 vs C2
 
 Quando uma mudança em `emprestimo` (ex: rename) precisa refletir em descrições de `contas_pagar`, há 3 opções:
