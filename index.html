@@ -8471,10 +8471,21 @@ function salvarContaPagar() {
   if (!vencimento) { smAlert('Preencha o vencimento'); return; }
 
   if (editId) {
-    // Edição de ocorrência recorrente é tratada num modal próprio (commit 5).
-    // Aqui só lida com edição "simples" (ocorrência única ou só esta da série).
     const c = contasPagar.find(x=>x.id===editId);
-    if (c) Object.assign(c, {nome,valor,vencimento,periodicidade,categoria,avisar,whatsapp,obs});
+    if (!c) return;
+    // Mudança de periodicidade em série recorrente: bloqueia. Pra trocar de
+    // semanal→mensal o usuário precisa cancelar a série e criar nova.
+    if (c.recorrenciaId && periodicidade !== c.periodicidade) {
+      smAlert('Pra mudar a periodicidade, cancele esta série (apagar esta + futuras) e crie uma nova com a nova periodicidade.');
+      return;
+    }
+    // Conta recorrente → abre modal "só esta vs todas pendentes"
+    if (c.recorrenciaId) {
+      const novosCampos = {nome,valor,vencimento,periodicidade,categoria,avisar,whatsapp,obs};
+      _cpRecEditModal(c, novosCampos);
+      return;
+    }
+    Object.assign(c, {nome,valor,vencimento,periodicidade,categoria,avisar,whatsapp,obs});
   } else if (periodicidade !== 'unico') {
     // Criação de série recorrente: gera N ocorrências compartilhando recorrenciaId.
     const recId = crypto.randomUUID();
@@ -8605,6 +8616,81 @@ function _cpRecCancelModal(c) {
 
 function closeCpRecModal() { document.getElementById('cp-rec-modal').classList.remove('open'); }
 document.getElementById('cp-rec-modal')?.addEventListener('click', function(e){ if(e.target===this) closeCpRecModal(); });
+
+// Modal de editar série recorrente (3 opções). Propaga só campos
+// "compartilháveis" — vencimento e periodicidade ficam só nesta
+// ocorrência (vencimento é específico de cada uma; periodicidade
+// é bloqueada de mudar antes deste modal abrir).
+function _cpRecEditModal(c, novos) {
+  const dataBR = c.vencimento.split('-').reverse().join('/');
+  const pendentes = contasPagar.filter(x => x.recorrenciaId === c.recorrenciaId && !x.paga);
+  const N = pendentes.length;
+  // Diff dos campos
+  const diffs = [];
+  if (novos.nome      !== c.nome)      diffs.push(`<li>Descrição: <s>${escHtml(c.nome)}</s> → <b>${escHtml(novos.nome)}</b></li>`);
+  if (+novos.valor    !== +c.valor)    diffs.push(`<li>Valor: <s>${fmt(c.valor)}</s> → <b>${fmt(novos.valor)}</b></li>`);
+  if (novos.vencimento !== c.vencimento) diffs.push(`<li>Vencimento: <s>${dataBR}</s> → <b>${novos.vencimento.split('-').reverse().join('/')}</b> <span style="color:var(--text3);">(só nesta)</span></li>`);
+  if (novos.categoria !== (c.categoria||'')) diffs.push(`<li>Categoria: <s>${escHtml(c.categoria||'—')}</s> → <b>${escHtml(novos.categoria||'—')}</b></li>`);
+  if ((novos.avisar||'') !== (c.avisar||'')) diffs.push(`<li>Avisar (dias): <s>${escHtml(c.avisar||'—')}</s> → <b>${escHtml(novos.avisar||'—')}</b></li>`);
+  if ((novos.whatsapp||'') !== (c.whatsapp||'')) diffs.push(`<li>WhatsApp: alterado</li>`);
+  if ((novos.obs||'') !== (c.obs||'')) diffs.push(`<li>Observação: alterada</li>`);
+  const diffHtml = diffs.length ? `<ul style="margin-top:6px;padding-left:18px;">${diffs.join('')}</ul>` : '<p style="color:var(--text3);margin-top:6px;">Nenhuma mudança detectada.</p>';
+
+  document.getElementById('cp-rec-title').textContent = '⚠️ Esta é uma conta recorrente';
+  document.getElementById('cp-rec-body').innerHTML = `
+    <p>Editando <b>"${escHtml(c.nome)}"</b> (vence em ${dataBR}).</p>
+    <p style="margin-top:8px;"><b>O que mudou:</b></p>
+    ${diffHtml}
+    <p style="margin-top:10px;color:var(--text3);font-size:11px;">Vencimento e periodicidade ficam só nesta ocorrência. Demais campos podem ser propagados pra todas as ${N} ocorrências pendentes da série.</p>
+  `;
+  const btnA = document.getElementById('cp-rec-btn-a');
+  const btnB = document.getElementById('cp-rec-btn-b');
+  btnA.textContent = 'Aplicar só nesta';
+  btnA.className = 'btn';
+  btnA.style.background = '';
+  btnA.style.borderColor = '';
+  btnA.style.color = '';
+  btnA.onclick = () => {
+    closeCpRecModal();
+    Object.assign(c, novos);
+    closeCPModal();
+    renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar();
+    atualizarDotContasPagar(); salvarDados();
+  };
+  btnB.textContent = `Aplicar em todas pendentes (${N})`;
+  btnB.className = 'btn btn-gold';
+  btnB.style.background = '';
+  btnB.style.borderColor = '';
+  btnB.style.color = '';
+  btnB.onclick = async () => {
+    closeCpRecModal();
+    // Aplica na atual (incluindo vencimento, que é específica)
+    Object.assign(c, novos);
+    // Propaga campos compartilháveis nas demais pendentes (não toca vencimento/periodicidade)
+    const sharedKeys = ['nome', 'valor', 'categoria', 'avisar', 'whatsapp', 'obs'];
+    pendentes.forEach(x => {
+      if (x.id === c.id) return;
+      sharedKeys.forEach(k => { x[k] = novos[k]; });
+    });
+    // Persiste em massa no banco. TABLE_MAP.contas_pagar.toDb mapeia
+    // nome→descricao, obs→observacao. Update via .eq() chain.
+    const updates = {
+      descricao:  novos.nome,
+      valor:      novos.valor,
+      categoria:  novos.categoria || null,
+      avisar:     +novos.avisar || 3,
+      whatsapp:   novos.whatsapp || null,
+      observacao: novos.obs || null,
+    };
+    await sb.from('contas_pagar').update(updates)
+      .eq('recorrencia_id', c.recorrenciaId)
+      .eq('status', 'pendente');
+    closeCPModal();
+    renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar();
+    atualizarDotContasPagar(); salvarDados();
+  };
+  document.getElementById('cp-rec-modal').classList.add('open');
+}
 
 // Modal de preview pra ações em contas vinculadas a empréstimo. Mostra
 // detalhes da parcela e explica o efeito colateral (sync via trigger ou
