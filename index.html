@@ -1945,7 +1945,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
           <option value="status|desc">🚦 Status — pagas primeiro</option>
         </select>
       </div>
-      <div id="cp-table-header" style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1fr auto;gap:12px;padding:10px 20px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);">
+      <div id="cp-table-header" style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1fr minmax(150px, auto);gap:12px;padding:10px 20px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);">
         <div data-col="descricao"  onclick="_cpSort('descricao')"  style="cursor:pointer;">Descrição <span class="cp-arrow"></span></div>
         <div data-col="categoria"  onclick="_cpSort('categoria')"  style="cursor:pointer;">Categoria <span class="cp-arrow"></span></div>
         <div data-col="valor"      onclick="_cpSort('valor')"      style="cursor:pointer;text-align:right;">Valor <span class="cp-arrow"></span></div>
@@ -7587,7 +7587,7 @@ function renderContasPagar() {
 
     return `
       <div style="border-bottom:1px solid var(--border);">
-        <div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1fr auto;gap:12px;align-items:center;padding:13px 20px;font-size:13px;">
+        <div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1fr minmax(150px, auto);gap:12px;align-items:center;padding:13px 20px;font-size:13px;">
           <div style="font-weight:700;color:${stColors[st]};min-width:0;overflow:hidden;text-overflow:ellipsis;">${empBadge}${escHtml(c.nome)}${empIcone}${obsIcone}</div>
           <div style="font-size:11px;color:var(--text3);min-width:0;">${escHtml(c.categoria)||'—'} · ${escHtml(periodoLabel[c.periodicidade]||c.periodicidade)}</div>
           <div class="td-mono" style="font-weight:700;text-align:right;">${fmt(c.valor)}</div>
