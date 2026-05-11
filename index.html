@@ -115,6 +115,10 @@ nav{padding:14px 10px;flex:1;}
 .topbar-left{display:flex;align-items:center;gap:12px;}
 .topbar-title{font-size:15px;font-weight:700;letter-spacing:-0.3px;}
 .topbar-sub{font-size:11px;color:var(--text3);margin-top:2px;}
+.breadcrumb{font-size:10px;color:var(--text3);margin-bottom:3px;letter-spacing:0.4px;text-transform:uppercase;font-weight:600;}
+.breadcrumb .bc-sep{margin:0 6px;color:var(--border2);}
+.breadcrumb .bc-parent{color:var(--text3);}
+.breadcrumb .bc-current{color:var(--text2);}
 .hamburger{display:none;background:none;border:none;color:var(--text);font-size:20px;cursor:pointer;padding:4px;}
 @media(max-width:768px){.hamburger{display:block;}}
 
@@ -1143,6 +1147,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     <div class="topbar-left">
       <button class="hamburger" onclick="toggleSidebar()">☰</button>
       <div>
+        <div class="breadcrumb" id="breadcrumb" style="display:none;"></div>
         <div class="topbar-title" id="page-title">Dashboard</div>
         <div class="topbar-sub" id="page-sub">Resumo geral da Smart Motors</div>
       </div>
@@ -2564,6 +2569,33 @@ const pageMeta={
   'contas-pagar':['Contas a Pagar','Gerencie vencimentos e nunca esqueça um pagamento'],
   custos:['Custos Fixos','Despesas mensais'],
 };
+// Breadcrumb hierárquico — pai não-clicável (etiqueta visual), atual em destaque.
+// Dashboard NÃO aparece (raiz). Pais espelham os agrupadores da sidebar.
+const BREADCRUMB_MAP = {
+  admin:           ['Visão Geral', 'Administração'],
+  pedidos:         ['Vendas', 'Pedidos'],
+  vendas:          ['Vendas', 'Vendas do Mês'],
+  estoque:         ['Produtos', 'Produtos & Estoque'],
+  simulador:       ['Produtos', 'Simulador de Preços'],
+  precos:          ['Produtos', 'Preços & Margens'],
+  oficina:         ['Operação', 'Oficina'],
+  sac:             ['Operação', 'SAC'],
+  clientes:        ['Operação', 'Clientes'],
+  contratos:       ['Operação', 'Contrato'],
+  financeiro:      ['Financeiro', 'Caixa'],
+  'contas-pagar':  ['Financeiro', 'Contas a Pagar'],
+  custos:          ['Financeiro', 'Custos Fixos'],
+};
+function renderBreadcrumb(id) {
+  const el = document.getElementById('breadcrumb');
+  if (!el) return;
+  const crumbs = BREADCRUMB_MAP[id];
+  if (!crumbs) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  el.innerHTML = `<span class="bc-parent">${crumbs[0]}</span>` +
+                 `<span class="bc-sep">›</span>` +
+                 `<span class="bc-current">${crumbs[1]}</span>`;
+}
 // opts.fromHistory=true → veio do popstate, NÃO empilha (evita loop)
 // opts.replace=true     → primeira navegação, replaceState em vez de pushState
 function showPage(id, opts){
@@ -2591,6 +2623,7 @@ function showPage(id, opts){
   const[t,s]=pageMeta[id]||[id,''];
   document.getElementById('page-title').textContent=t;
   document.getElementById('page-sub').textContent=s;
+  renderBreadcrumb(id);
   closeSidebar();
   const btnProd = document.getElementById('btn-add-produto');
   if (btnProd) btnProd.style.display = ['estoque','simulador'].includes(id) ? '' : 'none';
