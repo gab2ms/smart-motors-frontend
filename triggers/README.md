@@ -15,6 +15,8 @@ Link: `contas_pagar.emprestimo_parcela_id UUID REFERENCES emprestimo_parcelas(id
 
 - `lancamentos.transferencia_id UUID NULL` + `idx_lancamentos_transferencia` (parcial, WHERE transferencia_id IS NOT NULL) — vincula par de lançamentos que representam uma transferência entre contas. Convenções na seção "Lançamentos" abaixo.
 - `contas_pagar.recorrencia_id UUID NULL` + `idx_contas_pagar_recorrencia` (parcial, WHERE recorrencia_id IS NOT NULL) — vincula todas as ocorrências de uma conta recorrente. Pré-geração de N ocorrências (52 semanais, 12 mensais, etc) no momento da criação.
+- `contas_pagar.dia_semana_fixo SMALLINT NULL` — dia da semana fixo (0=dom..6=sáb) pra séries semanais/quinzenais. Sem índice (cardinalidade muito baixa).
+- `lancamentos.conta_pagar_id TEXT NULL REFERENCES contas_pagar(id) ON DELETE SET NULL` + `idx_lancamentos_conta_pagar` (parcial) — vincula lançamento de caixa gerado pelo modal de pagamento de Contas a Pagar. `ON DELETE SET NULL` preserva histórico financeiro mesmo se conta_pagar for deletada.
 
 ---
 
