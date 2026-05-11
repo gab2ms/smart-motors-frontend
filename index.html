@@ -6615,11 +6615,15 @@ function renderFinKpis() {
   const ini = document.getElementById('fin-data-ini')?.value;
   const fim = document.getElementById('fin-data-fim')?.value;
   const filtrado   = filtrarPorData(lancamentos, ini, fim);
-  const entradas   = filtrado.filter(l=>l.tipo==='entrada').reduce((s,l)=>s+l.valor,0);
-  const saidas     = filtrado.filter(l=>l.tipo==='saida').reduce((s,l)=>s+l.valor,0);
+  // Transferências entre contas são movimentação interna — não contam
+  // como receita/despesa real. Excluídas dos KPIs Entradas/Saídas/Fluxo.
+  // Continuam visíveis na lista, no gráfico de categorias e na evolução.
+  const filtradoSemTransf = filtrado.filter(l => !l.transferenciaId);
+  const entradas   = filtradoSemTransf.filter(l=>l.tipo==='entrada').reduce((s,l)=>s+l.valor,0);
+  const saidas     = filtradoSemTransf.filter(l=>l.tipo==='saida').reduce((s,l)=>s+l.valor,0);
   const fluxo      = entradas - saidas;
-  const nEnt       = filtrado.filter(l=>l.tipo==='entrada').length;
-  const nSai       = filtrado.filter(l=>l.tipo==='saida').length;
+  const nEnt       = filtradoSemTransf.filter(l=>l.tipo==='entrada').length;
+  const nSai       = filtradoSemTransf.filter(l=>l.tipo==='saida').length;
   const fluxoColor = fluxo>0?'var(--green)':fluxo<0?'var(--red)':'var(--text3)';
   const fluxoIcon  = fluxo>0?'↑':fluxo<0?'↓':'→';
   const margem     = entradas>0?((fluxo/entradas)*100):0;
