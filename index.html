@@ -6942,10 +6942,14 @@ function renderLancamentos() {
   const tamanho = finTamanhoPagina(finPaginaAtual);
   const pageItems = lista.slice(offset, offset + tamanho);
 
-  tbody.innerHTML = pageItems.map(l => `
+  tbody.innerHTML = pageItems.map(l => {
+    const transfIcone = l.transferenciaId
+      ? ` <span style="color:var(--gold);font-size:11px;" title="Transferência entre contas">⇄</span>`
+      : '';
+    return `
     <div class="lancamento-row">
       <span class="td-mono" style="font-size:11px;">${l.data||'—'}</span>
-      <span style="font-weight:600;font-size:12px;">${escHtml(l.descricao)||'—'}${l.obs?`<span style="color:var(--text3);font-weight:400;"> · ${escHtml(l.obs)}</span>`:''}</span>
+      <span style="font-weight:600;font-size:12px;">${escHtml(l.descricao)||'—'}${transfIcone}${l.obs?`<span style="color:var(--text3);font-weight:400;"> · ${escHtml(l.obs)}</span>`:''}</span>
       <span><span class="badge" style="background:var(--surface2);color:var(--text2);">${escHtml(l.categoria)||'—'}</span></span>
       <span style="font-size:11px;color:var(--text3);">${escHtml(l.conta)||'—'}</span>
       <span class="td-mono" style="font-weight:700;color:${l.tipo==='entrada'?'var(--green)':'var(--red)'};">
@@ -6956,7 +6960,8 @@ function renderLancamentos() {
         <button class="action-btn del-btn" onclick="deletarLancamento('${l.id}')">✕</button>
       </span>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   if (pagEl) {
     if (totalPaginas <= 1) { pagEl.style.display = 'none'; pagEl.innerHTML = ''; }
@@ -7210,6 +7215,7 @@ function _salvarTransferencia() {
 function editarLancamento(id) {
   const l = lancamentos.find(l=>l.id===id);
   if (!l) return;
+  if (l.transferenciaId) return _editarTransferencia(l);
   editLanId = id;
   document.getElementById('lan-modal-title').innerHTML = 'Editar <span>lançamento</span>';
   setLanTipo(l.tipo);
@@ -7223,14 +7229,57 @@ function editarLancamento(id) {
   document.getElementById('lan-modal').classList.add('open');
 }
 
+// Editar transferência: reusa o lan-modal em modo transferência.
+// editLanId aponta pra qualquer um dos 2 lançamentos do par —
+// _salvarTransferencia identifica o par via _transfPar(editLanId).
+function _editarTransferencia(l) {
+  const par = _transfPar(l.id);
+  if (!par) { smAlert('Par de transferência inconsistente — recarregue a página'); return; }
+  editLanId = l.id;
+  document.getElementById('lan-modal-title').innerHTML = 'Editar <span>transferência</span>';
+  setLanTipo('transferencia');
+  document.getElementById('lan-valor').value = par.saida.valor;
+  document.getElementById('lan-data').value  = par.saida.data;
+  document.getElementById('lan-obs').value   = par.saida.obs || '';
+  populateLanConta();
+  document.getElementById('lan-conta-origem').value  = par.saida.conta;
+  document.getElementById('lan-conta-destino').value = par.entrada.conta;
+  document.getElementById('lan-modal').classList.add('open');
+}
+
 async function deletarLancamento(id) {
   const l = lancamentos.find(l=>l.id===id);
-  if (!l || !(await smConfirm(`Remover "${l.descricao}"?`))) return;
+  if (!l) return;
+  if (l.transferenciaId) return _deletarTransferencia(l);
+  if (!(await smConfirm(`Remover "${l.descricao}"?`))) return;
   // Reverte saldo
   const ct = contas.find(c=>c.nome===l.conta);
   if (ct) ct.saldo += l.tipo==='entrada'?-l.valor:l.valor;
   sb.from('lancamentos').delete().eq('id', id);
   lancamentos = lancamentos.filter(l=>l.id!==id);
+  populateFinCatFilter();
+  populateFinContaFilter();
+  renderContas();
+  renderFinKpis();
+  renderLancamentos();
+  salvarDados();
+}
+
+// Delete em par: remove os 2 lançamentos da transferência via
+// transferencia_id + reverte saldos das duas contas. Nunca deleta isolado.
+async function _deletarTransferencia(l) {
+  const par = _transfPar(l.id);
+  if (!par) { smAlert('Par de transferência inconsistente'); return; }
+  const ok = await smConfirm(
+    `Isso vai deletar os 2 lançamentos da transferência (${par.saida.conta} → ${par.entrada.conta}, ${fmt(par.saida.valor)}) e reverter os saldos das duas contas. Continuar?`
+  );
+  if (!ok) return;
+  const ctO = contas.find(c => c.nome === par.saida.conta);
+  const ctD = contas.find(c => c.nome === par.entrada.conta);
+  if (ctO) ctO.saldo += par.saida.valor;
+  if (ctD) ctD.saldo -= par.entrada.valor;
+  await sb.from('lancamentos').delete().eq('transferencia_id', par.transferenciaId);
+  lancamentos = lancamentos.filter(x => x.transferenciaId !== par.transferenciaId);
   populateFinCatFilter();
   populateFinContaFilter();
   renderContas();
