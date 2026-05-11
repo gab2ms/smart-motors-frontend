@@ -7456,6 +7456,9 @@ function renderContasPagar() {
       ? `<span class="badge badge-purple" style="cursor:pointer;margin-right:6px;" onclick="event.stopPropagation();_cpAbrirEmprestimo('${eparcId}')" title="Abrir empréstimo">💰 Empréstimo</span>`
       : '';
     const empIcone = eparcId ? ' <span style="color:var(--text3);font-size:11px;" title="Vinculado a empréstimo — alterações sincronizam com a parcela">🔗</span>' : '';
+    const obsIcone = c.obs
+      ? ` <span style="cursor:pointer;opacity:0.55;margin-left:4px;font-size:11px;" onclick="event.stopPropagation();_cpToggleObs('${c.id}')" title="Ver observação">📝</span>`
+      : '';
     const waNum = c.whatsapp||'';
     const waMsg = encodeURIComponent(`⚡ Smart Motors
 
@@ -7465,29 +7468,39 @@ function renderContasPagar() {
     const waLink = waNum?`https://wa.me/${waNum}?text=${waMsg}`:`https://wa.me/?text=${waMsg}`;
 
     return `
-      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:12px;align-items:center;padding:13px 20px;border-bottom:1px solid var(--border);font-size:13px;" class="">
-        <div>
-          <div style="font-weight:700;color:${stColors[st]};">${empBadge}${escHtml(c.nome)}${empIcone}</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(c.categoria)||'—'} · ${escHtml(periodoLabel[c.periodicidade]||c.periodicidade)}</div>
-          ${c.obs?`<div style="font-size:10px;color:var(--text3);">${escHtml(c.obs)}</div>`:''}
+      <div style="border-bottom:1px solid var(--border);">
+        <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:12px;align-items:center;padding:13px 20px;font-size:13px;">
+          <div>
+            <div style="font-weight:700;color:${stColors[st]};">${empBadge}${escHtml(c.nome)}${empIcone}${obsIcone}</div>
+            <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(c.categoria)||'—'} · ${escHtml(periodoLabel[c.periodicidade]||c.periodicidade)}</div>
+          </div>
+          <div class="td-mono" style="font-weight:700;">${fmt(c.valor)}</div>
+          <div>
+            <div class="td-mono" style="font-size:12px;">${c.vencimento.split('-').reverse().join('/')}</div>
+            <div style="font-size:10px;color:${dias<0?'var(--red)':dias<=3?'var(--orange)':'var(--text3)'};">
+              ${c.paga?'':'('+(dias<0?'atrasado '+Math.abs(dias)+'d':dias===0?'hoje':dias+'d')+')'}</div>
+          </div>
+          <div>${stBadges[st]}</div>
+          <div style="display:flex;gap:5px;">
+            ${!c.paga
+              ? '<button class="btn btn-gold" onclick="pagarConta(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;">✅</button>'
+              : '<button class="action-btn" onclick="despagarConta(\'' + c.id + '\')" style="font-size:10px;">↩</button>'}
+            <a href="${waLink}" target="_blank" class="action-btn" style="background:#25D366;border-color:#25D366;color:#fff;text-decoration:none;padding:5px 8px;font-size:10px;font-weight:700;">📲</a>
+            <button class="action-btn edit-btn" onclick="editarContaPagar('${c.id}')">✏</button>
+            <button class="action-btn del-btn" onclick="deletarContaPagar('${c.id}')">✕</button>
+          </div>
         </div>
-        <div class="td-mono" style="font-weight:700;">${fmt(c.valor)}</div>
-        <div>
-          <div class="td-mono" style="font-size:12px;">${c.vencimento.split('-').reverse().join('/')}</div>
-          <div style="font-size:10px;color:${dias<0?'var(--red)':dias<=3?'var(--orange)':'var(--text3)'};">
-            ${c.paga?'':'('+(dias<0?'atrasado '+Math.abs(dias)+'d':dias===0?'hoje':dias+'d')+')'}</div>
-        </div>
-        <div>${stBadges[st]}</div>
-        <div style="display:flex;gap:5px;">
-          ${!c.paga
-            ? '<button class="btn btn-gold" onclick="pagarConta(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;">✅</button>'
-            : '<button class="action-btn" onclick="despagarConta(\'' + c.id + '\')" style="font-size:10px;">↩</button>'}
-          <a href="${waLink}" target="_blank" class="action-btn" style="background:#25D366;border-color:#25D366;color:#fff;text-decoration:none;padding:5px 8px;font-size:10px;font-weight:700;">📲</a>
-          <button class="action-btn edit-btn" onclick="editarContaPagar('${c.id}')">✏</button>
-          <button class="action-btn del-btn" onclick="deletarContaPagar('${c.id}')">✕</button>
-        </div>
+        ${c.obs ? `<div id="cp-obs-${c.id}" style="display:none;margin:0 20px 12px 36px;padding:10px 14px;background:var(--surface2);border-left:2px solid var(--gold);border-radius:0 6px 6px 0;font-size:11px;color:var(--text2);line-height:1.5;">${escHtml(c.obs)}</div>` : ''}
       </div>`;
   }).join('');
+}
+
+// Toggle inline da observação. Estado não persiste no re-render
+// (mudar de tab/mês recria o DOM e fecha tudo — comportamento esperado).
+function _cpToggleObs(id) {
+  const el = document.getElementById('cp-obs-' + id);
+  if (!el) return;
+  el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
 }
 
 function openCPModal(id) {
