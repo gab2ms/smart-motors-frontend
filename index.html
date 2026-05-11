@@ -9,13 +9,16 @@
 <meta name="app-version" content="2026-04-30-31">
 <script>console.log('[head] inline script no <head> executou — pagina parseou ate aqui');</script>
 <title>Smart Motors — Sistema de Gestão</title>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onload="console.log('[head] supabase CDN carregou')" onerror="console.error('[head] supabase CDN FALHOU ao carregar')"></script>
 <!-- xlsx-js-style: fork do SheetJS que preserva estilos (cell.s) no output xlsx.
      A versao oficial community em cdn.sheetjs.com nao salva estilos. -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onload="console.log('[head] xlsx-js-style carregou')" onerror="console.error('[head] xlsx-js-style FALHOU')"></script>
 <style>
 :root {
+  --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --mono: 'JetBrains Mono', monospace;
   --bg:       #141414;
   --surface:  #1c1c1c;
@@ -41,7 +44,7 @@
   --r-sm: 6px;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Montserrat',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;-webkit-font-smoothing:antialiased;}
+body{font-family:var(--font-primary);background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;-webkit-font-smoothing:antialiased;}
 
 /* ── LAYOUT ── */
 .layout{display:flex;min-height:100vh;}
@@ -87,7 +90,7 @@ nav{padding:14px 10px;flex:1;}
   color:var(--text2);cursor:pointer;transition:all .15s;
   font-size:13px;font-weight:500;
   border:none;background:none;width:100%;text-align:left;
-  font-family:'Montserrat',sans-serif;
+  font-family:var(--font-primary);
 }
 .nav-item:hover{background:var(--surface2);color:var(--text);}
 .nav-item.active{
@@ -125,7 +128,7 @@ nav{padding:14px 10px;flex:1;}
 /* BUTTONS */
 .btn{
   padding:8px 16px;border-radius:var(--r-sm);
-  font-family:'Montserrat',sans-serif;font-size:12px;font-weight:600;
+  font-family:var(--font-primary);font-size:12px;font-weight:600;
   cursor:pointer;border:1px solid var(--border2);
   background:var(--surface2);color:var(--text);
   transition:all .15s;letter-spacing:0.2px;
@@ -224,7 +227,7 @@ tbody td{padding:12px 16px;font-size:13px;}
   flex:1;min-width:180px;
   background:var(--surface);border:1px solid var(--border2);
   border-radius:var(--r-sm);padding:9px 13px;
-  color:var(--text);font-family:'Montserrat',sans-serif;font-size:12px;
+  color:var(--text);font-family:var(--font-primary);font-size:12px;
   font-weight:500;outline:none;transition:border .15s;
 }
 .search-input:focus{border-color:var(--gold);}
@@ -236,7 +239,7 @@ select.search-input{cursor:pointer;}
 .action-btn{
   padding:4px 10px;border-radius:4px;font-size:10px;font-weight:700;
   cursor:pointer;border:1px solid var(--border2);background:var(--surface2);
-  color:var(--text2);transition:all .15s;font-family:'Montserrat',sans-serif;
+  color:var(--text2);transition:all .15s;font-family:var(--font-primary);
   letter-spacing:0.3px;text-transform:uppercase;
 }
 .action-btn:hover{background:var(--surface3);color:var(--text);}
@@ -377,7 +380,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
   background:rgba(0,0,0,0.72);
   z-index:10001;
   align-items:center;justify-content:center;
-  font-family:'Montserrat',sans-serif;
+  font-family:var(--font-primary);
   padding:20px;
 }
 .sm-modal-shell.open{display:flex;}
@@ -394,14 +397,14 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 .sm-modal-input{
   width:100%;padding:10px 12px;border-radius:6px;
   border:1px solid #363636;background:#232323;color:#f5f5f5;
-  font-family:'Montserrat',sans-serif;font-size:13px;outline:none;
+  font-family:var(--font-primary);font-size:13px;outline:none;
   transition:border-color .15s;
 }
 .sm-modal-input:focus{border-color:#f5c518;}
 .sm-modal-actions{display:flex;gap:10px;justify-content:flex-end;}
 .sm-modal-btn{
   padding:9px 22px;border-radius:6px;
-  font-family:'Montserrat',sans-serif;
+  font-family:var(--font-primary);
   font-size:12px;font-weight:700;text-transform:uppercase;
   letter-spacing:0.5px;cursor:pointer;
   transition:all .15s;border:1px solid;
@@ -462,7 +465,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 .login-tab-row{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:22px;}
 .login-tab{
   padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;
-  border:none;background:none;color:var(--text3);font-family:'Montserrat',sans-serif;
+  border:none;background:none;color:var(--text3);font-family:var(--font-primary);
   border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;
 }
 .login-tab.active{color:var(--gold);border-bottom-color:var(--gold);}
@@ -481,7 +484,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 .login-success.show{display:block;}
 .login-link{
   background:none;border:none;color:var(--gold);font-size:12px;
-  font-weight:600;cursor:pointer;font-family:'Montserrat',sans-serif;
+  font-weight:600;cursor:pointer;font-family:var(--font-primary);
   text-decoration:underline;padding:0;
 }
 
@@ -550,7 +553,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 .db-size-btn {
   padding:3px 7px;border-radius:3px;font-size:9px;font-weight:700;
   border:1px solid var(--border2);background:none;color:var(--text3);
-  cursor:pointer;font-family:'Montserrat',sans-serif;transition:all .15s;
+  cursor:pointer;font-family:var(--font-primary);transition:all .15s;
   text-transform:uppercase;letter-spacing:.5px;
 }
 .db-size-btn.active { background:var(--gold);border-color:var(--gold);color:#000; }
@@ -871,7 +874,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 .fin-tab-btn {
   background: none; border: none;
   padding: 10px 18px;
-  font-family: 'Montserrat', sans-serif;
+  font-family: var(--font-primary);
   font-size: 12px; font-weight: 600;
   color: var(--text3);
   cursor: pointer;
@@ -5993,7 +5996,7 @@ function atualizarUserDisplay(user) {
             <div style="font-size:10px;color:var(--text3);">${user.role==='admin'?'🛡️ Administrador':'Usuário'}</div>
           </div>
         </div>
-        <button onclick="fazerLogout()" style="width:100%;padding:7px;border-radius:var(--r-sm);border:1px solid var(--border2);background:none;color:var(--text3);font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:0.5px;transition:all .15s;" onmouseenter="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseleave="this.style.borderColor='var(--border2)';this.style.color='var(--text3)'">↩ Sair da conta</button>
+        <button onclick="fazerLogout()" style="width:100%;padding:7px;border-radius:var(--r-sm);border:1px solid var(--border2);background:none;color:var(--text3);font-family:var(--font-primary);font-size:10px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:0.5px;transition:all .15s;" onmouseenter="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseleave="this.style.borderColor='var(--border2)';this.style.color='var(--text3)'">↩ Sair da conta</button>
       `;
       sidebar.appendChild(div);
     }
@@ -7482,7 +7485,7 @@ function setLanTipo(tipo) {
   const btnE = document.getElementById('lan-btn-entrada');
   const btnS = document.getElementById('lan-btn-saida');
   const btnT = document.getElementById('lan-btn-transf');
-  const base = 'flex:1;padding:10px;border-radius:var(--r-sm);font-family:"Montserrat",sans-serif;font-size:12px;font-weight:700;cursor:pointer;';
+  const base = 'flex:1;padding:10px;border-radius:var(--r-sm);font-family:var(--font-primary);font-size:12px;font-weight:700;cursor:pointer;';
   const inativo = base + 'border:1px solid var(--border2);background:var(--surface2);color:var(--text3);';
   btnE.style.cssText = inativo;
   btnS.style.cssText = inativo;
@@ -11579,15 +11582,15 @@ renderDashboard();
         <label>Tipo</label>
         <div style="display:flex;gap:8px;">
           <button id="lan-btn-entrada" onclick="setLanTipo('entrada')"
-            style="flex:1;padding:10px;border-radius:var(--r-sm);border:2px solid var(--green);background:var(--green-dim);color:var(--green);font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;cursor:pointer;">
+            style="flex:1;padding:10px;border-radius:var(--r-sm);border:2px solid var(--green);background:var(--green-dim);color:var(--green);font-family:var(--font-primary);font-size:12px;font-weight:700;cursor:pointer;">
             ↑ Entrada
           </button>
           <button id="lan-btn-saida" onclick="setLanTipo('saida')"
-            style="flex:1;padding:10px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface2);color:var(--text3);font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;cursor:pointer;">
+            style="flex:1;padding:10px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface2);color:var(--text3);font-family:var(--font-primary);font-size:12px;font-weight:700;cursor:pointer;">
             ↓ Saída
           </button>
           <button id="lan-btn-transf" onclick="setLanTipo('transferencia')"
-            style="flex:1;padding:10px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface2);color:var(--text3);font-family:'Montserrat',sans-serif;font-size:12px;font-weight:700;cursor:pointer;">
+            style="flex:1;padding:10px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface2);color:var(--text3);font-family:var(--font-primary);font-size:12px;font-weight:700;cursor:pointer;">
             ⇄ Transferência
           </button>
         </div>
