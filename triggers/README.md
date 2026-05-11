@@ -14,6 +14,7 @@ Link: `contas_pagar.emprestimo_parcela_id UUID REFERENCES emprestimo_parcelas(id
 ## Migrations recentes
 
 - `lancamentos.transferencia_id UUID NULL` + `idx_lancamentos_transferencia` (parcial, WHERE transferencia_id IS NOT NULL) — vincula par de lançamentos que representam uma transferência entre contas. Convenções na seção "Lançamentos" abaixo.
+- `contas_pagar.recorrencia_id UUID NULL` + `idx_contas_pagar_recorrencia` (parcial, WHERE recorrencia_id IS NOT NULL) — vincula todas as ocorrências de uma conta recorrente. Pré-geração de N ocorrências (52 semanais, 12 mensais, etc) no momento da criação.
 
 ---
 
