@@ -4106,6 +4106,14 @@ function renderDashboard(){
     renderDashCaixaRealMes();
     renderDashResumoCp();
   }, 150);
+  // emprestimos só é carregado pelo initFinanceiro. Pra "Próxima parcela"
+  // no kpis-int funcionar quando o usuário abre direto o Dashboard, força
+  // o load se ainda vazio. Re-render incremental do kpis-int ao terminar.
+  if (typeof carregarEmprestimos === 'function' && (typeof emprestimos === 'undefined' || !emprestimos.length)) {
+    carregarEmprestimos().then(() => {
+      try { renderDashInternal(); } catch(e) {}
+    }).catch(()=>{});
+  }
 }
 
 // Bloco "Resumo de contas a pagar" no Dashboard. Sempre mês corrente
