@@ -3243,7 +3243,7 @@ function renderDashInternal(){
     const venc = new Date(proxima.vencimento + 'T00:00:00');
     const dias = Math.round((venc - hoje) / (1000*60*60*24));
     const atrasada = dias < 0;
-    const dataBR = proxima.vencimento.split('-').reverse().join('/');
+    const dataBR = _vencComDia(proxima.vencimento);
     const corCls = atrasada ? 'red' : '';
     const corStyle = (!atrasada && dias <= 7) ? 'color:var(--orange);' : (!atrasada ? 'color:var(--gold);' : '');
     const txtDias = atrasada
@@ -6185,6 +6185,7 @@ function _empMapParcela(p) {
     numero:        p.numero,
     vencimento:    p.vencimento || '',
     venc:          p.vencimento ? p.vencimento.split('-').reverse().join('/') : '',
+    vencComDia:    p.vencimento ? _vencComDia(p.vencimento) : '',
     valor:         +p.valor,
     valorPago:     +(p.valor_pago || 0),
     status:        p.status || 'pendente',
@@ -6429,7 +6430,7 @@ function renderEmprestimoDetalhe(e) {
     html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;background:' + bg + ';border-radius:var(--r-sm);font-size:12px;flex-wrap:wrap;">'
           + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
           +   '<span style="font-family:var(--mono,monospace);font-weight:700;color:' + cor + ';min-width:30px;">' + String(p.numero).padStart(2,'0') + '</span>'
-          +   '<span style="color:var(--text2);">' + p.venc + '</span>'
+          +   '<span style="color:var(--text2);">' + (p.vencComDia || p.venc) + '</span>'
           +   badge
           + '</div>'
           + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">'
@@ -6753,6 +6754,7 @@ async function salvarParcelaEdit(parcelaId) {
   // Atualiza estado local
   pAtual.vencimento    = venc;
   pAtual.venc          = venc.split('-').reverse().join('/');
+  pAtual.vencComDia    = _vencComDia(venc);
   pAtual.valor         = valor;
   pAtual.status        = payload.status;
   pAtual.valorPago     = payload.valor_pago;
@@ -8369,7 +8371,7 @@ function renderContasPagar() {
           <div style="font-size:11px;color:var(--text3);min-width:0;">${escHtml(c.categoria)||'—'} · ${escHtml(periodoLabel[c.periodicidade]||c.periodicidade)}</div>
           <div class="td-mono" style="font-weight:700;text-align:right;">${fmt(c.valor)}</div>
           <div>
-            <div class="td-mono" style="font-size:12px;">${c.vencimento.split('-').reverse().join('/')}</div>
+            <div class="td-mono" style="font-size:12px;">${_vencComDia(c.vencimento)}</div>
             <div style="font-size:10px;color:${dias<0?'var(--red)':dias<=3?'var(--orange)':'var(--text3)'};">
               ${c.paga?'':'('+(dias<0?'atrasado '+Math.abs(dias)+'d':dias===0?'hoje':dias+'d')+')'}</div>
           </div>
@@ -8412,6 +8414,21 @@ function openCPModal(id) {
 }
 
 function closeCPModal() { document.getElementById('cp-modal').classList.remove('open'); }
+
+// Dia da semana abreviado pra exibir ao lado de datas de vencimento.
+// Calcula via timezone local (BR GMT-3). Aplicado em todos os displays
+// de vencimento na UI (não em paga_em/criado_em).
+const _DIAS_SEM = ['dom','seg','ter','qua','qui','sex','sáb'];
+function _diaSemanaCurto(iso) {
+  if (!iso) return '';
+  const [y,m,d] = iso.split('-').map(Number);
+  return _DIAS_SEM[new Date(y, m-1, d).getDay()];
+}
+function _vencComDia(iso) {
+  if (!iso) return '—';
+  const br = iso.split('-').reverse().join('/');
+  return `${br} <span style="color:var(--text3);">· ${_diaSemanaCurto(iso)}</span>`;
+}
 
 // ── Recorrência: pré-geração de N ocorrências ──
 // Cada periodicidade tem horizonte próprio (1 ano pra semanal/quinzenal/mensal,
@@ -8581,11 +8598,11 @@ function _cpRecCancelModal(c) {
     x.recorrenciaId === c.recorrenciaId && !x.paga && x.vencimento >= c.vencimento
   );
   const N = futurasPendentes.length;
-  const dataBR = c.vencimento.split('-').reverse().join('/');
+  const dataBRdia = _vencComDia(c.vencimento);
   document.getElementById('cp-rec-title').textContent = '⚠️ Esta é uma conta recorrente';
   document.getElementById('cp-rec-body').innerHTML = `
     <p><b>"${escHtml(c.nome)}" · ${periodLabel[c.periodicidade] || c.periodicidade}</b></p>
-    <p style="margin-top:8px;">Esta ocorrência (${dataBR}) e mais ${N-1} ocorrência${N-1!==1?'s':''} futura${N-1!==1?'s':''} pendente${N-1!==1?'s':''} podem ser apagadas.</p>
+    <p style="margin-top:8px;">Esta ocorrência (${dataBRdia}) e mais ${N-1} ocorrência${N-1!==1?'s':''} futura${N-1!==1?'s':''} pendente${N-1!==1?'s':''} podem ser apagadas.</p>
     <p style="margin-top:8px;color:var(--text3);">Ocorrências já pagas são mantidas como histórico.</p>
   `;
   const btnA = document.getElementById('cp-rec-btn-a');
@@ -8622,14 +8639,14 @@ document.getElementById('cp-rec-modal')?.addEventListener('click', function(e){ 
 // ocorrência (vencimento é específico de cada uma; periodicidade
 // é bloqueada de mudar antes deste modal abrir).
 function _cpRecEditModal(c, novos) {
-  const dataBR = c.vencimento.split('-').reverse().join('/');
+  const dataBRdia = _vencComDia(c.vencimento);
   const pendentes = contasPagar.filter(x => x.recorrenciaId === c.recorrenciaId && !x.paga);
   const N = pendentes.length;
   // Diff dos campos
   const diffs = [];
   if (novos.nome      !== c.nome)      diffs.push(`<li>Descrição: <s>${escHtml(c.nome)}</s> → <b>${escHtml(novos.nome)}</b></li>`);
   if (+novos.valor    !== +c.valor)    diffs.push(`<li>Valor: <s>${fmt(c.valor)}</s> → <b>${fmt(novos.valor)}</b></li>`);
-  if (novos.vencimento !== c.vencimento) diffs.push(`<li>Vencimento: <s>${dataBR}</s> → <b>${novos.vencimento.split('-').reverse().join('/')}</b> <span style="color:var(--text3);">(só nesta)</span></li>`);
+  if (novos.vencimento !== c.vencimento) diffs.push(`<li>Vencimento: <s>${dataBRdia}</s> → <b>${_vencComDia(novos.vencimento)}</b> <span style="color:var(--text3);">(só nesta)</span></li>`);
   if (novos.categoria !== (c.categoria||'')) diffs.push(`<li>Categoria: <s>${escHtml(c.categoria||'—')}</s> → <b>${escHtml(novos.categoria||'—')}</b></li>`);
   if ((novos.avisar||'') !== (c.avisar||'')) diffs.push(`<li>Avisar (dias): <s>${escHtml(c.avisar||'—')}</s> → <b>${escHtml(novos.avisar||'—')}</b></li>`);
   if ((novos.whatsapp||'') !== (c.whatsapp||'')) diffs.push(`<li>WhatsApp: alterado</li>`);
@@ -8638,7 +8655,7 @@ function _cpRecEditModal(c, novos) {
 
   document.getElementById('cp-rec-title').textContent = '⚠️ Esta é uma conta recorrente';
   document.getElementById('cp-rec-body').innerHTML = `
-    <p>Editando <b>"${escHtml(c.nome)}"</b> (vence em ${dataBR}).</p>
+    <p>Editando <b>"${escHtml(c.nome)}"</b> (vence em ${dataBRdia}).</p>
     <p style="margin-top:8px;"><b>O que mudou:</b></p>
     ${diffHtml}
     <p style="margin-top:10px;color:var(--text3);font-size:11px;">Vencimento e periodicidade ficam só nesta ocorrência. Demais campos podem ser propagados pra todas as ${N} ocorrências pendentes da série.</p>
@@ -8710,7 +8727,7 @@ function _cpEmpWarn(c, acao, onConfirm) {
       <div style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;">Parcela atual</div>
       <div><b>Número:</b> ${parc.numero}/${total}</div>
       <div><b>Valor:</b> ${fmt(parc.valor)}</div>
-      <div><b>Vencimento:</b> ${parc.venc}</div>
+      <div><b>Vencimento:</b> ${parc.vencComDia || parc.venc}</div>
       <div><b>Status:</b> ${parc.status === 'pago' ? '✅ Pago' : '⏳ Pendente'}</div>
     </div>` : '';
   document.getElementById('cp-warn-title').textContent = titulo;
