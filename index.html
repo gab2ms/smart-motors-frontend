@@ -2757,6 +2757,7 @@ async function carregarDados() {
 var DB_WIDGETS_DEF = [
   { id:'kpis-fat',     nome:'KPIs de faturamento',    desc:'Receita, pedidos, ticket, lucro',   icone:'💰', tamanhos:['full','half'], defaultSize:'full' },
   { id:'kpis-int',     nome:'KPIs internos',           desc:'Produtos, MC%, empréstimo, caixa',  icone:'📋', tamanhos:['full','half'], defaultSize:'full' },
+  { id:'saldo-caixa',  nome:'Saldo em caixa',          desc:'Total disponível com detalhamento por conta', icone:'💳', tamanhos:['full','half'], defaultSize:'full' },
   { id:'resumo-cp',    nome:'Resumo de contas a pagar', desc:'Total/pago/pendente do mês + atrasado', icone:'📅', tamanhos:['full','half'], defaultSize:'full' },
   { id:'vendedores',   nome:'Vendas por vendedor',     desc:'Ranking de vendedores do período',  icone:'👤', tamanhos:['full','half'], defaultSize:'half' },
   { id:'scooters',     nome:'Scooters mais vendidas',  desc:'Ranking de produtos vendidos',      icone:'🏆', tamanhos:['full','half'], defaultSize:'half' },
@@ -2768,13 +2769,14 @@ var DB_LAYOUT_KEY = 'sm_dash_layout_v1';
 
 // Layout padrão
 var DB_DEFAULT = [
-  { id:'kpis-fat',    ativo:true,  size:'full' },
-  { id:'kpis-int',    ativo:true,  size:'full' },
-  { id:'resumo-cp',   ativo:true,  size:'full' },
-  { id:'vendedores',  ativo:true,  size:'half' },
-  { id:'scooters',    ativo:true,  size:'half' },
-  { id:'grafico-dia', ativo:true,  size:'full' },
-  { id:'pedidos',     ativo:true,  size:'full' },
+  { id:'kpis-fat',       ativo:true,  size:'full' },
+  { id:'kpis-int',       ativo:true,  size:'full' },
+  { id:'saldo-caixa',    ativo:true,  size:'full' },
+  { id:'resumo-cp',      ativo:true,  size:'full' },
+  { id:'vendedores',     ativo:true,  size:'half' },
+  { id:'scooters',       ativo:true,  size:'half' },
+  { id:'grafico-dia',    ativo:true,  size:'full' },
+  { id:'pedidos',        ativo:true,  size:'full' },
 ];
 
 var dbLayout = null;
@@ -2940,6 +2942,22 @@ function renderWidgetHTML(id) {
 
     case 'kpis-int':
       return '<div class="kpi-grid" id="dash-int-kpis" style="margin-bottom:0;"></div>';
+
+    case 'saldo-caixa':
+      return '<div class="card" id="dash-saldo-caixa-card">'
+        +'<div class="card-header" onclick="toggleDashSaldoCaixa()" style="cursor:pointer;user-select:none;">'
+        +'<div><div class="card-title">💳 Saldo em caixa</div>'
+        +'<div class="card-sub" id="dash-saldo-caixa-sub">—</div></div>'
+        +'<span id="dash-saldo-caixa-arrow" style="font-size:14px;color:var(--text3);">▾</span>'
+        +'</div>'
+        +'<div class="kpi-grid" style="padding:16px 20px;margin-bottom:0;">'
+        +'<div class="kpi" style="border-top:2px solid var(--gold);">'
+        +'<div class="kpi-label">Total disponível</div>'
+        +'<div class="kpi-value gold" id="dash-saldo-caixa-total">—</div>'
+        +'<div class="kpi-change" id="dash-saldo-caixa-cnt">—</div>'
+        +'</div></div>'
+        +'<div id="dash-saldo-caixa-detalhe" style="display:none;border-top:1px solid var(--border);padding:12px 20px 16px;"></div>'
+        +'</div>';
 
     case 'resumo-cp':
       return '<div class="card" id="dash-resumo-cp-card">'
@@ -4036,6 +4054,7 @@ function renderDashboard(){
   initFaturamentoDash();
   setTimeout(function() {
     renderDashInternal();
+    renderDashSaldoCaixa();
     renderDashResumoCp();
   }, 150);
 }
@@ -4101,6 +4120,57 @@ function _cpDashGo(tab, mes) {
   if (typeof cpMesFiltro !== 'undefined') cpMesFiltro = mes; // null = sem filtro
   showPage('contas-pagar');
   if (typeof switchCpTab === 'function') switchCpTab(tab);
+}
+
+// Bloco "Saldo em caixa" no Dashboard.
+// Estado de expansão em variável módulo: persiste entre re-renders dentro
+// da sessão (sem localStorage), default colapsado a cada page load.
+let dashSaldoCaixaExpandido = false;
+
+function renderDashSaldoCaixa() {
+  const wrap = document.getElementById('dash-saldo-caixa-card');
+  if (!wrap) return;
+  const lista = (contas || []).slice().sort((a,b) => (b.saldo||0) - (a.saldo||0));
+  const total = lista.reduce((s,c) => s + (c.saldo||0), 0);
+
+  document.getElementById('dash-saldo-caixa-total').textContent = fmt(total);
+  document.getElementById('dash-saldo-caixa-cnt').textContent =
+    `${lista.length} conta${lista.length!==1?'s':''} · clique pra detalhar`;
+  document.getElementById('dash-saldo-caixa-sub').textContent = fmt(total) + ' disponível';
+
+  const det = document.getElementById('dash-saldo-caixa-detalhe');
+  det.innerHTML = lista.map(c => {
+    const zerada = !c.saldo;
+    return `
+      <div onclick="event.stopPropagation();_dashSaldoIrConta('${escHtml(c.nome).replace(/'/g, "\\'")}')"
+           style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);
+                  cursor:pointer;font-size:13px;${zerada?'opacity:0.5;':''}">
+        <span style="font-weight:600;">${escHtml(c.nome)}</span>
+        <span class="td-mono" style="font-weight:700;color:${zerada?'var(--text3)':'var(--text)'};">${fmt(c.saldo||0)}</span>
+      </div>`;
+  }).join('');
+
+  det.style.display = dashSaldoCaixaExpandido ? 'block' : 'none';
+  document.getElementById('dash-saldo-caixa-arrow').textContent = dashSaldoCaixaExpandido ? '▴' : '▾';
+}
+
+function toggleDashSaldoCaixa() {
+  dashSaldoCaixaExpandido = !dashSaldoCaixaExpandido;
+  renderDashSaldoCaixa();
+}
+
+// Click numa conta dentro do detalhe → Financeiro/Caixa com filtro de
+// conta aplicado. event.stopPropagation no inline onclick evita que o
+// click do header seja disparado e colapse o widget.
+function _dashSaldoIrConta(nome) {
+  showPage('financeiro');
+  setTimeout(() => {
+    const sel = document.getElementById('fin-filtro-conta');
+    if (sel) {
+      sel.value = nome;
+      if (typeof aplicarFiltrosLancamentos === 'function') aplicarFiltrosLancamentos();
+    }
+  }, 80);
 }
 
 
