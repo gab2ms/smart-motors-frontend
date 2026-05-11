@@ -1179,6 +1179,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         <span style="color:var(--text3);font-size:11px;">até</span>
         <input type="date" id="dash-fat-fim" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;" onchange="onDashDateChange()">
         <button class="btn" onclick="abrirBuilder()" style="font-size:11px;padding:6px 12px;">⚙ Personalizar</button>
+        <span id="dash-ultima-atualizacao" style="font-size:10px;color:var(--text3);font-weight:500;letter-spacing:0.2px;">—</span>
         <button class="btn btn-gold" onclick="carregarFaturamentoDash(true)" style="font-size:11px;padding:6px 14px;" title="Ignora cache (30min) e busca direto no Tiny">⚡ Atualizar</button>
         <button class="btn" onclick="gerarFechamentoMes()" style="font-size:11px;padding:6px 12px;" title="Exporta DRE + planilhas detalhadas em xlsx">📊 Fechar Mês</button>
       </div>
@@ -4166,6 +4167,10 @@ async function carregarFaturamentoDash(forcar) {
     var rankingVendedores = calcularRankingVendedores(pedidos);
     renderizarRankingVendedores(rankingVendedores);
 
+    // Marca timestamp da última carga bem-sucedida (Sprint UI etapa 3)
+    dashUltimaAtualizacao = Date.now();
+    renderDashUltimaAtualizacao();
+
   } catch(err) {
     dot.style.background = 'var(--red)';
     label.textContent    = 'Erro: ' + err.message;
@@ -4173,6 +4178,36 @@ async function carregarFaturamentoDash(forcar) {
     if (rankEl) rankEl.innerHTML = '<div class="empty" style="padding:20px;color:var(--red);">Erro ao carregar</div>';
   }
 }
+
+// ── Timestamp "atualizado há X" no header do Dashboard ──
+// Atualiza ao final de cada carregarFaturamentoDash bem-sucedido +
+// auto-refresh a cada 30s (só se Dashboard estiver na page ativa).
+let dashUltimaAtualizacao = null;
+
+function renderDashUltimaAtualizacao() {
+  const el = document.getElementById('dash-ultima-atualizacao');
+  if (!el) return;
+  if (!dashUltimaAtualizacao) { el.textContent = ''; return; }
+  const diffMs = Date.now() - dashUltimaAtualizacao;
+  const min = Math.floor(diffMs / 60000);
+  const hr  = Math.floor(min / 60);
+  const dia = Math.floor(hr / 24);
+  let txt;
+  if (diffMs < 30000)      txt = 'Atualizado agora há pouco';
+  else if (min < 1)        txt = 'Atualizado há menos de 1 min';
+  else if (min < 60)       txt = `Atualizado há ${min} min`;
+  else if (hr < 24)        txt = `Atualizado há ${hr} h`;
+  else                     txt = `Atualizado há ${dia} dia${dia!==1?'s':''}`;
+  el.textContent = txt;
+}
+
+// Auto-refresh a cada 30s. Só re-renderiza se Dashboard está ativo (evita
+// trabalho à toa quando user está em outra aba).
+setInterval(() => {
+  if (document.getElementById('page-dashboard')?.classList.contains('active')) {
+    renderDashUltimaAtualizacao();
+  }
+}, 30000);
 
 function renderDashboard(){
   renderDashboardDynamic(); // renderiza layout configurado pelo usuário
