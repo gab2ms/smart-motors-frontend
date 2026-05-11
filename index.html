@@ -2031,15 +2031,32 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         </div>
         <div class="form-group">
           <label>Periodicidade</label>
-          <select class="form-input" id="cp-periodicidade">
+          <select class="form-input" id="cp-periodicidade" onchange="_cpPeriodicidadeChange()">
             <option value="unico">Único (avulso)</option>
             <option value="semanal">Semanal</option>
+            <option value="quinzenal">Quinzenal</option>
             <option value="mensal" selected>Mensal</option>
             <option value="bimestral">Bimestral</option>
             <option value="trimestral">Trimestral</option>
             <option value="semestral">Semestral</option>
             <option value="anual">Anual</option>
           </select>
+        </div>
+        <div class="form-group" id="cp-dia-semana-grp">
+          <label>Dia da semana fixo <span style="color:var(--text3);font-weight:400;">(opcional)</span></label>
+          <select class="form-input" id="cp-dia-semana">
+            <option value="">Sem preferência</option>
+            <option value="0">Domingo</option>
+            <option value="1">Segunda</option>
+            <option value="2">Terça</option>
+            <option value="3">Quarta</option>
+            <option value="4">Quinta</option>
+            <option value="5">Sexta</option>
+            <option value="6">Sábado</option>
+          </select>
+          <div id="cp-dia-semana-hint" style="font-size:10px;color:var(--text3);margin-top:4px;display:none;">
+            A 1ª ocorrência usa a data escolhida. As demais são ajustadas pro dia da semana selecionado.
+          </div>
         </div>
         <div class="form-group">
           <label>Categoria</label>
@@ -8410,10 +8427,26 @@ function openCPModal(id) {
   document.getElementById('cp-avisar').value = '3';
   document.getElementById('cp-whatsapp').value = '';
   document.getElementById('cp-obs').value = '';
+  const selDia = document.getElementById('cp-dia-semana');
+  if (selDia) selDia.value = '';
+  _cpPeriodicidadeChange();
   el.classList.add('open');
 }
 
 function closeCPModal() { document.getElementById('cp-modal').classList.remove('open'); }
+
+// "Dia da semana fixo" só faz sentido em semanal/quinzenal. Em outras
+// periodicidades fica desabilitado e limpo (não persiste valor fantasma).
+function _cpPeriodicidadeChange() {
+  const per = document.getElementById('cp-periodicidade').value;
+  const sel = document.getElementById('cp-dia-semana');
+  const hint = document.getElementById('cp-dia-semana-hint');
+  if (!sel) return;
+  const habilitado = (per === 'semanal' || per === 'quinzenal');
+  sel.disabled = !habilitado;
+  if (hint) hint.style.display = habilitado ? 'block' : 'none';
+  if (!habilitado) sel.value = '';
+}
 
 // Dia da semana abreviado pra exibir ao lado de datas de vencimento.
 // Calcula via timezone local (BR GMT-3). Aplicado em todos os displays
@@ -8561,6 +8594,9 @@ function _editarContaPagarReal(c) {
   document.getElementById('cp-avisar').value       = c.avisar||'3';
   document.getElementById('cp-whatsapp').value     = c.whatsapp||'';
   document.getElementById('cp-obs').value          = c.obs||'';
+  const selDia = document.getElementById('cp-dia-semana');
+  if (selDia) selDia.value = (c.diaSemanaFixo != null) ? String(c.diaSemanaFixo) : '';
+  _cpPeriodicidadeChange();
   document.getElementById('cp-modal').classList.add('open');
 }
 
