@@ -2129,6 +2129,42 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     </div>
   </div>
 
+  <!-- MODAL: PAGAR CONTA (2 passos — só marcar vs marcar+lançar) -->
+  <div class="modal-overlay" id="cp-pagar-modal">
+    <div class="modal" style="width:520px;max-width:96vw;">
+      <!-- PASSO 1 — escolha -->
+      <div class="cp-pag-step-1">
+        <div class="modal-title">Marcar como paga</div>
+        <div id="cp-pag-info"></div>
+        <p style="margin-top:14px;font-size:12px;color:var(--text2);">Como você quer marcar essa conta?</p>
+        <div class="modal-actions" style="flex-direction:column;gap:8px;margin-top:16px;">
+          <button class="btn" id="cp-pag-btn-so" style="width:100%;">Só marcar como paga</button>
+          <button class="btn btn-gold" id="cp-pag-btn-lancar" style="width:100%;">Marcar paga + lançar no caixa</button>
+          <button class="btn" onclick="closeCpPagarModal()" style="width:100%;">Cancelar</button>
+        </div>
+      </div>
+      <!-- PASSO 2 — escolhe conta e data -->
+      <div class="cp-pag-step-2" style="display:none;">
+        <div class="modal-title">Lançar no caixa</div>
+        <div id="cp-pag-info-2"></div>
+        <div class="form-grid" style="margin-top:14px;">
+          <div class="form-group full">
+            <label>Conta bancária</label>
+            <select class="form-input" id="cp-pag-conta"></select>
+          </div>
+          <div class="form-group full">
+            <label>Data do pagamento</label>
+            <input class="form-input" id="cp-pag-data" type="date">
+          </div>
+        </div>
+        <div class="modal-actions" style="margin-top:16px;">
+          <button class="btn" id="cp-pag-btn-voltar">Voltar</button>
+          <button class="btn btn-gold" id="cp-pag-btn-confirmar">Confirmar e salvar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: AÇÃO EM CONTA RECORRENTE (cancelar / editar — 3 opções) -->
   <div class="modal-overlay" id="cp-rec-modal">
     <div class="modal" style="width:520px;max-width:96vw;">
@@ -7459,10 +7495,13 @@ function renderLancamentos() {
     const transfIcone = l.transferenciaId
       ? ` <span style="color:var(--gold);font-size:11px;" title="Transferência entre contas">⇄</span>`
       : '';
+    const cpIcone = l.contaPagarId
+      ? ` <span style="color:var(--gold);font-size:11px;" title="Vinculado a Contas a Pagar">📅</span>`
+      : '';
     return `
     <div class="lancamento-row">
       <span class="td-mono" style="font-size:11px;">${l.data||'—'}</span>
-      <span style="font-weight:600;font-size:12px;">${escHtml(l.descricao)||'—'}${transfIcone}${l.obs?`<span style="color:var(--text3);font-weight:400;"> · ${escHtml(l.obs)}</span>`:''}</span>
+      <span style="font-weight:600;font-size:12px;">${escHtml(l.descricao)||'—'}${transfIcone}${cpIcone}${l.obs?`<span style="color:var(--text3);font-weight:400;"> · ${escHtml(l.obs)}</span>`:''}</span>
       <span><span class="badge" style="background:var(--surface2);color:var(--text2);">${escHtml(l.categoria)||'—'}</span></span>
       <span style="font-size:11px;color:var(--text3);">${escHtml(l.conta)||'—'}</span>
       <span class="td-mono" style="font-weight:700;color:${l.tipo==='entrada'?'var(--green)':'var(--red)'};">
@@ -8302,7 +8341,7 @@ ${isVencida?'❗ Esta conta está VENCIDA!':'Faltam '+dias+' dia(s) para o venci
           </div>
         </div>
         <div style="display:flex;gap:6px;">
-          <button class="btn btn-gold" onclick="pagarConta('${c.id}')" style="font-size:11px;padding:6px 12px;">✅ Marcar paga</button>
+          <button class="btn btn-gold" onclick="pagarContaModal('${c.id}')" style="font-size:11px;padding:6px 12px;">✅ Marcar paga</button>
           <a href="${waLink}" target="_blank" class="btn" style="font-size:11px;padding:6px 12px;text-decoration:none;background:#25D366;border-color:#25D366;color:#fff;font-weight:700;">📲 WhatsApp</a>
         </div>
       </div>`;
@@ -8395,7 +8434,7 @@ function renderContasPagar() {
           <div>${stBadges[st]}</div>
           <div style="display:flex;gap:5px;">
             ${!c.paga
-              ? '<button class="btn btn-gold" onclick="pagarConta(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;">✅</button>'
+              ? '<button class="btn btn-gold" onclick="pagarContaModal(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;">✅</button>'
               : '<button class="action-btn" onclick="despagarConta(\'' + c.id + '\')" style="font-size:10px;">↩</button>'}
             <a href="${waLink}" target="_blank" class="action-btn" style="background:#25D366;border-color:#25D366;color:#fff;text-decoration:none;padding:5px 8px;font-size:10px;font-weight:700;">📲</a>
             <button class="action-btn edit-btn" onclick="editarContaPagar('${c.id}')">✏</button>
@@ -8589,6 +8628,84 @@ function salvarContaPagar() {
   atualizarDotContasPagar();
   salvarDados();
 }
+
+// Entrypoint da UI: abre modal de 2 passos. Permite "só marcar como paga"
+// (fluxo atual) ou "marcar paga + lançar no caixa" (cria saída em lancamentos
+// vinculada via conta_pagar_id e decrementa saldo da conta bancária).
+function pagarContaModal(id) {
+  const c = contasPagar.find(x => x.id === id);
+  if (!c) return;
+  _cpPagInit(c);
+  document.getElementById('cp-pagar-modal').classList.add('open');
+}
+
+function _cpPagInit(c) {
+  const dataBR = c.vencimento.split('-').reverse().join('/');
+  const infoHtml = `<p style="font-weight:600;">"${escHtml(c.nome)}"</p>
+                    <p style="color:var(--text3);font-size:11px;margin-top:4px;">
+                      Vence ${dataBR} · ${fmt(c.valor)}</p>`;
+  document.getElementById('cp-pag-info').innerHTML = infoHtml;
+  document.getElementById('cp-pag-info-2').innerHTML = infoHtml;
+  // Reset pra step 1
+  document.querySelector('#cp-pagar-modal .cp-pag-step-1').style.display = 'block';
+  document.querySelector('#cp-pagar-modal .cp-pag-step-2').style.display = 'none';
+  // Popula select de contas bancárias (placeholder força escolha consciente)
+  const sel = document.getElementById('cp-pag-conta');
+  sel.innerHTML = '<option value="">Selecione...</option>' +
+    (contas || []).map(b => `<option value="${escHtml(b.nome)}">${escHtml(b.nome)}</option>`).join('');
+  document.getElementById('cp-pag-data').value = new Date().toISOString().slice(0,10);
+  // Handlers
+  document.getElementById('cp-pag-btn-so').onclick = () => {
+    closeCpPagarModal();
+    pagarConta(c.id);
+  };
+  document.getElementById('cp-pag-btn-lancar').onclick = () => {
+    document.querySelector('#cp-pagar-modal .cp-pag-step-1').style.display = 'none';
+    document.querySelector('#cp-pagar-modal .cp-pag-step-2').style.display = 'block';
+  };
+  document.getElementById('cp-pag-btn-voltar').onclick = () => {
+    document.querySelector('#cp-pagar-modal .cp-pag-step-1').style.display = 'block';
+    document.querySelector('#cp-pagar-modal .cp-pag-step-2').style.display = 'none';
+  };
+  document.getElementById('cp-pag-btn-confirmar').onclick = () => _cpPagConfirmar(c);
+}
+
+async function _cpPagConfirmar(c) {
+  const contaNome = document.getElementById('cp-pag-conta').value;
+  const data      = document.getElementById('cp-pag-data').value;
+  if (!contaNome) { smAlert('Escolha uma conta bancária'); return; }
+  if (!data)      { smAlert('Escolha a data do pagamento'); return; }
+  const ctBanco = contas.find(b => b.nome === contaNome);
+  if (!ctBanco) { smAlert('Conta inválida'); return; }
+  closeCpPagarModal();
+  // 1. Marca conta como paga (trigger empréstimo propaga automaticamente via UPDATE).
+  await pagarConta(c.id);
+  // 2. Cria lançamento de saída vinculado.
+  lancamentos.push({
+    id: Date.now().toString(),
+    tipo: 'saida',
+    descricao: c.nome,
+    valor: c.valor,
+    data,
+    categoria: c.categoria || 'Outros',
+    conta: contaNome,
+    contaId: ctBanco.id,
+    obs: `Pagamento de conta a pagar: ${c.nome}`,
+    contaPagarId: c.id,
+  });
+  // 3. Decrementa saldo (fórmula idêntica a salvarLancamento pra tipo=saida).
+  ctBanco.saldo -= c.valor;
+  // 4. Re-render dos consumidores se estiverem montados.
+  if (typeof populateFinCatFilter === 'function') populateFinCatFilter();
+  if (typeof populateFinContaFilter === 'function') populateFinContaFilter();
+  if (typeof renderContas === 'function')       renderContas();
+  if (typeof renderFinKpis === 'function')      renderFinKpis();
+  if (typeof renderLancamentos === 'function')  renderLancamentos();
+  salvarDados();
+}
+
+function closeCpPagarModal() { document.getElementById('cp-pagar-modal').classList.remove('open'); }
+document.getElementById('cp-pagar-modal')?.addEventListener('click', function(e){ if(e.target===this) closeCpPagarModal(); });
 
 async function pagarConta(id) {
   const c = contasPagar.find(x=>x.id===id);
