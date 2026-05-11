@@ -206,6 +206,14 @@ tbody td{padding:12px 16px;font-size:13px;}
 .badge-gold{background:var(--gold-dim);color:var(--gold);}
 .badge-purple{background:rgba(139,92,246,0.15);color:#a78bfa;}
 
+/* Contas a Pagar — header de colunas: hover sutil; em mobile esconde
+   header e mostra dropdown de ordenação no lugar. */
+#cp-table-header [data-col]:hover{ color:var(--text2); }
+@media (max-width: 700px) {
+  #cp-table-header { display: none !important; }
+  #cp-mobile-sort  { display: block !important; }
+}
+
 /* SEARCH BAR */
 .search-bar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
 .search-input{
@@ -1923,6 +1931,27 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     <div class="card">
       <div class="card-header">
         <div><div class="card-title" id="cp-list-title">Contas cadastradas</div><div class="card-sub" id="cp-count">—</div></div>
+      </div>
+      <div id="cp-mobile-sort" style="display:none;padding:10px 16px;border-bottom:1px solid var(--border);">
+        <select class="search-input" id="cp-sort-mobile-select" onchange="_cpSortFromDropdown(this.value)">
+          <option value="vencimento|asc">📅 Vencimento ↑ (mais próximo)</option>
+          <option value="vencimento|desc">📅 Vencimento ↓</option>
+          <option value="valor|desc">💰 Valor ↓ (maior primeiro)</option>
+          <option value="valor|asc">💰 Valor ↑</option>
+          <option value="descricao|asc">📝 Descrição A-Z</option>
+          <option value="descricao|desc">📝 Descrição Z-A</option>
+          <option value="categoria|asc">🏷 Categoria A-Z</option>
+          <option value="status|asc">🚦 Status — urgência (atrasadas primeiro)</option>
+          <option value="status|desc">🚦 Status — pagas primeiro</option>
+        </select>
+      </div>
+      <div id="cp-table-header" style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1fr auto;gap:12px;padding:10px 20px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);">
+        <div data-col="descricao"  onclick="_cpSort('descricao')"  style="cursor:pointer;">Descrição <span class="cp-arrow"></span></div>
+        <div data-col="categoria"  onclick="_cpSort('categoria')"  style="cursor:pointer;">Categoria <span class="cp-arrow"></span></div>
+        <div data-col="valor"      onclick="_cpSort('valor')"      style="cursor:pointer;text-align:right;">Valor <span class="cp-arrow"></span></div>
+        <div data-col="vencimento" onclick="_cpSort('vencimento')" style="cursor:pointer;">Vencimento <span class="cp-arrow"></span></div>
+        <div data-col="status"     onclick="_cpSort('status')"     style="cursor:pointer;">Status <span class="cp-arrow"></span></div>
+        <div><!-- alinha com botões de ação --></div>
       </div>
       <div id="cp-lista"></div>
     </div>
@@ -7208,9 +7237,94 @@ let cpMesFiltro = null;
 let cpAbaAtiva = 'avencer'; // 'avencer' | 'pagas' | 'atrasadas'
 const CP_MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
+// Ordenação client-side da tabela. Reseta pro default ao trocar de tab
+// ou de mês — cada escopo tem semântica própria que não vale carregar.
+const CP_ORD_DEFAULT = { coluna: 'vencimento', direcao: 'asc' };
+let cpOrdenacao = { ...CP_ORD_DEFAULT };
+
+function _cpComparator(coluna, direcao) {
+  const dir = direcao === 'desc' ? -1 : 1;
+  // Tiebreaker dinâmico: se a coluna ativa é 'valor', desempata por
+  // vencimento ASC (evita indeterminação em valores iguais). Pras
+  // outras colunas, tiebreaker fixo por valor DESC (padrão Feature 1).
+  const tiebreaker = (a, b) => {
+    if (coluna === 'valor') return (a.vencimento||'').localeCompare(b.vencimento||'');
+    return b.valor - a.valor;
+  };
+  return (a, b) => {
+    let cmp = 0;
+    switch (coluna) {
+      case 'descricao':  cmp = (a.nome||'').localeCompare(b.nome||'', 'pt-BR'); break;
+      case 'categoria':  cmp = (a.categoria||'').localeCompare(b.categoria||'', 'pt-BR'); break;
+      case 'valor':      cmp = a.valor - b.valor; break;
+      case 'vencimento': cmp = (a.vencimento||'').localeCompare(b.vencimento||''); break;
+      case 'status': {
+        // Urgência: vencida(0) > pendente(1) > paga(2). ASC = mais urgente primeiro.
+        const ord = { vencida: 0, pendente: 1, paga: 2 };
+        cmp = (ord[statusConta(a)] ?? 9) - (ord[statusConta(b)] ?? 9);
+        break;
+      }
+    }
+    return (cmp * dir) || tiebreaker(a, b);
+  };
+}
+
+function _cpSort(coluna) {
+  if (cpOrdenacao.coluna === coluna) {
+    cpOrdenacao.direcao = cpOrdenacao.direcao === 'asc' ? 'desc' : 'asc';
+  } else {
+    // Direção inicial depende do tipo: valor numérico começa DESC (maior
+    // primeiro, mais útil); demais começam ASC (alfabético/cronológico).
+    cpOrdenacao = { coluna, direcao: (coluna === 'valor') ? 'desc' : 'asc' };
+  }
+  renderContasPagar();
+}
+
+function _cpSortFromDropdown(value) {
+  const [coluna, direcao] = value.split('|');
+  if (!coluna || !direcao) return;
+  cpOrdenacao = { coluna, direcao };
+  renderContasPagar();
+}
+
+function _cpAtualizarArrows() {
+  document.querySelectorAll('#cp-table-header [data-col]').forEach(el => {
+    const arrow = el.querySelector('.cp-arrow');
+    if (el.dataset.col === cpOrdenacao.coluna) {
+      if (arrow) arrow.textContent = cpOrdenacao.direcao === 'asc' ? '▲' : '▼';
+      el.style.color = 'var(--gold)';
+    } else {
+      if (arrow) arrow.textContent = '';
+      el.style.color = '';
+    }
+  });
+  const sel = document.getElementById('cp-sort-mobile-select');
+  if (sel) sel.value = cpOrdenacao.coluna + '|' + cpOrdenacao.direcao;
+}
+
+// A11y do header: aplica role/tabindex/keydown via JS pra não inflar HTML.
+// Idempotente (flag) — initContasPagar pode rodar múltiplas vezes.
+let _cpA11yInited = false;
+function _cpInitHeaderA11y() {
+  if (_cpA11yInited) return;
+  document.querySelectorAll('#cp-table-header [data-col]').forEach(el => {
+    el.setAttribute('role', 'button');
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('aria-label', 'Ordenar por ' + el.dataset.col);
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        _cpSort(el.dataset.col);
+      }
+    });
+  });
+  _cpA11yInited = true;
+}
+
 function switchCpTab(t) {
   if (!['avencer','pagas','atrasadas'].includes(t)) return;
   cpAbaAtiva = t;
+  cpOrdenacao = { ...CP_ORD_DEFAULT };
   document.querySelectorAll('.fin-tab-btn[data-cptab]').forEach(b => b.classList.toggle('active', b.dataset.cptab === t));
   renderContasPagar();
 }
@@ -7279,6 +7393,7 @@ function renderCpFiltroMes() {
 
 function onCpMesChange(v) {
   cpMesFiltro = v;
+  cpOrdenacao = { ...CP_ORD_DEFAULT };
   renderCpFiltroMes();
   renderContasPagar();
 }
@@ -7287,6 +7402,7 @@ function initContasPagar() {
   renderCpFiltroMes();
   renderContasPagarKpis();
   renderContasPagarAlertas();
+  _cpInitHeaderA11y();
   renderContasPagar();
   // Notifica WhatsApp para vencidas e vencendo em até 3d (1x/dia/conta)
   checarWhatsAppContasPagar();
@@ -7407,16 +7523,17 @@ function renderContasPagar() {
   // A Vencer: pendentes com venc >= hoje (filtra por mês de vencimento se ativo)
   // Pagas: pagas (filtra por mês de pagaEm — útil pra "o que paguei em maio")
   // Atrasadas: pendentes com venc < hoje (transversal — ignora filtro de mês)
-  const tieValor = (a,b) => b.valor - a.valor;
+  // Comparator vem de cpOrdenacao (header / dropdown mobile).
+  const cmp = _cpComparator(cpOrdenacao.coluna, cpOrdenacao.direcao);
   const avencer = contasPagar
     .filter(c => !c.paga && c.vencimento >= hojeISO && noMes(c.vencimento, cpMesFiltro))
-    .sort((a,b) => a.vencimento.localeCompare(b.vencimento) || tieValor(a,b));
+    .sort(cmp);
   const pagas = contasPagar
     .filter(c => c.paga && noMes(c.pagaEm, cpMesFiltro))
-    .sort((a,b) => (b.pagaEm||'').localeCompare(a.pagaEm||'') || tieValor(a,b));
+    .sort(cmp);
   const atrasadas = contasPagar
     .filter(c => !c.paga && c.vencimento < hojeISO)
-    .sort((a,b) => a.vencimento.localeCompare(b.vencimento) || tieValor(a,b));
+    .sort(cmp);
 
   // Atualiza contadores nos botões de tab
   const elAv = document.getElementById('cp-cnt-avencer');   if (elAv) elAv.textContent = avencer.length;
@@ -7429,6 +7546,7 @@ function renderContasPagar() {
   const escopoMes = cpAbaAtiva === 'atrasadas' ? '' : (cpMesFiltro ? ' em ' + _cpFmtMes(cpMesFiltro) : '');
   document.getElementById('cp-list-title').textContent = tituloAba;
   document.getElementById('cp-count').textContent = `${lista.length} conta${lista.length!==1?'s':''}${escopoMes}`;
+  _cpAtualizarArrows();
 
   const el = document.getElementById('cp-lista');
   if (!lista.length) {
@@ -7469,12 +7587,10 @@ function renderContasPagar() {
 
     return `
       <div style="border-bottom:1px solid var(--border);">
-        <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:12px;align-items:center;padding:13px 20px;font-size:13px;">
-          <div>
-            <div style="font-weight:700;color:${stColors[st]};">${empBadge}${escHtml(c.nome)}${empIcone}${obsIcone}</div>
-            <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(c.categoria)||'—'} · ${escHtml(periodoLabel[c.periodicidade]||c.periodicidade)}</div>
-          </div>
-          <div class="td-mono" style="font-weight:700;">${fmt(c.valor)}</div>
+        <div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1fr auto;gap:12px;align-items:center;padding:13px 20px;font-size:13px;">
+          <div style="font-weight:700;color:${stColors[st]};min-width:0;overflow:hidden;text-overflow:ellipsis;">${empBadge}${escHtml(c.nome)}${empIcone}${obsIcone}</div>
+          <div style="font-size:11px;color:var(--text3);min-width:0;">${escHtml(c.categoria)||'—'} · ${escHtml(periodoLabel[c.periodicidade]||c.periodicidade)}</div>
+          <div class="td-mono" style="font-weight:700;text-align:right;">${fmt(c.valor)}</div>
           <div>
             <div class="td-mono" style="font-size:12px;">${c.vencimento.split('-').reverse().join('/')}</div>
             <div style="font-size:10px;color:${dias<0?'var(--red)':dias<=3?'var(--orange)':'var(--text3)'};">
