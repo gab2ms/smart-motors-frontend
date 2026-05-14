@@ -121,6 +121,8 @@ nav{padding:14px 10px;flex:1;}
 .breadcrumb{font-size:10px;color:var(--text3);margin-bottom:3px;letter-spacing:0.4px;text-transform:uppercase;font-weight:600;}
 .breadcrumb .bc-sep{margin:0 6px;color:var(--border2);}
 .breadcrumb .bc-parent{color:var(--text3);}
+.breadcrumb .bc-link{color:var(--text2);cursor:pointer;transition:color .15s var(--ease);}
+.breadcrumb .bc-link:hover{color:var(--gold);}
 .breadcrumb .bc-current{color:var(--text2);}
 .hamburger{display:none;background:none;border:none;color:var(--text);font-size:20px;cursor:pointer;padding:4px;}
 @media(max-width:768px){.hamburger{display:block;}}
@@ -2661,15 +2663,30 @@ const BREADCRUMB_MAP = {
   'contas-pagar':  ['Financeiro', 'Contas a Pagar'],
   custos:          ['Financeiro', 'Custos Fixos'],
 };
-function renderBreadcrumb(id) {
+// Sub-tabs do módulo Financeiro: troca de sub-tab deve refletir em
+// título, subtítulo e breadcrumb (não rerenderiza pelo showPage).
+const FIN_SUBTAB_META = {
+  caixa:       { title: 'Caixa Atual', sub: 'Controle de caixa, contas e lançamentos', crumb: ['Financeiro', 'Caixa'] },
+  emprestimos: { title: 'Empréstimos', sub: 'Controle de financiamentos e parcelas',   crumb: ['Financeiro', 'Empréstimos'] },
+  ia:          { title: 'Análise IA',  sub: 'Insights automáticos sobre seu caixa',    crumb: ['Financeiro', 'Análise IA'] },
+};
+function renderBreadcrumbItems(items) {
   const el = document.getElementById('breadcrumb');
   if (!el) return;
-  const crumbs = BREADCRUMB_MAP[id];
-  if (!crumbs) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  if (!items || !items.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = 'block';
-  el.innerHTML = `<span class="bc-parent">${crumbs[0]}</span>` +
-                 `<span class="bc-sep">›</span>` +
-                 `<span class="bc-current">${crumbs[1]}</span>`;
+  el.innerHTML = items.map((it, i) => {
+    const isLast = i === items.length - 1;
+    const cls = isLast ? 'bc-current' : (it.onclick ? 'bc-link' : 'bc-parent');
+    const attrs = it.onclick && !isLast ? ` onclick="${it.onclick}"` : '';
+    return `<span class="${cls}"${attrs}>${it.label}</span>` +
+           (isLast ? '' : `<span class="bc-sep">›</span>`);
+  }).join('');
+}
+function renderBreadcrumb(id) {
+  const crumbs = BREADCRUMB_MAP[id];
+  if (!crumbs) { renderBreadcrumbItems([]); return; }
+  renderBreadcrumbItems(crumbs.map(label => ({ label })));
 }
 // opts.fromHistory=true → veio do popstate, NÃO empilha (evita loop)
 // opts.replace=true     → primeira navegação, replaceState em vez de pushState
@@ -6228,6 +6245,37 @@ function switchFinTab(tabId) {
   const headerActions = document.getElementById('fin-header-actions');
   if (headerActions) headerActions.style.display = (tabId === 'caixa') ? '' : 'none';
   try { localStorage.setItem('sm_fin_tab', tabId); } catch(e) {}
+
+  // Sincroniza título + subtítulo + breadcrumb com a sub-tab ativa.
+  // showPage seta esses elementos pela página inteira; aqui refinamos
+  // pra sub-tab. Se já tem detalhe de empréstimo aberto e a sub-tab é
+  // 'emprestimos', escolhe o breadcrumb de 3 níveis em vez do de 2.
+  const meta = FIN_SUBTAB_META[tabId];
+  const tEl = document.getElementById('page-title');
+  const sEl = document.getElementById('page-sub');
+  if (tabId === 'emprestimos' && emprestimoSelecionadoId) {
+    const e = getEmprestimoAtual();
+    if (e) { _atualizaBreadcrumbEmpDetalhe(e); return; }
+  }
+  if (meta) {
+    if (tEl) tEl.textContent = meta.title;
+    if (sEl) sEl.textContent = meta.sub;
+    renderBreadcrumbItems(meta.crumb.map(label => ({ label })));
+  }
+}
+
+// Breadcrumb de 3 níveis pro detalhe de empréstimo. Intermediário
+// "Empréstimos" é clicável (volta pra lista via voltarListaEmp).
+function _atualizaBreadcrumbEmpDetalhe(e) {
+  const tEl = document.getElementById('page-title');
+  const sEl = document.getElementById('page-sub');
+  if (tEl) tEl.textContent = e.nome || 'Empréstimo';
+  if (sEl) sEl.textContent = 'Detalhe e parcelas do empréstimo';
+  renderBreadcrumbItems([
+    { label: 'Financeiro' },
+    { label: 'Empréstimos', onclick: 'voltarListaEmp()' },
+    { label: e.nome || 'Empréstimo' },
+  ]);
 }
 
 // ════════════════════════════════════════════
@@ -6321,10 +6369,19 @@ function renderEmprestimoFin() {
 function abrirDetalheEmp(id) {
   emprestimoSelecionadoId = id;
   renderEmprestimoFin();
+  const e = getEmprestimoAtual();
+  if (e) _atualizaBreadcrumbEmpDetalhe(e);
 }
 function voltarListaEmp() {
   emprestimoSelecionadoId = null;
   renderEmprestimoFin();
+  // Restaura breadcrumb 2-níveis da sub-tab Empréstimos
+  const meta = FIN_SUBTAB_META.emprestimos;
+  const tEl = document.getElementById('page-title');
+  const sEl = document.getElementById('page-sub');
+  if (tEl) tEl.textContent = meta.title;
+  if (sEl) sEl.textContent = meta.sub;
+  renderBreadcrumbItems(meta.crumb.map(label => ({ label })));
 }
 function toggleEmpQuitados() {
   const list = document.getElementById('emp-quitados-list');
