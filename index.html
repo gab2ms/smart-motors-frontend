@@ -2607,6 +2607,11 @@ const ct = p=>(p.custo||0)+(p.montagem||0)+(p.comissao||0)+(p.nfCompra||0)+(p.nf
 const mc = p=>(p.venda||0)-ct(p);
 const mcp= p=>p.venda?(mc(p)/p.venda)*100:0;
 const fmt= v=>'R$ '+Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+// fmt() engole sinal via Math.abs (intencional pra colunas tabulares).
+// fmtSigned preserva o sinal pra valores que podem ser negativos
+// (lucro líquido, resultados, fluxos). Prefixa "− " só nos negativos —
+// positivos ficam sem "+" pra casar com convenção dos demais KPIs.
+const fmtSigned = v => (v < 0 ? '− ' : '') + fmt(v);
 const fmtP=v=>v.toFixed(2)+'%';
 
 function mcBadge(pct){
@@ -4207,7 +4212,7 @@ async function carregarFaturamentoDash(forcar) {
       + '<div class="kpi-change">clique para gerenciar ↗</div></div>'
       + '<div class="kpi"' + kpiNormal + '>'
       + '<div class="kpi-label">Lucro líquido est.</div>'
-      + '<div class="kpi-value ' + (lucroLiquido>=0?'green':'red') + '">' + fmt(lucroLiquido) + '</div>'
+      + '<div class="kpi-value ' + (lucroLiquido>=0?'green':'red') + '">' + fmtSigned(lucroLiquido) + '</div>'
       + deltaHTML(lucroLiquido, lucroLiquidoAnt)
       + '<div class="kpi-change">' + (margemLiq>=0?'+':'') + margemLiq.toFixed(1) + '% da receita</div></div>';
 
@@ -5572,7 +5577,7 @@ function renderizarDREVendas(pedidos) {
     +'<div class="kpi"><div class="kpi-label">Ticket médio</div><div class="kpi-value gold">'+fmt(ticketMedio)+'</div><div class="kpi-change">por pedido</div></div>'
     +'<div class="kpi"><div class="kpi-label">Lucro bruto est.</div><div class="kpi-value '+(lucroBruto>=0?'green':'red')+'">'+fmt(lucroBruto)+'</div><div class="kpi-change">MC média '+(avgMC*100).toFixed(1)+'%</div></div>'
     +'<div class="kpi"><div class="kpi-label">Custo fixo</div><div class="kpi-value red">'+fmt(custoFixo)+'</div><div class="kpi-change">'+custosFixos.length+' itens</div></div>'
-    +'<div class="kpi"><div class="kpi-label">Lucro líquido est.</div><div class="kpi-value '+(lucroLiq>=0?'green':'red')+'">'+fmt(lucroLiq)+'</div><div class="kpi-change">bruto − custo fixo</div></div>';
+    +'<div class="kpi"><div class="kpi-label">Lucro líquido est.</div><div class="kpi-value '+(lucroLiq>=0?'green':'red')+'">'+fmtSigned(lucroLiq)+'</div><div class="kpi-change">bruto − custo fixo</div></div>';
 }
 
 function renderizarRankingProdutosVendas(pedidos) {
@@ -5643,20 +5648,20 @@ function renderDRE(receita,custoTabela,custoFixo){
     <div style="display:flex;flex-direction:column;gap:0;">
       ${dreRow('Receita bruta',receita,'var(--green)',true)}
       ${dreRow('(−) Custo dos produtos',custoTabela,'var(--red)')}
-      ${dreRow('= Margem de contribuição',mc,mc>=0?'var(--gold)':'var(--red)',true,'('+mcPct.toFixed(1)+'%)')}
+      ${dreRow('= Margem de contribuição',mc,mc>=0?'var(--gold)':'var(--red)',true,'('+mcPct.toFixed(1)+'%)',true)}
       <div style="border-top:1px dashed var(--border2);margin:10px 0;"></div>
       ${dreRow('(−) Custo fixo do mês',custoFixo,'var(--red)')}
-      ${dreRow('= Lucro líquido estimado',ll,ll>=0?'var(--green)':'var(--red)',true,'('+llPct.toFixed(1)+'%)')}
+      ${dreRow('= Lucro líquido estimado',ll,ll>=0?'var(--green)':'var(--red)',true,'('+llPct.toFixed(1)+'%)',true)}
     </div>
   `;
-  document.getElementById('ll-display').textContent=fmt(ll);
+  document.getElementById('ll-display').textContent=fmtSigned(ll);
   document.getElementById('ll-display').style.color=ll>=0?'var(--green)':'var(--red)';
 }
 
-function dreRow(label,val,color,bold=false,extra=''){
+function dreRow(label,val,color,bold=false,extra='',signed=false){
   return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
     <span style="font-size:12px;color:var(--text2);font-weight:${bold?700:500};">${label}</span>
-    <span style="font-family:var(--mono,monospace);font-size:${bold?14:12}px;font-weight:${bold?800:600};color:${color};">${fmt(val)} <span style="font-size:10px;color:var(--text3);">${extra}</span></span>
+    <span style="font-family:var(--mono,monospace);font-size:${bold?14:12}px;font-weight:${bold?800:600};color:${color};">${signed?fmtSigned(val):fmt(val)} <span style="font-size:10px;color:var(--text3);">${extra}</span></span>
   </div>`;
 }
 
