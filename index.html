@@ -4495,10 +4495,61 @@ function _dashCaixaRealGo(tipo, mesAtual) {
 }
 
 // ── DRE simplificada do mês ──
-// Receita por regime de competência (faturamento Tiny do mês corrente).
-// Despesas por caixa REAL (lancamentos do mês, exceto transferências).
+// Receita por regime de competência (faturamento Tiny do período).
+// Despesas por caixa REAL (lançamentos do período, exceto transferências).
 // Custos fixos da tabela viram referência comparativa, não dedução.
 let dashDreMesExpandido = false;
+
+// Cálculo puro do DRE pra um período arbitrário. Não toca DOM. Consumido
+// pelo widget renderDashDreMes (mês corrente) e por gerarFechamentoMes
+// (range escolhido no selector do Dashboard).
+async function calcularDRE(iniISO, fimISO) {
+  const fmtBR = iso => { const p = iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
+
+  let receita = 0, pedidos = [];
+  try {
+    pedidos = await buscarPedidosCompletos(fmtBR(iniISO), fmtBR(fimISO), false);
+    receita = (pedidos || []).reduce((s,p) => s + (p.valor || 0), 0);
+  } catch(e) {
+    console.warn('[calcularDRE] falha ao buscar pedidos:', e.message);
+  }
+
+  const avgMCpct = (products && products.length)
+    ? products.reduce((s,p) => s + mcp(p), 0) / products.length / 100
+    : 0;
+  const cpv = receita * (1 - avgMCpct);
+  const lucroBruto = receita - cpv;
+  const pctLB = receita > 0 ? (lucroBruto / receita * 100) : 0;
+
+  const inPeriodo = d => d && d >= iniISO && d <= fimISO;
+  const desp = (lancamentos || []).filter(l =>
+    l.tipo === 'saida' && inPeriodo(l.data)
+    && !l.transferenciaId && l.categoria !== 'Transferência'
+  );
+  const despReal = desp.reduce((s,l) => s + (l.valor || 0), 0);
+  const despCount = desp.length;
+
+  const despPlanejado = (custosFixos || [])
+    .filter(c => c.nome !== 'Empréstimo' && c.nome !== 'vendas_mes_config')
+    .reduce((s,c) => s + (c.valor || 0), 0);
+
+  const todasParc = (emprestimos || []).flatMap(e => e.pagamentos || []);
+  const empPagos = todasParc.filter(p => p.status === 'pago' && inPeriodo(p.dataPagamento));
+  const empValor = empPagos.reduce((s,p) => s + (p.valorPago || p.valor || 0), 0);
+  const empCount = empPagos.length;
+
+  const resultado = lucroBruto - despReal - empValor;
+  const pctRes = receita > 0 ? (resultado / receita * 100) : 0;
+
+  return {
+    periodo: { iniISO, fimISO },
+    receita, pedidos,
+    avgMCpct, cpv, lucroBruto, pctLB,
+    despReal, despCount, despPlanejado,
+    empValor, empCount,
+    resultado, pctRes,
+  };
+}
 
 async function renderDashDreMes() {
   const wrap = document.getElementById('dash-dre-mes-card');
@@ -4509,8 +4560,8 @@ async function renderDashDreMes() {
   const mm   = String(hoje.getMonth()+1).padStart(2,'0');
   const mesAtual = `${yyyy}-${mm}`;
   const lastDay = new Date(yyyy, hoje.getMonth()+1, 0).getDate();
-  const iniBR = `01/${mm}/${yyyy}`;
-  const fimBR = `${String(lastDay).padStart(2,'0')}/${mm}/${yyyy}`;
+  const iniISO = `${yyyy}-${mm}-01`;
+  const fimISO = `${yyyy}-${mm}-${String(lastDay).padStart(2,'0')}`;
   const mesLabel = hoje.toLocaleString('pt-BR', { month:'long', year:'numeric' });
   const mesLabelCap = mesLabel.charAt(0).toUpperCase() + mesLabel.slice(1);
 
@@ -4518,45 +4569,10 @@ async function renderDashDreMes() {
   const subEl = document.getElementById('dash-dre-mes-sub');
   if (subEl) subEl.textContent = `Demonstração do Resultado simplificada (regime de competência) · ${mesLabelCap}`;
 
-  // ── Receita: fetch Tiny mês corrente (cache 30min compartilhado com kpis-fat) ──
-  let receita = 0;
-  try {
-    const peds = await buscarPedidosCompletos(iniBR, fimBR, false);
-    receita = (peds || []).reduce((s,p) => s + (p.valor || 0), 0);
-  } catch(e) {
-    console.warn('[renderDashDreMes] falha ao buscar pedidos:', e.message);
-  }
-
-  // ── CPV via avgMCpct dos products (mesma fórmula do kpis-fat) ──
-  const avgMCpct = (products && products.length)
-    ? products.reduce((s,p) => s + mcp(p), 0) / products.length / 100
-    : 0;
-  const cpv = receita * (1 - avgMCpct);
-  const lucroBruto = receita - cpv;
-  const pctLB = receita > 0 ? (lucroBruto / receita * 100) : 0;
-
-  // ── Despesas operacionais reais: lancamentos do mês ex-transferências ──
-  const inMes = (d) => d && d.slice(0,7) === mesAtual;
-  const desp = (lancamentos || []).filter(l =>
-    l.tipo === 'saida' && inMes(l.data) && !l.transferenciaId && l.categoria !== 'Transferência'
-  );
-  const despReal = desp.reduce((s,l) => s + (l.valor || 0), 0);
-  const despCount = desp.length;
-
-  // ── Despesas planejadas: SUM(custos_fixos) ex-Empréstimo ex-vendas_mes_config ──
-  const planejado = (custosFixos || [])
-    .filter(c => c.nome !== 'Empréstimo' && c.nome !== 'vendas_mes_config')
-    .reduce((s,c) => s + (c.valor || 0), 0);
-
-  // ── Empréstimos pagos no mês ──
-  const todasParc = (emprestimos || []).flatMap(e => e.pagamentos || []);
-  const empPagos = todasParc.filter(p => p.status === 'pago' && inMes(p.dataPagamento));
-  const empValor = empPagos.reduce((s,p) => s + (p.valorPago || p.valor || 0), 0);
-  const empCount = empPagos.length;
-
-  // ── Resultado ──
-  const resultado = lucroBruto - despReal - empValor;
-  const pctRes = receita > 0 ? (resultado / receita * 100) : 0;
+  const dre = await calcularDRE(iniISO, fimISO);
+  const { receita, cpv, lucroBruto, pctLB, despReal, despCount,
+          despPlanejado: planejado, empValor, empCount,
+          resultado, pctRes } = dre;
   const resCls = resultado > 0 ? 'green' : resultado < 0 ? 'red' : '';
   const resStyle = resultado === 0 ? 'color:var(--text2);' : '';
   const resIcon = resultado > 0 ? '🟢' : resultado < 0 ? '🔴' : '⚪';
