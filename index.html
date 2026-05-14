@@ -3881,7 +3881,14 @@ async function gerarFechamentoMes() {
     const pedidos = await buscarPedidosCompletos(fmtDateBR(iniISO), fmtDateBR(fimISO));
     const lancFiltrados = (lancamentos || []).filter(l => l.data >= iniISO && l.data <= fimISO);
 
+    // DRE do período — mesma fonte de verdade do widget DRE do Dashboard.
+    // Reutiliza pedidos via cache de buscarPedidosCompletos (forcar=false).
+    const dre = await calcularDRE(iniISO, fimISO);
+
     // ── Vendas por produto ──
+    // Loop matched/unmatched alimenta a aba "Vendas por Produto" (custo
+    // individual onde tem match, "—" onde não). NÃO é usado pra calcular
+    // CPV total no DRE — esse vem do calcularDRE via avgMCpct.
     const porProd = {};
     pedidos.forEach(ped => {
       (ped.itens || []).forEach(it => {
@@ -3896,27 +3903,21 @@ async function gerarFechamentoMes() {
     });
     const vendasArr = Object.values(porProd).sort((a, b) => b.receita - a.receita);
 
-    let custoProdVendidos = 0;
     vendasArr.forEach(v => {
       const prod = _matchProdutoPorNome(v.nome);
       if (prod && prod.venda) {
         v.custoUnit = ct(prod);
         v.mcRS  = v.receita - v.custoUnit * v.qtd;
         v.mcPct = v.receita > 0 ? (v.mcRS / v.receita) * 100 : 0;
-        custoProdVendidos += v.custoUnit * v.qtd;
       } else {
         v.custoUnit = null; v.mcRS = null; v.mcPct = null;
       }
     });
 
-    const receitaBruta      = pedidos.reduce((s, p) => s + (p.valor || 0), 0);
-    const mcBruta           = receitaBruta - custoProdVendidos;
-    const mcPctBruta        = receitaBruta > 0 ? (mcBruta / receitaBruta) * 100 : 0;
+    // Totais usados pelas abas 4 (Custos Fixos) e 5 (Lançamentos).
     const custoFixoTotal    = (custosFixos || []).reduce((s, c) => s + c.valor, 0);
     const saidasFinanceiras = lancFiltrados.filter(l => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0);
     const entradasExtras    = lancFiltrados.filter(l => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0);
-    const lucroLiquido      = mcBruta - custoFixoTotal - saidasFinanceiras + entradasExtras;
-    const lucroPct          = receitaBruta > 0 ? (lucroLiquido / receitaBruta) * 100 : 0;
 
     // ── Vendas por vendedor ──
     const porVend = {};
@@ -3960,6 +3961,11 @@ async function gerarFechamentoMes() {
     const periodoLabel = fmtDateBR(iniISO) + ' a ' + fmtDateBR(fimISO);
 
     // ════════ ABA 1: RESUMO (DRE) ════════
+    // Estrutura espelha o widget DRE do dashboard: Receita → CPV → Lucro
+    // bruto → Despesas operacionais reais → Empréstimos pagos → Resultado.
+    // Custos fixos viram referência (sublinha), não dedução — alinhado
+    // com regime de competência adotado pelo widget.
+    const planejadoFmt = dre.despPlanejado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const resumoRows = [
       [{ v: '⚡ SMART MOTORS', s: TITLE_BIG }],
       [{ v: 'Fechamento — ' + periodoLabel, s: SUBTITLE }],
@@ -3968,43 +3974,42 @@ async function gerarFechamentoMes() {
       [],
       [{ v: 'Item', s: HEADER }, { v: 'Valor', s: HEADER }, { v: '% Receita', s: HEADER }],
       [
-        'Receita bruta',
-        { v: receitaBruta, t: 'n', z: BRL, s: POS },
-        { v: 1, t: 'n', z: '0.0%' }
+        'Receita (faturamento Tiny)',
+        { v: dre.receita, t: 'n', z: BRL, s: POS },
+        { v: dre.receita > 0 ? 1 : 0, t: 'n', z: '0.0%' }
       ],
       [
         '(−) Custo dos produtos vendidos',
-        { v: -custoProdVendidos, t: 'n', z: BRL, s: NEG },
-        { v: receitaBruta > 0 ? -custoProdVendidos/receitaBruta : 0, t: 'n', z: '0.0%' }
+        { v: -dre.cpv, t: 'n', z: BRL, s: NEG },
+        { v: dre.receita > 0 ? -dre.cpv/dre.receita : 0, t: 'n', z: '0.0%' }
       ],
       [
-        { v: '= Margem de contribuição bruta', s: TOTAL_ROW },
-        { v: mcBruta, t: 'n', z: BRL, s: colorVal(mcBruta, TOTAL_ROW) },
-        { v: mcPctBruta/100, t: 'n', z: '0.0%', s: TOTAL_ROW }
+        { v: '= Lucro bruto', s: TOTAL_ROW },
+        { v: dre.lucroBruto, t: 'n', z: BRL, s: colorVal(dre.lucroBruto, TOTAL_ROW) },
+        { v: dre.pctLB/100, t: 'n', z: '0.0%', s: TOTAL_ROW }
       ],
+      [],
       [
-        '(−) Custos fixos do mês',
-        { v: -custoFixoTotal, t: 'n', z: BRL, s: NEG },
-        { v: receitaBruta > 0 ? -custoFixoTotal/receitaBruta : 0, t: 'n', z: '0.0%' }
+        '(−) Despesas operacionais (real)',
+        { v: -dre.despReal, t: 'n', z: BRL, s: NEG },
+        { v: dre.receita > 0 ? -dre.despReal/dre.receita : 0, t: 'n', z: '0.0%' }
       ],
+      [{ v: `    ${dre.despCount} lançamento${dre.despCount !== 1 ? 's' : ''} no período`, s: SUBTITLE }],
+      [{ v: `    R$ ${planejadoFmt} planejados em custos fixos (referência)`, s: SUBTITLE }],
       [
-        '(−) Gastos variáveis do mês',
-        { v: -saidasFinanceiras, t: 'n', z: BRL, s: NEG },
-        { v: receitaBruta > 0 ? -saidasFinanceiras/receitaBruta : 0, t: 'n', z: '0.0%' }
+        '(−) Empréstimos pagos',
+        { v: -dre.empValor, t: 'n', z: BRL, s: NEG },
+        { v: dre.receita > 0 ? -dre.empValor/dre.receita : 0, t: 'n', z: '0.0%' }
       ],
+      [{ v: `    ${dre.empCount} parcela${dre.empCount !== 1 ? 's' : ''} paga${dre.empCount !== 1 ? 's' : ''} no período`, s: SUBTITLE }],
       [
-        '(+) Entradas extras',
-        { v: entradasExtras, t: 'n', z: BRL, s: POS },
-        { v: receitaBruta > 0 ? entradasExtras/receitaBruta : 0, t: 'n', z: '0.0%' }
-      ],
-      [
-        { v: '= Lucro líquido estimado', s: TOTAL_ROW },
-        { v: lucroLiquido, t: 'n', z: BRL, s: colorVal(lucroLiquido, TOTAL_ROW) },
-        { v: lucroPct/100, t: 'n', z: '0.0%', s: TOTAL_ROW }
+        { v: '= RESULTADO DO MÊS', s: TOTAL_ROW },
+        { v: dre.resultado, t: 'n', z: BRL, s: colorVal(dre.resultado, TOTAL_ROW) },
+        { v: dre.pctRes/100, t: 'n', z: '0.0%', s: TOTAL_ROW }
       ],
     ];
     const ws1 = XLSX.utils.aoa_to_sheet(resumoRows);
-    ws1['!cols']   = [{ wch: 40 }, { wch: 20 }, { wch: 12 }];
+    ws1['!cols']   = [{ wch: 44 }, { wch: 20 }, { wch: 12 }];
     ws1['!rows']   = [{ hpt: 30 }];
     ws1['!merges'] = [
       { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } },
