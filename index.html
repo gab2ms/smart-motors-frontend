@@ -255,9 +255,9 @@ select.search-input{cursor:pointer;}
 .kpi[onclick]{transition:border-color 120ms ease, background 120ms ease;}
 .kpi[onclick]:hover{border-color:var(--gold);background:var(--surface2);}
 
-/* Linhas da lista de Contas a Pagar (.lancamento-row já tem hover próprio) */
-.cp-row{transition:background 120ms ease;}
-.cp-row:hover{background:var(--surface2);}
+/* Linhas das listas de Contas a Pagar / Receber (.lancamento-row já tem hover próprio) */
+.cp-row,.cr-row{transition:background 120ms ease;}
+.cp-row:hover,.cr-row:hover{background:var(--surface2);}
 
 #cp-table-header [data-col]{transition:color 120ms ease, background 120ms ease;}
 #cp-table-header [data-col]:hover{color:var(--text);background:var(--surface3);}
@@ -269,7 +269,7 @@ select.search-input{cursor:pointer;}
 @media (hover:none){
   .badge[onclick]:hover,
   .kpi[onclick]:hover,
-  .cp-row:hover,
+  .cp-row:hover,.cr-row:hover,
   #cp-table-header [data-col]:hover,
   .card-header[onclick]:hover{background:initial;filter:none;border-color:var(--border);color:inherit;}
 }
@@ -2186,10 +2186,61 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 
     <!-- ══════════════ CONTAS A RECEBER ══════════════ -->
   <div class="page content" id="page-contas-receber">
-    <div class="card" style="text-align:center;padding:48px 24px;">
-      <div style="font-size:32px;margin-bottom:8px;">🚧</div>
-      <div class="card-title">Em construção</div>
-      <div class="card-sub">O Commit 3 vai trazer o CRUD de contas a receber.</div>
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;">Recebimentos</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">Controle de contas a receber</div>
+      </div>
+      <button class="btn btn-gold" onclick="openCRModal()">+ Nova conta</button>
+    </div>
+
+    <!-- Lista -->
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div style="padding:14px 20px;border-bottom:1px solid var(--border);">
+        <div class="card-title" id="cr-list-title">Contas a receber</div>
+        <div class="card-sub" id="cr-count">—</div>
+      </div>
+      <div id="cr-lista"></div>
+    </div>
+
+    <!-- MODAL: NOVA / EDITAR CONTA A RECEBER -->
+    <div class="modal-overlay" id="cr-modal">
+      <div class="modal" style="width:600px;max-width:90vw;">
+        <div class="modal-title" id="cr-modal-title">Nova <span>conta</span></div>
+        <input type="hidden" id="cr-edit-id">
+        <div class="form-grid">
+          <div class="form-group full">
+            <label>Cliente <span style="color:var(--text3);font-weight:400;">(opcional)</span></label>
+            <select class="form-input" id="cr-cliente"></select>
+          </div>
+          <div class="form-group full">
+            <label>Descrição</label>
+            <input class="form-input" id="cr-descricao" type="text" placeholder="Ex: Venda scooter, Sinal pedido #123...">
+          </div>
+          <div class="form-group">
+            <label>Valor (R$)</label>
+            <input class="form-input" id="cr-valor" type="number" placeholder="0,00">
+          </div>
+          <div class="form-group">
+            <label>Vencimento</label>
+            <input class="form-input" id="cr-vencimento" type="date">
+          </div>
+          <div class="form-group full">
+            <label>Categoria</label>
+            <input class="form-input" id="cr-categoria" type="text" placeholder="Ex: Venda, Serviço, Sinal, Mensalidade...">
+          </div>
+          <div class="form-group full">
+            <label>Observação</label>
+            <input class="form-input" id="cr-obs" type="text" placeholder="Detalhes adicionais...">
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" onclick="closeCRModal()">Cancelar</button>
+          <button class="btn btn-gold" onclick="salvarContaReceber()">Salvar ⚡</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -2532,6 +2583,24 @@ const TABLE_MAP = {
       return out;
     },
   },
+  contas_receber: {
+    // schema usa 'observacao' (não 'obs') e 'status' (string 'recebido'/
+    // 'pendente' em vez do bool 'recebido' do JS). 'descricao' fica direto.
+    toDb: c => {
+      const { obs, recebido, ...rest } = c;
+      const out = toSnake(rest);
+      if (obs      !== undefined) out.observacao = obs;
+      if (recebido !== undefined) out.status = recebido ? 'recebido' : 'pendente';
+      return out;
+    },
+    fromDb: r => {
+      const out = toCamel(r);
+      out.obs      = r.observacao || '';
+      out.recebido = r.status === 'recebido';
+      delete out.observacao; delete out.status;
+      return out;
+    },
+  },
   custos_fixos:    { toDb: toSnake, fromDb: toCamel },
   produtos_precos: { toDb: toSnake, fromDb: toCamel },
 };
@@ -2756,6 +2825,7 @@ function showPage(id, opts){
   if(id==='admin')renderAdmin();
   if(id==='financeiro')initFinanceiro();
   if(id==='contas-pagar')initContasPagar();
+  if(id==='contas-receber')initContasReceber();
   if(id==='custos')renderCustos();
   if(id==='oficina')initOficina();
   if(id==='sac')initSac();
@@ -2837,6 +2907,7 @@ async function _enviarParaBanco() {
       _syncTable('contas_bancarias', contas),
       _syncTable('lancamentos',      lancamentos),
       _syncTable('contas_pagar',     contasPagar),
+      _syncTable('contas_receber',   contasReceber),
       _syncTable('custos_fixos',     custosFixos),
       _syncTable('produtos_precos',  products),
     ]);
@@ -2850,10 +2921,11 @@ async function _enviarParaBanco() {
 async function carregarDados() {
   console.log('[carregarDados] iniciando fetch de todas as tabelas');
   try {
-    const [c, l, cp, cf, pr, sc, vm, oo] = await Promise.all([
+    const [c, l, cp, cr, cf, pr, sc, vm, oo] = await Promise.all([
       sb.from('contas_bancarias').select('*').order('id'),
       sb.from('lancamentos').select('*').order('data', { ascending: false }).order('id', { ascending: false }),
       sb.from('contas_pagar').select('*'),
+      sb.from('contas_receber').select('*'),
       sb.from('custos_fixos').select('*').order('id'),
       sb.from('produtos_precos').select('*').order('id'),
       sb.from('sac_casos').select('*').order('numero', { ascending: false }),
@@ -2862,7 +2934,7 @@ async function carregarDados() {
     ]);
 
     // Loga resultado (e erros explicitos) de cada tabela
-    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc],['vendedores_mapeamento',vm],['oficina_ordens',oo]]
+    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['contas_receber',cr],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc],['vendedores_mapeamento',vm],['oficina_ordens',oo]]
       .forEach(([n, r]) => {
         if (r.error) console.error('[carregarDados] ERRO em ' + n + ':', r.error.message, r.error);
         else console.log('[carregarDados] ' + n + ': ' + (r.data?.length || 0) + ' rows');
@@ -2872,6 +2944,7 @@ async function carregarDados() {
     contas       = (!c.error  && c.data?.length)  ? c.data.map(fromDb('contas_bancarias')) : [];
     lancamentos  = (!l.error  && l.data)          ? l.data.map(fromDb('lancamentos'))      : [];
     contasPagar  = (!cp.error && cp.data)         ? cp.data.map(fromDb('contas_pagar'))    : [];
+    contasReceber= (!cr.error && cr.data)         ? cr.data.map(fromDb('contas_receber'))  : [];
     custosFixos  = (!cf.error && cf.data?.length) ? cf.data.map(fromDb('custos_fixos'))    : [];
     products     = (!pr.error && pr.data?.length) ? pr.data.map(fromDb('produtos_precos')) : [];
     sacCasos     = (!sc.error && sc.data)         ? toCamelArr(sc.data)                   : [];
@@ -2904,6 +2977,7 @@ async function carregarDados() {
       'contas=' + contas.length,
       'lancamentos=' + lancamentos.length,
       'contasPagar=' + contasPagar.length,
+      'contasReceber=' + contasReceber.length,
       'custosFixos=' + custosFixos.length,
       'products=' + products.length,
       'vendasMes=' + vendasMesConfig.valor);
@@ -9339,6 +9413,184 @@ document.addEventListener('DOMContentLoaded', function() {
   const cim = document.getElementById('cp-import-modal');
   if (cim) cim.addEventListener('click', function(e){ if(e.target===this) closeCPImportModal(); });
 });
+
+// ══════════════════════════════════════════
+//  CONTAS A RECEBER
+// ══════════════════════════════════════════
+let contasReceber = [];
+
+async function initContasReceber() {
+  // Fetch fresh dos clientes a cada abertura — custo desprezível e evita
+  // cache desatualizado (cliente cadastrado em outra aba não aparecia).
+  clientesAll = (await sb.from('clientes').select('*').order('nome')).data || [];
+  renderContasReceber();
+}
+
+// Status derivado: recebido > vencida (venc < hoje) > pendente.
+// 'vencida' não é materializado no banco — só depende da data.
+function _crStatus(c) {
+  if (c.recebido) return 'recebido';
+  if (diasAteVencimento(c.vencimento) < 0) return 'vencida';
+  return 'pendente';
+}
+
+function renderContasReceber() {
+  const el = document.getElementById('cr-lista');
+  if (!el) return;
+  const lista = [...contasReceber].sort((a, b) =>
+    (a.vencimento || '').localeCompare(b.vencimento || ''));
+  document.getElementById('cr-count').textContent =
+    `${lista.length} conta${lista.length !== 1 ? 's' : ''}`;
+
+  if (!lista.length) {
+    el.innerHTML = '<div class="empty" style="padding:32px;">Nenhuma conta a receber cadastrada.</div>';
+    return;
+  }
+
+  const stColors = { recebido:'var(--green)', pendente:'var(--text2)', vencida:'var(--red)' };
+  const stBadges = {
+    recebido:'<span class="badge badge-green">✅ Recebido</span>',
+    pendente:'<span class="badge badge-orange">⏳ Pendente</span>',
+    vencida: '<span class="badge badge-red">🚨 Vencida</span>',
+  };
+
+  el.innerHTML = lista.map(c => {
+    const st   = _crStatus(c);
+    const dias = diasAteVencimento(c.vencimento);
+    const cliente = c.clienteId
+      ? (clientesAll.find(x => x.id === c.clienteId)?.nome || '')
+      : '';
+    const obsIcone = c.obs
+      ? ` <span style="cursor:pointer;opacity:0.55;margin-left:4px;font-size:11px;" onclick="event.stopPropagation();_crToggleObs('${c.id}')" title="Ver observação">📝</span>`
+      : '';
+    return `
+      <div class="cr-row" style="border-bottom:1px solid var(--border);">
+        <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr minmax(140px, auto);gap:12px;align-items:center;padding:13px 20px;font-size:13px;">
+          <div style="font-weight:700;color:${stColors[st]};min-width:0;overflow:hidden;text-overflow:ellipsis;">
+            ${escHtml(c.descricao)}${obsIcone}
+            ${cliente ? `<div style="font-size:10px;color:var(--text3);font-weight:400;">${escHtml(cliente)}</div>` : ''}
+          </div>
+          <div style="font-size:11px;color:var(--text3);min-width:0;">${escHtml(c.categoria) || '—'}</div>
+          <div class="td-mono" style="font-weight:700;text-align:right;">${fmt(c.valor)}</div>
+          <div>
+            <div class="td-mono" style="font-size:12px;">${_vencComDia(c.vencimento)}</div>
+            <div style="font-size:10px;color:${dias<0?'var(--red)':dias<=3?'var(--orange)':'var(--text3)'};">
+              ${c.recebido ? '' : '('+(dias<0?'atrasado '+Math.abs(dias)+'d':dias===0?'hoje':dias+'d')+')'}</div>
+          </div>
+          <div>${stBadges[st]}</div>
+          <div style="display:flex;gap:5px;">
+            ${!c.recebido
+              ? '<button class="btn btn-gold" onclick="marcarRecebido(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;" title="Marcar recebido">✅</button>'
+              : '<button class="action-btn" onclick="desmarcarRecebido(\'' + c.id + '\')" style="font-size:10px;" title="Desmarcar recebido">↩</button>'}
+            <button class="action-btn edit-btn" onclick="editarContaReceber('${c.id}')">✏</button>
+            <button class="action-btn del-btn" onclick="deletarContaReceber('${c.id}')">✕</button>
+          </div>
+        </div>
+        ${c.obs ? `<div id="cr-obs-${c.id}" style="display:none;margin:0 20px 12px 36px;padding:10px 14px;background:var(--surface2);border-left:2px solid var(--gold);border-radius:0 6px 6px 0;font-size:11px;color:var(--text2);line-height:1.5;">${escHtml(c.obs)}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+// Toggle inline da observação. Não persiste no re-render (esperado).
+function _crToggleObs(id) {
+  const el = document.getElementById('cr-obs-' + id);
+  if (!el) return;
+  el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+}
+
+function _crPopularClientes(selId) {
+  const sel = document.getElementById('cr-cliente');
+  sel.innerHTML = '<option value="">— sem cliente —</option>' +
+    clientesAll.map(c => `<option value="${escHtml(c.id)}">${escHtml(c.nome)}</option>`).join('');
+  sel.value = selId || '';
+}
+
+function openCRModal() {
+  document.getElementById('cr-edit-id').value = '';
+  document.getElementById('cr-modal-title').innerHTML = 'Nova <span>conta</span>';
+  document.getElementById('cr-descricao').value = '';
+  document.getElementById('cr-valor').value = '';
+  document.getElementById('cr-vencimento').value = '';
+  document.getElementById('cr-categoria').value = '';
+  document.getElementById('cr-obs').value = '';
+  _crPopularClientes('');
+  document.getElementById('cr-modal').classList.add('open');
+}
+
+function closeCRModal() { document.getElementById('cr-modal').classList.remove('open'); }
+
+function salvarContaReceber() {
+  const descricao  = document.getElementById('cr-descricao').value.trim();
+  const valor      = parseFloat(document.getElementById('cr-valor').value) || 0;
+  const vencimento = document.getElementById('cr-vencimento').value;
+  const clienteId  = document.getElementById('cr-cliente').value || null;
+  const categoria  = document.getElementById('cr-categoria').value.trim();
+  const obs        = document.getElementById('cr-obs').value.trim();
+  const editId     = document.getElementById('cr-edit-id').value;
+
+  if (!descricao)  { smAlert('Preencha a descrição'); return; }
+  if (!valor)      { smAlert('Preencha o valor'); return; }
+  if (!vencimento) { smAlert('Preencha o vencimento'); return; }
+
+  if (editId) {
+    const c = contasReceber.find(x => x.id === editId);
+    if (!c) return;
+    Object.assign(c, { descricao, valor, vencimento, clienteId, categoria, obs });
+  } else {
+    contasReceber.push({
+      id: Date.now().toString(),
+      descricao, valor, vencimento, clienteId, categoria, obs,
+      recebido: false, recebidoEm: null,
+    });
+  }
+  closeCRModal();
+  renderContasReceber();
+  salvarDados();
+}
+
+function editarContaReceber(id) {
+  const c = contasReceber.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('cr-edit-id').value      = c.id;
+  document.getElementById('cr-modal-title').innerHTML = 'Editar <span>conta</span>';
+  document.getElementById('cr-descricao').value    = c.descricao || '';
+  document.getElementById('cr-valor').value        = c.valor;
+  document.getElementById('cr-vencimento').value   = c.vencimento || '';
+  document.getElementById('cr-categoria').value    = c.categoria || '';
+  document.getElementById('cr-obs').value          = c.obs || '';
+  _crPopularClientes(c.clienteId);
+  document.getElementById('cr-modal').classList.add('open');
+}
+
+async function deletarContaReceber(id) {
+  const c = contasReceber.find(x => x.id === id);
+  if (!c) return;
+  if (!(await smConfirm(`Remover "${c.descricao}"?`))) return;
+  await sb.from('contas_receber').delete().eq('id', c.id);
+  contasReceber = contasReceber.filter(x => x.id !== c.id);
+  renderContasReceber();
+  salvarDados();
+}
+
+// Marcar recebido (toggle simples): status + recebido_em. Sem lançamento
+// no caixa — a integração via FK conta_receber_id vira commit próprio.
+function marcarRecebido(id) {
+  const c = contasReceber.find(x => x.id === id);
+  if (!c) return;
+  c.recebido = true;
+  c.recebidoEm = new Date().toISOString().slice(0, 10);
+  renderContasReceber();
+  salvarDados();
+}
+
+function desmarcarRecebido(id) {
+  const c = contasReceber.find(x => x.id === id);
+  if (!c) return;
+  c.recebido = false;
+  c.recebidoEm = null;
+  renderContasReceber();
+  salvarDados();
+}
 
 // ══════════════════════════════════════════
 //  ADMIN — GESTÃO DE USUÁRIOS
