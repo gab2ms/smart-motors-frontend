@@ -17,6 +17,10 @@ Link: `contas_pagar.emprestimo_parcela_id UUID REFERENCES emprestimo_parcelas(id
 - `contas_pagar.recorrencia_id UUID NULL` + `idx_contas_pagar_recorrencia` (parcial, WHERE recorrencia_id IS NOT NULL) — vincula todas as ocorrências de uma conta recorrente. Pré-geração de N ocorrências (52 semanais, 12 mensais, etc) no momento da criação.
 - `contas_pagar.dia_semana_fixo SMALLINT NULL` — dia da semana fixo (0=dom..6=sáb) pra séries semanais/quinzenais. Sem índice (cardinalidade muito baixa).
 - `lancamentos.conta_pagar_id TEXT NULL REFERENCES contas_pagar(id) ON DELETE SET NULL` + `idx_lancamentos_conta_pagar` (parcial) — vincula lançamento de caixa gerado pelo modal de pagamento de Contas a Pagar. `ON DELETE SET NULL` preserva histórico financeiro mesmo se conta_pagar for deletada.
+- **`contas_receber`** (nova tabela, 17 colunas) — contas a receber, espelha o desenho de `contas_pagar`. Colunas-chave: `id TEXT PK` (default `gen_random_uuid()::text`), `status ∈ {pendente, recebido}`, `recebido_em DATE`, `periodicidade` com `quinzenal` (8 valores), `recorrencia_id`/`dia_semana_fixo` com a mesma semântica de séries recorrentes de `contas_pagar`. RLS `acesso_total` (`FOR ALL USING (true)`, padrão do app).
+  - Indexes: `idx_contas_receber_vencimento`, `idx_contas_receber_status`, `idx_contas_receber_recorrencia_id` (parcial), `idx_contas_receber_cliente_id` (parcial).
+  - FKs, todas `ON DELETE SET NULL` (preserva o registro e limpa o ponteiro órfão — nunca CASCADE): `cliente_id → clientes(id)`, `conta_id → contas_bancarias(id)`, `lancamento_id → lancamentos(id)`. `conta_id` e `lancamento_id` ficam sem índice de cobertura por ora (tabela vazia; advisor sinaliza como INFO).
+- `lancamentos.conta_receber_id TEXT NULL REFERENCES contas_receber(id) ON DELETE SET NULL` — vincula o lançamento de caixa gerado pelo recebimento de uma conta a receber. Espelha `conta_pagar_id`; `ON DELETE SET NULL` preserva o histórico financeiro mesmo se a `contas_receber` for deletada.
 
 ---
 
@@ -75,6 +79,7 @@ Guardar **só o nome do credor**, sem o prefixo `"Empréstimo "`. O prefixo é r
 
 - `emprestimo_parcelas.status` ∈ `{'pendente', 'pago'}`
 - `contas_pagar.status` ∈ `{'pendente', 'pago', 'vencido'}` (constraint permite `'vencido'`, mas hoje propagação é direta sem mapear; se aparecer `'vencido'` no futuro, ajustar `fn_conta_to_parcela` pra mapear → `'pendente'`)
+- `contas_receber.status` ∈ `{'pendente', 'recebido'}` (sem `'vencido'` — diferente de `contas_pagar`; vencimento atrasado é derivado da data, não materializado)
 
 ### Skip de parcelas já pagas no INSERT
 
