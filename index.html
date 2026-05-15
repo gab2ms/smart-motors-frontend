@@ -1131,6 +1131,10 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-icon">📅</span> Contas a Pagar
       <span class="nav-dot" id="dot-contas-pagar"></span>
     </button>
+    <button class="nav-item" onclick="showPage('contas-receber')">
+      <span class="nav-icon">📥</span> Contas a Receber
+      <span class="nav-dot"></span>
+    </button>
     <button class="nav-item" onclick="showPage('custos')">
       <span class="nav-icon">💸</span> Custos Fixos
       <span class="nav-dot"></span>
@@ -2180,6 +2184,15 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     </div>
   </div>
 
+    <!-- ══════════════ CONTAS A RECEBER ══════════════ -->
+  <div class="page content" id="page-contas-receber">
+    <div class="card" style="text-align:center;padding:48px 24px;">
+      <div style="font-size:32px;margin-bottom:8px;">🚧</div>
+      <div class="card-title">Em construção</div>
+      <div class="card-sub">O Commit 3 vai trazer o CRUD de contas a receber.</div>
+    </div>
+  </div>
+
     <!-- ══════════════ CUSTOS ══════════════ -->
   <div class="page content" id="page-custos">
     <div class="kpi-grid" style="max-width:600px;margin-bottom:24px;">
@@ -2644,6 +2657,7 @@ const pageMeta={
   admin:['Administração','Gerenciar usuários e aprovações de acesso'],
   financeiro:['Caixa Atual','Controle de caixa, contas e lançamentos'],
   'contas-pagar':['Contas a Pagar','Gerencie vencimentos e nunca esqueça um pagamento'],
+  'contas-receber':['Contas a Receber','Gerencie recebimentos do mês'],
   custos:['Custos Fixos','Despesas mensais'],
 };
 // Breadcrumb hierárquico — pai não-clicável (etiqueta visual), atual em destaque.
@@ -2661,6 +2675,7 @@ const BREADCRUMB_MAP = {
   contratos:       ['Operação', 'Contrato'],
   financeiro:      ['Financeiro', 'Caixa'],
   'contas-pagar':  ['Financeiro', 'Contas a Pagar'],
+  'contas-receber':['Financeiro', 'Contas a Receber'],
   custos:          ['Financeiro', 'Custos Fixos'],
 };
 // Sub-tabs do módulo Financeiro: troca de sub-tab deve refletir em
@@ -5795,12 +5810,13 @@ const TODOS_MODULOS = [
   { id: 'admin',        nome: 'Administração' },
   { id: 'financeiro',   nome: 'Financeiro' },
   { id: 'contas-pagar', nome: 'Contas a Pagar' },
+  { id: 'contas-receber', nome: 'Contas a Receber' },
   { id: 'custos',       nome: 'Custos Fixos' },
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
   vendedor:    ['dashboard', 'pedidos', 'simulador', 'oficina', 'sac', 'clientes', 'contratos'],
-  operacional: ['dashboard', 'precos', 'estoque', 'simulador', 'vendas', 'pedidos', 'oficina', 'sac', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'custos'],
+  operacional: ['dashboard', 'precos', 'estoque', 'simulador', 'vendas', 'pedidos', 'oficina', 'sac', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos'],
   customizado: null, // usa user.modulosPermitidos
 };
 function modulosPermitidos(user) {
