@@ -2193,7 +2193,20 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         <div style="font-size:13px;font-weight:700;">Recebimentos</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px;">Controle de contas a receber</div>
       </div>
-      <button class="btn btn-gold" onclick="openCRModal()">+ Nova conta</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <span id="cr-filtro-wrap" style="display:flex;gap:8px;">
+          <select class="search-input" id="cr-mes-filtro" onchange="onCrMesChange(this.value)" style="max-width:170px;"></select>
+          <button class="btn" id="cr-limpar-filtro" onclick="onCrMesChange('')" style="display:none;">✕ Limpar</button>
+        </span>
+        <button class="btn btn-gold" onclick="openCRModal()">+ Nova conta</button>
+      </div>
+    </div>
+
+    <!-- ABAS -->
+    <div class="fin-tabs" id="cr-tabs">
+      <button class="fin-tab-btn active" data-crtab="areceber"  onclick="switchCrTab('areceber')">📥 A Receber (<span id="cr-cnt-areceber">0</span>)</button>
+      <button class="fin-tab-btn"        data-crtab="recebidas" onclick="switchCrTab('recebidas')">✅ Recebidas (<span id="cr-cnt-recebidas">0</span>)</button>
+      <button class="fin-tab-btn"        data-crtab="atrasadas" onclick="switchCrTab('atrasadas')">🚨 Atrasadas (<span id="cr-cnt-atrasadas">0</span>)</button>
     </div>
 
     <!-- Lista -->
@@ -9418,11 +9431,16 @@ document.addEventListener('DOMContentLoaded', function() {
 //  CONTAS A RECEBER
 // ══════════════════════════════════════════
 let contasReceber = [];
+// Filtro de mês: null = nunca renderizado (pega mês atual no 1º render);
+// '' = "Todos os meses"; 'YYYY-MM' = mês específico. Não persiste em reload.
+let crMesFiltro = null;
+let crAbaAtiva = 'areceber'; // 'areceber' | 'recebidas' | 'atrasadas'
 
 async function initContasReceber() {
   // Fetch fresh dos clientes a cada abertura — custo desprezível e evita
   // cache desatualizado (cliente cadastrado em outra aba não aparecia).
   clientesAll = (await sb.from('clientes').select('*').order('nome')).data || [];
+  renderCrFiltroMes();
   renderContasReceber();
 }
 
@@ -9437,13 +9455,60 @@ function _crStatus(c) {
 function renderContasReceber() {
   const el = document.getElementById('cr-lista');
   if (!el) return;
-  const lista = [...contasReceber].sort((a, b) =>
-    (a.vencimento || '').localeCompare(b.vencimento || ''));
+  const filtroWrap = document.getElementById('cr-filtro-wrap');
+  const tabs       = document.getElementById('cr-tabs');
+
+  // Sem nenhuma conta: esconde dropdown + tabs, mensagem única.
+  if (!contasReceber.length) {
+    if (filtroWrap) filtroWrap.style.display = 'none';
+    if (tabs)       tabs.style.display = 'none';
+    document.getElementById('cr-list-title').textContent = 'Contas a receber';
+    document.getElementById('cr-count').textContent = '—';
+    el.innerHTML = '<div class="empty" style="padding:32px;">Nenhuma conta cadastrada.</div>';
+    return;
+  }
+  if (filtroWrap) filtroWrap.style.display = '';
+  if (tabs)       tabs.style.display = '';
+
+  const hojeISO = new Date().toISOString().slice(0,10);
+  const noMes = (iso, mes) => !mes || (iso && iso.slice(0,7) === mes);
+
+  // A Receber: pendentes com venc >= hoje, no mês filtrado.
+  // Recebidas: recebidas, filtradas por recebido_em (não vencimento — útil
+  //   pra ver "o que recebi no mês X").
+  // Atrasadas: pendentes vencidas — transversal, ignora o filtro de mês.
+  // Tiebreaker valor DESC (padrão do contas_pagar).
+  const cmpVencAsc   = (a,b) => (a.vencimento||'').localeCompare(b.vencimento||'') || (b.valor-a.valor);
+  const cmpRecebDesc = (a,b) => (b.recebidoEm||'').localeCompare(a.recebidoEm||'') || (b.valor-a.valor);
+  const areceber = contasReceber
+    .filter(c => !c.recebido && c.vencimento >= hojeISO && noMes(c.vencimento, crMesFiltro))
+    .sort(cmpVencAsc);
+  const recebidas = contasReceber
+    .filter(c => c.recebido && noMes(c.recebidoEm, crMesFiltro))
+    .sort(cmpRecebDesc);
+  const atrasadas = contasReceber
+    .filter(c => !c.recebido && c.vencimento < hojeISO)
+    .sort(cmpVencAsc);
+
+  document.getElementById('cr-cnt-areceber').textContent  = areceber.length;
+  document.getElementById('cr-cnt-recebidas').textContent = recebidas.length;
+  document.getElementById('cr-cnt-atrasadas').textContent = atrasadas.length;
+
+  const lista = crAbaAtiva === 'recebidas' ? recebidas
+              : crAbaAtiva === 'atrasadas' ? atrasadas
+              : areceber;
+  const tituloAba = { areceber:'A receber', recebidas:'Recebidas', atrasadas:'Atrasadas' }[crAbaAtiva];
+  // Atrasadas é transversal — não rotula com o mês do filtro.
+  const escopoMes = crAbaAtiva === 'atrasadas' ? '' : (crMesFiltro ? ' em ' + _cpFmtMes(crMesFiltro) : '');
+  document.getElementById('cr-list-title').textContent = tituloAba;
   document.getElementById('cr-count').textContent =
-    `${lista.length} conta${lista.length !== 1 ? 's' : ''}`;
+    `${lista.length} conta${lista.length!==1?'s':''}${escopoMes}`;
 
   if (!lista.length) {
-    el.innerHTML = '<div class="empty" style="padding:32px;">Nenhuma conta a receber cadastrada.</div>';
+    const msgVazio = crAbaAtiva === 'areceber'  ? `Nenhuma conta a receber${escopoMes}.`
+                   : crAbaAtiva === 'recebidas' ? `Nenhuma conta recebida${escopoMes}.`
+                   : 'Nenhuma conta atrasada — em dia! 🎉';
+    el.innerHTML = `<div class="empty" style="padding:32px;">${msgVazio}</div>`;
     return;
   }
 
@@ -9590,6 +9655,45 @@ function desmarcarRecebido(id) {
   c.recebidoEm = null;
   renderContasReceber();
   salvarDados();
+}
+
+// ── Filtro de mês + tabs ──
+// Dropdown lista só meses com >= 1 conta (por vencimento). O mês atual
+// sempre aparece — senão o default "mês atual" quebra quando não há conta.
+function _crMesesDisponiveis() {
+  const set = new Set();
+  for (const c of contasReceber) {
+    if (c.vencimento) set.add(c.vencimento.slice(0,7));
+  }
+  return [...set].sort();
+}
+
+function renderCrFiltroMes() {
+  const sel = document.getElementById('cr-mes-filtro');
+  if (!sel) return;
+  const meses = _crMesesDisponiveis();
+  const hoje = new Date().toISOString().slice(0,7);
+  if (!meses.includes(hoje)) { meses.push(hoje); meses.sort(); }
+  if (crMesFiltro === null) crMesFiltro = meses.includes(hoje) ? hoje : (meses[0] || '');
+  sel.innerHTML =
+    `<option value="">Todos os meses</option>` +
+    meses.map(m => `<option value="${m}" ${m===crMesFiltro?'selected':''}>${_cpFmtMes(m)}</option>`).join('');
+  const limpar = document.getElementById('cr-limpar-filtro');
+  if (limpar) limpar.style.display = crMesFiltro ? '' : 'none';
+}
+
+function onCrMesChange(v) {
+  crMesFiltro = v;
+  renderCrFiltroMes();
+  renderContasReceber();
+}
+
+function switchCrTab(t) {
+  if (!['areceber','recebidas','atrasadas'].includes(t)) return;
+  crAbaAtiva = t;
+  document.querySelectorAll('.fin-tab-btn[data-crtab]').forEach(b =>
+    b.classList.toggle('active', b.dataset.crtab === t));
+  renderContasReceber();
 }
 
 // ══════════════════════════════════════════
