@@ -259,6 +259,21 @@ select.search-input{cursor:pointer;}
 .cp-row,.cr-row{transition:background 120ms ease;}
 .cp-row:hover,.cr-row:hover{background:var(--surface2);}
 
+/* ── Componente de busca de cliente ── */
+.cli-search{position:relative;}
+.cli-search-input{width:100%;padding-right:66px;}
+.cli-search-tag{position:absolute;right:34px;top:50%;transform:translateY(-50%);font-size:9px;font-weight:700;letter-spacing:0.5px;background:var(--surface3);color:var(--text3);padding:2px 6px;border-radius:4px;pointer-events:none;}
+.cli-search-clear{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 5px;line-height:1;}
+.cli-search-clear:hover{color:var(--text);}
+.cli-search-dropdown{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);box-shadow:0 8px 24px rgba(0,0,0,0.45);max-height:280px;overflow-y:auto;}
+.cli-search-row{padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 120ms ease;}
+.cli-search-row:hover{background:var(--surface3);}
+.cli-search-row-nome{font-size:12px;font-weight:600;color:var(--text);}
+.cli-search-row-sub{font-size:10px;color:var(--text3);margin-top:1px;}
+.cli-search-opt{padding:9px 12px;cursor:pointer;font-size:11px;font-weight:600;color:var(--gold);border-bottom:1px solid var(--border);transition:background 120ms ease;}
+.cli-search-opt:hover{background:var(--surface3);}
+.cli-search-empty,.cli-search-more{padding:10px 12px;font-size:10px;color:var(--text3);}
+
 #cp-table-header [data-col]{transition:color 120ms ease, background 120ms ease;}
 #cp-table-header [data-col]:hover{color:var(--text);background:var(--surface3);}
 
@@ -1148,6 +1163,40 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 </div>
 
 <div class="backdrop" id="backdrop" onclick="closeSidebar()"></div>
+
+<!-- MODAL RÁPIDO: CADASTRAR CLIENTE (global — abre sobre qualquer modal) -->
+<div class="modal-overlay" id="cli-quick-modal" style="z-index:500;">
+  <div class="modal" style="width:440px;max-width:94vw;">
+    <div class="modal-title">Cadastrar <span>cliente</span> rápido</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Nome *</label>
+        <input class="form-input" id="cliq-nome" type="text" placeholder="Nome do cliente">
+      </div>
+      <div class="form-group">
+        <label>Telefone</label>
+        <input class="form-input" id="cliq-tel" type="text" placeholder="(21) 99999-9999">
+      </div>
+      <div class="form-group">
+        <label>CPF / CNPJ</label>
+        <input class="form-input" id="cliq-cpf" type="text" placeholder="000.000.000-00">
+      </div>
+      <div class="form-group full">
+        <label>Email</label>
+        <input class="form-input" id="cliq-email" type="text" placeholder="email@exemplo.com">
+      </div>
+      <div class="form-group full">
+        <label>Endereço</label>
+        <input class="form-input" id="cliq-endereco" type="text" placeholder="Rua, número, bairro...">
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:6px;">* Só o nome é obrigatório</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeCliQuickModal()">Cancelar</button>
+      <button class="btn btn-gold" onclick="salvarCliQuick()">Cadastrar e usar ⚡</button>
+    </div>
+  </div>
+</div>
 
 <!-- MAIN -->
 <div class="main">
@@ -9697,6 +9746,229 @@ function switchCrTab(t) {
   document.querySelectorAll('.fin-tab-btn[data-crtab]').forEach(b =>
     b.classList.toggle('active', b.dataset.crtab === t));
   renderContasReceber();
+}
+
+// ══════════════════════════════════════════
+//  COMPONENTE: BUSCA DE CLIENTE
+// ══════════════════════════════════════════
+// Campo de busca com autocomplete (nome/telefone/CPF) + opções "avulso" e
+// "cadastrar". Substitui os <select> de 218 clientes. Init por função
+// (padrão do codebase). Estado guardado por container em containerEl._cli.
+//
+// API:
+//   initClienteSearch(containerId, { onSelect, placeholder, initial })
+//   clienteSearchGet(containerId)  -> { tipo, clienteId, texto, cliente }
+//   clienteSearchSet(containerId, { clienteId } | { avulso } | null, fireCb)
+
+function _cliNorm(s){ return (s==null?'':String(s)).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function _cliDigitos(s){ return (s==null?'':String(s)).replace(/\D/g,''); }
+// clientesAll tem forma inconsistente (raw vs toCamel) — checa as 2 chaves.
+function _cliCpfDe(c){ return c.cpfCnpj || c.cpf_cnpj || c.cpf || ''; }
+
+function _cliFmtTel(t){
+  const d = _cliDigitos(t);
+  if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+  return t || '';
+}
+function _cliFmtCpf(c){
+  const d = _cliDigitos(c);
+  if (d.length === 11) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+  if (d.length === 14) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
+  return c || '';
+}
+
+// Busca em clientesAll: nome (normalizado, acento-insensível) OU telefone/CPF
+// (só dígitos), "includes" em qualquer parte do texto.
+function _cliBuscar(q){
+  const qn = _cliNorm(q);
+  const qd = _cliDigitos(q);
+  return (clientesAll || []).filter(c => {
+    if (qn && _cliNorm(c.nome).includes(qn)) return true;
+    if (qd) {
+      if (_cliDigitos(c.telefone).includes(qd)) return true;
+      if (_cliDigitos(_cliCpfDe(c)).includes(qd)) return true;
+    }
+    return false;
+  });
+}
+
+function initClienteSearch(containerId, opts){
+  opts = opts || {};
+  const cont = document.getElementById(containerId);
+  if (!cont) { console.warn('[clienteSearch] container não encontrado: ' + containerId); return; }
+  cont.classList.add('cli-search');
+  cont.innerHTML =
+    `<input type="text" class="form-input cli-search-input" placeholder="${escHtml(opts.placeholder || '🔍 Buscar por nome, telefone ou CPF')}">` +
+    `<span class="cli-search-tag" style="display:none;">AVULSO</span>` +
+    `<button type="button" class="cli-search-clear" style="display:none;" title="Limpar seleção">✕</button>` +
+    `<div class="cli-search-dropdown" style="display:none;"></div>`;
+  const els = {
+    input:    cont.querySelector('.cli-search-input'),
+    tag:      cont.querySelector('.cli-search-tag'),
+    clear:    cont.querySelector('.cli-search-clear'),
+    dropdown: cont.querySelector('.cli-search-dropdown'),
+  };
+  cont._cli = { opts, els, state: { tipo:'vazio', clienteId:null, cliente:null, texto:'' } };
+
+  els.input.addEventListener('input', () => _cliRenderDropdown(cont));
+  els.input.addEventListener('focus', () => {
+    if (cont._cli.state.tipo === 'vazio' && els.input.value.trim()) _cliRenderDropdown(cont);
+  });
+  els.clear.addEventListener('click', () => _cliAplicar(cont, { tipo:'vazio' }, true));
+
+  if (opts.initial) clienteSearchSet(containerId, opts.initial, false);
+  _cliInitDocListener();
+  return cont;
+}
+
+function _cliRenderDropdown(cont){
+  const els = cont._cli.els;
+  const q = els.input.value.trim();
+  if (!q) { els.dropdown.style.display = 'none'; els.dropdown.innerHTML = ''; return; }
+
+  const todos = _cliBuscar(q);
+  const mostrados = todos.slice(0, 10);
+  let html = mostrados.map(c => {
+    const tel = c.telefone ? _cliFmtTel(c.telefone) : 'sem telefone';
+    const cpfRaw = _cliCpfDe(c);
+    const cpf = cpfRaw ? 'CPF ' + _cliFmtCpf(cpfRaw) : 'sem CPF';
+    return `<div class="cli-search-row" data-cliid="${escHtml(c.id)}">
+      <div class="cli-search-row-nome">${escHtml(c.nome)}</div>
+      <div class="cli-search-row-sub">${escHtml(tel)} · ${escHtml(cpf)}</div>
+    </div>`;
+  }).join('');
+  if (!mostrados.length) html += `<div class="cli-search-empty">Nenhum cliente encontrado.</div>`;
+  else if (todos.length > 10) html += `<div class="cli-search-more">…e mais ${todos.length-10} resultado${todos.length-10!==1?'s':''} — refine a busca</div>`;
+  html += `<div class="cli-search-opt" data-opt="avulso">+ Usar "${escHtml(q)}" como cliente avulso</div>`;
+  html += `<div class="cli-search-opt" data-opt="cadastrar">+ Cadastrar este cliente</div>`;
+  els.dropdown.innerHTML = html;
+  els.dropdown.style.display = 'block';
+
+  els.dropdown.querySelectorAll('.cli-search-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const c = (clientesAll || []).find(x => String(x.id) === row.dataset.cliid);
+      if (c) _cliAplicar(cont, { tipo:'cliente', cliente:c }, true);
+    });
+  });
+  els.dropdown.querySelector('[data-opt="avulso"]').addEventListener('click', () => {
+    _cliAplicar(cont, { tipo:'avulso', texto:q }, true);
+  });
+  els.dropdown.querySelector('[data-opt="cadastrar"]').addEventListener('click', () => {
+    els.dropdown.style.display = 'none';
+    openCliQuickModal(q, cont.id);
+  });
+}
+
+// Aplica um estado: atualiza UI + state interno + (se fireCb) dispara onSelect.
+function _cliAplicar(cont, novo, fireCb){
+  const { els, opts, state } = cont._cli;
+  if (novo.tipo === 'cliente') {
+    Object.assign(state, { tipo:'cliente', cliente:novo.cliente, clienteId:novo.cliente.id, texto:novo.cliente.nome || '' });
+    els.input.value = novo.cliente.nome || '';
+    els.input.readOnly = true;
+    els.tag.style.display = 'none';
+    els.clear.style.display = 'block';
+  } else if (novo.tipo === 'avulso') {
+    Object.assign(state, { tipo:'avulso', cliente:null, clienteId:null, texto:novo.texto || '' });
+    els.input.value = novo.texto || '';
+    els.input.readOnly = true;
+    els.tag.style.display = 'block';
+    els.clear.style.display = 'block';
+  } else {
+    Object.assign(state, { tipo:'vazio', cliente:null, clienteId:null, texto:'' });
+    els.input.value = '';
+    els.input.readOnly = false;
+    els.tag.style.display = 'none';
+    els.clear.style.display = 'none';
+    els.input.focus();
+  }
+  els.dropdown.style.display = 'none';
+  els.dropdown.innerHTML = '';
+  if (fireCb && typeof opts.onSelect === 'function') {
+    opts.onSelect(
+      state.tipo === 'cliente' ? { tipo:'cliente', cliente:state.cliente }
+      : state.tipo === 'avulso' ? { tipo:'avulso', texto:state.texto }
+      : { tipo:'vazio' }
+    );
+  }
+}
+
+function clienteSearchGet(containerId){
+  const cont = document.getElementById(containerId);
+  if (!cont || !cont._cli) return { tipo:'vazio', clienteId:null, texto:'', cliente:null };
+  const s = cont._cli.state;
+  return { tipo:s.tipo, clienteId:s.clienteId, texto:s.texto, cliente:s.cliente };
+}
+
+function clienteSearchSet(containerId, val, fireCb){
+  const cont = document.getElementById(containerId);
+  if (!cont || !cont._cli) return;
+  if (!val) { _cliAplicar(cont, { tipo:'vazio' }, !!fireCb); return; }
+  if (val.clienteId) {
+    const c = (clientesAll || []).find(x => String(x.id) === String(val.clienteId));
+    _cliAplicar(cont, c ? { tipo:'cliente', cliente:c } : { tipo:'vazio' }, !!fireCb);
+    return;
+  }
+  if (val.avulso) { _cliAplicar(cont, { tipo:'avulso', texto:val.avulso }, !!fireCb); return; }
+  _cliAplicar(cont, { tipo:'vazio' }, !!fireCb);
+}
+
+// Fecha dropdowns abertos ao clicar fora (listener global, registrado 1x).
+let _cliDocListener = false;
+function _cliInitDocListener(){
+  if (_cliDocListener) return;
+  _cliDocListener = true;
+  document.addEventListener('click', e => {
+    document.querySelectorAll('.cli-search').forEach(cont => {
+      if (!cont.contains(e.target)) {
+        const dd = cont.querySelector('.cli-search-dropdown');
+        if (dd) dd.style.display = 'none';
+      }
+    });
+  });
+}
+
+// ── Modal rápido de cadastro de cliente ──
+let _cliQuickAlvo = null; // containerId do componente que abriu o modal
+
+function openCliQuickModal(nomePrefill, alvoContainerId){
+  _cliQuickAlvo = alvoContainerId || null;
+  document.getElementById('cliq-nome').value     = nomePrefill || '';
+  document.getElementById('cliq-tel').value      = '';
+  document.getElementById('cliq-cpf').value      = '';
+  document.getElementById('cliq-email').value    = '';
+  document.getElementById('cliq-endereco').value = '';
+  document.getElementById('cli-quick-modal').classList.add('open');
+  document.getElementById('cliq-nome').focus();
+}
+
+function closeCliQuickModal(){
+  document.getElementById('cli-quick-modal').classList.remove('open');
+  _cliQuickAlvo = null;
+}
+
+async function salvarCliQuick(){
+  const nome = document.getElementById('cliq-nome').value.trim();
+  if (!nome) { smAlert('Preencha o nome do cliente'); return; }
+  const novo = { nome, origem: 'manual' };
+  const tel      = document.getElementById('cliq-tel').value.trim();
+  const cpf      = document.getElementById('cliq-cpf').value.trim();
+  const email    = document.getElementById('cliq-email').value.trim();
+  const endereco = document.getElementById('cliq-endereco').value.trim();
+  if (tel)      novo.telefone = tel;
+  if (cpf)      novo.cpf_cnpj = cpf;
+  if (email)    novo.email = email;
+  if (endereco) novo.endereco = endereco;
+
+  const { data, error } = await sb.from('clientes').insert(novo).select().single();
+  if (error) { smAlert('Erro ao cadastrar cliente: ' + error.message); return; }
+  const cli = toCamel(data);
+  clientesAll.push(cli);
+  if (Array.isArray(oficinaClientes)) oficinaClientes.push(cli);
+  const alvo = _cliQuickAlvo;
+  closeCliQuickModal();
+  if (alvo) clienteSearchSet(alvo, { clienteId: cli.id }, true);
 }
 
 // ══════════════════════════════════════════
