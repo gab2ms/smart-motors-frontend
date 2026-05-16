@@ -7397,9 +7397,12 @@ function renderFinKpis() {
   const fim = document.getElementById('fin-data-fim')?.value;
   const filtrado   = filtrarPorData(lancamentos, ini, fim);
   // Transferências entre contas são movimentação interna — não contam
-  // como receita/despesa real. Excluídas dos KPIs Entradas/Saídas/Fluxo.
-  // Continuam visíveis na lista, no gráfico de categorias e na evolução.
-  const filtradoSemTransf = filtrado.filter(l => !l.transferenciaId);
+  // como receita/despesa real. Excluídas dos KPIs, do gráfico de categorias,
+  // dos insights e da evolução. Continuam visíveis só na lista de lançamentos.
+  // Dupla checagem (transferenciaId + categoria) = defesa em profundidade,
+  // alinhada com calcularDRE e os KPIs do mês do dashboard.
+  const filtradoSemTransf = filtrado.filter(l =>
+    !l.transferenciaId && l.categoria !== 'Transferência');
   const entradas   = filtradoSemTransf.filter(l=>l.tipo==='entrada').reduce((s,l)=>s+l.valor,0);
   const saidas     = filtradoSemTransf.filter(l=>l.tipo==='saida').reduce((s,l)=>s+l.valor,0);
   const fluxo      = entradas - saidas;
@@ -7432,9 +7435,9 @@ function renderFinKpis() {
     </div>
   `;
 
-  renderFinCharts(filtrado);
-  renderFinInsights(filtrado, entradas, saidas, fluxo);
-  renderFinEvolucao(filtrado);
+  renderFinCharts(filtradoSemTransf);
+  renderFinInsights(filtradoSemTransf, entradas, saidas, fluxo);
+  renderFinEvolucao(filtradoSemTransf);
 }
 
 function renderFinCharts(filtrado) {
