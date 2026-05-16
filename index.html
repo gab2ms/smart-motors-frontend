@@ -2275,7 +2275,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         <div class="form-grid">
           <div class="form-group full">
             <label>Cliente <span style="color:var(--text3);font-weight:400;">(opcional)</span></label>
-            <select class="form-input" id="cr-cliente"></select>
+            <div id="cr-cliente-search"></div>
           </div>
           <div class="form-group full">
             <label>Descrição</label>
@@ -9615,13 +9615,6 @@ function _crToggleObs(id) {
   el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
 }
 
-function _crPopularClientes(selId) {
-  const sel = document.getElementById('cr-cliente');
-  sel.innerHTML = '<option value="">— sem cliente —</option>' +
-    clientesAll.map(c => `<option value="${escHtml(c.id)}">${escHtml(c.nome)}</option>`).join('');
-  sel.value = selId || '';
-}
-
 function openCRModal() {
   document.getElementById('cr-edit-id').value = '';
   document.getElementById('cr-modal-title').innerHTML = 'Nova <span>conta</span>';
@@ -9630,7 +9623,7 @@ function openCRModal() {
   document.getElementById('cr-vencimento').value = '';
   document.getElementById('cr-categoria').value = '';
   document.getElementById('cr-obs').value = '';
-  _crPopularClientes('');
+  initClienteSearch('cr-cliente-search', {});
   document.getElementById('cr-modal').classList.add('open');
 }
 
@@ -9640,7 +9633,10 @@ function salvarContaReceber() {
   const descricao  = document.getElementById('cr-descricao').value.trim();
   const valor      = parseFloat(document.getElementById('cr-valor').value) || 0;
   const vencimento = document.getElementById('cr-vencimento').value;
-  const clienteId  = document.getElementById('cr-cliente').value || null;
+  // Componente de busca: cliente selecionado → id; avulso/vazio → null.
+  // O texto avulso não é persistido — descrição é o campo próprio da conta.
+  const _cliSel    = clienteSearchGet('cr-cliente-search');
+  const clienteId  = _cliSel.tipo === 'cliente' ? _cliSel.clienteId : null;
   const categoria  = document.getElementById('cr-categoria').value.trim();
   const obs        = document.getElementById('cr-obs').value.trim();
   const editId     = document.getElementById('cr-edit-id').value;
@@ -9675,7 +9671,7 @@ function editarContaReceber(id) {
   document.getElementById('cr-vencimento').value   = c.vencimento || '';
   document.getElementById('cr-categoria').value    = c.categoria || '';
   document.getElementById('cr-obs').value          = c.obs || '';
-  _crPopularClientes(c.clienteId);
+  initClienteSearch('cr-cliente-search', { initial: c.clienteId ? { clienteId: c.clienteId } : null });
   document.getElementById('cr-modal').classList.add('open');
 }
 
