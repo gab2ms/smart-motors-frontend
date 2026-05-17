@@ -37,6 +37,16 @@ Consumidores:
 
 `ativo` faz round-trip pelos mappers genéricos (`produtos_precos` usa `toSnake`/`toCamel`). Atenção: `saveProduct` reconstrói o objeto do zero a cada edição — por isso o checkbox "Ativo" no modal é obrigatório (sem ele, editar um produto apagaria a flag).
 
+## Matcher Tiny ↔ cadastro — `_matchProdutoPorNome`
+
+Liga o nome de um item vendido no Tiny ao produto em `produtos_precos`. O Tiny escreve nomes verbosos ("MOTONETA ELÉTRICA X11 1000W - VERMELHA") que divergem do `modelo` do cadastro ("X11"). Cascata de tentativas: (1) exato, (2) exato case-insensitive, (3) `startsWith` no nome cru, (4) `startsWith` no nome **normalizado**, (5) X-Buddy, (6) alias map (`_PRODUTO_ALIASES` — Skylo→Eskilo, Pit→Pit+suporte).
+
+`_normalizarNomeTiny` (etapa 4): strip do prefixo Tiny (`_PRODUTO_PREFIXOS_TINY` — motoneta/bicicleta/triciclo/…), hífen → espaço, e remoção dos tokens-ruído (`_PRODUTO_PALAVRAS_RUIDO` = elétrica/eletrica/elétrico/eletrico/fan). Sem isso, "MOTONETA ELÉTRICA X11" deixava "elétrica x11" e o `startsWith('x11')` falhava — era a causa de X11/Vix/Lee/Harley não casarem.
+
+X-Buddy (etapa 5): o Tiny manda "X-BUDDY" sem o ah, mas o cadastro tem 2 entradas (12ah/20ah). Decisão **opção A**: casa com o primeiro cadastro "X Buddy" (determinístico pela ordem da tabela = 12ah). Os 2 são quase idênticos (custo 6.100 vs 6.300, MC 20,4% vs 22,6%) e o matcher só alimenta display (widget "Scooters mais vendidas", Excel "Vendas por Produto") — não toca o `avgMCpct` do DRE. Se um dia os 2 divergirem muito, migrar pra produto sintético com média (backlog).
+
+Acessórios (capacete, retrovisor, suporte) e serviços (frete, manutenção) não têm cadastro em `produtos_precos` — ficam sem match por design.
+
 ## Correções de dados
 
 - **2026-05-17 — `produtos_precos.jonosake` zerado em GT1, G7, Valley e Best.** O campo `jonosake` (componente somado no custo total via `ct()`) tinha R$ 1.157,30 nesses 4 produtos. Não era custo real: era um **acordo temporário de evento** — parte do lucro repassada a um parceiro durante um evento específico. O evento foi encerrado, então o valor não corresponde mais a custo nenhum. `UPDATE produtos_precos SET jonosake = 0` nos 4. Impacto: `avgMCpct` global (média de MC% dos produtos, usada no CPV estimado do `calcularDRE`) subiu de **~22,2% → 23,81%**, melhorando a fidelidade do DRE. Nenhum outro produto tinha `jonosake ≠ 0`.

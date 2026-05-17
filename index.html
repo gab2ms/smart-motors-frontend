@@ -3716,7 +3716,13 @@ function renderDashRanking() {
 // nome do Tiny começa com um desses, tentamos um match adicional pelo
 // restante: "MOTONETA PIXEL VERMELHA" → "PIXEL VERMELHA" → startsWith
 // match com cadastro "Pixel".
-const _PRODUTO_PREFIXOS_TINY = ['motoneta ', 'triciclo ', 'moto ', 'bike ', 'patinete ', 'scooter '];
+const _PRODUTO_PREFIXOS_TINY = ['motoneta ', 'bicicleta ', 'triciclo ', 'moto ', 'bike ', 'patinete ', 'scooter '];
+
+// Palavras que o Tiny intercala entre o prefixo e o modelo (ou no meio do
+// nome) e que não existem no cadastro. Removidas como tokens inteiros pelo
+// _normalizarNomeTiny pra não quebrar o startsWith — ex: "MOTONETA ELÉTRICA
+// X11 1000W" deixava "elétrica x11 1000w" e o startsWith('x11') falhava.
+const _PRODUTO_PALAVRAS_RUIDO = ['elétrica', 'eletrica', 'elétrico', 'eletrico', 'fan'];
 
 // Aliases declarativos pra cobrir divergências entre Tiny ↔ cadastro
 // em products_precos quando nem startsWith nem strip-prefixo resolvem.
@@ -3734,6 +3740,14 @@ function _stripPrefixoTiny(low) {
     if (low.startsWith(pref)) return low.slice(pref.length);
   }
   return low;
+}
+
+// Normaliza um nome do Tiny pra comparação: strip do prefixo Tiny, hífen
+// vira espaço, e remove os tokens-ruído inteiros (elétrica, fan, etc).
+function _normalizarNomeTiny(low) {
+  let s = _stripPrefixoTiny(low).replace(/-/g, ' ');
+  s = s.split(/\s+/).filter(t => t && !_PRODUTO_PALAVRAS_RUIDO.includes(t)).join(' ');
+  return s.trim();
 }
 
 function _tokensProduto(s) {
@@ -3755,13 +3769,23 @@ function _matchProdutoPorNome(itemNome) {
     .filter(p => p.modelo && low.startsWith(p.modelo.toLowerCase()))
     .sort((a, b) => (b.modelo.length - a.modelo.length));
   if (candidatos.length) return candidatos[0];
-  // Fallback: strip prefixo Tiny conhecido e refaz startsWith.
-  const stripped = _stripPrefixoTiny(low);
-  if (stripped !== low) {
+  // Fallback: normaliza (strip prefixo Tiny + hífen→espaço + palavras-ruído)
+  // e refaz startsWith.
+  const norm = _normalizarNomeTiny(low);
+  if (norm !== low) {
     candidatos = products
-      .filter(p => p.modelo && stripped.startsWith(p.modelo.toLowerCase()))
+      .filter(p => p.modelo && norm.startsWith(p.modelo.toLowerCase().replace(/-/g, ' ')))
       .sort((a, b) => (b.modelo.length - a.modelo.length));
     if (candidatos.length) return candidatos[0];
+  }
+  // X-Buddy: o Tiny não informa o ah (12/20). Opção A — casa com o primeiro
+  // cadastro "X Buddy" (determinístico por ordem da tabela). Os 2 cadastros
+  // são quase idênticos (custo 6.100 vs 6.300); ver triggers/README.md.
+  // Usa `norm` (hífen já virou espaço) — `_tokensProduto` preserva o hífen,
+  // então o token cru seria "x-buddy", não "buddy".
+  if (norm.split(' ').includes('buddy')) {
+    const xb = products.find(p => /buddy/i.test(p.modelo || ''));
+    if (xb) return xb;
   }
   // Fallback final: alias map. Cobre Tiny names que divergem do cadastro.
   const tokensNome = new Set(_tokensProduto(itemNome));
