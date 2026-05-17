@@ -21,6 +21,7 @@ Link: `contas_pagar.emprestimo_parcela_id UUID REFERENCES emprestimo_parcelas(id
   - Indexes: `idx_contas_receber_vencimento`, `idx_contas_receber_status`, `idx_contas_receber_recorrencia_id` (parcial), `idx_contas_receber_cliente_id` (parcial).
   - FKs, todas `ON DELETE SET NULL` (preserva o registro e limpa o ponteiro órfão — nunca CASCADE): `cliente_id → clientes(id)`, `conta_id → contas_bancarias(id)`, `lancamento_id → lancamentos(id)`. `conta_id` e `lancamento_id` ficam sem índice de cobertura por ora (tabela vazia; advisor sinaliza como INFO).
 - `lancamentos.conta_receber_id TEXT NULL REFERENCES contas_receber(id) ON DELETE SET NULL` — vincula o lançamento de caixa gerado pelo recebimento de uma conta a receber. Espelha `conta_pagar_id`; `ON DELETE SET NULL` preserva o histórico financeiro mesmo se a `contas_receber` for deletada.
+- `sac_casos.cliente_id UUID NULL REFERENCES clientes(id) ON DELETE SET NULL` + `idx_sac_casos_cliente_id` (parcial, WHERE cliente_id IS NOT NULL) — vincula o caso SAC ao cliente cadastrado. Antes o SAC só guardava snapshot (`cliente_nome`/`cliente_telefone`/`cliente_cpf`, sem FK); agora espelha `oficina_ordens` e `contas_receber`. `ON DELETE SET NULL` preserva o caso e zera o ponteiro órfão. Casos antigos ficam com `cliente_id = NULL` (sem backfill — snapshot de nome continua válido). Não há `TABLE_MAP` entry pra `sac_casos`: usa os mappers genéricos `toSnake`/`toCamel`, que já fazem o round-trip `clienteId` ↔ `cliente_id`.
 
 ---
 
