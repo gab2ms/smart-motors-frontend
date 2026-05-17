@@ -9989,9 +9989,11 @@ async function salvarCliQuick(){
 // ── Modal de proteção: salvar OS/caso sem cliente cadastrado ──
 // Genérico — Oficina e SAC reusam. `prosseguir` é chamado tanto no
 // "Cadastrar" (após o cadastro concluir) quanto no "Salvar sem cadastrar".
-function _abrirAvulsoWarn(contexto, texto, prosseguir, searchId){
+// `fraseSalvar` é a oração completa (caller cuida da concordância de
+// gênero): "Esta OS será salva" / "Este caso será salvo".
+function _abrirAvulsoWarn(fraseSalvar, texto, prosseguir, searchId){
   document.getElementById('cli-avulso-warn-body').innerHTML =
-    `Esta ${escHtml(contexto)} será salva <b>sem cliente cadastrado</b>.<br><br>` +
+    `${escHtml(fraseSalvar)} <b>sem cliente cadastrado</b>.<br><br>` +
     `Cliente: <b>"${escHtml(texto)}"</b><br><br>` +
     `<span style="color:var(--text3);">Cadastrar agora ajuda no histórico futuro (próximas visitas, garantia, etc).</span>`;
   document.getElementById('cli-avulso-btn-cadastrar').onclick = () => {
@@ -10761,6 +10763,7 @@ async function ofMoverParaSac(id) {
   );
   if (!ok) return;
   const sacPayload = {
+    cliente_id: o.clienteId || null,
     cliente_nome: o.clienteNome,
     cliente_telefone: o.clienteTelefone || null,
     cliente_cpf: o.clienteCpf || null,
@@ -11167,7 +11170,7 @@ async function ofSalvar(editId) {
   // "Cadastrar" e "Salvar sem cadastrar" caem ambos em _ofSalvarReal, que
   // relê o estado do componente (cliente após cadastro / avulso senão).
   if (cliSel.tipo === 'avulso') {
-    _abrirAvulsoWarn('OS', cliNome, () => _ofSalvarReal(editId), 'of-cli-search');
+    _abrirAvulsoWarn('Esta OS será salva', cliNome, () => _ofSalvarReal(editId), 'of-cli-search');
     return;
   }
   _ofSalvarReal(editId);
@@ -11271,29 +11274,14 @@ async function initSac() {
   checarWhatsAppSacVencido();
 }
 
-function sacClienteSugestao() {
-  const inp = document.getElementById('sac-cli');
-  const box = document.getElementById('sac-cli-sugestoes');
-  if (!inp || !box) return;
-  const q = inp.value.trim().toLowerCase();
-  if (!q) { box.style.display = 'none'; return; }
-  const matches = clientesAll.filter(c => (c.nome||'').toLowerCase().includes(q)).slice(0, 6);
-  if (!matches.length) { box.style.display = 'none'; return; }
-  box.innerHTML = matches.map(c =>
-    `<div onclick="sacSelecionarCliente('${c.id}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px;" onmouseenter="this.style.background='var(--surface3)'" onmouseleave="this.style.background='transparent'"><div style="font-weight:600;">${escHtml(c.nome)}</div>${c.telefone?`<div style="font-size:10px;color:var(--text3);">${escHtml(c.telefone)}</div>`:''}</div>`
-  ).join('');
-  box.style.display = 'block';
-}
-
-function sacSelecionarCliente(id) {
-  const c = clientesAll.find(x => x.id === id);
-  if (!c) return;
-  document.getElementById('sac-cli').value = c.nome || '';
-  const tel = document.getElementById('sac-tel');
-  if (tel && !tel.value) tel.value = c.telefone || '';
-  const cpf = document.getElementById('sac-cpf');
-  if (cpf && !cpf.value) cpf.value = c.cpfCnpj || c.cpf || '';
-  document.getElementById('sac-cli-sugestoes').style.display = 'none';
+// Componente de busca preenche tel/CPF ao escolher um cliente cadastrado.
+// Avulso/vazio: mantém o que o usuário tiver digitado nesses campos.
+function sacClienteOnSelect(result){
+  if (result.tipo === 'cliente') {
+    const c = result.cliente;
+    document.getElementById('sac-tel').value = c.telefone || '';
+    document.getElementById('sac-cpf').value = c.cpfCnpj || c.cpf_cnpj || c.cpf || '';
+  }
 }
 
 function atualizarDotSac() {
@@ -11425,9 +11413,8 @@ function abrirSacModal(id) {
     + `<div class="modal-bloco">`
     +   `<div class="modal-bloco-titulo">🧑 Cliente</div>`
     +   `<div class="form-grid">`
-    +     `<div class="form-group full" style="position:relative;"><label>Cliente</label>`
-    +       `<input class="form-input" id="sac-cli" value="${escAttr(c&&c.clienteNome)}" autocomplete="off" oninput="sacClienteSugestao()">`
-    +       `<div id="sac-cli-sugestoes" style="position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;display:none;"></div>`
+    +     `<div class="form-group full"><label>Cliente</label>`
+    +       `<div id="sac-cli-search"></div>`
     +     `</div>`
     +     `<div class="form-group"><label>Telefone</label><input class="form-input" id="sac-tel" value="${escAttr(c&&c.clienteTelefone)}"></div>`
     +     `<div class="form-group"><label>CPF</label><input class="form-input" id="sac-cpf" value="${escAttr(cpfInicial)}"></div>`
@@ -11483,6 +11470,11 @@ function abrirSacModal(id) {
     + `</div>`;
   document.body.appendChild(shell);
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+  initClienteSearch('sac-cli-search', {
+    onSelect: sacClienteOnSelect,
+    initial: c ? (c.clienteId ? { clienteId: c.clienteId }
+                : (c.clienteNome ? { avulso: c.clienteNome } : null)) : null,
+  });
 
   // Carrega timeline e listener de update (auto-cleanup quando modal sai do DOM)
   if (isEdit) {
@@ -11533,7 +11525,33 @@ function sacTipoOutroToggle() {
 }
 
 async function sacSalvar(editId) {
-  const clienteNome     = document.getElementById('sac-cli').value.trim();
+  const cliSel  = clienteSearchGet('sac-cli-search');
+  const cliNome = cliSel.tipo === 'cliente' ? (cliSel.cliente.nome || '')
+                : cliSel.tipo === 'avulso'  ? cliSel.texto
+                : '';
+  const tipoProblema     = document.getElementById('sac-tipo').value;
+  const tipoOutro        = document.getElementById('sac-tipo-outro').value.trim();
+  const problemaRelatado = document.getElementById('sac-desc').value.trim();
+
+  if (!cliNome) return smAlert('Preencha o nome do cliente.');
+  if (!tipoProblema) return smAlert('Selecione o tipo do problema.');
+  if (tipoProblema === 'outro' && !tipoOutro) return smAlert('Especifique o tipo do problema (campo "outro").');
+  if (!problemaRelatado) return smAlert('Preencha o problema relatado.');
+
+  // Avulso (texto sem cliente_id) → modal de proteção antes de salvar.
+  // "Cadastrar" e "Salvar sem cadastrar" caem ambos em _sacSalvarReal, que
+  // relê o estado do componente (cliente após cadastro / avulso senão).
+  if (cliSel.tipo === 'avulso') {
+    _abrirAvulsoWarn('Este caso será salvo', cliNome, () => _sacSalvarReal(editId), 'sac-cli-search');
+    return;
+  }
+  _sacSalvarReal(editId);
+}
+
+async function _sacSalvarReal(editId) {
+  const cliSel          = clienteSearchGet('sac-cli-search');
+  const clienteId       = cliSel.tipo === 'cliente' ? cliSel.clienteId : null;
+  const clienteNome     = cliSel.tipo === 'cliente' ? (cliSel.cliente.nome || '') : (cliSel.texto || '');
   const clienteTelefone = document.getElementById('sac-tel').value.trim();
   const clienteCpf      = document.getElementById('sac-cpf').value.trim();
   const modelo          = document.getElementById('sac-modelo').value.trim();
@@ -11550,12 +11568,8 @@ async function sacSalvar(editId) {
   const problemaRelatado= document.getElementById('sac-desc').value.trim();
   const itensDeixados   = document.getElementById('sac-itens').value.trim();
 
-  if (!clienteNome) return smAlert('Preencha o nome do cliente.');
-  if (!tipoProblema) return smAlert('Selecione o tipo do problema.');
-  if (tipoProblema === 'outro' && !tipoOutro) return smAlert('Especifique o tipo do problema (campo "outro").');
-  if (!problemaRelatado) return smAlert('Preencha o problema relatado.');
-
   const payload = {
+    cliente_id: clienteId,
     cliente_nome: clienteNome,
     cliente_telefone: clienteTelefone || null,
     cliente_cpf: clienteCpf || null,
