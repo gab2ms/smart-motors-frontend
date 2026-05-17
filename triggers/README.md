@@ -80,6 +80,24 @@ Acessórios (capacete, retrovisor, suporte) e serviços (frete, manutenção) n�
 - **2026-05-17 — `produtos_precos.jonosake` zerado em GT1, G7, Valley e Best.** O campo `jonosake` (componente somado no custo total via `ct()`) tinha R$ 1.157,30 nesses 4 produtos. Não era custo real: era um **acordo temporário de evento** — parte do lucro repassada a um parceiro durante um evento específico. O evento foi encerrado, então o valor não corresponde mais a custo nenhum. `UPDATE produtos_precos SET jonosake = 0` nos 4. Impacto: `avgMCpct` global (média de MC% dos produtos, usada no CPV estimado do `calcularDRE`) subiu de **~22,2% → 23,81%**, melhorando a fidelidade do DRE. Nenhum outro produto tinha `jonosake ≠ 0`.
 - **2026-05-17 — split + recategorização de lançamentos de Montagem/NF.** As categorias `Montagem / Serviço Técnico` e `Nota Fiscal e Imposto` misturavam custo de produto (já contado no CPV via `ct()`) com despesa operacional pura. Para o DRE reestruturado poder excluir por nome de categoria (ver "DRE — regime de competência" abaixo), separamos: (1) o lançamento misto de R$ 1.250 ("10 montagens + 150 serviços externos") foi **dividido** em R$ 1.100 (`10 montagens`, fica em `Montagem / Serviço Técnico`) + R$ 150 (`150 serviços externos`, nova categoria `Oficina - Peças e Serviços`); (2) 2 lançamentos de reparo de oficina (R$ 35 frete peça + R$ 330 módulo p/ conserto de cliente) movidos para `Oficina - Peças e Serviços`; (3) o DAS de abril (R$ 242,88) movido para a nova categoria `Imposto e Tributos`. Resultado: `Montagem / Serviço Técnico` (R$ 1.790) e `Nota Fiscal e Imposto` (R$ 600) ficam **puros** (custo de produto, no CPV); `Oficina - Peças e Serviços` (R$ 515) e `Imposto e Tributos` (R$ 242,88) ficam **puros** (operacional). Sem isso, o DRE duplicaria ~R$ 2.390 (montagem/NF já no CPV) ou perderia ~R$ 758 de despesa operacional real. Categorias são texto livre em `lancamentos.categoria` — não há tabela de categorias; "Oficina - Peças e Serviços" e "Imposto e Tributos" passam a existir só pelo uso.
 
+## Schema de Custos de Produtos
+
+Feature "Custos de Produtos" (substitui a aba Simulador). Objetivo: separar o custo bruto do produto dos custos operacionais embutidos, e mover custos não-por-unidade para configuração.
+
+**Tabela `config_custos`** — pares chave/valor para custos que não escalam por unidade vendida:
+
+| chave | valor | descrição |
+|---|---|---|
+| `nf_pedido` | 30 | Custo de NF por pedido (não por unidade) |
+
+Estrutura: `chave TEXT PK`, `valor NUMERIC NOT NULL`, `descricao TEXT`, `atualizado_em TIMESTAMPTZ DEFAULT now()`. RLS `acesso_total FOR ALL TO public` (mesma convenção das outras tabelas do app).
+
+**Colunas novas em `produtos_precos`:**
+- `custo_puro NUMERIC` — custo bruto do produto absorvendo os componentes que `ctReal` não toma separadamente. Backfill: `custo_puro = custo + COALESCE(nf_compra,0) + COALESCE(jonosake,0) + COALESCE(financeiro,0)`.
+- `categoria TEXT CHECK (categoria IN ('motoneta','acessorio'))` — default backfill `'motoneta'`.
+
+**Relação `ctReal` × `ct()` legado:** `ctReal = custo_puro + montagem + comissao + nf_pedido`. Para produtos com `nf = 30` (a maioria), `ctReal` reproduz `ct()` exatamente. O único divergente no cadastro atual é o **BAJAX** (`nf = 170`): `ctReal` fica R$ 140 abaixo de `ct()` — diferença intencional, pois a NF deixou de ser por-unidade (170) e virou por-pedido (`nf_pedido = 30`). O componente `nf` por-unidade de `produtos_precos` é deliberadamente abandonado por `ctReal` em favor de `config_custos.nf_pedido`.
+
 ---
 
 ## Armadilha #1 — `pg_trigger_depth()` na cláusula WHEN
