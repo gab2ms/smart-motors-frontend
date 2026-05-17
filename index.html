@@ -1118,6 +1118,10 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-icon">🧮</span> Simulador de Preços
       <span class="nav-dot"></span>
     </button>
+    <button class="nav-item" onclick="showPage('custos-produtos')">
+      <span class="nav-icon">🏷️</span> Custos de Produtos
+      <span class="nav-dot"></span>
+    </button>
 
     <div class="nav-label">Operação</div>
     <button class="nav-item" onclick="showPage('oficina')">
@@ -1297,6 +1301,51 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
             </tr>
           </thead>
           <tbody id="precos-table"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ CUSTOS DE PRODUTOS ══════════════ -->
+  <div class="page content" id="page-custos-produtos">
+    <div class="card" style="margin-bottom:16px;padding:16px 20px;">
+      <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:10px;">📌 Constantes Globais</div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span style="font-size:13px;color:var(--text2);">NF por pedido:</span>
+        <span class="td-mono" style="font-size:15px;font-weight:800;color:var(--gold);" id="cp-nf-valor">R$ —</span>
+      </div>
+    </div>
+    <div class="search-bar">
+      <input type="text" class="search-input" placeholder="🔍 Buscar modelo..." id="cp-search" oninput="renderCustosProdutos()">
+      <select class="search-input" id="cp-filter-fornecedor" onchange="renderCustosProdutos()" style="max-width:180px;"></select>
+      <select class="search-input" id="cp-filter-categoria" onchange="renderCustosProdutos()" style="max-width:170px;">
+        <option value="">Todas as categorias</option>
+        <option value="motoneta">Motoneta</option>
+        <option value="acessorio">Acessório</option>
+      </select>
+      <select class="search-input" id="cp-filter-status" onchange="renderCustosProdutos()" style="max-width:140px;">
+        <option value="ativos">Ativos</option>
+        <option value="inativos">Inativos</option>
+        <option value="todos">Todos</option>
+      </select>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Custos por Produto</div>
+          <div class="card-sub" id="cp-count"></div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Modelo</th><th>Categoria</th><th>Fornecedor</th>
+              <th>Custo Puro</th><th>Montagem</th><th>Comissão</th>
+              <th>CtReal</th><th>Venda</th><th>MC %</th>
+            </tr>
+          </thead>
+          <tbody id="cp-table"></tbody>
         </table>
       </div>
     </div>
@@ -2817,6 +2866,7 @@ const pageMeta={
   'contas-pagar':['Contas a Pagar','Gerencie vencimentos e nunca esqueça um pagamento'],
   'contas-receber':['Contas a Receber','Gerencie recebimentos do mês'],
   custos:['Custos Fixos','Despesas mensais'],
+  'custos-produtos':['Custos de Produtos','Gerencie os componentes de custo de cada produto'],
 };
 // Breadcrumb hierárquico — pai não-clicável (etiqueta visual), atual em destaque.
 // Dashboard NÃO aparece (raiz). Pais espelham os agrupadores da sidebar.
@@ -2835,6 +2885,7 @@ const BREADCRUMB_MAP = {
   'contas-pagar':  ['Financeiro', 'Contas a Pagar'],
   'contas-receber':['Financeiro', 'Contas a Receber'],
   custos:          ['Financeiro', 'Custos Fixos'],
+  'custos-produtos':['Produtos', 'Custos de Produtos'],
 };
 // Sub-tabs do módulo Financeiro: troca de sub-tab deve refletir em
 // título, subtítulo e breadcrumb (não rerenderiza pelo showPage).
@@ -2916,6 +2967,7 @@ function showPage(id, opts){
   if(id==='contas-pagar')initContasPagar();
   if(id==='contas-receber')initContasReceber();
   if(id==='custos')renderCustos();
+  if(id==='custos-produtos')renderCustosProdutos();
   if(id==='oficina')initOficina();
   if(id==='sac')initSac();
   if(id==='clientes')initClientes();
@@ -5063,6 +5115,61 @@ function renderPrecos(){
 }
 
 // ══════════════════════════════════════════
+//  CUSTOS DE PRODUTOS
+// ══════════════════════════════════════════
+// Listagem dos componentes de custo da estrutura nova (custoPuro,
+// montagem, comissao, categoria) + ctReal calculado. Edição: Sub-commit 4b.
+function renderCustosProdutos(){
+  const nfEl=document.getElementById('cp-nf-valor');
+  if(nfEl)nfEl.textContent=fmt(CONFIG_CUSTOS.nf_pedido||0);
+
+  const selF=document.getElementById('cp-filter-fornecedor');
+  if(selF&&selF.options.length<=0){
+    selF.innerHTML='<option value="">Todos fornecedores</option>';
+    [...new Set(products.map(p=>p.fornecedor).filter(Boolean))].sort().forEach(s=>{
+      const o=document.createElement('option');o.value=s;o.textContent=s;selF.appendChild(o);
+    });
+  }
+  const q=(document.getElementById('cp-search')?.value||'').toLowerCase();
+  const forn=document.getElementById('cp-filter-fornecedor')?.value||'';
+  const cat=document.getElementById('cp-filter-categoria')?.value||'';
+  const status=document.getElementById('cp-filter-status')?.value||'ativos';
+
+  const filtered=products.filter(p=>{
+    if(status==='ativos'&&p.ativo===false)return false;
+    if(status==='inativos'&&p.ativo!==false)return false;
+    if(q&&!(p.modelo||'').toLowerCase().includes(q))return false;
+    if(forn&&p.fornecedor!==forn)return false;
+    if(cat&&(p.categoria||'motoneta')!==cat)return false;
+    return true;
+  });
+
+  document.getElementById('cp-count').textContent=`${filtered.length} produto${filtered.length!==1?'s':''}`;
+  document.getElementById('cp-table').innerHTML=filtered.length?filtered.map(p=>{
+    const ctr=ctReal(p);
+    const venda=p.venda||0;
+    const mcpReal=venda>0?((venda-ctr)/venda*100):0;
+    const mcCor=mcpReal>=30?'var(--gold)':mcpReal>=15?'var(--orange)':'var(--red)';
+    const inativo=p.ativo===false;
+    const catLabel=(p.categoria||'motoneta')==='acessorio'?'Acessório':'Motoneta';
+    return `<tr${inativo?' style="opacity:0.5;"':''}>
+      <td class="td-model">${inativo
+        ?`<s>${escHtml(p.modelo||'')}</s> <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;">inativo</span>`
+        :escHtml(p.modelo||'')}</td>
+      <td><span style="font-size:11px;color:var(--text2);">${catLabel}</span></td>
+      <td><span class="td-supplier">${escHtml(p.fornecedor||'—')}</span></td>
+      <td class="td-mono">${fmt(p.custoPuro||0)}</td>
+      <td class="td-mono">${fmt(p.montagem||0)}</td>
+      <td class="td-mono">${fmt(p.comissao||0)}</td>
+      <td class="td-mono" style="font-weight:700;">${fmt(ctr)}</td>
+      <td class="td-mono">${fmt(venda)}</td>
+      <td class="td-mono" style="color:${mcCor};font-weight:700;">${fmtP(mcpReal)}</td>
+    </tr>`;
+  }).join('')
+    :`<tr><td colspan="9" class="empty">Nenhum produto encontrado</td></tr>`;
+}
+
+// ══════════════════════════════════════════
 //  MODAL
 // ══════════════════════════════════════════
 function openEdit(i){
@@ -6078,11 +6185,12 @@ const TODOS_MODULOS = [
   { id: 'contas-pagar', nome: 'Contas a Pagar' },
   { id: 'contas-receber', nome: 'Contas a Receber' },
   { id: 'custos',       nome: 'Custos Fixos' },
+  { id: 'custos-produtos', nome: 'Custos de Produtos' },
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
   vendedor:    ['dashboard', 'pedidos', 'simulador', 'oficina', 'sac', 'clientes', 'contratos'],
-  operacional: ['dashboard', 'precos', 'estoque', 'simulador', 'vendas', 'pedidos', 'oficina', 'sac', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos'],
+  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'simulador', 'vendas', 'pedidos', 'oficina', 'sac', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos'],
   customizado: null, // usa user.modulosPermitidos
 };
 function modulosPermitidos(user) {
