@@ -1310,9 +1310,16 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
   <div class="page content" id="page-custos-produtos">
     <div class="card" style="margin-bottom:16px;padding:16px 20px;">
       <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:10px;">📌 Constantes Globais</div>
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;" id="cp-nf-display">
         <span style="font-size:13px;color:var(--text2);">NF por pedido:</span>
         <span class="td-mono" style="font-size:15px;font-weight:800;color:var(--gold);" id="cp-nf-valor">R$ —</span>
+        <button class="action-btn edit-btn" onclick="cpEditNf()">editar</button>
+      </div>
+      <div style="display:none;align-items:center;gap:8px;flex-wrap:wrap;" id="cp-nf-edit">
+        <span style="font-size:13px;color:var(--text2);">NF por pedido: R$</span>
+        <input type="number" class="form-input" id="cp-nf-input" style="max-width:110px;">
+        <button class="btn btn-gold" style="padding:6px 14px;" onclick="cpSaveNf()">Salvar</button>
+        <button class="btn" style="padding:6px 14px;" onclick="cpCancelNf()">Cancelar</button>
       </div>
     </div>
     <div class="search-bar">
@@ -1335,6 +1342,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
           <div class="card-title">Custos por Produto</div>
           <div class="card-sub" id="cp-count"></div>
         </div>
+        <button class="btn btn-gold" onclick="cpOpenNovo()">+ Novo produto</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -2510,6 +2518,43 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
   </div>
 </div>
 
+<!-- ══════════════ MODAL — CUSTOS DE PRODUTOS ══════════════ -->
+<div class="modal-overlay" id="cp-edit-modal">
+  <div class="modal">
+    <div class="modal-title" id="cp-modal-title">Editar <span>custo</span></div>
+    <input type="hidden" id="cp-edit-idx">
+    <div class="form-grid">
+      <div class="form-group full"><label>Modelo</label><input class="form-input" id="cp-edit-modelo" type="text"></div>
+      <div class="form-group full"><label>Fornecedor</label><input class="form-input" id="cp-edit-fornecedor" type="text"></div>
+      <div class="form-group"><label>Categoria</label>
+        <select class="form-input" id="cp-edit-categoria" onchange="cpToggleComissao();cpUpdateComputed();">
+          <option value="motoneta">Motoneta</option>
+          <option value="acessorio">Acessório</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Custo puro (R$)</label><input class="form-input" id="cp-edit-custo-puro" type="number" oninput="cpUpdateComputed()"></div>
+      <div class="form-group"><label>Custo montagem (R$)</label><input class="form-input" id="cp-edit-montagem" type="number" oninput="cpUpdateComputed()"></div>
+      <div class="form-group"><label>Comissão vendedor (R$)</label><input class="form-input" id="cp-edit-comissao" type="number" oninput="cpUpdateComputed()"></div>
+      <div class="form-group" id="cp-edit-venda-wrap"><label>Preço de venda (R$)</label><input class="form-input" id="cp-edit-venda" type="number" oninput="cpUpdateComputed()"></div>
+      <div class="form-group full" id="cp-edit-venda-nota" style="display:none;font-size:11px;color:var(--text3);">
+        Preço de venda é editável em <a onclick="cpCloseModal();showPage('precos');" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Preços &amp; Margens →</a>
+      </div>
+      <div class="form-group full" style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="cp-edit-ativo" checked style="width:auto;cursor:pointer;">
+        <label for="cp-edit-ativo" style="margin:0;cursor:pointer;">Produto ativo — aparece no catálogo vivo e entra na média de MC% do DRE</label>
+      </div>
+    </div>
+    <div class="computed-row">
+      <div><div class="computed-label">CtReal</div><div class="computed-value" id="cp-modal-ctreal">R$ —</div></div>
+      <div><div class="computed-label">MC %</div><div class="computed-value" id="cp-modal-mcp">—%</div></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="cpCloseModal()">Cancelar</button>
+      <button class="btn btn-gold" onclick="cpSave()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════════
 //  BOOTSTRAP — primeira coisa, sem dependências
@@ -2825,7 +2870,13 @@ let emprestimoSelecionadoId = null;
 const ct = p=>(p.custo||0)+(p.montagem||0)+(p.comissao||0)+(p.nfCompra||0)+(p.nf||0)+(p.jonosake||0)+(p.financeiro||0);
 // ctReal — custo total por unidade pela estrutura nova (Custos de Produtos):
 // custoPuro absorve nfCompra/jonosake/financeiro; nf vira config por pedido.
-const ctReal = p=>(p.custoPuro||0)+(p.montagem||0)+(p.comissao||0)+(CONFIG_CUSTOS.nf_pedido||0);
+// Acessório não tem comissão própria nem NF própria (a NF é a do pedido).
+const ctReal = p => {
+  const base = (p.custoPuro||0) + (p.montagem||0);
+  return (p.categoria||'motoneta') === 'acessorio'
+    ? base
+    : base + (p.comissao||0) + (CONFIG_CUSTOS.nf_pedido||0);
+};
 const mc = p=>(p.venda||0)-ct(p);
 const mcp= p=>p.venda?(mc(p)/p.venda)*100:0;
 const fmt= v=>'R$ '+Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -5135,7 +5186,7 @@ function renderCustosProdutos(){
   const cat=document.getElementById('cp-filter-categoria')?.value||'';
   const status=document.getElementById('cp-filter-status')?.value||'ativos';
 
-  const filtered=products.filter(p=>{
+  const filtered=products.map((p,i)=>({...p,_i:i})).filter(p=>{
     if(status==='ativos'&&p.ativo===false)return false;
     if(status==='inativos'&&p.ativo!==false)return false;
     if(q&&!(p.modelo||'').toLowerCase().includes(q))return false;
@@ -5152,7 +5203,7 @@ function renderCustosProdutos(){
     const mcCor=mcpReal>=30?'var(--gold)':mcpReal>=15?'var(--orange)':'var(--red)';
     const inativo=p.ativo===false;
     const catLabel=(p.categoria||'motoneta')==='acessorio'?'Acessório':'Motoneta';
-    return `<tr${inativo?' style="opacity:0.5;"':''}>
+    return `<tr onclick="cpOpenEdit(${p._i})" style="cursor:pointer;${inativo?'opacity:0.5;':''}">
       <td class="td-model">${inativo
         ?`<s>${escHtml(p.modelo||'')}</s> <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;">inativo</span>`
         :escHtml(p.modelo||'')}</td>
@@ -5167,6 +5218,113 @@ function renderCustosProdutos(){
     </tr>`;
   }).join('')
     :`<tr><td colspan="9" class="empty">Nenhum produto encontrado</td></tr>`;
+}
+
+// ── Modal de edição de custo ──
+function cpToggleComissao(){
+  const cat=document.getElementById('cp-edit-categoria').value;
+  const com=document.getElementById('cp-edit-comissao');
+  if(cat==='acessorio'){ com.value=0; com.disabled=true; com.style.opacity='0.5'; }
+  else { com.disabled=false; com.style.opacity=''; }
+}
+function cpGetModalP(){
+  const cat=document.getElementById('cp-edit-categoria').value;
+  return {
+    categoria:cat,
+    custoPuro:+document.getElementById('cp-edit-custo-puro').value||0,
+    montagem:+document.getElementById('cp-edit-montagem').value||0,
+    comissao:cat==='acessorio'?0:(+document.getElementById('cp-edit-comissao').value||0),
+    venda:+document.getElementById('cp-edit-venda').value||0,
+  };
+}
+function cpUpdateComputed(){
+  const p=cpGetModalP();
+  const ctr=ctReal(p);
+  const mcpReal=p.venda>0?((p.venda-ctr)/p.venda*100):0;
+  document.getElementById('cp-modal-ctreal').textContent=fmt(ctr);
+  const el=document.getElementById('cp-modal-mcp');
+  el.textContent=fmtP(mcpReal);
+  el.style.color=mcpReal>=30?'var(--gold)':mcpReal>=15?'var(--orange)':'var(--red)';
+}
+function cpOpenEdit(i){
+  const p=products[i];
+  if(!p)return;
+  document.getElementById('cp-modal-title').innerHTML=`Editar custo — <span>${escHtml(p.modelo||'')}</span>`;
+  document.getElementById('cp-edit-idx').value=i;
+  document.getElementById('cp-edit-modelo').value=p.modelo||'';
+  document.getElementById('cp-edit-fornecedor').value=p.fornecedor||'';
+  document.getElementById('cp-edit-categoria').value=p.categoria||'motoneta';
+  document.getElementById('cp-edit-custo-puro').value=p.custoPuro||0;
+  document.getElementById('cp-edit-montagem').value=p.montagem||0;
+  document.getElementById('cp-edit-comissao').value=p.comissao||0;
+  document.getElementById('cp-edit-venda').value=p.venda||0;
+  document.getElementById('cp-edit-ativo').checked=p.ativo!==false;
+  // modo edição: preço de venda não é editável aqui (só em #precos)
+  document.getElementById('cp-edit-venda-wrap').style.display='none';
+  document.getElementById('cp-edit-venda-nota').style.display='';
+  cpToggleComissao();
+  cpUpdateComputed();
+  document.getElementById('cp-edit-modal').classList.add('open');
+}
+function cpOpenNovo(){
+  document.getElementById('cp-modal-title').innerHTML='Novo <span>produto</span>';
+  document.getElementById('cp-edit-idx').value=-1;
+  document.getElementById('cp-edit-modelo').value='';
+  document.getElementById('cp-edit-fornecedor').value='';
+  document.getElementById('cp-edit-categoria').value='motoneta';
+  ['cp-edit-custo-puro','cp-edit-montagem','cp-edit-comissao','cp-edit-venda'].forEach(id=>document.getElementById(id).value=0);
+  document.getElementById('cp-edit-ativo').checked=true;
+  // modo novo: preço de venda inicial é editável
+  document.getElementById('cp-edit-venda-wrap').style.display='';
+  document.getElementById('cp-edit-venda-nota').style.display='none';
+  cpToggleComissao();
+  cpUpdateComputed();
+  document.getElementById('cp-edit-modal').classList.add('open');
+}
+function cpCloseModal(){document.getElementById('cp-edit-modal').classList.remove('open');}
+function cpSave(){
+  const i=+document.getElementById('cp-edit-idx').value;
+  const modelo=document.getElementById('cp-edit-modelo').value.trim();
+  if(!modelo){smAlert('Preencha o nome do modelo');return;}
+  const mp=cpGetModalP();
+  const fornecedor=document.getElementById('cp-edit-fornecedor').value.trim()||'—';
+  const ativo=document.getElementById('cp-edit-ativo').checked;
+  if(i===-1){
+    products.push({modelo,fornecedor,categoria:mp.categoria,custoPuro:mp.custoPuro,
+      montagem:mp.montagem,comissao:mp.comissao,venda:mp.venda,ativo});
+  } else {
+    const p=products[i];
+    if(!p){smAlert('Produto não encontrado');return;}
+    p.modelo=modelo; p.fornecedor=fornecedor; p.categoria=mp.categoria;
+    p.custoPuro=mp.custoPuro; p.montagem=mp.montagem; p.comissao=mp.comissao;
+    p.ativo=ativo;
+    // venda NÃO é mexida em modo edição (editável só em #precos)
+  }
+  cpCloseModal();
+  renderCustosProdutos();
+  renderDashboard();
+  salvarDados();
+}
+// ── Card NF Global (config_custos.nf_pedido) ──
+function cpEditNf(){
+  document.getElementById('cp-nf-input').value=CONFIG_CUSTOS.nf_pedido||0;
+  document.getElementById('cp-nf-display').style.display='none';
+  document.getElementById('cp-nf-edit').style.display='flex';
+}
+function cpCancelNf(){
+  document.getElementById('cp-nf-edit').style.display='none';
+  document.getElementById('cp-nf-display').style.display='flex';
+}
+async function cpSaveNf(){
+  const novo=+document.getElementById('cp-nf-input').value;
+  if(!(novo>=0)){smAlert('Valor inválido');return;}
+  if(!(await smConfirm('Isso recalcula o custo de todos os produtos e o DRE. Confirmar NF por pedido = '+fmt(novo)+'?')))return;
+  const {error}=await sb.from('config_custos').upsert({chave:'nf_pedido',valor:novo,atualizado_em:new Date().toISOString()});
+  if(error){smAlert('Erro ao salvar: '+error.message);return;}
+  CONFIG_CUSTOS.nf_pedido=novo;
+  cpCancelNf();
+  renderCustosProdutos();
+  renderDashboard();
 }
 
 // ══════════════════════════════════════════
@@ -5648,6 +5806,7 @@ function closeSidebar(){
   document.getElementById('backdrop').classList.remove('open');
 }
 document.getElementById('edit-modal')?.addEventListener('click',function(e){if(e.target===this)closeModal();});
+document.getElementById('cp-edit-modal')?.addEventListener('click',function(e){if(e.target===this)cpCloseModal();});
 
 // ══════════════════════════════════════════
 //  TINY ERP — PRODUTOS & ESTOQUE
