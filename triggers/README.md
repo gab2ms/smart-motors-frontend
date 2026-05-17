@@ -47,6 +47,34 @@ X-Buddy (etapa 5): o Tiny manda "X-BUDDY" sem o ah, mas o cadastro tem 2 entrada
 
 Acessórios (capacete, retrovisor, suporte) e serviços (frete, manutenção) não têm cadastro em `produtos_precos` — ficam sem match por design.
 
+## DRE — regime de competência
+
+`calcularDRE(iniISO, fimISO)` é o cálculo puro do DRE (não toca DOM). Consumido pelo widget `renderDashDreMes` (mês corrente) e pela aba "Resumo" do Excel em `gerarFechamentoMes` (range do selector). Estrutura de **7 linhas**:
+
+```
+   Receita (faturamento Tiny)
+(−) CPV real — Σ ct(produto) × qtd dos itens vendidos
+(+) Ajuste comissão venda direta
+=  Margem bruta ajustada
+(−) Despesas operacionais
+(−) Empréstimos pagos no mês
+=  Resultado do mês
+```
+
+**Princípio — caixa × competência.** O DRE mistura faturamento Tiny (competência) com lançamentos de caixa. O risco é duplicar: qualquer lançamento que pague algo **já embutido no CPV** conta duas vezes. Por isso o `despReal` exclui a constante `_DRE_CATEGORIAS_FORA_DESPESA`:
+
+- `Fornecedores`, `Motonetas`, `Montagem / Serviço Técnico`, `Nota Fiscal e Imposto` — custo de produto, já no `ct()` do CPV.
+- `Empréstimos` — amortização de dívida; entra só na linha própria, vinda de `emprestimo_parcelas` (não dos lançamentos). Antes contava em dobro.
+- `Acerto de Caixa`, `Estorno`, `Transferência` — movimentações não-operacionais.
+
+**CPV real:** loop nos `pedidos[].itens[]` do Tiny, `_matchProdutoPorNome` → `Σ ct(prod) × qtd`. Item sem cadastro (acessório/serviço) usa fallback estimado `valor × (1 − avgMCpct)`. O `avgMCpct` (média de MC% — fallback e referência) considera só produtos `ativo !== false`.
+
+**Ajuste de venda direta:** o `ct()` soma `comissao`, mas em venda direta os sócios ("Venda Direta Smart Motors") não recebem comissão. A linha `(+) Ajuste` devolve essa comissão fantasma: `Σ prod.comissao × qtd` dos itens de pedidos de venda direta — comissão **real** de cada produto, não flat R$100 (6 produtos têm `comissao = 0`).
+
+**Instabilidade do Tiny:** `_tinyStabilityCheck` faz 2 buscas forçadas; se a contagem de pedidos diverge, `tinyEstabilidade.estavel = false` → widget mostra badge "⚠️ Dados Tiny instáveis" e o Excel adiciona linha de aviso. É mitigação visual — o fix de raiz do Tiny é separado.
+
+**Decisão de UI:** o widget DRE é a **fonte única** do resultado. O KPI "Lucro líquido est." foi removido do bloco Faturamento do Dashboard e da página Vendas do Mês pra não haver dois lucros líquidos divergentes; "Custo fixo do mês" virou "Custo Fixo Planejado" (deixa claro que é o cadastro, não o real). Existe ainda um `renderDRE`/`recalcDRE` separado (análise de planilha de vendas importada) que **não** usa `calcularDRE` — é outra ferramenta, fora desta estrutura.
+
 ## Correções de dados
 
 - **2026-05-17 — `produtos_precos.jonosake` zerado em GT1, G7, Valley e Best.** O campo `jonosake` (componente somado no custo total via `ct()`) tinha R$ 1.157,30 nesses 4 produtos. Não era custo real: era um **acordo temporário de evento** — parte do lucro repassada a um parceiro durante um evento específico. O evento foi encerrado, então o valor não corresponde mais a custo nenhum. `UPDATE produtos_precos SET jonosake = 0` nos 4. Impacto: `avgMCpct` global (média de MC% dos produtos, usada no CPV estimado do `calcularDRE`) subiu de **~22,2% → 23,81%**, melhorando a fidelidade do DRE. Nenhum outro produto tinha `jonosake ≠ 0`.
