@@ -86,6 +86,17 @@ Guardar **só o nome do credor**, sem o prefixo `"Empréstimo "`. O prefixo é r
 
 `fn_parcela_to_conta` **não** cria `contas_pagar` quando uma parcela é inserida já com `status = 'pago'`. Reabrir (UPDATE `pago→pendente`) cria sob demanda. Backfill segue a mesma regra: só pendentes geram conta.
 
+### Vínculo de cliente — `cliente_id` + snapshot
+
+As 3 tabelas operacionais que referenciam cliente — `contas_receber`, `oficina_ordens`, `sac_casos` — seguem o **mesmo desenho**, fechado na feature de componente de busca de cliente:
+
+- `cliente_id UUID NULL REFERENCES clientes(id) ON DELETE SET NULL` — vínculo navegável. `idx_<tabela>_cliente_id` parcial (`WHERE cliente_id IS NOT NULL`).
+- Junto, **snapshot** `cliente_nome` (+ `cliente_telefone`/`cliente_cpf` em oficina/sac). **Não é redundância:** é histórico imutável. Cliente avulso nunca vira FK; renomear um cliente não reescreve registros antigos.
+- `cliente_id IS NULL` = caso avulso **ou** registro pré-feature (sem backfill — `oficina_ordens`/`sac_casos` antigos ficaram NULL de propósito). O snapshot de nome é sempre a fonte de exibição; `cliente_id` é só o ponteiro.
+- `ON DELETE SET NULL` (nunca CASCADE): deletar um cliente **não** apaga OS/caso/conta — só zera o ponteiro. O snapshot preserva quem era.
+
+No frontend, o componente único `initClienteSearch` alimenta os 3 modais; salvar avulso passa pelo modal de proteção `cli-avulso-warn-modal`. `sac_casos` e `oficina_ordens` **não** têm entry em `TABLE_MAP` — usam os mappers genéricos `toSnake`/`toCamel`, que já fazem o round-trip `clienteId` ↔ `cliente_id`. Tabela nova que linke cliente deve repetir esse desenho.
+
 ---
 
 ## Convenções — `lancamentos`
