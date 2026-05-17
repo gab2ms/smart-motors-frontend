@@ -328,17 +328,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 .computed-value{font-size:16px;font-weight:800;margin-top:4px;font-family:'JetBrains Mono',monospace;}
 .modal-actions{display:flex;gap:10px;margin-top:20px;justify-content:flex-end;}
 
-/* SIMULATOR */
-.sim-wrap{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
-.sim-row{display:flex;flex-direction:column;gap:5px;margin-bottom:13px;}
-.sim-result{
-  background:var(--gold-dim);border:1px solid rgba(245,197,24,0.18);
-  border-radius:var(--r);padding:20px;
-}
-.sim-result-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;}
-.sim-r-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.9px;font-weight:700;}
-.sim-r-val{font-size:20px;font-weight:800;margin-top:4px;font-family:'JetBrains Mono',monospace;}
-
 /* PEDIDOS */
 .order-card{
   background:var(--surface);border:1px solid var(--border);
@@ -380,7 +369,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
   .backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:150;}
   .backdrop.open{display:block;}
   .form-grid{grid-template-columns:1fr;}
-  .sim-wrap{grid-template-columns:1fr;}
   .order-item-row{grid-template-columns:1fr 1fr;}
   .content{padding:14px;}
   .topbar{padding:12px 14px;}
@@ -1114,10 +1102,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-icon">🏪</span> Produtos & Estoque
       <span class="nav-dot"></span>
     </button>
-    <button class="nav-item" onclick="showPage('simulador')">
-      <span class="nav-icon">🧮</span> Simulador de Preços
-      <span class="nav-dot"></span>
-    </button>
     <button class="nav-item" onclick="showPage('custos-produtos')">
       <span class="nav-icon">🏷️</span> Custos de Produtos
       <span class="nav-dot"></span>
@@ -1384,68 +1368,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
           </thead>
           <tbody id="cp-table"></tbody>
         </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══════════════ SIMULADOR ══════════════ -->
-  <div class="page content" id="page-simulador">
-    <div class="sim-wrap">
-      <div>
-        <div class="card" style="padding:20px;">
-          <div class="card-title" style="margin-bottom:16px;">Simular produto</div>
-
-          <!-- Seletor de produto existente -->
-          <div class="sim-row">
-            <label>Carregar produto cadastrado</label>
-            <select class="form-input" id="sim-produto-select" onchange="carregarProdutoSimulador()" style="cursor:pointer;">
-              <option value="">— Selecionar produto —</option>
-            </select>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
-            <div style="flex:1;height:1px;background:var(--border2);"></div>
-            <span style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.8px;">ou preencha manualmente</span>
-            <div style="flex:1;height:1px;background:var(--border2);"></div>
-          </div>
-
-          <div class="sim-row"><label>Modelo</label><input type="text" class="form-input" id="sim-modelo" placeholder="Nome do modelo"></div>
-          <div class="sim-row"><label>Custo do produto (R$)</label><input type="number" class="form-input" id="sim-custo" placeholder="0,00" oninput="calcSim()"></div>
-          <div class="sim-row"><label>Custo montagem (R$)</label><input type="number" class="form-input" id="sim-montagem" value="110" oninput="calcSim()"></div>
-          <div class="sim-row"><label>Comissão vendedor (R$)</label><input type="number" class="form-input" id="sim-comissao" value="100" oninput="calcSim()"></div>
-          <div class="sim-row"><label>Custo NF compra (R$)</label><input type="number" class="form-input" id="sim-nf-compra" value="70" oninput="calcSim()"></div>
-          <div class="sim-row"><label>Custo NF (R$)</label><input type="number" class="form-input" id="sim-nf" value="30" oninput="calcSim()"></div>
-          <div class="sim-row"><label>Custo financeiro (R$)</label><input type="number" class="form-input" id="sim-financeiro" value="0" oninput="calcSim()"></div>
-          <div class="sim-row"><label>Preço de venda (R$)</label><input type="number" class="form-input" id="sim-venda" placeholder="0,00" oninput="calcSim()"></div>
-          <button class="btn btn-gold" style="width:100%;margin-top:6px;" onclick="addSimToProducts()">Adicionar à tabela ⚡</button>
-        </div>
-      </div>
-      <div>
-        <div class="sim-result">
-          <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Resultado</div>
-          <div class="sim-result-grid">
-            <div><div class="sim-r-label">Custo Total</div><div class="sim-r-val" id="sim-r-custo" style="color:var(--text)">R$ —</div></div>
-            <div><div class="sim-r-label">MC R$</div><div class="sim-r-val" id="sim-r-mc">R$ —</div></div>
-            <div><div class="sim-r-label">MC %</div><div class="sim-r-val" id="sim-r-mcp">—%</div></div>
-            <div><div class="sim-r-label">Status</div><div id="sim-r-status" style="margin-top:8px;">—</div></div>
-          </div>
-        </div>
-
-        <div class="card" style="margin-top:14px;padding:20px;">
-          <div class="card-title" style="margin-bottom:14px;">Calcular preço por margem</div>
-          <div class="sim-row">
-            <label>Margem desejada (%)</label>
-            <input type="number" class="form-input" id="sim-margem-alvo" value="30" oninput="calcPrecoAlvo()">
-          </div>
-          <div style="padding:14px;background:var(--surface2);border-radius:var(--r-sm);">
-            <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Preço sugerido</div>
-            <div style="font-size:22px;font-weight:800;color:var(--gold);font-family:'JetBrains Mono',monospace;margin-top:5px;" id="sim-preco-alvo">R$ —</div>
-          </div>
-        </div>
-
-        <div class="card" style="margin-top:14px;padding:20px;">
-          <div class="card-title" style="margin-bottom:14px;">Simulação de parcelamento</div>
-          <div id="sim-parcelamento"><div style="color:var(--text3);font-size:12px;font-weight:500;">Preencha o preço de venda.</div></div>
-        </div>
       </div>
     </div>
   </div>
@@ -2938,7 +2860,6 @@ function mcBar(pct){
 const pageMeta={
   dashboard:['Dashboard','Resumo geral da Smart Motors'],
   precos:['Preços & Margens','Gerencie preços e veja margens de contribuição'],
-  simulador:['Simulador de Preços','Simule custos e calcule margens antes de precificar'],
   vendas:['Vendas do Mês','Importe o relatório do Tiny ERP e veja a margem líquida real'],
   estoque:['Produtos & Estoque','Produtos e estoque sincronizados do Tiny ERP em tempo real'],
   pedidos:['Pedidos','Controle seus pedidos por fornecedor'],
@@ -2960,7 +2881,6 @@ const BREADCRUMB_MAP = {
   pedidos:         ['Vendas', 'Pedidos'],
   vendas:          ['Vendas', 'Vendas do Mês'],
   estoque:         ['Produtos', 'Produtos & Estoque'],
-  simulador:       ['Produtos', 'Simulador de Preços'],
   precos:          ['Produtos', 'Preços & Margens'],
   oficina:         ['Operação', 'Oficina'],
   sac:             ['Operação', 'SAC'],
@@ -3003,6 +2923,11 @@ function showPage(id, opts){
   opts = opts || {};
   console.log('[showPage] id=' + id + ' fromHistory=' + !!opts.fromHistory
     + ' replace=' + !!opts.replace);
+  // Rota legada: o Simulador foi substituído pela aba Custos de Produtos.
+  if (id === 'simulador') {
+    id = 'custos-produtos';
+    setTimeout(() => smAlert('O Simulador de Preços foi substituído pela aba Custos de Produtos.'), 150);
+  }
   // Controle de acesso: redireciona para dashboard se sem permissao
   let _user = null;
   try { _user = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
@@ -3027,7 +2952,7 @@ function showPage(id, opts){
   renderBreadcrumb(id);
   closeSidebar();
   const btnProd = document.getElementById('btn-add-produto');
-  if (btnProd) btnProd.style.display = ['estoque','simulador'].includes(id) ? '' : 'none';
+  if (btnProd) btnProd.style.display = id === 'estoque' ? '' : 'none';
 
   // Sincroniza com History API: o botão voltar/avançar do navegador
   // navega entre módulos como se fossem páginas separadas.
@@ -3044,7 +2969,6 @@ function showPage(id, opts){
   if(id==='dashboard')renderDashboard();
   if(id==='precos')renderPrecos();
   if(id==='vendas'){popularSeletorPeriodo();carregarVendasDoMes();}
-  if(id==='simulador'){populateSimSelect();}
   if(id==='estoque')initEstoque();
   if(id==='pedidos')initPedidosTiny();
   if(id==='admin')renderAdmin();
@@ -3677,7 +3601,7 @@ function renderDashMargens(){
   const sorted = [...products].sort(function(a,b){return mcp(b)-mcp(a);});
   var topRows = '';
   sorted.slice(0,5).forEach(function(p){
-    topRows += '<tr onclick="showPage(&quot;simulador&quot;)" style="cursor:pointer;">'
+    topRows += '<tr onclick="showPage(&quot;precos&quot;)" style="cursor:pointer;">'
       + '<td class="td-model" style="font-size:12px;">' + p.modelo + '</td>'
       + '<td class="td-mono" style="font-size:11px;">' + fmt(p.venda) + '</td>'
       + '<td>' + mcBadge(mcp(p)) + '</td></tr>';
@@ -3687,7 +3611,7 @@ function renderDashMargens(){
   const low = products.filter(function(p){return mcp(p)<15;});
   var lowRows = '';
   low.forEach(function(p){
-    lowRows += '<tr onclick="showPage(&quot;simulador&quot;)" style="cursor:pointer;">'
+    lowRows += '<tr onclick="showPage(&quot;precos&quot;)" style="cursor:pointer;">'
       + '<td class="td-model" style="font-size:12px;">' + p.modelo + '</td>'
       + '<td class="td-mono" style="font-size:11px;">' + fmt(p.venda) + '</td>'
       + '<td>' + mcBadge(mcp(p)) + '</td></tr>';
@@ -5481,149 +5405,6 @@ async function delProduct(i){
 }
 
 // ══════════════════════════════════════════
-//  SIMULADOR
-// ══════════════════════════════════════════
-function getSimP(){
-  return{
-    custo:+document.getElementById('sim-custo').value||0,
-    montagem:+document.getElementById('sim-montagem').value||0,
-    comissao:+document.getElementById('sim-comissao').value||0,
-    nfCompra:+document.getElementById('sim-nf-compra').value||0,
-    nf:+document.getElementById('sim-nf').value||0,
-    jonosake:0,
-    financeiro:+document.getElementById('sim-financeiro').value||0,
-    venda:+document.getElementById('sim-venda').value||0,
-  };
-}
-function populateSimSelect() {
-  const sel = document.getElementById('sim-produto-select');
-  if (!sel) return;
-  // Merge: produtos locais + produtos do Tiny
-  const fontes = [];
-  products.forEach(p => fontes.push({nome: p.modelo, src: 'local', data: p}));
-  produtosTiny.forEach(p => {
-    if (!fontes.find(f => f.nome === p.nome))
-      fontes.push({nome: p.nome, src: 'tiny', data: p});
-  });
-  fontes.sort((a,b) => a.nome.localeCompare(b.nome));
-
-  // Rebuild options
-  sel.innerHTML = '<option value="">— Selecionar produto —</option>';
-  fontes.forEach((f, i) => {
-    const opt = document.createElement('option');
-    opt.value = i;
-    opt.textContent = f.nome + (f.src === 'tiny' ? ' ★' : '');
-    opt._data = f;
-    sel.appendChild(opt);
-  });
-  sel._fontes = fontes;
-}
-
-function carregarProdutoSimulador() {
-  const sel = document.getElementById('sim-produto-select');
-  const idx = sel.value;
-  if (idx === '') return;
-  const fonte = sel._fontes[parseInt(idx)];
-  if (!fonte) return;
-
-  const d = fonte.data;
-
-  // Preenche nome
-  document.getElementById('sim-modelo').value = d.nome || d.modelo || '';
-
-  if (fonte.src === 'local') {
-    // Produto da tabela local — tem breakdown completo
-    document.getElementById('sim-custo').value      = d.custo      || 0;
-    document.getElementById('sim-montagem').value   = d.montagem   || 0;
-    document.getElementById('sim-comissao').value   = d.comissao   || 0;
-    document.getElementById('sim-nf-compra').value  = d.nfCompra   || 0;
-    document.getElementById('sim-nf').value         = d.nf         || 0;
-    document.getElementById('sim-financeiro').value = d.financeiro || 0;
-    document.getElementById('sim-venda').value      = d.venda      || 0;
-  } else {
-    // Produto do Tiny — usa preço custo como base, zera os demais
-    document.getElementById('sim-custo').value      = d.precoCusto || d.preco || 0;
-    document.getElementById('sim-montagem').value   = 0;
-    document.getElementById('sim-comissao').value   = 0;
-    document.getElementById('sim-nf-compra').value  = 0;
-    document.getElementById('sim-nf').value         = 0;
-    document.getElementById('sim-financeiro').value = 0;
-    document.getElementById('sim-venda').value      = d.preco || 0;
-  }
-
-  calcSim();
-
-  // Highlight to show it was loaded
-  sel.style.borderColor = 'var(--gold)';
-  setTimeout(() => sel.style.borderColor = '', 1500);
-}
-
-function calcSim(){
-  const p=getSimP();
-  const ctt=ct(p),m=mc(p),mp=mcp(p);
-  document.getElementById('sim-r-custo').textContent=fmt(ctt);
-  document.getElementById('sim-r-mc').textContent=(m<0?'-':'')+fmt(Math.abs(m));
-  document.getElementById('sim-r-mc').style.color=m>=0?'var(--green)':'var(--red)';
-  document.getElementById('sim-r-mcp').textContent=fmtP(mp);
-  document.getElementById('sim-r-mcp').style.color=mp>=30?'var(--gold)':mp>=15?'var(--orange)':'var(--red)';
-  let st=mp>=30?'<span class="badge badge-gold">Excelente</span>':mp>=20?'<span class="badge badge-green">Boa</span>':mp>=10?'<span class="badge badge-orange">Regular</span>':'<span class="badge badge-red">Baixa</span>';
-  document.getElementById('sim-r-status').innerHTML=st;
-  calcPrecoAlvo();calcParcelamento(p.venda);
-}
-function calcPrecoAlvo(){
-  const p=getSimP();const ctt=ct(p);const a=+document.getElementById('sim-margem-alvo').value||30;
-  document.getElementById('sim-preco-alvo').textContent=ctt>0?fmt(ctt/(1-a/100)):'R$ —';
-}
-function calcParcelamento(v){
-  const el=document.getElementById('sim-parcelamento');
-  if(!v||v<=0){el.innerHTML='<div style="color:var(--text3);font-size:12px;font-weight:500;">Preencha o preço de venda.</div>';return;}
-
-  const TAXA_BASE_RECEBER = 9000;
-  const TAXA_BASE_PAGAR   = 10477.30;
-  const FATOR_TAXA        = TAXA_BASE_PAGAR / TAXA_BASE_RECEBER;
-
-  const opcoes = [
-    {p:2,  fator:1.0399},
-    {p:3,  fator:1.0598},
-    {p:4,  fator:1.0750},
-    {p:6,  fator:1.0980},
-    {p:10, fator:1.1500},
-    {p:12, fator:1.1641},
-    {p:18, fator:1.2200},
-  ];
-
-  let rows = '';
-  opcoes.forEach(function(x) {
-    const totalCliente = v * x.fator;
-    const parcela      = totalCliente / x.p;
-    const taxa         = totalCliente - v;
-    const taxaPct      = ((x.fator - 1) * 100).toFixed(1);
-    rows += '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr;gap:6px;padding:8px 0;border-bottom:1px solid var(--border);">'
-          + '<span style="font-size:13px;font-weight:800;color:var(--gold);">' + x.p + 'x</span>'
-          + '<span style="font-family:var(--mono,monospace);font-size:12px;font-weight:700;text-align:right;">' + fmt(totalCliente) + '</span>'
-          + '<span style="font-family:var(--mono,monospace);font-size:12px;font-weight:700;color:var(--green);text-align:right;">' + fmt(parcela) + '/mês</span>'
-          + '<span style="font-family:var(--mono,monospace);font-size:11px;color:var(--red);text-align:right;">-' + fmt(taxa) + ' (' + taxaPct + '%)</span>'
-          + '</div>';
-  });
-
-  el.innerHTML = '<div style="display:grid;grid-template-columns:40px 1fr 1fr 1fr;gap:6px;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:4px;">'
-    + '<span style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;">Parc.</span>'
-    + '<span style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;text-align:right;">Cliente paga</span>'
-    + '<span style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;text-align:right;">Por mês</span>'
-    + '<span style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;text-align:right;">Taxa</span>'
-    + '</div>'
-    + rows
-    + '<div style="margin-top:10px;padding:10px 12px;background:var(--gold-dim);border-radius:var(--r-sm);font-size:11px;color:var(--text3);line-height:1.5;">'
-    + '💡 Taxa real: para você receber <b style="color:var(--gold)">' + fmt(v) + '</b> o cliente paga <b style="color:var(--text)">' + fmt(v * FATOR_TAXA) + '</b> ('
-    + ((FATOR_TAXA-1)*100).toFixed(2) + '% de taxa total sobre o valor)</div>';
-}
-
-function addSimToProducts(){
-  const p=getSimP();p.modelo=document.getElementById('sim-modelo').value||'Novo modelo';p.fornecedor='—';
-  products.push(p);smAlert('⚡ "'+p.modelo+'" adicionado à tabela!');
-}
-
-// ══════════════════════════════════════════
 //  PEDIDOS — TINY ERP
 // ══════════════════════════════════════════
 let pedidosTiny = [];
@@ -6408,7 +6189,6 @@ const ADMIN_EMAIL  = 'gabrielllmoreirall@gmail.com';
 const TODOS_MODULOS = [
   { id: 'dashboard',    nome: 'Dashboard' },
   { id: 'precos',       nome: 'Preços & Margens' },
-  { id: 'simulador',    nome: 'Simulador' },
   { id: 'vendas',       nome: 'Vendas' },
   { id: 'estoque',      nome: 'Produtos & Estoque' },
   { id: 'pedidos',      nome: 'Pedidos' },
@@ -6425,8 +6205,8 @@ const TODOS_MODULOS = [
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
-  vendedor:    ['dashboard', 'pedidos', 'simulador', 'oficina', 'sac', 'clientes', 'contratos'],
-  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'simulador', 'vendas', 'pedidos', 'oficina', 'sac', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos'],
+  vendedor:    ['dashboard', 'pedidos', 'oficina', 'sac', 'clientes', 'contratos'],
+  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'vendas', 'pedidos', 'oficina', 'sac', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos'],
   customizado: null, // usa user.modulosPermitidos
 };
 function modulosPermitidos(user) {
@@ -10586,7 +10366,7 @@ function _abrirAcessoModal({ mode, user }) {
     +   '<div class="form-group full"><label>Perfil</label>'
     +     '<select class="form-input" id="acm-perfil" onchange="document.getElementById(\'acm-modulos-wrap\').style.display=this.value===\'customizado\'?\'block\':\'none\';">'
     +       '<option value="admin"' + (perfilSel==='admin'?' selected':'') + '>Admin — todos os módulos</option>'
-    +       '<option value="vendedor"' + (perfilSel==='vendedor'?' selected':'') + '>Vendedor — Dashboard, Pedidos, Simulador, Oficina, SAC, Clientes</option>'
+    +       '<option value="vendedor"' + (perfilSel==='vendedor'?' selected':'') + '>Vendedor — Dashboard, Pedidos, Oficina, SAC, Clientes</option>'
     +       '<option value="operacional"' + (perfilSel==='operacional'?' selected':'') + '>Operacional — tudo menos Admin</option>'
     +       '<option value="customizado"' + (perfilSel==='customizado'?' selected':'') + '>Customizado — escolher módulos</option>'
     +     '</select>'
