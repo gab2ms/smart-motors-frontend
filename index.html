@@ -1276,6 +1276,9 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         <option value="media">Média (15–30%)</option>
         <option value="baixa">Baixa (&lt; 15%)</option>
       </select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;white-space:nowrap;">
+        <input type="checkbox" id="toggle-inativos" onchange="renderPrecos()" style="width:auto;cursor:pointer;"> Mostrar inativos
+      </label>
     </div>
     <div class="card">
       <div class="card-header">
@@ -2441,6 +2444,10 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <div class="form-group"><label>Custo Jonosake (R$)</label><input class="form-input" id="edit-jonosake" type="number" oninput="updateModalComputed()"></div>
       <div class="form-group"><label>Custo financeiro (R$)</label><input class="form-input" id="edit-financeiro" type="number" oninput="updateModalComputed()"></div>
       <div class="form-group"><label>Preço de venda (R$)</label><input class="form-input" id="edit-venda" type="number" oninput="updateModalComputed()"></div>
+      <div class="form-group full" style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="edit-ativo" checked style="width:auto;cursor:pointer;">
+        <label for="edit-ativo" style="margin:0;cursor:pointer;">Produto ativo — aparece no catálogo vivo e entra na média de MC% do DRE</label>
+      </div>
     </div>
     <div class="computed-row">
       <div><div class="computed-label">Custo Total</div><div class="computed-value" id="modal-custo-total">R$ —</div></div>
@@ -4733,8 +4740,11 @@ async function calcularDRE(iniISO, fimISO) {
     console.warn('[calcularDRE] falha ao buscar pedidos:', e.message);
   }
 
-  const avgMCpct = (products && products.length)
-    ? products.reduce((s,p) => s + mcp(p), 0) / products.length / 100
+  // Só produtos ativos entram na média de MC% do CPV estimado.
+  // `ativo !== false` → registros antigos/seed sem a flag contam como ativos.
+  const produtosAtivos = (products || []).filter(p => p.ativo !== false);
+  const avgMCpct = produtosAtivos.length
+    ? produtosAtivos.reduce((s,p) => s + mcp(p), 0) / produtosAtivos.length / 100
     : 0;
   const cpv = receita * (1 - avgMCpct);
   const lucroBruto = receita - cpv;
@@ -4918,8 +4928,10 @@ function renderPrecos(){
   const q=(document.getElementById('search-modelo')?.value||'').toLowerCase();
   const forn=document.getElementById('filter-fornecedor')?.value||'';
   const marg=document.getElementById('filter-margem')?.value||'';
+  const mostrarInativos=document.getElementById('toggle-inativos')?.checked||false;
 
   const filtered=products.map((p,i)=>({...p,_i:i})).filter(p=>{
+    if(!mostrarInativos&&p.ativo===false)return false;
     if(q&&!p.modelo.toLowerCase().includes(q))return false;
     if(forn&&p.fornecedor!==forn)return false;
     const m=mcp(p);
@@ -4931,8 +4943,10 @@ function renderPrecos(){
 
   document.getElementById('precos-count').textContent=`${filtered.length} produto${filtered.length!==1?'s':''} encontrado${filtered.length!==1?'s':''}`;
   document.getElementById('precos-table').innerHTML=filtered.length?filtered.map(p=>`
-    <tr>
-      <td class="td-model">${escHtml(p.modelo)}</td>
+    <tr${p.ativo===false?' style="opacity:0.5;"':''}>
+      <td class="td-model">${p.ativo===false
+        ?`<s>${escHtml(p.modelo)}</s> <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;">inativo</span>`
+        :escHtml(p.modelo)}</td>
       <td><span class="td-supplier">${escHtml(p.fornecedor)}</span></td>
       <td class="td-mono">${fmt(p.custo)}</td>
       <td class="td-mono">${fmt(ct(p))}</td>
@@ -4964,6 +4978,7 @@ function openEdit(i){
   document.getElementById('edit-jonosake').value=p.jonosake||0;
   document.getElementById('edit-financeiro').value=p.financeiro||0;
   document.getElementById('edit-venda').value=p.venda||0;
+  document.getElementById('edit-ativo').checked=p.ativo!==false;
   updateModalComputed();
   document.getElementById('edit-modal').classList.add('open');
 }
@@ -4972,6 +4987,7 @@ function openAddProduct(){
   document.getElementById('edit-idx').value=-1;
   ['edit-modelo','edit-fornecedor'].forEach(id=>document.getElementById(id).value='');
   ['edit-custo','edit-montagem','edit-comissao','edit-nf-compra','edit-nf','edit-jonosake','edit-financeiro','edit-venda'].forEach(id=>document.getElementById(id).value=0);
+  document.getElementById('edit-ativo').checked=true;
   updateModalComputed();
   document.getElementById('edit-modal').classList.add('open');
 }
@@ -5007,6 +5023,7 @@ function saveProduct(){
     jonosake:+document.getElementById('edit-jonosake').value||0,
     financeiro:+document.getElementById('edit-financeiro').value||0,
     venda:+document.getElementById('edit-venda').value||0,
+    ativo:document.getElementById('edit-ativo').checked,
   };
   if(!p.modelo){smAlert('Preencha o nome do modelo');return;}
   if(i===-1){products.push(p);} else {p.id=products[i].id;products[i]=p;}

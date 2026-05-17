@@ -22,6 +22,20 @@ Link: `contas_pagar.emprestimo_parcela_id UUID REFERENCES emprestimo_parcelas(id
   - FKs, todas `ON DELETE SET NULL` (preserva o registro e limpa o ponteiro órfão — nunca CASCADE): `cliente_id → clientes(id)`, `conta_id → contas_bancarias(id)`, `lancamento_id → lancamentos(id)`. `conta_id` e `lancamento_id` ficam sem índice de cobertura por ora (tabela vazia; advisor sinaliza como INFO).
 - `lancamentos.conta_receber_id TEXT NULL REFERENCES contas_receber(id) ON DELETE SET NULL` — vincula o lançamento de caixa gerado pelo recebimento de uma conta a receber. Espelha `conta_pagar_id`; `ON DELETE SET NULL` preserva o histórico financeiro mesmo se a `contas_receber` for deletada.
 - `sac_casos.cliente_id UUID NULL REFERENCES clientes(id) ON DELETE SET NULL` + `idx_sac_casos_cliente_id` (parcial, WHERE cliente_id IS NOT NULL) — vincula o caso SAC ao cliente cadastrado. Antes o SAC só guardava snapshot (`cliente_nome`/`cliente_telefone`/`cliente_cpf`, sem FK); agora espelha `oficina_ordens` e `contas_receber`. `ON DELETE SET NULL` preserva o caso e zera o ponteiro órfão. Casos antigos ficam com `cliente_id = NULL` (sem backfill — snapshot de nome continua válido). Não há `TABLE_MAP` entry pra `sac_casos`: usa os mappers genéricos `toSnake`/`toCamel`, que já fazem o round-trip `clienteId` ↔ `cliente_id`.
+- `produtos_precos.ativo BOOLEAN NOT NULL DEFAULT true` — flag pra separar catálogo vivo de produtos descontinuados. Ver seção "Ativo/Inativo de produtos" abaixo.
+
+## Ativo/Inativo de produtos
+
+A coluna `produtos_precos.ativo` separa o catálogo vivo dos modelos descontinuados (ou sem giro). 13 produtos foram marcados `ativo = false` na introdução da feature (GT1, G7, Valley, Best, Grazie, Sol, Future, Ready, Explore, Felicie duo, Dot, Conquest, Maggie); 17 seguem ativos.
+
+Convenção de leitura — **sempre `ativo !== false`, nunca `=== true`**: registros antigos/seed sem a flag (ou produtos criados por caminhos que não setam `ativo`) contam como ativos.
+
+Consumidores:
+- **`calcularDRE`** — o `avgMCpct` (média de MC% que estima o CPV) usa **só ativos**. Inativar produto de margem baixa sobe o `avgMCpct`; inativar de margem alta desce.
+- **Aba `#precos`** — toggle "Mostrar inativos" (default oculto). Inativos aparecem com `opacity` reduzida, modelo em strikethrough e badge "inativo". Modal de edição tem checkbox "Ativo".
+- **`_matchProdutoPorNome`, widget "Scooters mais vendidas", Excel "Vendas por Produto"** — **continuam enxergando inativos**. Inativo significa "não vende mais", não "não existe": venda histórica de um descontinuado ainda precisa achar o cadastro pra obter custo/MC%.
+
+`ativo` faz round-trip pelos mappers genéricos (`produtos_precos` usa `toSnake`/`toCamel`). Atenção: `saveProduct` reconstrói o objeto do zero a cada edição — por isso o checkbox "Ativo" no modal é obrigatório (sem ele, editar um produto apagaria a flag).
 
 ## Correções de dados
 
