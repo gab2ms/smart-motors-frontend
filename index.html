@@ -2763,6 +2763,10 @@ let custosFixos = [];
 const VENDAS_MES_CONFIG_NOME = 'vendas_mes_config';
 let vendasMesConfig = { nome: VENDAS_MES_CONFIG_NOME, valor: 40 };
 
+// Config de Custos de Produtos. Tabela config_custos (chave/valor) —
+// custos que não escalam por unidade vendida (ex.: NF por pedido).
+let CONFIG_CUSTOS = { nf_pedido: 30 };
+
 let emprestimos = [];
 let emprestimoSelecionadoId = null;
 
@@ -2770,6 +2774,9 @@ let emprestimoSelecionadoId = null;
 //  HELPERS
 // ══════════════════════════════════════════
 const ct = p=>(p.custo||0)+(p.montagem||0)+(p.comissao||0)+(p.nfCompra||0)+(p.nf||0)+(p.jonosake||0)+(p.financeiro||0);
+// ctReal — custo total por unidade pela estrutura nova (Custos de Produtos):
+// custoPuro absorve nfCompra/jonosake/financeiro; nf vira config por pedido.
+const ctReal = p=>(p.custoPuro||0)+(p.montagem||0)+(p.comissao||0)+(CONFIG_CUSTOS.nf_pedido||0);
 const mc = p=>(p.venda||0)-ct(p);
 const mcp= p=>p.venda?(mc(p)/p.venda)*100:0;
 const fmt= v=>'R$ '+Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -3003,7 +3010,7 @@ async function _enviarParaBanco() {
 async function carregarDados() {
   console.log('[carregarDados] iniciando fetch de todas as tabelas');
   try {
-    const [c, l, cp, cr, cf, pr, sc, vm, oo] = await Promise.all([
+    const [c, l, cp, cr, cf, pr, sc, vm, oo, cc] = await Promise.all([
       sb.from('contas_bancarias').select('*').order('id'),
       sb.from('lancamentos').select('*').order('data', { ascending: false }).order('id', { ascending: false }),
       sb.from('contas_pagar').select('*'),
@@ -3013,10 +3020,11 @@ async function carregarDados() {
       sb.from('sac_casos').select('*').order('numero', { ascending: false }),
       sb.from('vendedores_mapeamento').select('*').order('nome_real'),
       sb.from('oficina_ordens').select('*').order('numero', { ascending: false }),
+      sb.from('config_custos').select('*'),
     ]);
 
     // Loga resultado (e erros explicitos) de cada tabela
-    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['contas_receber',cr],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc],['vendedores_mapeamento',vm],['oficina_ordens',oo]]
+    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['contas_receber',cr],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc],['vendedores_mapeamento',vm],['oficina_ordens',oo],['config_custos',cc]]
       .forEach(([n, r]) => {
         if (r.error) console.error('[carregarDados] ERRO em ' + n + ':', r.error.message, r.error);
         else console.log('[carregarDados] ' + n + ': ' + (r.data?.length || 0) + ' rows');
@@ -3032,6 +3040,9 @@ async function carregarDados() {
     sacCasos     = (!sc.error && sc.data)         ? toCamelArr(sc.data)                   : [];
     vendedoresMapeamento = (!vm.error && vm.data) ? toCamelArr(vm.data)                   : [];
     oficinaOrdens = (!oo.error && oo.data)        ? toCamelArr(oo.data)                   : [];
+    if (!cc.error && cc.data) {
+      cc.data.forEach(r => { CONFIG_CUSTOS[r.chave] = Number(r.valor); });
+    }
     _recalcMapaVendedores();
 
     // Seed inicial se a tabela existe mas está vazia
