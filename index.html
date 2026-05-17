@@ -4206,10 +4206,11 @@ async function gerarFechamentoMes() {
     const periodoLabel = fmtDateBR(iniISO) + ' a ' + fmtDateBR(fimISO);
 
     // ════════ ABA 1: RESUMO (DRE) ════════
-    // Estrutura espelha o widget DRE do dashboard: Receita → CPV → Lucro
-    // bruto → Despesas operacionais reais → Empréstimos pagos → Resultado.
+    // Estrutura espelha o widget DRE do dashboard (7 linhas): Receita →
+    // CPV real → (+) Ajuste venda direta → Margem bruta ajustada →
+    // Despesas operacionais reais → Empréstimos pagos → Resultado.
     // Custos fixos viram referência (sublinha), não dedução — alinhado
-    // com regime de competência adotado pelo widget.
+    // com o regime de competência adotado pelo widget.
     const planejadoFmt = dre.despPlanejado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const resumoRows = [
       [{ v: '⚡ SMART MOTORS', s: TITLE_BIG }],
@@ -4224,13 +4225,18 @@ async function gerarFechamentoMes() {
         { v: dre.receita > 0 ? 1 : 0, t: 'n', z: '0.0%' }
       ],
       [
-        '(−) Custo dos produtos vendidos',
+        '(−) CPV — custo real dos produtos vendidos',
         { v: -dre.cpv, t: 'n', z: BRL, s: NEG },
         { v: dre.receita > 0 ? -dre.cpv/dre.receita : 0, t: 'n', z: '0.0%' }
       ],
       [
-        { v: '= Lucro bruto', s: TOTAL_ROW },
-        { v: dre.lucroBruto, t: 'n', z: BRL, s: colorVal(dre.lucroBruto, TOTAL_ROW) },
+        '(+) Ajuste comissão venda direta',
+        { v: dre.ajusteVendaDireta, t: 'n', z: BRL, s: POS },
+        { v: dre.receita > 0 ? dre.ajusteVendaDireta/dre.receita : 0, t: 'n', z: '0.0%' }
+      ],
+      [
+        { v: '= Margem bruta ajustada', s: TOTAL_ROW },
+        { v: dre.margemBrutaAjustada, t: 'n', z: BRL, s: colorVal(dre.margemBrutaAjustada, TOTAL_ROW) },
         { v: dre.pctLB/100, t: 'n', z: '0.0%', s: TOTAL_ROW }
       ],
       [],
@@ -4253,6 +4259,14 @@ async function gerarFechamentoMes() {
         { v: dre.pctRes/100, t: 'n', z: '0.0%', s: TOTAL_ROW }
       ],
     ];
+    // Aviso de instabilidade do Tiny — mesma sinalização do widget DRE.
+    if (dre.tinyEstabilidade && !dre.tinyEstabilidade.estavel) {
+      const [c1, c2] = dre.tinyEstabilidade.contagens || [0, 0];
+      resumoRows.push(
+        [],
+        [{ v: `⚠️ Dados Tiny instáveis — o Tiny retornou ${c1} e ${c2} pedidos em buscas seguidas do mesmo período; os valores acima podem variar ao gerar de novo.`, s: SUBTITLE }]
+      );
+    }
     const ws1 = XLSX.utils.aoa_to_sheet(resumoRows);
     ws1['!cols']   = [{ wch: 44 }, { wch: 20 }, { wch: 12 }];
     ws1['!rows']   = [{ hpt: 30 }];
