@@ -49,13 +49,12 @@ Acessórios (capacete, retrovisor, suporte) e serviços (frete, manutenção) n�
 
 ## DRE — regime de competência
 
-`calcularDRE(iniISO, fimISO)` é o cálculo puro do DRE (não toca DOM). Consumido pelo widget `renderDashDreMes` (mês corrente) e pela aba "Resumo" do Excel em `gerarFechamentoMes` (range do selector). Estrutura de **7 linhas**:
+`calcularDRE(iniISO, fimISO)` é o cálculo puro do DRE (não toca DOM). Consumido pelo widget `renderDashDreMes` (mês corrente) e pela aba "Resumo" do Excel em `gerarFechamentoMes` (range do selector). Estrutura de **6 linhas**:
 
 ```
    Receita (faturamento Tiny)
-(−) CPV real — Σ ct(produto) × qtd dos itens vendidos
-(+) Ajuste comissão venda direta
-=  Margem bruta ajustada
+(−) CPV real — custo dos produtos vendidos (estrutura Custos de Produtos)
+=  Margem bruta
 (−) Despesas operacionais
 (−) Empréstimos pagos no mês
 =  Resultado do mês
@@ -63,13 +62,13 @@ Acessórios (capacete, retrovisor, suporte) e serviços (frete, manutenção) n�
 
 **Princípio — caixa × competência.** O DRE mistura faturamento Tiny (competência) com lançamentos de caixa. O risco é duplicar: qualquer lançamento que pague algo **já embutido no CPV** conta duas vezes. Por isso o `despReal` exclui a constante `_DRE_CATEGORIAS_FORA_DESPESA`:
 
-- `Fornecedores`, `Motonetas`, `Montagem / Serviço Técnico`, `Nota Fiscal e Imposto` — custo de produto, já no `ct()` do CPV.
+- `Fornecedores`, `Motonetas`, `Montagem / Serviço Técnico`, `Nota Fiscal e Imposto` — custo de produto, já no CPV.
 - `Empréstimos` — amortização de dívida; entra só na linha própria, vinda de `emprestimo_parcelas` (não dos lançamentos). Antes contava em dobro.
 - `Acerto de Caixa`, `Estorno`, `Transferência` — movimentações não-operacionais.
 
-**CPV real:** loop nos `pedidos[].itens[]` do Tiny, `_matchProdutoPorNome` → `Σ ct(prod) × qtd`. Item sem cadastro (acessório/serviço) usa fallback estimado `valor × (1 − avgMCpct)`. O `avgMCpct` (média de MC% — fallback e referência) considera só produtos `ativo !== false`.
+**CPV real:** loop nos `pedidos[].itens[]` do Tiny, `_matchProdutoPorNome`. Por item matchado soma `(custoPuro + montagem + comissao) × qtd`; a NF entra **1× por pedido** (`config_custos.nf_pedido`, R$ 30), não por unidade. Em venda direta ("Venda Direta Smart Motors") os sócios não recebem comissão — ela é **excluída direto no CPV**. Não há mais linha "(+) Ajuste comissão venda direta": a estrutura anterior somava `comissao` no `ct()` e a devolvia depois numa linha própria; agora a decisão está dentro do loop e o DRE tem 6 linhas. Item sem cadastro (acessório/serviço) usa fallback estimado `valor × (1 − avgMCpct)`. O `avgMCpct` (média de MC% — fallback e referência) considera só produtos `ativo !== false`.
 
-**Ajuste de venda direta:** o `ct()` soma `comissao`, mas em venda direta os sócios ("Venda Direta Smart Motors") não recebem comissão. A linha `(+) Ajuste` devolve essa comissão fantasma: `Σ prod.comissao × qtd` dos itens de pedidos de venda direta — comissão **real** de cada produto, não flat R$100 (6 produtos têm `comissao = 0`).
+O CPV **não** chama o helper `ctReal(p)`: `ctReal` é a visão por-unidade simplificada (consumida pela aba Custos de Produtos) e não comporta a comissão condicional por vendedor nem a NF agregada por pedido. O `calcularDRE` calcula os componentes inline.
 
 **Instabilidade do Tiny:** `_tinyStabilityCheck` faz 2 buscas forçadas; se a contagem de pedidos diverge, `tinyEstabilidade.estavel = false` → widget mostra badge "⚠️ Dados Tiny instáveis" e o Excel adiciona linha de aviso. É mitigação visual — o fix de raiz do Tiny é separado.
 

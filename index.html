@@ -4217,11 +4217,11 @@ async function gerarFechamentoMes() {
     const periodoLabel = fmtDateBR(iniISO) + ' a ' + fmtDateBR(fimISO);
 
     // ════════ ABA 1: RESUMO (DRE) ════════
-    // Estrutura espelha o widget DRE do dashboard (7 linhas): Receita →
-    // CPV real → (+) Ajuste venda direta → Margem bruta ajustada →
-    // Despesas operacionais reais → Empréstimos pagos → Resultado.
-    // Custos fixos viram referência (sublinha), não dedução — alinhado
-    // com o regime de competência adotado pelo widget.
+    // Estrutura espelha o widget DRE do dashboard (6 linhas): Receita →
+    // CPV real → Margem bruta → Despesas operacionais reais →
+    // Empréstimos pagos → Resultado. Custos fixos viram referência
+    // (sublinha), não dedução — alinhado com o regime de competência
+    // adotado pelo widget.
     const planejadoFmt = dre.despPlanejado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const resumoRows = [
       [{ v: '⚡ SMART MOTORS', s: TITLE_BIG }],
@@ -4241,13 +4241,8 @@ async function gerarFechamentoMes() {
         { v: dre.receita > 0 ? -dre.cpv/dre.receita : 0, t: 'n', z: '0.0%' }
       ],
       [
-        '(+) Ajuste comissão venda direta',
-        { v: dre.ajusteVendaDireta, t: 'n', z: BRL, s: POS },
-        { v: dre.receita > 0 ? dre.ajusteVendaDireta/dre.receita : 0, t: 'n', z: '0.0%' }
-      ],
-      [
-        { v: '= Margem bruta ajustada', s: TOTAL_ROW },
-        { v: dre.margemBrutaAjustada, t: 'n', z: BRL, s: colorVal(dre.margemBrutaAjustada, TOTAL_ROW) },
+        { v: '= Margem bruta', s: TOTAL_ROW },
+        { v: dre.lucroBruto, t: 'n', z: BRL, s: colorVal(dre.lucroBruto, TOTAL_ROW) },
         { v: dre.pctLB/100, t: 'n', z: '0.0%', s: TOTAL_ROW }
       ],
       [],
@@ -4815,34 +4810,30 @@ async function calcularDRE(iniISO, fimISO) {
   const avgMCpct = produtosAtivos.length
     ? produtosAtivos.reduce((s,p) => s + mcp(p), 0) / produtosAtivos.length / 100
     : 0;
-  // CPV real: soma ct(produto) × qtd item a item dos pedidos do Tiny.
+  // CPV real (estrutura Custos de Produtos): por item matchado soma
+  // custoPuro + montagem + comissão; a NF entra 1× por pedido
+  // (config_custos.nf_pedido), não por unidade. Em venda direta os
+  // sócios não recebem comissão — excluída direto no CPV (antes era
+  // devolvida na linha "Ajuste comissão venda direta", agora removida).
   // Item sem cadastro (acessório/serviço) cai no fallback estimado por
   // avgMCpct — evita margem fictícia de 100% nesses itens.
   let cpv = 0;
   for (const ped of pedidos) {
+    const vendaDireta = (ped.vendedor && ped.vendedor.nome) === 'Venda Direta Smart Motors';
     for (const it of (ped.itens || [])) {
       const qtd  = it.quantidade || 0;
       const prod = _matchProdutoPorNome((it.produto || it.nome || '').trim());
-      cpv += prod
-        ? ct(prod) * qtd
-        : (qtd * (it.valorUnitario || 0)) * (1 - avgMCpct);
+      if (prod) {
+        const comissao = vendaDireta ? 0 : (prod.comissao || 0);
+        cpv += ((prod.custoPuro || 0) + (prod.montagem || 0) + comissao) * qtd;
+      } else {
+        cpv += (qtd * (it.valorUnitario || 0)) * (1 - avgMCpct);
+      }
     }
+    cpv += (CONFIG_CUSTOS.nf_pedido || 0); // NF: custo por pedido, não por unidade
   }
   const lucroBruto = receita - cpv;
-
-  // Devolve a comissão fantasma cobrada no CPV das vendas diretas: o
-  // ct() soma prod.comissao, mas em venda direta os sócios não recebem
-  // comissão. Σ comissão real (não flat R$100 — 6 produtos têm
-  // comissao = 0). Itens do Tiny: campo `produto` (nome) e `quantidade`.
-  const ajusteVendaDireta = pedidos.reduce((sum, ped) => {
-    if ((ped.vendedor && ped.vendedor.nome) !== 'Venda Direta Smart Motors') return sum;
-    return sum + (ped.itens || []).reduce((s, it) => {
-      const prod = _matchProdutoPorNome((it.produto || it.nome || '').trim());
-      return prod ? s + (prod.comissao || 0) * (it.quantidade || 0) : s;
-    }, 0);
-  }, 0);
-  const margemBrutaAjustada = lucroBruto + ajusteVendaDireta;
-  const pctLB = receita > 0 ? (margemBrutaAjustada / receita * 100) : 0;
+  const pctLB = receita > 0 ? (lucroBruto / receita * 100) : 0;
 
   const inPeriodo = d => d && d >= iniISO && d <= fimISO;
   const desp = (lancamentos || []).filter(l =>
@@ -4862,13 +4853,13 @@ async function calcularDRE(iniISO, fimISO) {
   const empValor = empPagos.reduce((s,p) => s + (p.valorPago || p.valor || 0), 0);
   const empCount = empPagos.length;
 
-  const resultado = margemBrutaAjustada - despReal - empValor;
+  const resultado = lucroBruto - despReal - empValor;
   const pctRes = receita > 0 ? (resultado / receita * 100) : 0;
 
   return {
     periodo: { iniISO, fimISO },
     receita, pedidos,
-    avgMCpct, cpv, lucroBruto, ajusteVendaDireta, margemBrutaAjustada, pctLB,
+    avgMCpct, cpv, lucroBruto, pctLB,
     despReal, despCount, despPlanejado,
     empValor, empCount,
     resultado, pctRes,
@@ -4891,9 +4882,9 @@ async function renderDashDreMes() {
   const mesLabelCap = mesLabel.charAt(0).toUpperCase() + mesLabel.slice(1);
 
   const dre = await calcularDRE(iniISO, fimISO);
-  const { receita, cpv, lucroBruto, ajusteVendaDireta, margemBrutaAjustada,
-          pctLB, despReal, despCount, despPlanejado: planejado,
-          empValor, empCount, resultado, pctRes, tinyEstabilidade } = dre;
+  const { receita, cpv, lucroBruto, pctLB, despReal, despCount,
+          despPlanejado: planejado, empValor, empCount,
+          resultado, pctRes, tinyEstabilidade } = dre;
 
   // Subtítulo do widget + badge de instabilidade do Tiny.
   const subEl = document.getElementById('dash-dre-mes-sub');
@@ -4928,7 +4919,7 @@ async function renderDashDreMes() {
     ? `${resIcon} ${Math.abs(pctRes).toFixed(0)}% ${resLabel}`
     : `${resIcon} sem receita no mês`;
 
-  // ── Detalhe expandido — 7 linhas + tooltips + click handlers ──
+  // ── Detalhe expandido — 6 linhas + tooltips + click handlers ──
   const det = document.getElementById('dash-dre-mes-detalhe');
   if (det) {
     const linha = (label, valor, opts = {}) => {
@@ -4951,18 +4942,13 @@ async function renderDashDreMes() {
     det.innerHTML = `
       ${linha('Receita (faturamento Tiny)', receita, { onclick: `_dashDreIrPedidos()` })}
       ${linha('(−) CPV — custo real dos produtos vendidos', cpv, {
-        title: 'Soma do custo de cada produto vendido (ct() × qtd dos itens do Tiny). Itens sem cadastro (acessórios/serviços) usam estimativa por MC% médio.'
-      })}
-      ${linha('(+) Ajuste comissão venda direta', ajusteVendaDireta, {
-        sign: ajusteVendaDireta > 0 ? '+ ' : '',
-        color: ajusteVendaDireta > 0 ? 'var(--green)' : '',
-        title: 'Devolve a comissão fantasma cobrada no CPV das vendas diretas — os sócios ("Venda Direta Smart Motors") não recebem comissão.'
+        title: 'Custo de cada produto vendido: custo puro + montagem + comissão (exceto venda direta) por unidade + NF por pedido (não por unidade). Itens sem cadastro usam estimativa por MC% médio.'
       })}
       ${sep}
-      ${linha('= Margem bruta ajustada', margemBrutaAjustada, {
+      ${linha('= Margem bruta', lucroBruto, {
         bold: true,
         pct: receita > 0 ? `${pctLB.toFixed(0)}% da receita` : '',
-        title: 'Receita − CPV + ajuste de comissão de venda direta.'
+        title: 'Receita − CPV.'
       })}
       <div style="height:8px;"></div>
       ${linha('(−) Despesas operacionais', despReal, {
@@ -4982,7 +4968,7 @@ async function renderDashDreMes() {
         sign: resSign,
         color: resultado > 0 ? 'var(--green)' : resultado < 0 ? 'var(--red)' : 'var(--text2)',
         pct: receita > 0 ? `${resIcon} ${Math.abs(pctRes).toFixed(0)}% ${resLabel}` : '',
-        title: 'Margem bruta ajustada − Despesas operacionais − Empréstimos.'
+        title: 'Margem bruta − Despesas operacionais − Empréstimos.'
       })}
     `;
   }
