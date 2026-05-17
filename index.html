@@ -2823,8 +2823,7 @@ let emprestimoSelecionadoId = null;
 // ══════════════════════════════════════════
 //  HELPERS
 // ══════════════════════════════════════════
-const ct = p=>(p.custo||0)+(p.montagem||0)+(p.comissao||0)+(p.nfCompra||0)+(p.nf||0)+(p.jonosake||0)+(p.financeiro||0);
-// ctReal — custo total por unidade pela estrutura nova (Custos de Produtos):
+// ctReal — custo total por unidade (estrutura Custos de Produtos):
 // custoPuro absorve nfCompra/jonosake/financeiro; nf vira config por pedido.
 // Acessório não tem comissão própria nem NF própria (a NF é a do pedido).
 const ctReal = p => {
@@ -2833,8 +2832,12 @@ const ctReal = p => {
     ? base
     : base + (p.comissao||0) + (CONFIG_CUSTOS.nf_pedido||0);
 };
-const mc = p=>(p.venda||0)-ct(p);
-const mcp= p=>p.venda?(mc(p)/p.venda)*100:0;
+// ct/mc/mcp — aliases legados. ct() era a soma de 7 componentes de custo;
+// agora é ctReal(). mc/mcp seguem derivando de ct. Rename ct→ctReal nos
+// callers fica pra um refactor de nomenclatura separado.
+const ct = p => ctReal(p);
+const mc = p => (p.venda||0) - ct(p);
+const mcp = p => p.venda ? (mc(p)/p.venda)*100 : 0;
 const fmt= v=>'R$ '+Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 // fmt() engole sinal via Math.abs (intencional pra colunas tabulares).
 // fmtSigned preserva o sinal pra valores que podem ser negativos
