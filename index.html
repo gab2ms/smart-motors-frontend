@@ -1198,6 +1198,19 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
   </div>
 </div>
 
+<!-- MODAL DE PROTEÇÃO: salvar OS/caso sem cliente cadastrado (Oficina/SAC) -->
+<div class="modal-overlay" id="cli-avulso-warn-modal" style="z-index:480;">
+  <div class="modal" style="width:440px;max-width:94vw;">
+    <div class="modal-title">⚠️ Sem cliente cadastrado</div>
+    <div id="cli-avulso-warn-body" style="font-size:12px;color:var(--text2);line-height:1.6;"></div>
+    <div class="modal-actions" style="flex-direction:column;gap:8px;margin-top:18px;">
+      <button class="btn btn-gold" id="cli-avulso-btn-cadastrar" style="width:100%;">Cadastrar este cliente</button>
+      <button class="btn" id="cli-avulso-btn-salvar" style="width:100%;">Salvar sem cadastrar</button>
+      <button class="btn" id="cli-avulso-btn-cancelar" style="width:100%;">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MAIN -->
 <div class="main">
   <!-- TOPBAR -->
@@ -9926,10 +9939,12 @@ function _cliInitDocListener(){
 }
 
 // ── Modal rápido de cadastro de cliente ──
-let _cliQuickAlvo = null; // containerId do componente que abriu o modal
+let _cliQuickAlvo = null;    // containerId do componente que abriu o modal
+let _cliQuickOnDone = null;  // callback opcional — disparado SÓ no sucesso
 
-function openCliQuickModal(nomePrefill, alvoContainerId){
+function openCliQuickModal(nomePrefill, alvoContainerId, onDone){
   _cliQuickAlvo = alvoContainerId || null;
+  _cliQuickOnDone = (typeof onDone === 'function') ? onDone : null;
   document.getElementById('cliq-nome').value     = nomePrefill || '';
   document.getElementById('cliq-tel').value      = '';
   document.getElementById('cliq-cpf').value      = '';
@@ -9939,9 +9954,11 @@ function openCliQuickModal(nomePrefill, alvoContainerId){
   document.getElementById('cliq-nome').focus();
 }
 
+// Cancelar/fechar — NÃO dispara onDone. Só salvarCliQuick (sucesso) dispara.
 function closeCliQuickModal(){
   document.getElementById('cli-quick-modal').classList.remove('open');
   _cliQuickAlvo = null;
+  _cliQuickOnDone = null;
 }
 
 async function salvarCliQuick(){
@@ -9962,9 +9979,30 @@ async function salvarCliQuick(){
   const cli = toCamel(data);
   clientesAll.push(cli);
   if (Array.isArray(oficinaClientes)) oficinaClientes.push(cli);
-  const alvo = _cliQuickAlvo;
+  // captura alvo/onDone antes do close (que zera ambos)
+  const alvo = _cliQuickAlvo, onDone = _cliQuickOnDone;
   closeCliQuickModal();
-  if (alvo) clienteSearchSet(alvo, { clienteId: cli.id }, true);
+  if (alvo)   clienteSearchSet(alvo, { clienteId: cli.id }, true);
+  if (onDone) onDone(cli);
+}
+
+// ── Modal de proteção: salvar OS/caso sem cliente cadastrado ──
+// Genérico — Oficina e SAC reusam. `prosseguir` é chamado tanto no
+// "Cadastrar" (após o cadastro concluir) quanto no "Salvar sem cadastrar".
+function _abrirAvulsoWarn(contexto, texto, prosseguir, searchId){
+  document.getElementById('cli-avulso-warn-body').innerHTML =
+    `Esta ${escHtml(contexto)} será salva <b>sem cliente cadastrado</b>.<br><br>` +
+    `Cliente: <b>"${escHtml(texto)}"</b><br><br>` +
+    `<span style="color:var(--text3);">Cadastrar agora ajuda no histórico futuro (próximas visitas, garantia, etc).</span>`;
+  document.getElementById('cli-avulso-btn-cadastrar').onclick = () => {
+    openCliQuickModal(texto, searchId, () => { _fecharAvulsoWarn(); prosseguir(); });
+  };
+  document.getElementById('cli-avulso-btn-salvar').onclick = () => { _fecharAvulsoWarn(); prosseguir(); };
+  document.getElementById('cli-avulso-btn-cancelar').onclick = () => _fecharAvulsoWarn();
+  document.getElementById('cli-avulso-warn-modal').classList.add('open');
+}
+function _fecharAvulsoWarn(){
+  document.getElementById('cli-avulso-warn-modal').classList.remove('open');
 }
 
 // ══════════════════════════════════════════
@@ -10987,9 +11025,8 @@ function abrirOfModal(id) {
     + `<div class="modal-bloco">`
     +   `<div class="modal-bloco-titulo">🧑 Cliente</div>`
     +   `<div class="form-grid">`
-    +     `<div class="form-group full" style="position:relative;"><label>Cliente</label>`
-    +       `<input class="form-input" id="of-cli-nome" value="${escAttr(o&&o.clienteNome)}" autocomplete="off" oninput="ofClienteSugestao()">`
-    +       `<div id="of-cli-sugestoes" style="position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;display:none;"></div>`
+    +     `<div class="form-group full"><label>Cliente</label>`
+    +       `<div id="of-cli-search"></div>`
     +     `</div>`
     +     `<div class="form-group"><label>Telefone</label><input class="form-input" id="of-cli-tel" value="${escAttr(o&&o.clienteTelefone)}"></div>`
     +     `<div class="form-group"><label>CPF</label><input class="form-input" id="of-cli-cpf" value="${escAttr(cpfInicial)}"></div>`
@@ -11047,7 +11084,11 @@ function abrirOfModal(id) {
     + `</div>`;
   document.body.appendChild(shell);
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
-  if (!isEdit) ofClienteSugestao();
+  initClienteSearch('of-cli-search', {
+    onSelect: ofClienteOnSelect,
+    initial: o ? (o.clienteId ? { clienteId: o.clienteId }
+                : (o.clienteNome ? { avulso: o.clienteNome } : null)) : null,
+  });
 
   // Carrega timeline e registra listener de update (auto-cleanup quando modal sai do DOM)
   if (isEdit) {
@@ -11097,31 +11138,45 @@ function ofTipoOutroToggle() {
   wrap.style.display = (sel.value === 'outro') ? '' : 'none';
 }
 
-function ofClienteSugestao() {
-  const inp = document.getElementById('of-cli-nome');
-  const box = document.getElementById('of-cli-sugestoes');
-  if (!inp || !box) return;
-  const q = inp.value.trim().toLowerCase();
-  if (!q) { box.style.display = 'none'; return; }
-  const matches = oficinaClientes.filter(c => (c.nome||'').toLowerCase().includes(q)).slice(0, 6);
-  if (!matches.length) { box.style.display = 'none'; return; }
-  box.innerHTML = matches.map(c =>
-    `<div onclick="ofSelecionarCliente('${c.id}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px;" onmouseenter="this.style.background='var(--surface3)'" onmouseleave="this.style.background='transparent'"><div style="font-weight:600;">${escHtml(c.nome)}</div>${c.telefone?`<div style="font-size:10px;color:var(--text3);">${escHtml(c.telefone)}</div>`:''}</div>`
-  ).join('');
-  box.style.display = 'block';
-}
-function ofSelecionarCliente(id) {
-  const c = oficinaClientes.find(x => x.id === id);
-  if (!c) return;
-  document.getElementById('of-cli-nome').value = c.nome || '';
-  document.getElementById('of-cli-tel').value  = c.telefone || '';
-  document.getElementById('of-cli-cpf').value  = c.cpfCnpj || c.cpf || '';
-  document.getElementById('of-cli-nome').dataset.clienteId = c.id;
-  document.getElementById('of-cli-sugestoes').style.display = 'none';
+// Componente de busca preenche tel/CPF ao escolher um cliente cadastrado.
+// Avulso/vazio: mantém o que o usuário tiver digitado nesses campos.
+function ofClienteOnSelect(result){
+  if (result.tipo === 'cliente') {
+    const c = result.cliente;
+    document.getElementById('of-cli-tel').value = c.telefone || '';
+    document.getElementById('of-cli-cpf').value = c.cpfCnpj || c.cpf_cnpj || c.cpf || '';
+  }
 }
 
 async function ofSalvar(editId) {
-  const cliNome   = document.getElementById('of-cli-nome').value.trim();
+  const cliSel    = clienteSearchGet('of-cli-search');
+  const cliNome   = cliSel.tipo === 'cliente' ? (cliSel.cliente.nome || '')
+                  : cliSel.tipo === 'avulso'  ? cliSel.texto
+                  : '';
+  const modelo    = document.getElementById('of-modelo').value.trim();
+  const tipo      = document.getElementById('of-tipo').value;
+  const tipoOutro = document.getElementById('of-tipo-outro').value.trim();
+  const problema  = document.getElementById('of-problema').value.trim();
+
+  if (!cliNome) return smAlert('Preencha o nome do cliente.');
+  if (!modelo)  return smAlert('Preencha o modelo da scooter.');
+  if (!problema) return smAlert('Preencha o problema relatado.');
+  if (tipo === 'outro' && !tipoOutro) return smAlert('Especifique o tipo do problema (campo "outro").');
+
+  // Avulso (texto sem cliente_id) → modal de proteção antes de salvar.
+  // "Cadastrar" e "Salvar sem cadastrar" caem ambos em _ofSalvarReal, que
+  // relê o estado do componente (cliente após cadastro / avulso senão).
+  if (cliSel.tipo === 'avulso') {
+    _abrirAvulsoWarn('OS', cliNome, () => _ofSalvarReal(editId), 'of-cli-search');
+    return;
+  }
+  _ofSalvarReal(editId);
+}
+
+async function _ofSalvarReal(editId) {
+  const cliSel    = clienteSearchGet('of-cli-search');
+  const clienteId = cliSel.tipo === 'cliente' ? cliSel.clienteId : null;
+  const cliNome   = cliSel.tipo === 'cliente' ? (cliSel.cliente.nome || '') : (cliSel.texto || '');
   const cliTel    = document.getElementById('of-cli-tel').value.trim();
   const cliCpf    = document.getElementById('of-cli-cpf').value.trim();
   const modelo    = document.getElementById('of-modelo').value.trim();
@@ -11139,30 +11194,6 @@ async function ofSalvar(editId) {
   const valor     = parseFloat(document.getElementById('of-valor').value) || 0;
   const diag      = document.getElementById('of-diag')?.value.trim() || null;
   const sol       = document.getElementById('of-sol')?.value.trim() || null;
-
-  if (!cliNome) return smAlert('Preencha o nome do cliente.');
-  if (!modelo)  return smAlert('Preencha o modelo da scooter.');
-  if (!problema) return smAlert('Preencha o problema relatado.');
-  if (tipo === 'outro' && !tipoOutro) return smAlert('Especifique o tipo do problema (campo "outro").');
-
-  // Cliente: se nome bate exato com alguém do cadastro, usa o id; senão cria
-  let clienteId = document.getElementById('of-cli-nome').dataset.clienteId || null;
-  if (!clienteId) {
-    const existing = oficinaClientes.find(c => (c.nome||'').toLowerCase() === cliNome.toLowerCase());
-    if (existing) {
-      clienteId = existing.id;
-    } else {
-      const novoCli = { nome: cliNome, origem: 'manual' };
-      if (cliTel) novoCli.telefone = cliTel;
-      if (cliCpf) novoCli.cpf_cnpj = cliCpf;
-      const { data, error } = await sb.from('clientes').insert(novoCli).select().single();
-      if (error) return smAlert('Erro ao cadastrar cliente: ' + error.message);
-      clienteId = data.id;
-      const novo = toCamel(data);
-      oficinaClientes.push(novo);
-      clientesAll.push(novo);
-    }
-  }
 
   const payload = {
     cliente_id: clienteId,
