@@ -4433,11 +4433,9 @@ async function carregarFaturamentoDash(forcar) {
     var custoFixoMensal = custosFixos.reduce(function(s,c){return s+c.valor;}, 0);
     var avgMCpct    = products.length ? products.reduce(function(s,p){return s+mcp(p);},0)/products.length/100 : 0;
     var lucroBruto  = receitaTotal * avgMCpct;
-    var lucroLiquido = lucroBruto - custoFixoMensal;
-    var margemLiq   = receitaTotal > 0 ? lucroLiquido/receitaTotal*100 : 0;
-    // Mesma fórmula aplicada ao período anterior (para comparação)
-    var lucroBrutoAnt   = ka.receita * avgMCpct;
-    var lucroLiquidoAnt = lucroBrutoAnt - custoFixoMensal;
+    // Lucro bruto do período anterior (para o delta comparativo).
+    // O lucro líquido saiu daqui — o widget DRE é a fonte autoritativa.
+    var lucroBrutoAnt = ka.receita * avgMCpct;
 
     // Parse YYYY-MM-DD em local time (new Date('2026-04-01') eh UTC midnight,
     // que no Brasil GMT-3 vira 31/03 21h e o toLocaleString mostra "marco").
@@ -4474,14 +4472,9 @@ async function carregarFaturamentoDash(forcar) {
       + deltaHTML(lucroBruto, lucroBrutoAnt)
       + '<div class="kpi-change">MC média ' + (avgMCpct*100).toFixed(1) + '% × receita</div></div>'
       + '<div class="kpi"' + kpiClickCus + '>'
-      + '<div class="kpi-label">Custo fixo do mês</div>'
+      + '<div class="kpi-label">Custo Fixo Planejado</div>'
       + '<div class="kpi-value red">' + fmt(custoFixoMensal) + '</div>'
-      + '<div class="kpi-change">clique para gerenciar ↗</div></div>'
-      + '<div class="kpi"' + kpiNormal + '>'
-      + '<div class="kpi-label">Lucro líquido est.</div>'
-      + '<div class="kpi-value ' + (lucroLiquido>=0?'green':'red') + '">' + fmtSigned(lucroLiquido) + '</div>'
-      + deltaHTML(lucroLiquido, lucroLiquidoAnt)
-      + '<div class="kpi-change">' + (margemLiq>=0?'+':'') + margemLiq.toFixed(1) + '% da receita</div></div>';
+      + '<div class="kpi-change">soma do cadastro · real no widget DRE ↗</div></div>';
 
     // Esconde o container kpis-int duplicado (legacy do builder).
     // As 2 KPIs internas agora ficam na mesma grid acima.
@@ -4811,7 +4804,20 @@ async function calcularDRE(iniISO, fimISO) {
     }
   }
   const lucroBruto = receita - cpv;
-  const pctLB = receita > 0 ? (lucroBruto / receita * 100) : 0;
+
+  // Devolve a comissão fantasma cobrada no CPV das vendas diretas: o
+  // ct() soma prod.comissao, mas em venda direta os sócios não recebem
+  // comissão. Σ comissão real (não flat R$100 — 6 produtos têm
+  // comissao = 0). Itens do Tiny: campo `produto` (nome) e `quantidade`.
+  const ajusteVendaDireta = pedidos.reduce((sum, ped) => {
+    if ((ped.vendedor && ped.vendedor.nome) !== 'Venda Direta Smart Motors') return sum;
+    return sum + (ped.itens || []).reduce((s, it) => {
+      const prod = _matchProdutoPorNome((it.produto || it.nome || '').trim());
+      return prod ? s + (prod.comissao || 0) * (it.quantidade || 0) : s;
+    }, 0);
+  }, 0);
+  const margemBrutaAjustada = lucroBruto + ajusteVendaDireta;
+  const pctLB = receita > 0 ? (margemBrutaAjustada / receita * 100) : 0;
 
   const inPeriodo = d => d && d >= iniISO && d <= fimISO;
   const desp = (lancamentos || []).filter(l =>
@@ -4831,13 +4837,13 @@ async function calcularDRE(iniISO, fimISO) {
   const empValor = empPagos.reduce((s,p) => s + (p.valorPago || p.valor || 0), 0);
   const empCount = empPagos.length;
 
-  const resultado = lucroBruto - despReal - empValor;
+  const resultado = margemBrutaAjustada - despReal - empValor;
   const pctRes = receita > 0 ? (resultado / receita * 100) : 0;
 
   return {
     periodo: { iniISO, fimISO },
     receita, pedidos,
-    avgMCpct, cpv, lucroBruto, pctLB,
+    avgMCpct, cpv, lucroBruto, ajusteVendaDireta, margemBrutaAjustada, pctLB,
     despReal, despCount, despPlanejado,
     empValor, empCount,
     resultado, pctRes,
@@ -4859,14 +4865,26 @@ async function renderDashDreMes() {
   const mesLabel = hoje.toLocaleString('pt-BR', { month:'long', year:'numeric' });
   const mesLabelCap = mesLabel.charAt(0).toUpperCase() + mesLabel.slice(1);
 
-  // Atualiza subtítulo do widget com o mês corrente.
-  const subEl = document.getElementById('dash-dre-mes-sub');
-  if (subEl) subEl.textContent = `Demonstração do Resultado simplificada (regime de competência) · ${mesLabelCap}`;
-
   const dre = await calcularDRE(iniISO, fimISO);
-  const { receita, cpv, lucroBruto, pctLB, despReal, despCount,
-          despPlanejado: planejado, empValor, empCount,
-          resultado, pctRes } = dre;
+  const { receita, cpv, lucroBruto, ajusteVendaDireta, margemBrutaAjustada,
+          pctLB, despReal, despCount, despPlanejado: planejado,
+          empValor, empCount, resultado, pctRes, tinyEstabilidade } = dre;
+
+  // Subtítulo do widget + badge de instabilidade do Tiny.
+  const subEl = document.getElementById('dash-dre-mes-sub');
+  if (subEl) {
+    const base = `Demonstração do Resultado simplificada (regime de competência) · ${mesLabelCap}`;
+    if (tinyEstabilidade && !tinyEstabilidade.estavel) {
+      const [c1, c2] = tinyEstabilidade.contagens || [0, 0];
+      const tip = `O Tiny retornou ${c1} e ${c2} pedidos em buscas seguidas do mesmo período. O DRE pode mudar ao recarregar.`;
+      subEl.innerHTML = escHtml(base)
+        + ` <span title="${escHtml(tip)}" style="display:inline-block;margin-left:6px;`
+        + `font-size:10px;font-weight:700;color:var(--red);border:1px solid var(--red);`
+        + `border-radius:4px;padding:1px 6px;">⚠️ Dados Tiny instáveis</span>`;
+    } else {
+      subEl.textContent = base;
+    }
+  }
   const resCls = resultado > 0 ? 'green' : resultado < 0 ? 'red' : '';
   const resStyle = resultado === 0 ? 'color:var(--text2);' : '';
   const resIcon = resultado > 0 ? '🟢' : resultado < 0 ? '🔴' : '⚪';
@@ -4907,23 +4925,30 @@ async function renderDashDreMes() {
 
     det.innerHTML = `
       ${linha('Receita (faturamento Tiny)', receita, { onclick: `_dashDreIrPedidos()` })}
-      ${linha('(−) Custo dos produtos vendidos', cpv, {
-        title: 'CPV = Receita × (1 − MC% médio dos produtos). Estimativa baseada em produtos[].mcp.'
+      ${linha('(−) CPV — custo real dos produtos vendidos', cpv, {
+        title: 'Soma do custo de cada produto vendido (ct() × qtd dos itens do Tiny). Itens sem cadastro (acessórios/serviços) usam estimativa por MC% médio.'
+      })}
+      ${linha('(+) Ajuste comissão venda direta', ajusteVendaDireta, {
+        sign: ajusteVendaDireta > 0 ? '+ ' : '',
+        color: ajusteVendaDireta > 0 ? 'var(--green)' : '',
+        title: 'Devolve a comissão fantasma cobrada no CPV das vendas diretas — os sócios ("Venda Direta Smart Motors") não recebem comissão.'
       })}
       ${sep}
-      ${linha('= Lucro bruto', lucroBruto, {
+      ${linha('= Margem bruta ajustada', margemBrutaAjustada, {
         bold: true,
         pct: receita > 0 ? `${pctLB.toFixed(0)}% da receita` : '',
-        title: 'Receita − CPV. Lucro antes das despesas operacionais.'
+        title: 'Receita − CPV + ajuste de comissão de venda direta.'
       })}
       <div style="height:8px;"></div>
       ${linha('(−) Despesas operacionais', despReal, {
         onclick: `_dashDreIrDespesas('${mesAtual}')`,
+        title: 'Lançamentos de saída do mês, exceto: custo de produto já no CPV (Fornecedores, Motonetas, Montagem, NF), empréstimos (linha própria) e não-operacionais (Acerto de Caixa, Estorno, transferências).'
       })}
       ${sublinha(`real do mês (${despCount} lançamento${despCount!==1?'s':''})`)}
       ${sublinha(`${fmt(planejado)} planejados em custos fixos`)}
       ${linha('(−) Empréstimos pagos', empValor, {
         onclick: `_dashDreIrEmprestimos()`,
+        title: 'Parcelas de empréstimo pagas no mês (de emprestimo_parcelas). Linha própria — não duplica com as despesas operacionais.'
       })}
       ${sublinha(`${empCount} parcela${empCount!==1?'s':''} paga${empCount!==1?'s':''} em ${mesLabel.split(' ')[0]}`)}
       ${sep}
@@ -4932,7 +4957,7 @@ async function renderDashDreMes() {
         sign: resSign,
         color: resultado > 0 ? 'var(--green)' : resultado < 0 ? 'var(--red)' : 'var(--text2)',
         pct: receita > 0 ? `${resIcon} ${Math.abs(pctRes).toFixed(0)}% ${resLabel}` : '',
-        title: 'Lucro bruto − Despesas operacionais − Empréstimos.'
+        title: 'Margem bruta ajustada − Despesas operacionais − Empréstimos.'
       })}
     `;
   }
@@ -5904,14 +5929,13 @@ function renderizarDREVendas(pedidos) {
   var custoFixo    = custosFixos.reduce(function(s,c){return s+c.valor;}, 0);
   var avgMC        = products.length ? products.reduce(function(s,p){return s+mcp(p);},0)/products.length/100 : 0;
   var lucroBruto   = receitaTotal * avgMC;
-  var lucroLiq     = lucroBruto - custoFixo;
+  // Lucro líquido saiu daqui — widget DRE do Dashboard é a fonte única.
 
   document.getElementById('vendas-kpis').innerHTML =
     '<div class="kpi"><div class="kpi-label">Receita total</div><div class="kpi-value green">'+fmt(receitaTotal)+'</div><div class="kpi-change">'+qtdPedidos+' pedidos faturados</div></div>'
     +'<div class="kpi"><div class="kpi-label">Ticket médio</div><div class="kpi-value gold">'+fmt(ticketMedio)+'</div><div class="kpi-change">por pedido</div></div>'
     +'<div class="kpi"><div class="kpi-label">Lucro bruto est.</div><div class="kpi-value '+(lucroBruto>=0?'green':'red')+'">'+fmt(lucroBruto)+'</div><div class="kpi-change">MC média '+(avgMC*100).toFixed(1)+'%</div></div>'
-    +'<div class="kpi"><div class="kpi-label">Custo fixo</div><div class="kpi-value red">'+fmt(custoFixo)+'</div><div class="kpi-change">'+custosFixos.length+' itens</div></div>'
-    +'<div class="kpi"><div class="kpi-label">Lucro líquido est.</div><div class="kpi-value '+(lucroLiq>=0?'green':'red')+'">'+fmtSigned(lucroLiq)+'</div><div class="kpi-change">bruto − custo fixo</div></div>';
+    +'<div class="kpi"><div class="kpi-label">Custo Fixo Planejado</div><div class="kpi-value red">'+fmt(custoFixo)+'</div><div class="kpi-change">soma do cadastro</div></div>';
 }
 
 function renderizarRankingProdutosVendas(pedidos) {
