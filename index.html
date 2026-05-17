@@ -1228,7 +1228,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       </div>
     </div>
     <div style="display:flex;gap:8px;">
-<button class="btn btn-gold" onclick="openAddProduct()" id="btn-add-produto" style="display:none;">+ Produto</button>
+<button class="btn btn-gold" onclick="cpOpenNovo()" id="btn-add-produto" style="display:none;">+ Produto</button>
     </div>
   </div>
 
@@ -1302,6 +1302,35 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
           </thead>
           <tbody id="precos-table"></tbody>
         </table>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Calcular preço por margem</div>
+          <div class="card-sub">Sugere o preço de venda pra atingir a margem desejada (base CtReal)</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;padding:4px;">
+        <div class="form-group" style="min-width:200px;margin:0;">
+          <label>Produto</label>
+          <select class="form-input" id="pm-produto" onchange="calcPrecoMargem()">
+            <option value="">— Custo manual —</option>
+          </select>
+        </div>
+        <div class="form-group" style="max-width:150px;margin:0;">
+          <label>Custo (R$)</label>
+          <input type="number" class="form-input" id="pm-custo" placeholder="0,00" oninput="calcPrecoMargem()">
+        </div>
+        <div class="form-group" style="max-width:150px;margin:0;">
+          <label>Margem desejada (%)</label>
+          <input type="number" class="form-input" id="pm-margem" value="30" oninput="calcPrecoMargem()">
+        </div>
+        <div style="padding:8px 14px;background:var(--surface2);border-radius:var(--r-sm);min-width:160px;">
+          <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Preço sugerido</div>
+          <div style="font-size:20px;font-weight:800;color:var(--gold);font-family:'JetBrains Mono',monospace;margin-top:3px;" id="pm-preco">R$ —</div>
+        </div>
+        <button class="btn btn-gold" onclick="aplicarPrecoMargem()">Aplicar este preço →</button>
       </div>
     </div>
   </div>
@@ -2493,13 +2522,18 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     <div class="form-grid">
       <div class="form-group full"><label>Modelo</label><input class="form-input" id="edit-modelo" type="text"></div>
       <div class="form-group full"><label>Fornecedor</label><input class="form-input" id="edit-fornecedor" type="text"></div>
-      <div class="form-group"><label>Custo produto (R$)</label><input class="form-input" id="edit-custo" type="number" oninput="updateModalComputed()"></div>
-      <div class="form-group"><label>Custo montagem (R$)</label><input class="form-input" id="edit-montagem" type="number" oninput="updateModalComputed()"></div>
-      <div class="form-group"><label>Comissão vendedor (R$)</label><input class="form-input" id="edit-comissao" type="number" oninput="updateModalComputed()"></div>
-      <div class="form-group"><label>Custo NF compra (R$)</label><input class="form-input" id="edit-nf-compra" type="number" oninput="updateModalComputed()"></div>
-      <div class="form-group"><label>Custo NF (R$)</label><input class="form-input" id="edit-nf" type="number" oninput="updateModalComputed()"></div>
-      <div class="form-group"><label>Custo Jonosake (R$)</label><input class="form-input" id="edit-jonosake" type="number" oninput="updateModalComputed()"></div>
-      <div class="form-group"><label>Custo financeiro (R$)</label><input class="form-input" id="edit-financeiro" type="number" oninput="updateModalComputed()"></div>
+      <div class="form-group full" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--text3);">
+        <span>🔒 Custos editáveis em Custos de Produtos</span>
+        <button class="action-btn edit-btn" onclick="irParaCustosProduto()">Ir pra Custos de Produtos →</button>
+      </div>
+      <div class="form-group"><label>Custo produto (R$)</label><input class="form-input" id="edit-custo" type="number" readonly style="opacity:0.55;"></div>
+      <div class="form-group"><label>Custo puro (R$)</label><input class="form-input" id="edit-custo-puro" type="number" readonly style="opacity:0.55;"></div>
+      <div class="form-group"><label>Custo montagem (R$)</label><input class="form-input" id="edit-montagem" type="number" readonly style="opacity:0.55;"></div>
+      <div class="form-group"><label>Comissão vendedor (R$)</label><input class="form-input" id="edit-comissao" type="number" readonly style="opacity:0.55;"></div>
+      <div class="form-group"><label>Custo NF compra (R$)</label><input class="form-input" id="edit-nf-compra" type="number" readonly style="opacity:0.55;"></div>
+      <div class="form-group"><label>Custo NF (R$)</label><input class="form-input" id="edit-nf" type="number" readonly style="opacity:0.55;"></div>
+      <div class="form-group"><label>Custo Jonosake (R$)</label><input class="form-input" id="edit-jonosake" type="number" readonly style="opacity:0.55;"></div>
+      <div class="form-group"><label>Custo financeiro (R$)</label><input class="form-input" id="edit-financeiro" type="number" readonly style="opacity:0.55;"></div>
       <div class="form-group"><label>Preço de venda (R$)</label><input class="form-input" id="edit-venda" type="number" oninput="updateModalComputed()"></div>
       <div class="form-group full" style="display:flex;align-items:center;gap:8px;">
         <input type="checkbox" id="edit-ativo" checked style="width:auto;cursor:pointer;">
@@ -5129,6 +5163,13 @@ function renderPrecos(){
       const o=document.createElement('option');o.value=s;o.textContent=s;sel.appendChild(o);
     });
   }
+  // Select de produto do bloco "Calcular preço por margem"
+  const selPM=document.getElementById('pm-produto');
+  if(selPM&&selPM.options.length<=1){
+    products.forEach((p,i)=>{
+      const o=document.createElement('option');o.value=i;o.textContent=p.modelo;selPM.appendChild(o);
+    });
+  }
   const q=(document.getElementById('search-modelo')?.value||'').toLowerCase();
   const forn=document.getElementById('filter-fornecedor')?.value||'';
   const marg=document.getElementById('filter-margem')?.value||'';
@@ -5337,6 +5378,7 @@ function openEdit(i){
   document.getElementById('edit-modelo').value=p.modelo;
   document.getElementById('edit-fornecedor').value=p.fornecedor;
   document.getElementById('edit-custo').value=p.custo||0;
+  document.getElementById('edit-custo-puro').value=p.custoPuro||0;
   document.getElementById('edit-montagem').value=p.montagem||0;
   document.getElementById('edit-comissao').value=p.comissao||0;
   document.getElementById('edit-nf-compra').value=p.nfCompra||0;
@@ -5348,16 +5390,15 @@ function openEdit(i){
   updateModalComputed();
   document.getElementById('edit-modal').classList.add('open');
 }
-function openAddProduct(){
-  document.getElementById('modal-title').innerHTML='Novo <span>produto</span>';
-  document.getElementById('edit-idx').value=-1;
-  ['edit-modelo','edit-fornecedor'].forEach(id=>document.getElementById(id).value='');
-  ['edit-custo','edit-montagem','edit-comissao','edit-nf-compra','edit-nf','edit-jonosake','edit-financeiro','edit-venda'].forEach(id=>document.getElementById(id).value=0);
-  document.getElementById('edit-ativo').checked=true;
-  updateModalComputed();
-  document.getElementById('edit-modal').classList.add('open');
-}
 function closeModal(){document.getElementById('edit-modal').classList.remove('open');}
+// Botão "Ir pra Custos de Produtos" do modal de #precos — leva o produto
+// atual pro editor de custos (única via de edição de custo).
+function irParaCustosProduto(){
+  const i=+document.getElementById('edit-idx').value;
+  closeModal();
+  showPage('custos-produtos');
+  if(i>=0&&products[i])cpOpenEdit(i);
+}
 function updateModalComputed(){
   const p={
     custo:+document.getElementById('edit-custo').value||0,
@@ -5382,6 +5423,11 @@ function saveProduct(){
     modelo:document.getElementById('edit-modelo').value,
     fornecedor:document.getElementById('edit-fornecedor').value,
     custo:+document.getElementById('edit-custo').value||0,
+    // custoPuro e categoria não são editáveis aqui (só em Custos de
+    // Produtos) — mas TÊM que ser preservados, senão salvar a venda
+    // pelo #precos zeraria os dois no objeto em memória.
+    custoPuro:+document.getElementById('edit-custo-puro').value||0,
+    categoria:(i>=0&&products[i]?products[i].categoria:null)||'motoneta',
     montagem:+document.getElementById('edit-montagem').value||0,
     comissao:+document.getElementById('edit-comissao').value||0,
     nfCompra:+document.getElementById('edit-nf-compra').value||0,
@@ -5395,6 +5441,37 @@ function saveProduct(){
   if(i===-1){products.push(p);} else {p.id=products[i].id;products[i]=p;}
   closeModal();renderPrecos();renderDashboard();
   salvarDados();
+}
+// ── Calcular preço por margem (migrado do Simulador) ──
+function calcPrecoMargem(){
+  const sel=document.getElementById('pm-produto');
+  const idx=sel?sel.value:'';
+  const custoInput=document.getElementById('pm-custo');
+  let custo;
+  if(idx===''){
+    custo=+custoInput.value||0;
+    custoInput.disabled=false; custoInput.style.opacity='';
+  } else {
+    custo=ctReal(products[+idx]||{});
+    custoInput.value=Math.round(custo*100)/100;
+    custoInput.disabled=true; custoInput.style.opacity='0.5';
+  }
+  const margem=+document.getElementById('pm-margem').value||30;
+  const preco=(custo>0&&margem<100)?custo/(1-margem/100):0;
+  document.getElementById('pm-preco').textContent=preco>0?fmt(preco):'R$ —';
+}
+function aplicarPrecoMargem(){
+  const sel=document.getElementById('pm-produto');
+  const idx=sel?sel.value:'';
+  if(idx===''){smAlert('Selecione um produto pra aplicar o preço sugerido');return;}
+  const i=+idx;
+  const custo=ctReal(products[i]||{});
+  const margem=+document.getElementById('pm-margem').value||30;
+  const preco=(custo>0&&margem<100)?custo/(1-margem/100):0;
+  if(!(preco>0)){smAlert('Preço sugerido inválido');return;}
+  openEdit(i);
+  document.getElementById('edit-venda').value=Math.round(preco*100)/100;
+  updateModalComputed();
 }
 async function delProduct(i){
   if(!(await smConfirm('Remover "'+products[i].modelo+'"?')))return;
