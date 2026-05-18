@@ -8120,6 +8120,17 @@ function setLanTipo(tipo) {
   const transfMode = (tipo === 'transferencia');
   document.querySelectorAll('#lan-modal .lan-mode-normal').forEach(el => el.style.display = transfMode ? 'none' : '');
   document.querySelectorAll('#lan-modal .lan-mode-transf').forEach(el => el.style.display = transfMode ? '' : 'none');
+  lanCategoriaHint();
+}
+
+// Lembrete contextual: comissão de venda vai na categoria própria
+// ("Comissão de Vendas"), separada do salário — senão duplica no DRE
+// (a comissão já está no CPV via o componente comissao do ctReal).
+function lanCategoriaHint() {
+  const cat  = document.getElementById('lan-categoria').value;
+  const tipo = document.getElementById('lan-tipo').value;
+  const hint = document.getElementById('lan-hint-comissao');
+  if (hint) hint.style.display = (tipo !== 'transferencia' && cat === 'Funcionários') ? '' : 'none';
 }
 
 function populateLanConta() {
@@ -8323,6 +8334,7 @@ function editarLancamento(id) {
   document.getElementById('lan-valor').value     = l.valor||0;
   document.getElementById('lan-data').value      = l.data||'';
   document.getElementById('lan-categoria').value = l.categoria||'';
+  lanCategoriaHint();
   document.getElementById('lan-obs').value       = l.obs||'';
   populateLanConta();
   document.getElementById('lan-conta').value     = l.conta||'';
@@ -13111,7 +13123,7 @@ renderDashboard();
       </div>
       <div class="form-group lan-mode-normal">
         <label>Categoria</label>
-        <select class="form-input" id="lan-categoria">
+        <select class="form-input" id="lan-categoria" onchange="lanCategoriaHint()">
           <option value="">Selecionar...</option>
           <optgroup label="↑ Entradas">
             <option value="Motonetas">Motonetas</option>
@@ -13125,6 +13137,7 @@ renderDashboard();
           <optgroup label="↓ Saídas fixas">
             <option value="Aluguel e Condomínio">Aluguel e Condomínio</option>
             <option value="Funcionários">Funcionários</option>
+            <option value="Comissão de Vendas">Comissão de Vendas</option>
             <option value="SÓCIOS">SÓCIOS</option>
             <option value="Empréstimos">Empréstimos</option>
             <option value="Marketing">Marketing</option>
@@ -13153,6 +13166,11 @@ renderDashboard();
             <option value="Transferência" disabled>Transferência (use o botão ⇄)</option>
           </optgroup>
         </select>
+      </div>
+      <div class="form-group full lan-mode-normal" id="lan-hint-comissao" style="display:none;">
+        <div style="font-size:11px;color:var(--gold);background:var(--gold-dim);border-radius:var(--r-sm);padding:8px 11px;line-height:1.45;">
+          💡 É <b>comissão de venda</b>? Lance numa linha separada com a categoria <b>"Comissão de Vendas"</b> — comissão junto do salário conta 2× no DRE (já está no custo do produto).
+        </div>
       </div>
       <div class="form-group lan-mode-normal">
         <label>Conta</label>
