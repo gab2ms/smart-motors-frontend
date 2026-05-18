@@ -3061,7 +3061,6 @@ async function _enviarParaBanco() {
       _syncTable('lancamentos',      lancamentos),
       _syncTable('contas_pagar',     contasPagar),
       _syncTable('contas_receber',   contasReceber),
-      _syncTable('custos_fixos',     custosFixos),
       _syncTable('produtos_precos',  products),
     ]);
     console.log('✅ Dados salvos no Supabase');
@@ -3119,16 +3118,18 @@ async function carregarDados() {
       return (data || []).map(map.fromDb);
     };
     if (!c.error)  contas      = await seed('contas_bancarias', contas,      CONTAS_SEED);
-    if (!cf.error) custosFixos = await seed('custos_fixos',     custosFixos, CUSTOS_FIXOS_SEED);
     if (!pr.error) products    = await seed('produtos_precos',  products,    PRODUCTS_SEED);
+    // custos_fixos NÃO é mais semeada nem sincronizada — a aba Custos
+    // Operacionais lê de lancamentos. As linhas serão deletadas num
+    // passo separado; o fetch continua só pra aba antiga não quebrar.
 
-    // Extrai a config de "vendas/mês" da lista de custos (não é despesa real)
+    // Config "vendas/mês" — migrada de custos_fixos pra config_custos
+    // (chave 'vendas_mes'). A linha legada em custos_fixos é só removida
+    // do array em memória pra não aparecer como custo na aba antiga.
+    if (CONFIG_CUSTOS.vendas_mes != null) vendasMesConfig.valor = CONFIG_CUSTOS.vendas_mes;
     const _cfgIdx = custosFixos.findIndex(x => x.nome === VENDAS_MES_CONFIG_NOME);
-    if (_cfgIdx >= 0) {
-      vendasMesConfig = custosFixos[_cfgIdx];
-      custosFixos.splice(_cfgIdx, 1);
-      console.log('[carregarDados] vendas_mes_config carregado:', vendasMesConfig.valor);
-    }
+    if (_cfgIdx >= 0) custosFixos.splice(_cfgIdx, 1);
+    console.log('[carregarDados] vendas_mes:', vendasMesConfig.valor);
 
     console.log('[carregarDados] estado em memoria pos-load:',
       'contas=' + contas.length,
@@ -4911,9 +4912,11 @@ async function calcularDRE(iniISO, fimISO) {
   const despReal = desp.reduce((s,l) => s + (l.valor || 0), 0);
   const despCount = desp.length;
 
-  const despPlanejado = (custosFixos || [])
-    .filter(c => c.nome !== 'Empréstimo' && c.nome !== 'vendas_mes_config')
-    .reduce((s,c) => s + (c.valor || 0), 0);
+  // Custo Fixo Planejado: média da despesa operacional dos últimos ≤3
+  // meses-calendário completos (estrutura nova — não usa mais custos_fixos).
+  const _planej = _despPlanejadoHistorico();
+  const despPlanejado = _planej.media;
+  const despPlanejadoBaseMeses = _planej.nMeses;
 
   const todasParc = (emprestimos || []).flatMap(e => e.pagamentos || []);
   const empPagos = todasParc.filter(p => p.status === 'pago' && inPeriodo(p.dataPagamento));
@@ -4927,10 +4930,125 @@ async function calcularDRE(iniISO, fimISO) {
     periodo: { iniISO, fimISO },
     receita, pedidos,
     avgMCpct, cpv, lucroBruto, pctLB,
-    despReal, despCount, despPlanejado,
+    despReal, despCount, despPlanejado, despPlanejadoBaseMeses,
     empValor, empCount,
     resultado, pctRes,
     tinyEstabilidade,
+  };
+}
+
+// ══════════════════════════════════════════
+//  CUSTOS OPERACIONAIS — análise de lancamentos
+// ══════════════════════════════════════════
+// Substitui o cadastro estático custos_fixos: a fonte é lancamentos.
+
+// Custo Fixo Planejado do DRE: média da despesa operacional dos últimos
+// ≤3 meses-calendário COMPLETOS (o mês corrente parcial fica fora, senão
+// subestima). Retorna { media, nMeses } — nMeses alimenta o aviso "base: N".
+function _despPlanejadoHistorico() {
+  const totaisPorMes = {};
+  for (const l of (lancamentos || [])) {
+    if (l.tipo !== 'saida' || l.transferenciaId) continue;
+    if (_DRE_CATEGORIAS_FORA_DESPESA.includes(l.categoria)) continue;
+    const mes = (l.data || '').slice(0, 7);
+    if (!mes) continue;
+    totaisPorMes[mes] = (totaisPorMes[mes] || 0) + (l.valor || 0);
+  }
+  const mesCorrente = new Date().toISOString().slice(0, 7);
+  const meses = Object.keys(totaisPorMes)
+    .filter(m => m < mesCorrente)        // exclui o mês corrente parcial
+    .sort().reverse().slice(0, 3);       // últimos ≤3 meses completos com dado
+  if (!meses.length) return { media: 0, nMeses: 0 };
+  const soma = meses.reduce((s, m) => s + totaisPorMes[m], 0);
+  return { media: soma / meses.length, nMeses: meses.length };
+}
+
+// Normaliza descrição p/ o agrupamento (nível 2 do drill-down):
+// minúsculas, sem acento, espaços colapsados. Sem descrição → fallback.
+const _normDesc = s => (s || '(sem descrição)').toLowerCase()
+  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/\s+/g, ' ').trim();
+
+// Nível 2 do drill-down — agrupa lançamentos por descrição normalizada.
+function agruparPorDescricao(lancs) {
+  const m = {};
+  for (const l of (lancs || [])) {
+    const k = _normDesc(l.descricao);
+    (m[k] ??= { descricao: k, n: 0, total: 0 });
+    m[k].n++; m[k].total += (l.valor || 0);
+  }
+  return Object.values(m).sort((a, b) => b.total - a.total);
+}
+
+// Classifica uma categoria por estabilidade dos totais mensais recentes.
+// 1 mês de histórico → 'indefinido'. Variação ≤5% entre meses → 'fixo'.
+function classificarFixoVariavel(totaisMensais) {
+  if (!totaisMensais || totaisMensais.length < 2) return 'indefinido';
+  const min = Math.min(...totaisMensais), max = Math.max(...totaisMensais);
+  if (min <= 0) return 'variavel';
+  return ((max - min) / min <= 0.05) ? 'fixo' : 'variavel';
+}
+
+// Resolve o seletor de período → [iniISO, fimISO].
+function _periodoRange(p) {
+  const h = new Date(), y = h.getFullYear(), m = h.getMonth();
+  const iso = d => d.toISOString().slice(0, 10);
+  const ini = (yy, mm) => iso(new Date(yy, mm, 1));
+  const fim = (yy, mm) => iso(new Date(yy, mm + 1, 0));
+  switch (p) {
+    case 'mes-anterior': return [ini(y, m - 1), fim(y, m - 1)];
+    case 'trimestre':    return [ini(y, m - 2), fim(y, m)];
+    case 'semestre':     return [ini(y, m - 5), fim(y, m)];
+    case 'anual':        return [ini(y, m - 11), fim(y, m)];
+    default:             return [ini(y, m), fim(y, m)];   // 'mes-atual'
+  }
+}
+
+// Agregador principal — consumido pela aba Custos Operacionais (Sub-commit C).
+// Lê lancamentos, exclui categorias não-operacionais (_DRE_CATEGORIAS_FORA_
+// DESPESA), agrupa por categoria, classifica fixo/variável/indefinido e
+// separa as inativas (sem lançamento nos últimos 2 meses).
+function calcularCustosOperacionais(periodo) {
+  const [ini, fim] = _periodoRange(periodo || 'mes-atual');
+  const ehOp = l => l.tipo === 'saida' && !l.transferenciaId
+    && !_DRE_CATEGORIAS_FORA_DESPESA.includes(l.categoria);
+  const lim = new Date(); lim.setMonth(lim.getMonth() - 2);
+  const limISO = lim.toISOString().slice(0, 10);
+
+  // 1 passada: por categoria junta lançamentos do período + meses + última data.
+  const cats = {};
+  for (const l of (lancamentos || [])) {
+    if (!ehOp(l)) continue;
+    const cat = l.categoria || '(sem categoria)';
+    const c = (cats[cat] ??= { categoria: cat, doPeriodo: [], meses: {}, ultimaData: '' });
+    const mes = (l.data || '').slice(0, 7);
+    if (mes) c.meses[mes] = (c.meses[mes] || 0) + (l.valor || 0);
+    if ((l.data || '') > c.ultimaData) c.ultimaData = l.data || '';
+    if ((l.data || '') >= ini && (l.data || '') <= fim) c.doPeriodo.push(l);
+  }
+
+  const fixos = [], variaveis = [], indefinidos = [], inativos = [];
+  for (const c of Object.values(cats)) {
+    if (c.ultimaData < limISO) {
+      inativos.push({ categoria: c.categoria, ultimoLancamento: c.ultimaData || null });
+      continue;
+    }
+    const total = c.doPeriodo.reduce((s, l) => s + (l.valor || 0), 0);
+    const totaisMensais = Object.keys(c.meses).sort().slice(-3).map(m => c.meses[m]);
+    const classe = classificarFixoVariavel(totaisMensais);
+    const item = { categoria: c.categoria, total, n: c.doPeriodo.length,
+      subitens: agruparPorDescricao(c.doPeriodo), classificacao: classe };
+    (classe === 'fixo' ? fixos : classe === 'variavel' ? variaveis : indefinidos).push(item);
+  }
+  const ordena = a => a.sort((x, y) => y.total - x.total);
+  const soma = a => a.reduce((s, x) => s + x.total, 0);
+  ordena(fixos); ordena(variaveis); ordena(indefinidos);
+  return {
+    periodo: { iniISO: ini, fimISO: fim },
+    fixos, variaveis, indefinidos, inativos,
+    totalFixo: soma(fixos), totalVariavel: soma(variaveis),
+    totalIndefinido: soma(indefinidos),
+    total: soma(fixos) + soma(variaveis) + soma(indefinidos),
   };
 }
 
@@ -4950,7 +5068,7 @@ async function renderDashDreMes() {
 
   const dre = await calcularDRE(iniISO, fimISO);
   const { receita, cpv, lucroBruto, pctLB, despReal, despCount,
-          despPlanejado: planejado, empValor, empCount,
+          despPlanejado: planejado, despPlanejadoBaseMeses, empValor, empCount,
           resultado, pctRes, tinyEstabilidade } = dre;
 
   // Subtítulo do widget + badge de instabilidade do Tiny.
@@ -5023,7 +5141,10 @@ async function renderDashDreMes() {
         title: 'Lançamentos de saída do mês, exceto: custo de produto já no CPV (Fornecedores, Motonetas, Montagem, NF), empréstimos (linha própria) e não-operacionais (Acerto de Caixa, Estorno, transferências).'
       })}
       ${sublinha(`real do mês (${despCount} lançamento${despCount!==1?'s':''})`)}
-      ${sublinha(`${fmt(planejado)} planejados em custos fixos`)}
+      ${sublinha(`Custo Fixo Planejado: ${fmt(planejado)}`
+        + (despPlanejadoBaseMeses < 3
+            ? `  ⚠️ base: ${despPlanejadoBaseMeses} ${despPlanejadoBaseMeses === 1 ? 'mês' : 'meses'}`
+            : ''))}
       ${linha('(−) Empréstimos pagos', empValor, {
         onclick: `_dashDreIrEmprestimos()`,
         title: 'Parcelas de empréstimo pagas no mês (de emprestimo_parcelas). Linha própria — não duplica com as despesas operacionais.'
@@ -5598,9 +5719,8 @@ function renderCustos(){
     </div>`;
 }
 
-// Persiste o valor de "vendas/mês" no Supabase como uma row especial em
-// custos_fixos (nome=vendas_mes_config). Debounced para não bater no
-// banco a cada keystroke.
+// Persiste o valor de "vendas/mês" em config_custos (chave 'vendas_mes').
+// Debounced para não bater no banco a cada keystroke.
 let _vendasMesTimer = null;
 function vendasMesChanged() {
   // Re-render imediato (UX), persistência depois
@@ -5614,24 +5734,11 @@ async function salvarVendasMes() {
   const val = parseInt(inp.value) || 40;
   if (val === vendasMesConfig.valor) return;
   vendasMesConfig.valor = val;
-  vendasMesConfig.nome  = VENDAS_MES_CONFIG_NOME;
-
-  const payload = TABLE_MAP.custos_fixos.toDb(vendasMesConfig);
-  let resp;
-  if (vendasMesConfig.id) {
-    resp = await sb.from('custos_fixos')
-      .update(payload).eq('id', vendasMesConfig.id)
-      .select().single();
-  } else {
-    resp = await sb.from('custos_fixos')
-      .insert(payload).select().single();
-  }
-  if (resp.error) {
-    console.error('[vendas-mes] erro ao salvar:', resp.error.message);
-    return;
-  }
-  if (resp.data) Object.assign(vendasMesConfig, TABLE_MAP.custos_fixos.fromDb(resp.data));
-  console.log('[vendas-mes] salvo no Supabase:', vendasMesConfig.valor, 'id=' + vendasMesConfig.id);
+  const { error } = await sb.from('config_custos')
+    .upsert({ chave: 'vendas_mes', valor: val, atualizado_em: new Date().toISOString() });
+  if (error) { console.error('[vendas-mes] erro ao salvar:', error.message); return; }
+  CONFIG_CUSTOS.vendas_mes = val;
+  console.log('[vendas-mes] salvo em config_custos:', val);
 }
 
 async function editCusto(i){
