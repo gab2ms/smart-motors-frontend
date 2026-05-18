@@ -1802,6 +1802,12 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 
   <!-- ══════════════ OFICINA ══════════════ -->
   <div class="page content" id="page-oficina">
+    <!-- ABAS -->
+    <div class="fin-tabs">
+      <button class="fin-tab-btn active" data-oftab="abertas"     onclick="switchOfTab('abertas')">📋 Em aberto (<span id="of-cnt-abertas">0</span>)</button>
+      <button class="fin-tab-btn"        data-oftab="finalizadas" onclick="switchOfTab('finalizadas')">🏁 Finalizadas (<span id="of-cnt-finalizadas">0</span>)</button>
+    </div>
+
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
       <div>
         <div style="font-size:13px;font-weight:700;">Ordens de serviço</div>
@@ -1813,7 +1819,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
           <option value="acao_interna">🔧 Ação interna</option>
           <option value="aguardando_terceiro">⏳ Aguardando terceiro</option>
           <option value="pronto_entrega">✅ Pronto pra entrega</option>
-          <option value="finalizado">🏁 Finalizado</option>
         </select>
         <input type="text" class="search-input" id="of-busca" placeholder="🔍 Cliente, modelo, chassi..." oninput="renderOficina()" style="min-width:220px;">
         <button class="btn btn-gold" onclick="abrirOfModal()">+ Nova OS</button>
@@ -1830,6 +1835,12 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 
   <!-- ══════════════ SAC ══════════════ -->
   <div class="page content" id="page-sac">
+    <!-- ABAS -->
+    <div class="fin-tabs">
+      <button class="fin-tab-btn active" data-sactab="abertos"     onclick="switchSacTab('abertos')">📋 Em aberto (<span id="sac-cnt-abertos">0</span>)</button>
+      <button class="fin-tab-btn"        data-sactab="finalizados" onclick="switchSacTab('finalizados')">🏁 Finalizados (<span id="sac-cnt-finalizados">0</span>)</button>
+    </div>
+
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
       <div>
         <div style="font-size:13px;font-weight:700;">Casos de SAC</div>
@@ -1841,7 +1852,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
           <option value="acao_interna">🔧 Ação interna</option>
           <option value="aguardando_terceiro">⏳ Aguardando terceiro</option>
           <option value="pronto_entrega">✅ Pronto pra entrega</option>
-          <option value="finalizado">🏁 Finalizado</option>
         </select>
         <select class="search-input" id="sac-filtro-prio" onchange="renderSac()" style="max-width:140px;">
           <option value="">Todas prioridades</option>
@@ -11148,6 +11158,7 @@ async function _smTimelineAbrirEvento(casoId, modulo, eventoExistenteId) {
 // ══════════════════════════════════════════
 let oficinaClientes = [];
 let oficinaOrdens   = [];
+let ofAbaAtiva      = 'abertas'; // 'abertas' | 'finalizadas' — não persiste entre navegações
 
 const OF_STATUS = OS_STATUS;
 
@@ -11161,7 +11172,7 @@ async function initOficina() {
   oficinaOrdens   = oo.data ? toCamelArr(oo.data) : [];
   console.log('[oficina] clientes=' + oficinaClientes.length + ' ordens=' + oficinaOrdens.length);
   renderOficinaKpis();
-  renderOficina();
+  switchOfTab('abertas'); // reseta a aba ao abrir o módulo (não persiste) + renderiza
   // Notifica OS prontas pendentes (1x/dia/item)
   checarWhatsAppOficinaPronto();
 }
@@ -11184,6 +11195,13 @@ function renderOficinaKpis() {
     + `<div class="kpi" style="border-top:2px solid var(--text2);"><div class="kpi-label">Finalizadas no mês</div><div class="kpi-value" style="color:var(--text);">${finalMes}</div><div class="kpi-change">${hoje.toLocaleString('pt-BR',{month:'long'})}/${ano}</div></div>`;
 }
 
+function switchOfTab(t) {
+  if (!['abertas','finalizadas'].includes(t)) return;
+  ofAbaAtiva = t;
+  document.querySelectorAll('.fin-tab-btn[data-oftab]').forEach(b => b.classList.toggle('active', b.dataset.oftab === t));
+  renderOficina();
+}
+
 function renderOficina() {
   const el  = document.getElementById('of-lista');
   const sub = document.getElementById('of-sub');
@@ -11194,9 +11212,18 @@ function renderOficina() {
   // OSes com SAC vinculado ainda não finalizado vão pro card "Em garantia"
   const sacAtivosIds = new Set((sacCasos || []).filter(c => c.status !== 'finalizado').map(c => c.id));
 
-  let lista = oficinaOrdens.slice();
+  // Bases por tab — contador independe de busca/select. A regra sacDestinoId
+  // (ocultar OS ligada a SAC ativo) define a tab "Em aberto"; "Finalizadas"
+  // mostra tudo que estiver finalizado.
+  const abertasBase     = oficinaOrdens.filter(o => o.status !== 'finalizado'
+    && (!o.sacDestinoId || !sacAtivosIds.has(o.sacDestinoId)));
+  const finalizadasBase = oficinaOrdens.filter(o => o.status === 'finalizado');
+  const elCntA = document.getElementById('of-cnt-abertas');     if (elCntA) elCntA.textContent = abertasBase.length;
+  const elCntF = document.getElementById('of-cnt-finalizadas'); if (elCntF) elCntF.textContent = finalizadasBase.length;
+
+  // Filtros (status, busca) operam dentro da tab selecionada.
+  let lista = (ofAbaAtiva === 'finalizadas' ? finalizadasBase : abertasBase).slice();
   if (filtroStatus) lista = lista.filter(o => o.status === filtroStatus);
-  else lista = lista.filter(o => !o.sacDestinoId || !sacAtivosIds.has(o.sacDestinoId));
   if (busca) lista = lista.filter(o =>
     (o.clienteNome||'').toLowerCase().includes(busca)
     || (o.modeloScooter||'').toLowerCase().includes(busca)
@@ -11206,7 +11233,8 @@ function renderOficina() {
   document.getElementById('of-count').textContent = oficinaOrdens.length + ' OS no total';
 
   if (!lista.length) {
-    el.innerHTML = '<div class="empty" style="padding:32px;">Nenhuma OS encontrada</div>';
+    const vazio = ofAbaAtiva === 'finalizadas' ? 'Nenhuma OS finalizada' : 'Nenhuma OS em aberto';
+    el.innerHTML = '<div class="empty" style="padding:32px;">' + vazio + '</div>';
     return;
   }
 
@@ -11756,6 +11784,7 @@ async function _ofSalvarReal(editId) {
 //  SAC
 // ══════════════════════════════════════════
 let sacCasos = [];
+let sacAbaAtiva = 'abertos'; // 'abertos' | 'finalizados' — não persiste entre navegações
 
 const SAC_STATUS = OS_STATUS;
 const SAC_PRIO = {
@@ -11776,7 +11805,7 @@ async function initSac() {
   }
   console.log('[sac] casos=' + sacCasos.length + ' clientes=' + clientesAll.length);
   renderSacKpis();
-  renderSac();
+  switchSacTab('abertos'); // reseta a aba ao abrir o módulo (não persiste) + renderiza
   atualizarDotSac();
   // Notifica casos com prazo vencido (1x/dia/item)
   checarWhatsAppSacVencido();
@@ -11818,6 +11847,13 @@ function renderSacKpis() {
     + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Finalizados no mês</div><div class="kpi-value green">${finalMes}</div><div class="kpi-change">${new Date().toLocaleString('pt-BR',{month:'long'})}</div></div>`;
 }
 
+function switchSacTab(t) {
+  if (!['abertos','finalizados'].includes(t)) return;
+  sacAbaAtiva = t;
+  document.querySelectorAll('.fin-tab-btn[data-sactab]').forEach(b => b.classList.toggle('active', b.dataset.sactab === t));
+  renderSac();
+}
+
 function renderSac() {
   const el = document.getElementById('sac-lista');
   const sub = document.getElementById('sac-sub');
@@ -11826,7 +11862,15 @@ function renderSac() {
   const fP = document.getElementById('sac-filtro-prio')?.value || '';
   const fT = document.getElementById('sac-filtro-tipo')?.value || '';
   const q  = (document.getElementById('sac-busca')?.value || '').toLowerCase();
-  let lista = sacCasos.slice();
+
+  // Bases por tab — contador independe de busca/filtros.
+  const abertosBase     = sacCasos.filter(c => c.status !== 'finalizado');
+  const finalizadosBase = sacCasos.filter(c => c.status === 'finalizado');
+  const elCntA = document.getElementById('sac-cnt-abertos');     if (elCntA) elCntA.textContent = abertosBase.length;
+  const elCntF = document.getElementById('sac-cnt-finalizados'); if (elCntF) elCntF.textContent = finalizadosBase.length;
+
+  // Filtros (status, prioridade, tipo, busca) operam dentro da tab selecionada.
+  let lista = (sacAbaAtiva === 'finalizados' ? finalizadosBase : abertosBase).slice();
   if (fS) lista = lista.filter(c => c.status === fS);
   if (fP) lista = lista.filter(c => c.prioridade === fP);
   if (fT) lista = lista.filter(c => c.tipoProblema === fT);
@@ -11839,7 +11883,8 @@ function renderSac() {
   document.getElementById('sac-count').textContent = sacCasos.length + ' casos no total';
 
   if (!lista.length) {
-    el.innerHTML = '<div class="empty" style="padding:32px;">Nenhum caso encontrado</div>';
+    const vazio = sacAbaAtiva === 'finalizados' ? 'Nenhum caso finalizado' : 'Nenhum caso em aberto';
+    el.innerHTML = '<div class="empty" style="padding:32px;">' + vazio + '</div>';
     return;
   }
   const hoje = new Date().toISOString().split('T')[0];
