@@ -74,7 +74,9 @@ O CPV **não** chama o helper `ctReal(p)`: `ctReal` é a visão por-unidade simp
 
 **Instabilidade do Tiny:** `_tinyStabilityCheck` faz 2 buscas forçadas; se a contagem de pedidos diverge, `tinyEstabilidade.estavel = false` → widget mostra badge "⚠️ Dados Tiny instáveis" e o Excel adiciona linha de aviso. É mitigação visual — o fix de raiz do Tiny é separado.
 
-**Decisão de UI:** o widget DRE é a **fonte única** do resultado. O KPI "Lucro líquido est." foi removido do bloco Faturamento do Dashboard e da página Vendas do Mês pra não haver dois lucros líquidos divergentes; "Custo fixo do mês" virou "Custo Fixo Planejado" (deixa claro que é o cadastro, não o real). Existe ainda um `renderDRE`/`recalcDRE` separado (análise de planilha de vendas importada) que **não** usa `calcularDRE` — é outra ferramenta, fora desta estrutura.
+**Decisão de UI:** o widget DRE é a **fonte única** do resultado. O KPI "Lucro líquido est." foi removido do bloco Faturamento do Dashboard e da página Vendas do Mês pra não haver dois lucros líquidos divergentes; "Custo fixo do mês" virou "Custo Fixo Planejado". Existe ainda um `renderDRE`/`recalcDRE` separado (análise de planilha de vendas importada) que **não** usa `calcularDRE` — é outra ferramenta, fora desta estrutura (atualmente sem ponto de entrada na UI — código legado).
+
+**Custo Fixo Planejado — `_despPlanejadoHistorico()`.** Desde 2026-05-18 o cadastro estático `custos_fixos` deixou de existir (ver "Custos Operacionais" abaixo). O valor "Custo Fixo Planejado" exibido nos KPIs (Dashboard Faturamento, Vendas do Mês) e enviado à Análise IA (`custosFixosMensais`) vem de `_despPlanejadoHistorico()` — **média da despesa operacional dos últimos ≤3 meses-calendário completos** (o mês corrente parcial fica fora, senão subestima; exclui as mesmas categorias do `_DRE_CATEGORIAS_FORA_DESPESA`). Retorna `{ media, nMeses }`; `nMeses < 3` alimenta o badge "⚠️ base: N meses" no widget DRE e o banner "análise em construção" da aba Custos Operacionais. `calcularDRE` expõe `despPlanejado` + `despPlanejadoBaseMeses` pelo mesmo helper.
 
 ## Correções de dados
 
@@ -85,6 +87,8 @@ O CPV **não** chama o helper `ctReal(p)`: `ctReal` é a visão por-unidade simp
 - **2026-05-17 — reclassificação do cadastro `custos_fixos` (análise contábil).** O cadastro tinha vocabulário desalinhado das categorias de `lancamentos`, itens duplicados, genéricos e lixo de teste. Ações: **DELETADOS** "Funcionário teste", "Funcionário 2", "Funcionário 3" (genéricos R$ 1.819, substituídos pelos nomes reais), "Insumos" (R$ 300, órfão) e "Terceirizados (média)" (R$ 875 — dupla contagem: era o roll-up da categoria `Serviços Terceirizados`, que já se decompõe em Faxina + Contabilidade). **RENOMEADOS/ATUALIZADOS:** "Aluguel"→"Aluguel - Loja Matriz" (R$ 3.500→3.000, valor real recorrente), "Quiosque"→"Aluguel - Quiosque", "Tráfego Pago"→"Marketing" (R$ 4.416 mantido — orçamento conservador). **CRIADOS:** "Rafael"/"Nicolly"/"Henrique" (CLT fixo R$ 1.819), "Samuel" (jovem aprendiz, R$ 800 fixo), "Oficina - Peças e Serviços" (R$ 500), "Imposto e Tributos (DAS)" (R$ 250), "Compras Gerais" (R$ 200). Cadastro: 21 → 23 linhas. **"Pró-labore Sócios" R$ 4.000 mantido** — são 2 sócios a R$ 2.000: Moisés (ativo) + Gabriel (suspenso temporariamente, decisão estratégica de preservar caixa). O planejado reflete o estado normal da empresa; a linha fica agrupada (não vira 2 linhas). "Saveiro Assinatura" R$ 2.099 mantido (ainda pago, só não caiu na janela auditada).
 - **2026-05-17 — comissão de vendas: bug de dupla contagem.** Comissão era lançada junto do salário em `Funcionários` (ex.: "Rafael R$ 2.269" = R$ 1.819 fixo + comissões). Como `comissao` já entra no CPV (componente do `ctReal`), a comissão contava 2× no DRE. Solução (Opção A): comissão passa a ser lançada na categoria nova `Comissão de Vendas`, adicionada ao `_DRE_CATEGORIAS_FORA_DESPESA` → excluída do `despReal`. Vale daqui pra frente; o erro histórico (lançamentos antigos de `Funcionários` com comissão embutida) foi aceito — não é prático separar retroativamente.
 - **2026-05-17 — R$ 15.000 "início aluguel calçadão" → categoria `Investimento em Ponto`.** O lançamento (2026-05-12) estava em `Aluguel e Condomínio`, contando como despesa operacional e afundando o resultado de maio. É caução/abertura de unidade nova — investimento não-recorrente. Movido para a categoria nova `Investimento em Ponto`, adicionada ao `_DRE_CATEGORIAS_FORA_DESPESA`. Efeito no DRE de maio: `despReal` caiu R$ 28.049,74 → R$ 13.049,74. A categoria não tem item em `custos_fixos` (nada a planejar mensalmente).
+- **2026-05-18 — migração `vendas_mes_config` → `config_custos`.** A meta de vendas/mês morava numa linha especial de `custos_fixos` (`nome = 'vendas_mes_config'`, valor 40), separada do cadastro de custos no carregamento via `VENDAS_MES_CONFIG_NOME`. Como `custos_fixos` ia ser esvaziada (entrada abaixo), o valor foi migrado para `config_custos` (`UPSERT chave='vendas_mes', valor=40`). `carregarDados` passou a ler `CONFIG_CUSTOS.vendas_mes`; `salvarVendasMes` faz upsert nessa chave. Migração feita antes do DELETE para não perder o valor.
+- **2026-05-18 — DELETE do cadastro `custos_fixos` (22 linhas).** Com a feature "Custos Operacionais" derivando tudo de `lancamentos`, o cadastro estático ficou redundante e divergente do real. `DELETE FROM custos_fixos WHERE nome != 'vendas_mes_config'` removeu as 22 linhas de custos planejados; a tabela foi **preservada** (não dropada) para rollback. A linha `vendas_mes_config` foi removida depois, já migrada (entrada acima). Regressão tratada no mesmo dia: 4 pontos do código ainda somavam `custosFixos.reduce(...)` e passaram a exibir R$ 0 (KPI "Custo Fixo Planejado" no Dashboard e em Vendas do Mês, contexto da Análise IA, e o `custoFixoMes` legado do `recalcDRE`) — corrigidos para usar `_despPlanejadoHistorico().media`.
 
 ## Schema de Custos de Produtos
 
@@ -95,6 +99,7 @@ Feature "Custos de Produtos" (substitui a aba Simulador). Objetivo: separar o cu
 | chave | valor | descrição |
 |---|---|---|
 | `nf_pedido` | 30 | Custo de NF por pedido (não por unidade) |
+| `vendas_mes` | 40 | Meta/estimativa de vendas/mês — base do "Custo por Venda" da aba Custos Operacionais. Migrado de `custos_fixos` (linha `vendas_mes_config`) em 2026-05-18. |
 
 Estrutura: `chave TEXT PK`, `valor NUMERIC NOT NULL`, `descricao TEXT`, `atualizado_em TIMESTAMPTZ DEFAULT now()`. RLS `acesso_total FOR ALL TO public` (mesma convenção das outras tabelas do app).
 
@@ -103,6 +108,22 @@ Estrutura: `chave TEXT PK`, `valor NUMERIC NOT NULL`, `descricao TEXT`, `atualiz
 - `categoria TEXT CHECK (categoria IN ('motoneta','acessorio'))` — default backfill `'motoneta'`.
 
 **Relação `ctReal` × `ct()` legado:** `ctReal = custo_puro + montagem + comissao + nf_pedido`. Para produtos com `nf = 30` (a maioria), `ctReal` reproduz `ct()` exatamente. O único divergente no cadastro atual é o **BAJAX** (`nf = 170`): `ctReal` fica R$ 140 abaixo de `ct()` — diferença intencional, pois a NF deixou de ser por-unidade (170) e virou por-pedido (`nf_pedido = 30`). O componente `nf` por-unidade de `produtos_precos` é deliberadamente abandonado por `ctReal` em favor de `config_custos.nf_pedido`.
+
+## Custos Operacionais
+
+Feature 2026-05-18 — substitui a aba/cadastro estático "Custos Fixos". A fonte única passa a ser a tabela `lancamentos`; a aba foi renomeada "Custos Fixos" → **"Custos Operacionais"** (slug `#custos` mantido). A tabela `custos_fixos` foi esvaziada mas **preservada** (rollback) — ver "Correções de dados".
+
+**Backend — `calcularCustosOperacionais(periodo)`** (`index.html`). Lê `lancamentos`, considera só `tipo === 'saida'` sem `transferenciaId` e exclui as categorias do `_DRE_CATEGORIAS_FORA_DESPESA` (mesma lista do DRE). Por categoria agrega: total do período, totais mensais (≤3 últimos meses) e última data de lançamento. Retorna `{ periodo:{iniISO,fimISO}, fixos[], variaveis[], indefinidos[], inativos[], totalFixo, totalVariavel, totalIndefinido, total }`.
+
+- **Janela de atividade:** categoria sem lançamento nos últimos 2 meses → `inativos`.
+- **Classificação fixo/variável (`classificarFixoVariavel`):** mesmo valor (±5%) entre meses → `fixo`; varia >5% → `variavel`; <2 meses de histórico → `indefinido`.
+- **Drill-down (`agruparPorDescricao` + `_normDesc`):** nível 1 = categoria; nível 2 = descrição normalizada (`toLowerCase`, sem acento, espaços colapsados, `trim`) — agrupamento **literal**, não por palavra-chave. Sem descrição → fallback `(sem descrição)`.
+- **Períodos (`_periodoRange` / `_CO_PERIODOS`):** Mês atual, Mês anterior, Trimestre, Semestre, Anual. "Anual" só aparece com >6 meses de histórico operacional (`_coTemHistoricoLongo`).
+- **Banner "análise em construção":** quando o histórico tem <3 meses completos (`_despPlanejadoHistorico().nMeses < 3`).
+
+**UI (`renderCustos`):** seletor de período, 3 indicadores (Fixos, Variáveis = variáveis+indefinidos, Total Operacional) + "Custo por Venda" (`config_custos.vendas_mes`); seções 🟦 Fixos / 🟧 Variáveis (indefinidos misturados nas variáveis com selo ⬜) com drill-down por categoria; ⚠️ Inativos só se houver. Estado: `_custosPeriodo`, `_custosExpandido`.
+
+**Excel "Fechar Mês":** a aba 4 foi de "Custos Fixos" → **"Custos Operacionais"** (`gerarFechamentoMes`), montada de `calcularCustosOperacionais('mes-atual')` — header, 4 indicadores, seções 🟦/🟧 com drill-down indentado, ⚠️ Inativos condicional, aviso "análise em construção" quando `nMeses<3`. **Dívida técnica leve:** a aba é sempre "mês atual", independente do range do selector de fechamento — aceitar parâmetro de range é TODO.
 
 ---
 

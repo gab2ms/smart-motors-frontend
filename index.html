@@ -4254,8 +4254,8 @@ async function gerarFechamentoMes() {
       }
     });
 
-    // Totais usados pelas abas 4 (Custos Fixos) e 5 (Lançamentos).
-    const custoFixoTotal    = (custosFixos || []).reduce((s, c) => s + c.valor, 0);
+    // Totais usados pela aba 5 (Lançamentos). A aba 4 (Custos Operacionais)
+    // calcula o próprio total via calcularCustosOperacionais().
     const saidasFinanceiras = lancFiltrados.filter(l => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0);
     const entradasExtras    = lancFiltrados.filter(l => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0);
 
@@ -4419,16 +4419,69 @@ async function gerarFechamentoMes() {
     ws3['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 16 }, { wch: 12 }];
     XLSX.utils.book_append_sheet(wb, ws3, 'Vendas por Vendedor');
 
-    // ════════ ABA 4: CUSTOS FIXOS ════════
-    const custosOrdenados = (custosFixos || []).slice().sort((a, b) => b.valor - a.valor);
-    const custosRows = [
-      ['Descrição', 'Valor'].map(h => ({ v: h, s: HEADER })),
-      ...custosOrdenados.map(c => [c.nome, { v: c.valor, t: 'n', z: BRL }]),
-      [{ v: 'TOTAL', s: TOTAL_ROW }, { v: custoFixoTotal, t: 'n', z: BRL, s: { ...TOTAL_ROW, ...NEG } }],
+    // ════════ ABA 4: CUSTOS OPERACIONAIS ════════
+    // Substitui a antiga aba "Custos Fixos" (cadastro estático removido).
+    // Dívida técnica leve: a aba é sempre "mês atual", independente do range
+    // escolhido no selector de fechamento — aceitar parâmetro de range é TODO.
+    const co        = calcularCustosOperacionais('mes-atual');
+    const coHist    = _despPlanejadoHistorico();
+    const coPerLbl  = fmtDateBR(co.periodo.iniISO) + ' a ' + fmtDateBR(co.periodo.fimISO);
+    const SELO      = { fixo: '🟦', variavel: '🟧', indefinido: '⬜' };
+    const CLASSIF   = { fixo: 'Fixo', variavel: 'Variável', indefinido: 'Indefinido' };
+    const coRows = [
+      [{ v: '⚡ SMART MOTORS', s: TITLE_BIG }],
+      [{ v: 'Custos Operacionais — ' + coPerLbl, s: SUBTITLE }],
+      [],
     ];
-    const ws4 = XLSX.utils.aoa_to_sheet(custosRows);
-    ws4['!cols'] = [{ wch: 32 }, { wch: 18 }];
-    XLSX.utils.book_append_sheet(wb, ws4, 'Custos Fixos');
+    if (coHist.nMeses < 3) {
+      coRows.push([{ v: '⚠️ Análise em construção — só ' + coHist.nMeses
+        + ' mês(es) completo(s) de histórico. Classificação fixo/variável ainda imprecisa.',
+        s: SUBTITLE }]);
+      coRows.push([]);
+    }
+    // ── Indicadores ──
+    const coVariavel = co.totalVariavel + co.totalIndefinido;
+    const coVendas   = CONFIG_CUSTOS.vendas_mes || 0;
+    coRows.push([{ v: 'Indicadores', s: SECTION }]);
+    coRows.push(['Custos Fixos',     { v: co.totalFixo, t: 'n', z: BRL }]);
+    coRows.push(['Custos Variáveis', { v: coVariavel,   t: 'n', z: BRL }]);
+    coRows.push([{ v: 'Total Operacional', s: TOTAL_ROW },
+      { v: co.total, t: 'n', z: BRL, s: { ...TOTAL_ROW, ...NEG } }]);
+    coRows.push(['Custo por Venda (' + coVendas + ' vendas)',
+      { v: coVendas > 0 ? co.total / coVendas : 0, t: 'n', z: BRL }]);
+    coRows.push([]);
+    // ── 🟦 Custos Fixos (drill-down por descrição) ──
+    coRows.push([{ v: '🟦 Custos Fixos', s: SECTION }]);
+    coRows.push(['Categoria', 'Classif.', 'Valor'].map(h => ({ v: h, s: HEADER })));
+    if (!co.fixos.length) coRows.push([{ v: '(nenhuma categoria fixa)', s: SUBTITLE }]);
+    co.fixos.forEach(c => {
+      coRows.push([c.categoria, CLASSIF.fixo, { v: c.total, t: 'n', z: BRL }]);
+      c.subitens.forEach(s => coRows.push([
+        '    ' + s.descricao + ' (' + s.n + '×)', '', { v: s.total, t: 'n', z: BRL }]));
+    });
+    coRows.push([]);
+    // ── 🟧 Custos Variáveis (variáveis + indefinidos, selo por classe) ──
+    const coVar = [...co.variaveis, ...co.indefinidos].sort((a, b) => b.total - a.total);
+    coRows.push([{ v: '🟧 Custos Variáveis', s: SECTION }]);
+    coRows.push(['Categoria', 'Classif.', 'Valor'].map(h => ({ v: h, s: HEADER })));
+    if (!coVar.length) coRows.push([{ v: '(nenhuma categoria variável)', s: SUBTITLE }]);
+    coVar.forEach(c => {
+      coRows.push([SELO[c.classificacao] + ' ' + c.categoria,
+        CLASSIF[c.classificacao], { v: c.total, t: 'n', z: BRL }]);
+      c.subitens.forEach(s => coRows.push([
+        '    ' + s.descricao + ' (' + s.n + '×)', '', { v: s.total, t: 'n', z: BRL }]));
+    });
+    // ── ⚠️ Inativos (só se houver) ──
+    if (co.inativos.length) {
+      coRows.push([]);
+      coRows.push([{ v: '⚠️ Categorias Inativas (sem lançamento há +2 meses)', s: SECTION }]);
+      coRows.push(['Categoria', 'Último lançamento', ''].map(h => ({ v: h, s: HEADER })));
+      co.inativos.forEach(c => coRows.push([
+        c.categoria, c.ultimoLancamento ? fmtDateBR(c.ultimoLancamento) : '—', '']));
+    }
+    const ws4 = XLSX.utils.aoa_to_sheet(coRows);
+    ws4['!cols'] = [{ wch: 40 }, { wch: 10 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, ws4, 'Custos Operacionais');
 
     // ════════ ABA 5: LANÇAMENTOS FINANCEIROS ════════
     const _lanCmp = (a, b) => (a.data||'').localeCompare(b.data||'') || (a.id||'').localeCompare(b.id||'');
@@ -4534,7 +4587,7 @@ async function carregarFaturamentoDash(forcar) {
     var receitaTotal = kc.receita;
     var totalPedidos = kc.qtd;
     var ticketMedio  = kc.ticket;
-    var custoFixoMensal = custosFixos.reduce(function(s,c){return s+c.valor;}, 0);
+    var custoFixoMensal = _despPlanejadoHistorico().media;
     var avgMCpct    = products.length ? products.reduce(function(s,p){return s+mcp(p);},0)/products.length/100 : 0;
     var lucroBruto  = receitaTotal * avgMCpct;
     // Lucro bruto do período anterior (para o delta comparativo).
@@ -4578,7 +4631,7 @@ async function carregarFaturamentoDash(forcar) {
       + '<div class="kpi"' + kpiClickCus + '>'
       + '<div class="kpi-label">Custo Fixo Planejado</div>'
       + '<div class="kpi-value red">' + fmt(custoFixoMensal) + '</div>'
-      + '<div class="kpi-change">soma do cadastro · real no widget DRE ↗</div></div>';
+      + '<div class="kpi-change">média histórica · real no widget DRE ↗</div></div>';
 
     // Esconde o container kpis-int duplicado (legacy do builder).
     // As 2 KPIs internas agora ficam na mesma grid acima.
@@ -6191,7 +6244,7 @@ function initEstoque() {
 //  VENDAS DO MÊS — XLS IMPORTER
 // ══════════════════════════════════════════
 let vendasData = null;
-let custoFixoMes = custosFixos.reduce((s,c)=>s+c.valor,0);
+let custoFixoMes = 0; // default; recalculado via _despPlanejadoHistorico() ao montar a aba
 
 function popularSeletorPeriodo() {
   var selectMes = document.getElementById('vendas-mes');
@@ -6263,7 +6316,7 @@ function renderizarDREVendas(pedidos) {
   var receitaTotal = pedidos.reduce(function(s,p){return s+(p.valor||0);}, 0);
   var qtdPedidos   = pedidos.length;
   var ticketMedio  = qtdPedidos > 0 ? receitaTotal / qtdPedidos : 0;
-  var custoFixo    = custosFixos.reduce(function(s,c){return s+c.valor;}, 0);
+  var custoFixo    = _despPlanejadoHistorico().media;
   var avgMC        = products.length ? products.reduce(function(s,p){return s+mcp(p);},0)/products.length/100 : 0;
   var lucroBruto   = receitaTotal * avgMC;
   // Lucro líquido saiu daqui — widget DRE do Dashboard é a fonte única.
@@ -6272,7 +6325,7 @@ function renderizarDREVendas(pedidos) {
     '<div class="kpi"><div class="kpi-label">Receita total</div><div class="kpi-value green">'+fmt(receitaTotal)+'</div><div class="kpi-change">'+qtdPedidos+' pedidos faturados</div></div>'
     +'<div class="kpi"><div class="kpi-label">Ticket médio</div><div class="kpi-value gold">'+fmt(ticketMedio)+'</div><div class="kpi-change">por pedido</div></div>'
     +'<div class="kpi"><div class="kpi-label">Lucro bruto est.</div><div class="kpi-value '+(lucroBruto>=0?'green':'red')+'">'+fmt(lucroBruto)+'</div><div class="kpi-change">MC média '+(avgMC*100).toFixed(1)+'%</div></div>'
-    +'<div class="kpi"><div class="kpi-label">Custo Fixo Planejado</div><div class="kpi-value red">'+fmt(custoFixo)+'</div><div class="kpi-change">soma do cadastro</div></div>';
+    +'<div class="kpi"><div class="kpi-label">Custo Fixo Planejado</div><div class="kpi-value red">'+fmt(custoFixo)+'</div><div class="kpi-change">média histórica</div></div>';
 }
 
 function renderizarRankingProdutosVendas(pedidos) {
@@ -7700,7 +7753,7 @@ function buildDadosSaudeFinanceira() {
   const entradas = lancMes.filter(l => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0);
   const saidas = lancMes.filter(l => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0);
   const saldoTotal = (contas || []).reduce((s, c) => s + c.saldo, 0);
-  const custoFixoMensal = (custosFixos || []).reduce((s, c) => s + c.valor, 0);
+  const custoFixoMensal = _despPlanejadoHistorico().media;
 
   const todasParcelas   = (emprestimos || []).flatMap(e => e.pagamentos);
   const parcelasAbertas = todasParcelas.filter(p => p.status !== 'pago');
