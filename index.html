@@ -255,6 +255,14 @@ select.search-input{cursor:pointer;}
 .kpi[onclick]{transition:border-color 120ms ease, background 120ms ease;}
 .kpi[onclick]:hover{border-color:var(--gold);background:var(--surface2);}
 
+/* Cards KPI clicáveis que viram filtro (Oficina / SAC) */
+.kpi-clickable{cursor:pointer;}
+.kpi.kpi-ativo{
+  border-color:var(--gold) !important;
+  box-shadow:0 0 0 1px var(--gold);
+  background:var(--gold-dim) !important;
+}
+
 /* Linhas das listas de Contas a Pagar / Receber (.lancamento-row já tem hover próprio) */
 .cp-row,.cr-row{transition:background 120ms ease;}
 .cp-row:hover,.cr-row:hover{background:var(--surface2);}
@@ -11171,6 +11179,7 @@ async function initOficina() {
   oficinaClientes = clientesAll.slice();
   oficinaOrdens   = oo.data ? toCamelArr(oo.data) : [];
   console.log('[oficina] clientes=' + oficinaClientes.length + ' ordens=' + oficinaOrdens.length);
+  const selOf = document.getElementById('of-filtro-status'); if (selOf) selOf.value = ''; // estado inicial: sem filtro
   renderOficinaKpis();
   switchOfTab('abertas'); // reseta a aba ao abrir o módulo (não persiste) + renderiza
   // Notifica OS prontas pendentes (1x/dia/item)
@@ -11189,10 +11198,36 @@ function renderOficinaKpis() {
   const el = document.getElementById('of-kpis');
   if (!el) return;
   el.innerHTML =
-    `<div class="kpi" style="border-top:2px solid var(--orange);"><div class="kpi-label">Ação interna</div><div class="kpi-value" style="color:var(--orange);">${acaoInterna}</div><div class="kpi-change">loja precisa agir</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">Aguardando terceiro</div><div class="kpi-value gold">${aguardTerc}</div><div class="kpi-change">cliente / fornecedor / garantia</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Pronto pra entrega</div><div class="kpi-value green">${prontas}</div><div class="kpi-change">aguardando cliente</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--text2);"><div class="kpi-label">Finalizadas no mês</div><div class="kpi-value" style="color:var(--text);">${finalMes}</div><div class="kpi-change">${hoje.toLocaleString('pt-BR',{month:'long'})}/${ano}</div></div>`;
+    `<div class="kpi kpi-clickable" data-of-card="acao_interna" onclick="filtrarOfPorCard('acao_interna')" style="border-top:2px solid var(--orange);"><div class="kpi-label">Ação interna</div><div class="kpi-value" style="color:var(--orange);">${acaoInterna}</div><div class="kpi-change">loja precisa agir</div></div>`
+    + `<div class="kpi kpi-clickable" data-of-card="aguardando_terceiro" onclick="filtrarOfPorCard('aguardando_terceiro')" style="border-top:2px solid var(--gold);"><div class="kpi-label">Aguardando terceiro</div><div class="kpi-value gold">${aguardTerc}</div><div class="kpi-change">cliente / fornecedor / garantia</div></div>`
+    + `<div class="kpi kpi-clickable" data-of-card="pronto_entrega" onclick="filtrarOfPorCard('pronto_entrega')" style="border-top:2px solid var(--green);"><div class="kpi-label">Pronto pra entrega</div><div class="kpi-value green">${prontas}</div><div class="kpi-change">aguardando cliente</div></div>`
+    + `<div class="kpi kpi-clickable" data-of-card="finalizado" onclick="filtrarOfPorCard('finalizado')" style="border-top:2px solid var(--text2);"><div class="kpi-label">Finalizadas no mês</div><div class="kpi-value" style="color:var(--text);">${finalMes}</div><div class="kpi-change">${hoje.toLocaleString('pt-BR',{month:'long'})}/${ano}</div></div>`;
+}
+
+// Card KPI da Oficina → filtro de status (toggle). "Finalizadas" troca de tab.
+function filtrarOfPorCard(status) {
+  const select = document.getElementById('of-filtro-status');
+  if (status === 'finalizado') {
+    select.value = ''; // a tab "Finalizadas" não tem filtro de status
+    switchOfTab(ofAbaAtiva === 'finalizadas' ? 'abertas' : 'finalizadas');
+    return;
+  }
+  const jaAtivo = ofAbaAtiva === 'abertas' && select.value === status;
+  select.value = jaAtivo ? '' : status;
+  if (ofAbaAtiva !== 'abertas') switchOfTab('abertas');
+  else renderOficina();
+}
+
+// Qual card está "ativo" dado o estado atual (tab + select). null = nenhum.
+function _ofCardAtivo() {
+  if (ofAbaAtiva === 'finalizadas') return 'finalizado';
+  const v = document.getElementById('of-filtro-status')?.value || '';
+  return ['acao_interna','aguardando_terceiro','pronto_entrega'].includes(v) ? v : null;
+}
+function _aplicarOfCardAtivo() {
+  const ativo = _ofCardAtivo();
+  document.querySelectorAll('#of-kpis [data-of-card]').forEach(el =>
+    el.classList.toggle('kpi-ativo', el.dataset.ofCard === ativo));
 }
 
 function switchOfTab(t) {
@@ -11221,9 +11256,10 @@ function renderOficina() {
   const elCntA = document.getElementById('of-cnt-abertas');     if (elCntA) elCntA.textContent = abertasBase.length;
   const elCntF = document.getElementById('of-cnt-finalizadas'); if (elCntF) elCntF.textContent = finalizadasBase.length;
 
-  // Filtros (status, busca) operam dentro da tab selecionada.
+  // Filtros (status, busca) operam dentro da tab selecionada. O select de
+  // status só tem status "em aberto" — não se aplica à tab Finalizadas.
   let lista = (ofAbaAtiva === 'finalizadas' ? finalizadasBase : abertasBase).slice();
-  if (filtroStatus) lista = lista.filter(o => o.status === filtroStatus);
+  if (filtroStatus && ofAbaAtiva !== 'finalizadas') lista = lista.filter(o => o.status === filtroStatus);
   if (busca) lista = lista.filter(o =>
     (o.clienteNome||'').toLowerCase().includes(busca)
     || (o.modeloScooter||'').toLowerCase().includes(busca)
@@ -11231,6 +11267,7 @@ function renderOficina() {
 
   if (sub) sub.textContent = lista.length + ' OS exibida' + (lista.length!==1?'s':'');
   document.getElementById('of-count').textContent = oficinaOrdens.length + ' OS no total';
+  _aplicarOfCardAtivo(); // reaplica o destaque do card após qualquer render
 
   if (!lista.length) {
     const vazio = ofAbaAtiva === 'finalizadas' ? 'Nenhuma OS finalizada' : 'Nenhuma OS em aberto';
@@ -11785,6 +11822,7 @@ async function _ofSalvarReal(editId) {
 // ══════════════════════════════════════════
 let sacCasos = [];
 let sacAbaAtiva = 'abertos'; // 'abertos' | 'finalizados' — não persiste entre navegações
+let sacFiltroVencidos = false; // filtro "contato vencido" — ativado só pelo card homônimo
 
 const SAC_STATUS = OS_STATUS;
 const SAC_PRIO = {
@@ -11804,6 +11842,11 @@ async function initSac() {
     oficinaClientes = clientesAll.slice();
   }
   console.log('[sac] casos=' + sacCasos.length + ' clientes=' + clientesAll.length);
+  // Estado inicial: sem filtros (selects e flag de vencidos zerados).
+  ['sac-filtro-status','sac-filtro-prio','sac-filtro-tipo'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  sacFiltroVencidos = false;
   renderSacKpis();
   switchSacTab('abertos'); // reseta a aba ao abrir o módulo (não persiste) + renderiza
   atualizarDotSac();
@@ -11841,10 +11884,47 @@ function renderSacKpis() {
   const vencidos   = sacCasos.filter(c => c.status !== 'finalizado' && c.dataProximoContato && c.dataProximoContato <= hoje).length;
   const finalMes   = sacCasos.filter(c => c.status === 'finalizado' && (c.dataResolucao || '').startsWith(mesPref)).length;
   document.getElementById('sac-kpis').innerHTML =
-    `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">Casos abertos</div><div class="kpi-value gold">${abertos}</div><div class="kpi-change">em aberto</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">Prioridade alta</div><div class="kpi-value red">${altas}</div><div class="kpi-change">requer atenção</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">Contato vencido</div><div class="kpi-value red">${vencidos}</div><div class="kpi-change">precisa retornar hoje</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Finalizados no mês</div><div class="kpi-value green">${finalMes}</div><div class="kpi-change">${new Date().toLocaleString('pt-BR',{month:'long'})}</div></div>`;
+    `<div class="kpi kpi-clickable" data-sac-card="todos-abertos" onclick="filtrarSacPorCard('todos-abertos')" style="border-top:2px solid var(--gold);"><div class="kpi-label">Casos abertos</div><div class="kpi-value gold">${abertos}</div><div class="kpi-change">em aberto</div></div>`
+    + `<div class="kpi kpi-clickable" data-sac-card="prio-alta" onclick="filtrarSacPorCard('prio-alta')" style="border-top:2px solid var(--red);"><div class="kpi-label">Prioridade alta</div><div class="kpi-value red">${altas}</div><div class="kpi-change">requer atenção</div></div>`
+    + `<div class="kpi kpi-clickable" data-sac-card="vencidos" onclick="filtrarSacPorCard('vencidos')" style="border-top:2px solid var(--red);"><div class="kpi-label">Contato vencido</div><div class="kpi-value red">${vencidos}</div><div class="kpi-change">precisa retornar hoje</div></div>`
+    + `<div class="kpi kpi-clickable" data-sac-card="finalizados" onclick="filtrarSacPorCard('finalizados')" style="border-top:2px solid var(--green);"><div class="kpi-label">Finalizados no mês</div><div class="kpi-value green">${finalMes}</div><div class="kpi-change">${new Date().toLocaleString('pt-BR',{month:'long'})}</div></div>`;
+}
+
+// Card KPI do SAC → filtro (toggle). Cada card mapeia ao filtro que representa.
+function filtrarSacPorCard(modo) {
+  const selStatus = document.getElementById('sac-filtro-status');
+  const selPrio   = document.getElementById('sac-filtro-prio');
+  const selTipo   = document.getElementById('sac-filtro-tipo');
+  const limpar = () => { selStatus.value=''; selPrio.value=''; selTipo.value=''; sacFiltroVencidos=false; };
+
+  // Toggle: clicar no card já ativo limpa tudo e volta pra "Em aberto".
+  if (_sacCardAtivo() === modo) {
+    limpar();
+    if (sacAbaAtiva !== 'abertos') switchSacTab('abertos'); else renderSac();
+    return;
+  }
+  limpar();
+  if (modo === 'prio-alta') selPrio.value = 'alta';
+  if (modo === 'vencidos')  sacFiltroVencidos = true;
+  const tab = modo === 'finalizados' ? 'finalizados' : 'abertos';
+  if (sacAbaAtiva !== tab) switchSacTab(tab); else renderSac();
+}
+
+// Card "ativo" dado o estado. "todos-abertos" nunca acende (= estado neutro).
+function _sacCardAtivo() {
+  if (sacAbaAtiva === 'finalizados') return 'finalizados';
+  const s = document.getElementById('sac-filtro-status')?.value || '';
+  const p = document.getElementById('sac-filtro-prio')?.value || '';
+  const t = document.getElementById('sac-filtro-tipo')?.value || '';
+  if (s || t) return null;                            // filtro manual sem card → nada aceso
+  if (sacFiltroVencidos && !p) return 'vencidos';
+  if (p === 'alta' && !sacFiltroVencidos) return 'prio-alta';
+  return null;
+}
+function _aplicarSacCardAtivo() {
+  const ativo = _sacCardAtivo();
+  document.querySelectorAll('#sac-kpis [data-sac-card]').forEach(el =>
+    el.classList.toggle('kpi-ativo', el.dataset.sacCard === ativo));
 }
 
 function switchSacTab(t) {
@@ -11871,9 +11951,13 @@ function renderSac() {
 
   // Filtros (status, prioridade, tipo, busca) operam dentro da tab selecionada.
   let lista = (sacAbaAtiva === 'finalizados' ? finalizadosBase : abertosBase).slice();
-  if (fS) lista = lista.filter(c => c.status === fS);
+  if (fS && sacAbaAtiva !== 'finalizados') lista = lista.filter(c => c.status === fS); // status só "em aberto"
   if (fP) lista = lista.filter(c => c.prioridade === fP);
   if (fT) lista = lista.filter(c => c.tipoProblema === fT);
+  if (sacFiltroVencidos) {
+    const hojeISO = new Date().toISOString().split('T')[0];
+    lista = lista.filter(c => c.dataProximoContato && c.dataProximoContato <= hojeISO);
+  }
   if (q)  lista = lista.filter(c =>
     (c.clienteNome||'').toLowerCase().includes(q)
     || (c.fornecedor||'').toLowerCase().includes(q)
@@ -11881,6 +11965,7 @@ function renderSac() {
 
   if (sub) sub.textContent = lista.length + ' caso' + (lista.length!==1?'s':'') + ' exibido' + (lista.length!==1?'s':'');
   document.getElementById('sac-count').textContent = sacCasos.length + ' casos no total';
+  _aplicarSacCardAtivo(); // reaplica o destaque do card após qualquer render
 
   if (!lista.length) {
     const vazio = sacAbaAtiva === 'finalizados' ? 'Nenhum caso finalizado' : 'Nenhum caso em aberto';
