@@ -643,6 +643,11 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
   0%   { background-position: 100% 0; }
   100% { background-position: -120% 0; }
 }
+/* drill-down de Custos Operacionais — fade sutil ao expandir */
+@keyframes co-fade { from { opacity:0; transform:translateY(-3px); } to { opacity:1; transform:none; } }
+.co-subs { animation: co-fade 0.18s var(--ease); }
+.co-cat-row { transition: background 0.15s var(--ease); }
+.co-cat-row:hover { background: var(--surface2); }
 .kpi-value {
   transition: text-shadow 0.25s var(--ease);
 }
@@ -1139,7 +1144,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('custos')">
-      <span class="nav-icon">💸</span> Custos Fixos
+      <span class="nav-icon">💸</span> Custos Operacionais
       <span class="nav-dot"></span>
     </button>
   </nav>
@@ -2332,14 +2337,30 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 
     <!-- ══════════════ CUSTOS ══════════════ -->
   <div class="page content" id="page-custos">
-    <div class="kpi-grid" style="max-width:600px;margin-bottom:24px;">
+    <!-- Banner de análise em construção (histórico < 3 meses) -->
+    <div id="custos-banner" style="display:none;background:rgba(245,197,24,0.1);border:1px solid rgba(245,197,24,0.32);border-radius:var(--r-sm);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--text2);line-height:1.5;"></div>
+    <!-- Seletor de período -->
+    <div id="custos-periodos" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;"></div>
+    <!-- 4 cards -->
+    <div class="kpi-grid" style="margin-bottom:22px;">
       <div class="kpi">
-        <div class="kpi-label">Custo fixo total / mês</div>
-        <div class="kpi-value red" id="custo-total-mes">R$ 0</div>
+        <div class="kpi-label">🟦 Custos Fixos</div>
+        <div class="kpi-value" id="co-card-fixo" style="color:#3a86ff;">R$ 0</div>
+        <div class="kpi-change" id="co-card-fixo-sub"></div>
       </div>
       <div class="kpi">
-        <div class="kpi-label">Custo por venda</div>
-        <div class="kpi-value gold" id="custo-por-venda">R$ 0</div>
+        <div class="kpi-label">🟧 Custos Variáveis</div>
+        <div class="kpi-value" id="co-card-var" style="color:var(--orange);">R$ 0</div>
+        <div class="kpi-change" id="co-card-var-sub"></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Total Operacional</div>
+        <div class="kpi-value red" id="co-card-total">R$ 0</div>
+        <div class="kpi-change" id="co-card-total-sub"></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Custo por Venda</div>
+        <div class="kpi-value gold" id="co-card-cpv">R$ 0</div>
         <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
           <span style="font-size:10px;color:var(--text3);font-weight:600;">Vendas/mês:</span>
           <input type="number" id="vendas-mes-input" value="40" min="1" max="999"
@@ -2348,10 +2369,8 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         </div>
       </div>
     </div>
-    <div class="card" style="padding:20px;">
-      <div class="card-title" style="margin-bottom:14px;">Despesas mensais</div>
-      <div id="custos-lista"></div>
-    </div>
+    <!-- Seções (Fixos / Variáveis / Inativos) -->
+    <div id="custos-secoes"></div>
   </div>
 </div><!-- /main -->
 </div><!-- /layout -->
@@ -2874,7 +2893,7 @@ const pageMeta={
   financeiro:['Caixa Atual','Controle de caixa, contas e lançamentos'],
   'contas-pagar':['Contas a Pagar','Gerencie vencimentos e nunca esqueça um pagamento'],
   'contas-receber':['Contas a Receber','Gerencie recebimentos do mês'],
-  custos:['Custos Fixos','Despesas mensais'],
+  custos:['Custos Operacionais','Análise inteligente baseada em lançamentos reais'],
   'custos-produtos':['Custos de Produtos','Gerencie os componentes de custo de cada produto'],
 };
 // Breadcrumb hierárquico — pai não-clicável (etiqueta visual), atual em destaque.
@@ -2892,7 +2911,7 @@ const BREADCRUMB_MAP = {
   financeiro:      ['Financeiro', 'Caixa'],
   'contas-pagar':  ['Financeiro', 'Contas a Pagar'],
   'contas-receber':['Financeiro', 'Contas a Receber'],
-  custos:          ['Financeiro', 'Custos Fixos'],
+  custos:          ['Financeiro', 'Custos Operacionais'],
   'custos-produtos':['Produtos', 'Custos de Produtos'],
 };
 // Sub-tabs do módulo Financeiro: troca de sub-tab deve refletir em
@@ -5695,28 +5714,120 @@ function addOrderItem(){}
 // ══════════════════════════════════════════
 //  CUSTOS
 // ══════════════════════════════════════════
-function renderCustos(){
-  const tot=custosFixos.reduce((s,c)=>s+c.valor,0);
-  document.getElementById('custo-total-mes').textContent=fmt(tot);
-  const inp = document.getElementById('vendas-mes-input');
-  // Sincroniza o input com o valor salvo no Supabase (vendasMesConfig).
-  // O usuário pode estar editando — só sobrescreve quando o valor difere
-  // do que ele tem na tela (caso de carga inicial / outro device).
-  if (inp && document.activeElement !== inp) inp.value = vendasMesConfig.valor;
-  const vendasMesInput = parseInt(inp?.value) || vendasMesConfig.valor || 40;
-  document.getElementById('custo-por-venda').textContent=fmt(tot/vendasMesInput);
-  document.getElementById('custos-lista').innerHTML=custosFixos.map((c,i)=>`
-    <div class="custo-row">
-      <span class="custo-name">${escHtml(c.nome)}</span>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <span class="custo-val">${fmt(c.valor)}</span>
-        <button class="action-btn edit-btn" onclick="editCusto(${i})" style="padding:3px 8px;font-size:9px;" title="Editar">✏</button>
-        <button class="action-btn del-btn" onclick="delCusto(${i})" style="padding:3px 8px;font-size:9px;" title="Remover">✕</button>
-      </div>
-    </div>`).join('')+`
-    <div style="margin-top:12px;">
-      <button class="btn btn-gold" onclick="addCusto()" style="width:100%;font-size:12px;">+ Adicionar despesa</button>
+// ── Custos Operacionais — UI (análise read-only de lancamentos) ──
+let _custosPeriodo = 'mes-atual';
+let _custosExpandido = new Set();
+const _CO_PERIODOS = [
+  { id:'mes-atual',    label:'Mês atual' },
+  { id:'mes-anterior', label:'Mês anterior' },
+  { id:'trimestre',    label:'Trimestre' },
+  { id:'semestre',     label:'Semestre' },
+  { id:'anual',        label:'Anual' },
+];
+// "Anual" só aparece com >6 meses de histórico operacional.
+function _coTemHistoricoLongo(){
+  const lim = new Date(); lim.setMonth(lim.getMonth() - 6);
+  const limISO = lim.toISOString().slice(0, 10);
+  return (lancamentos || []).some(l => l.tipo === 'saida' && (l.data || '') < limISO
+    && !l.transferenciaId && !_DRE_CATEGORIAS_FORA_DESPESA.includes(l.categoria));
+}
+function setCustosPeriodo(p){ _custosPeriodo = p; renderCustos(); }
+function toggleCustoCat(cat){
+  if (_custosExpandido.has(cat)) _custosExpandido.delete(cat);
+  else _custosExpandido.add(cat);
+  renderCustos();
+}
+// Linha de categoria com drill-down dos subitens literais.
+function _coLinhaCategoria(item, selo){
+  const aberto = _custosExpandido.has(item.categoria);
+  const subs = aberto
+    ? `<div class="co-subs" style="padding:2px 0 8px 22px;">` + (item.subitens || []).map(s =>
+        `<div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--text3);padding:3px 0;">
+           <span>${escHtml(s.descricao)} <span style="opacity:0.55;">(${s.n}×)</span></span>
+           <span class="td-mono">${fmt(s.total)}</span>
+         </div>`).join('') + `</div>`
+    : '';
+  return `<div>
+      <div class="co-cat-row" data-cat="${escHtml(item.categoria)}" onclick="toggleCustoCat(this.dataset.cat)"
+        style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 8px;cursor:pointer;border-bottom:1px solid var(--border);">
+        <span style="font-size:13px;font-weight:600;">${selo} ${escHtml(item.categoria)}</span>
+        <span style="display:flex;align-items:center;gap:12px;">
+          <span class="td-mono" style="font-weight:700;">${fmt(item.total)}</span>
+          <span style="font-size:10px;color:var(--text3);">${aberto ? '▲' : '▼'}</span>
+        </span>
+      </div>${subs}
     </div>`;
+}
+function renderCustos(){
+  const co = calcularCustosOperacionais(_custosPeriodo);
+
+  // Banner de "análise em construção" (histórico < 3 meses completos)
+  const nMeses = _despPlanejadoHistorico().nMeses;
+  const banner = document.getElementById('custos-banner');
+  if (banner){
+    if (nMeses < 3){
+      banner.style.display = '';
+      banner.innerHTML = `⚠️ <b>Análise inteligente em construção</b> — base de ${nMeses} mês${nMeses===1?'':'es'} completo${nMeses===1?'':'s'}, precisão limitada. Mais histórico melhora a classificação fixo/variável (estimativa: ~agosto/2026 pra análise robusta).`;
+    } else banner.style.display = 'none';
+  }
+
+  // Seletor de período (Anual condicional ao histórico)
+  const longo = _coTemHistoricoLongo();
+  const selEl = document.getElementById('custos-periodos');
+  if (selEl){
+    selEl.innerHTML = _CO_PERIODOS
+      .filter(p => p.id !== 'anual' || longo)
+      .map(p => {
+        const at = p.id === _custosPeriodo;
+        return `<button onclick="setCustosPeriodo('${p.id}')" style="`
+          + `padding:7px 14px;border-radius:var(--r-sm);font-family:var(--font-primary);font-size:12px;`
+          + `font-weight:700;cursor:pointer;border:1px solid ${at?'var(--gold)':'var(--border2)'};`
+          + `background:${at?'var(--gold-dim)':'var(--surface2)'};color:${at?'var(--gold)':'var(--text3)'};">`
+          + `${p.label}</button>`;
+      }).join('');
+  }
+
+  // Cards — o card Variável inclui os Indefinidos (Fixo + Variável = Total)
+  const variavelCard = co.totalVariavel + co.totalIndefinido;
+  const nVarCats = co.variaveis.length + co.indefinidos.length;
+  const inp = document.getElementById('vendas-mes-input');
+  if (inp && document.activeElement !== inp) inp.value = vendasMesConfig.valor;
+  const vm = parseInt(inp?.value) || vendasMesConfig.valor || 40;
+  const set = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
+  set('co-card-fixo', fmt(co.totalFixo));
+  set('co-card-fixo-sub', `${co.fixos.length} categoria${co.fixos.length===1?'':'s'}`);
+  set('co-card-var', fmt(variavelCard));
+  set('co-card-var-sub', `${nVarCats} categoria${nVarCats===1?'':'s'}`);
+  set('co-card-total', fmt(co.total));
+  set('co-card-total-sub', _CO_PERIODOS.find(p=>p.id===_custosPeriodo)?.label || '');
+  set('co-card-cpv', fmt(vm > 0 ? co.total / vm : 0));
+
+  // Seções
+  const tituloSec = (txt, cor) => `<div style="font-size:11px;font-weight:800;text-transform:uppercase;`
+    + `letter-spacing:0.8px;color:${cor};margin:18px 0 4px;">${txt}</div>`;
+  const cardWrap = h => `<div class="card" style="padding:8px 14px;">${h}</div>`;
+  const vazio = txt => `<div style="font-size:12px;color:var(--text3);padding:12px 8px;">${txt}</div>`;
+
+  let html = '';
+  html += tituloSec('🟦 Custos Fixos (mesmo valor todo mês)', '#3a86ff');
+  html += cardWrap(co.fixos.length
+    ? co.fixos.map(it => _coLinhaCategoria(it, '🟦')).join('')
+    : vazio('Nenhum custo fixo identificado neste período.'));
+  html += tituloSec('🟧 Custos Variáveis (escala com a atividade)', 'var(--orange)');
+  const varRows = co.variaveis.map(it => _coLinhaCategoria(it, '🟧'))
+    .concat(co.indefinidos.map(it => _coLinhaCategoria(it, '⬜')));
+  html += cardWrap(varRows.length
+    ? varRows.join('')
+    : vazio('Nenhum custo variável neste período.'));
+  if (co.inativos.length){
+    html += tituloSec('⚠️ Inativos (sem lançamento há 2+ meses)', 'var(--text3)');
+    html += cardWrap(co.inativos.map(i =>
+      `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);padding:6px 8px;">
+         <span>${escHtml(i.categoria)}</span><span>último: ${i.ultimoLancamento || '—'}</span>
+       </div>`).join(''));
+  }
+  const sec = document.getElementById('custos-secoes');
+  if (sec) sec.innerHTML = html;
 }
 
 // Persiste o valor de "vendas/mês" em config_custos (chave 'vendas_mes').
@@ -5741,28 +5852,6 @@ async function salvarVendasMes() {
   console.log('[vendas-mes] salvo em config_custos:', val);
 }
 
-async function editCusto(i){
-  const novoNome=await smPrompt('Nome da despesa:',custosFixos[i].nome);
-  if(novoNome===null)return;
-  const novoVal=await smPrompt('Valor (R$):',custosFixos[i].valor);
-  if(novoVal===null)return;
-  custosFixos[i].nome=novoNome||custosFixos[i].nome;
-  custosFixos[i].valor=parseFloat(novoVal)||custosFixos[i].valor;
-  renderCustos();
-  salvarDados();
-}
-async function delCusto(i){
-  if(!(await smConfirm('Remover "'+custosFixos[i].nome+'" de R$ '+custosFixos[i].valor.toFixed(2)+'?')))return;
-  const id = custosFixos[i].id;
-  if (id != null) sb.from('custos_fixos').delete().eq('id', id);
-  custosFixos.splice(i,1);renderCustos();salvarDados();
-}
-async function addCusto(){
-  const nome=await smPrompt('Nome da despesa:','');
-  if(!nome)return;
-  const val=parseFloat(await smPrompt('Valor mensal (R$):','0'))||0;
-  custosFixos.push({nome,valor:val});renderCustos();salvarDados();
-}
 
 // ══════════════════════════════════════════
 //  MOBILE
@@ -6313,7 +6402,7 @@ const TODOS_MODULOS = [
   { id: 'financeiro',   nome: 'Financeiro' },
   { id: 'contas-pagar', nome: 'Contas a Pagar' },
   { id: 'contas-receber', nome: 'Contas a Receber' },
-  { id: 'custos',       nome: 'Custos Fixos' },
+  { id: 'custos',       nome: 'Custos Operacionais' },
   { id: 'custos-produtos', nome: 'Custos de Produtos' },
 ];
 const PERFIS_DEFAULT_MODULOS = {
