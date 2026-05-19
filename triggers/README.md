@@ -8,6 +8,8 @@ Notas e convenções para triggers PL/pgSQL no Supabase deste projeto. Migration
 |---|---|---|---|---|
 | `trg_parcela_to_conta` | `emprestimo_parcelas` | INSERT, UPDATE, DELETE | `fn_parcela_to_conta()` | Cria/atualiza/deleta `contas_pagar` espelhada |
 | `trg_conta_to_parcela` | `contas_pagar` | UPDATE, DELETE | `fn_conta_to_parcela()` | Propaga status/valor/datas de volta pra `emprestimo_parcelas` |
+| `trg_montagens_itens_recalc` | `montagens_itens` | INSERT, UPDATE, DELETE | `tg_montagens_itens_recalc()` → `montagens_recalc_lote()` | Recalcula `valor_total`, `data_ultimo_recebimento`, `status_pagamento` no lote |
+| `trg_montagens_pagamentos_recalc` | `montagens_pagamentos` | INSERT, UPDATE, DELETE | `tg_montagens_pagamentos_recalc()` → `montagens_recalc_lote()` | Recalcula `valor_pago` + `status_pagamento` no lote |
 
 Link: `contas_pagar.emprestimo_parcela_id UUID REFERENCES emprestimo_parcelas(id) ON DELETE CASCADE`.
 
@@ -124,6 +126,34 @@ Feature 2026-05-18 — substitui a aba/cadastro estático "Custos Fixos". A font
 **UI (`renderCustos`):** seletor de período, 3 indicadores (Fixos, Variáveis = variáveis+indefinidos, Total Operacional) + "Custo por Venda" (`config_custos.vendas_mes`); seções 🟦 Fixos / 🟧 Variáveis (indefinidos misturados nas variáveis com selo ⬜) com drill-down por categoria; ⚠️ Inativos só se houver. Estado: `_custosPeriodo`, `_custosExpandido`.
 
 **Excel "Fechar Mês":** a aba 4 foi de "Custos Fixos" → **"Custos Operacionais"** (`gerarFechamentoMes`), montada de `calcularCustosOperacionais('mes-atual')` — header, 4 indicadores, seções 🟦/🟧 com drill-down indentado, ⚠️ Inativos condicional, aviso "análise em construção" quando `nMeses<3`. **Dívida técnica leve:** a aba é sempre "mês atual", independente do range do selector de fechamento — aceitar parâmetro de range é TODO.
+
+## Montagens — schema
+
+Feature 2026-05-19 — gestão de lotes de motonetas enviadas a montadores externos (Marcos/Helder/Danton). 4 tabelas com triggers que mantêm os totais do lote sempre em sincronia com itens e pagamentos.
+
+**Tabelas:**
+
+| Tabela | Papel |
+|---|---|
+| `montadores` | Cadastro do prestador: `nome`, `telefone`, `preco_padrao` (default R$ 110), `principal BOOLEAN`, `ativo BOOLEAN`, `observacoes`. Seed: Marcos (principal), Helder, Danton. |
+| `montagens_lotes` | Lote = remessa entregue a um montador. `numero_lote SERIAL UNIQUE`, `montador_id UUID REFERENCES montadores(id) ON DELETE SET NULL`, `data_envio DATE`, `data_ultimo_recebimento DATE`, e agregados (`valor_total`, `valor_pago`, `status_pagamento`). **Agregados são mantidos por trigger — nunca escrever à mão.** |
+| `montagens_itens` | Uma motoneta no lote: `modelo`, `cor`, `chassi`, `preco_montagem` (snapshot — não FK pra `montadores.preco_padrao`), `status_montagem ∈ {fila, montando, montada, recebida}` (CHECK), `data_recebimento`. `lote_id ON DELETE CASCADE`. |
+| `montagens_pagamentos` | Pagamento (parcial ou integral) feito ao montador: `valor`, `data_pagamento`, `itens_ids JSONB` (lista opcional dos itens cobertos), `lancamento_id TEXT REFERENCES lancamentos(id) ON DELETE SET NULL` (vínculo opcional com o lançamento de caixa). `lote_id ON DELETE CASCADE`. |
+
+**Sincronia via triggers — `montagens_recalc_lote(p_lote_id)`.** Função única chamada por dois triggers AFTER INSERT/UPDATE/DELETE FOR EACH ROW: `trg_montagens_itens_recalc` e `trg_montagens_pagamentos_recalc`. Recalcula no lote:
+
+- `valor_total = Σ itens.preco_montagem`
+- `valor_pago  = Σ pagamentos.valor`
+- `data_ultimo_recebimento = MAX(itens.data_recebimento)`
+- `status_pagamento`: `pago <= 0 → 'pendente'`; `pago >= total ∧ total > 0 → 'pago'`; resto → `'parcial'`.
+
+UPDATE que troca `lote_id` (mover item/pagamento entre lotes) recalcula os dois — velho e novo. CASCADE de delete do lote dispara recalc num `lote_id` já inexistente — vira no-op (sem erro). As 3 funções têm `SET search_path = ''` + tudo `public.`-qualificado (silencia o advisor).
+
+**Anti-race com `FOR UPDATE` (R1).** A função abre com `PERFORM 1 FROM montagens_lotes WHERE id = p_lote_id FOR UPDATE`. Trava a linha do lote pelo resto da transação, serializando recálculos concorrentes. Sem isso, 2 pagamentos parciais simultâneos no mesmo lote leem o mesmo `valor_pago` antigo, somam separadamente e o último UPDATE sobrescreve o do anterior — lost update clássico. Com o lock, o segundo espera o primeiro, recalcula sobre o estado já atualizado, e o total bate.
+
+**Convenção — chassi `UPPER(TRIM(...))` no frontend.** O app normaliza chassi (uppercase + trim) antes de gravar. O banco **não** força via CHECK — confia no app. Pareamento se dá pelo índice UNIQUE parcial `idx_montagens_itens_chassi_ativo` (`WHERE status_montagem != 'recebida'`): um chassi não pode estar em 2 montagens ativas simultâneas. Uma vez `recebida`, sai do índice e pode reaparecer no futuro (raro, mas válido — ex: revisão/retorno).
+
+**Convenção — `principal` sem UNIQUE.** A flag `montadores.principal BOOLEAN` marca o montador de maior volume (hoje: Marcos). **Não há índice UNIQUE parcial forçando "só um"** — é convenção de uso, não constraint. UI ordena `principal DESC, nome`. Reatribuir é só UPDATE em 2 linhas; sem complicação de constraint para um valor que muda raramente.
 
 ---
 
