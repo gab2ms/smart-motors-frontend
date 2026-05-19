@@ -1129,6 +1129,10 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-icon">📞</span> SAC
       <span class="nav-dot" id="dot-sac"></span>
     </button>
+    <button class="nav-item" onclick="showPage('montagens')">
+      <span class="nav-icon">🔧</span> Montagens
+      <span class="nav-dot"></span>
+    </button>
     <button class="nav-item" onclick="showPage('clientes')">
       <span class="nav-icon">👥</span> Clientes
       <span class="nav-dot"></span>
@@ -1886,6 +1890,43 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     <div class="card">
       <div class="card-header"><div><div class="card-sub" id="sac-count">—</div></div></div>
       <div id="sac-lista"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════ MONTAGENS ══════════════ -->
+  <div class="page content" id="page-montagens">
+    <!-- ABAS -->
+    <div class="fin-tabs">
+      <button class="fin-tab-btn active" data-monttab="andamento"  onclick="switchMontagensTab('andamento')">📋 Em andamento (<span id="mont-cnt-andamento">0</span>)</button>
+      <button class="fin-tab-btn"        data-monttab="concluidos" onclick="switchMontagensTab('concluidos')">✅ Concluídos (<span id="mont-cnt-concluidos">0</span>)</button>
+      <button class="fin-tab-btn"        data-monttab="montadores" onclick="switchMontagensTab('montadores')">👷 Montadores (<span id="mont-cnt-montadores">0</span>)</button>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;">Lotes de montagem</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="mont-sub">—</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select class="search-input" id="mont-filtro-montador" onchange="renderMontagens()" style="max-width:180px;">
+          <option value="">Todos montadores</option>
+        </select>
+        <select class="search-input" id="mont-filtro-status" onchange="renderMontagens()" style="max-width:180px;">
+          <option value="">Todos status pgto</option>
+          <option value="pendente">🔴 Pendente</option>
+          <option value="parcial">🟡 Parcial</option>
+          <option value="pago">🟢 Pago</option>
+        </select>
+        <input type="text" class="search-input" id="mont-busca" placeholder="🔍 Chassi, modelo, montador..." oninput="renderMontagens()" style="min-width:220px;">
+        <button class="btn btn-gold" onclick="abrirMontagemModal()">+ Novo lote</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid" id="mont-kpis"></div>
+
+    <div class="card">
+      <div class="card-header"><div><div class="card-sub" id="mont-count">—</div></div></div>
+      <div id="mont-lista"></div>
     </div>
   </div>
 
@@ -2905,6 +2946,7 @@ const pageMeta={
   pedidos:['Pedidos','Controle seus pedidos por fornecedor'],
   oficina:['Oficina','Ordens de serviço e cadastro de clientes'],
   sac:['SAC','Atendimento pós-venda, garantias e contatos com fornecedores'],
+  montagens:['Montagens','Controle de lotes enviados pra montadores externos'],
   clientes:['Clientes','Cadastro central — manuais e sincronizados com Tiny'],
   contratos:['Contrato','Geração e histórico de contratos de garantia'],
   admin:['Administração','Gerenciar usuários e aprovações de acesso'],
@@ -2924,6 +2966,7 @@ const BREADCRUMB_MAP = {
   precos:          ['Produtos', 'Preços & Margens'],
   oficina:         ['Operação', 'Oficina'],
   sac:             ['Operação', 'SAC'],
+  montagens:       ['Operação', 'Montagens'],
   clientes:        ['Operação', 'Clientes'],
   contratos:       ['Operação', 'Contrato'],
   financeiro:      ['Financeiro', 'Caixa'],
@@ -3019,6 +3062,7 @@ function showPage(id, opts){
   if(id==='custos-produtos')renderCustosProdutos();
   if(id==='oficina')initOficina();
   if(id==='sac')initSac();
+  if(id==='montagens')initMontagens();
   if(id==='clientes')initClientes();
   if(id==='contratos')initContratos();
 }
@@ -3110,7 +3154,7 @@ async function _enviarParaBanco() {
 async function carregarDados() {
   console.log('[carregarDados] iniciando fetch de todas as tabelas');
   try {
-    const [c, l, cp, cr, cf, pr, sc, vm, oo, cc] = await Promise.all([
+    const [c, l, cp, cr, cf, pr, sc, vm, oo, cc, mt, ml, mi, mp] = await Promise.all([
       sb.from('contas_bancarias').select('*').order('id'),
       sb.from('lancamentos').select('*').order('data', { ascending: false }).order('id', { ascending: false }),
       sb.from('contas_pagar').select('*'),
@@ -3121,10 +3165,14 @@ async function carregarDados() {
       sb.from('vendedores_mapeamento').select('*').order('nome_real'),
       sb.from('oficina_ordens').select('*').order('numero', { ascending: false }),
       sb.from('config_custos').select('*'),
+      sb.from('montadores').select('*').order('principal', { ascending: false }).order('nome'),
+      sb.from('montagens_lotes').select('*').order('numero_lote', { ascending: false }),
+      sb.from('montagens_itens').select('*'),
+      sb.from('montagens_pagamentos').select('*'),
     ]);
 
     // Loga resultado (e erros explicitos) de cada tabela
-    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['contas_receber',cr],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc],['vendedores_mapeamento',vm],['oficina_ordens',oo],['config_custos',cc]]
+    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['contas_receber',cr],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc],['vendedores_mapeamento',vm],['oficina_ordens',oo],['config_custos',cc],['montadores',mt],['montagens_lotes',ml],['montagens_itens',mi],['montagens_pagamentos',mp]]
       .forEach(([n, r]) => {
         if (r.error) console.error('[carregarDados] ERRO em ' + n + ':', r.error.message, r.error);
         else console.log('[carregarDados] ' + n + ': ' + (r.data?.length || 0) + ' rows');
@@ -3140,6 +3188,10 @@ async function carregarDados() {
     sacCasos     = (!sc.error && sc.data)         ? toCamelArr(sc.data)                   : [];
     vendedoresMapeamento = (!vm.error && vm.data) ? toCamelArr(vm.data)                   : [];
     oficinaOrdens = (!oo.error && oo.data)        ? toCamelArr(oo.data)                   : [];
+    montadores          = (!mt.error && mt.data) ? toCamelArr(mt.data) : [];
+    montagensLotes      = (!ml.error && ml.data) ? toCamelArr(ml.data) : [];
+    montagensItens      = (!mi.error && mi.data) ? toCamelArr(mi.data) : [];
+    montagensPagamentos = (!mp.error && mp.data) ? toCamelArr(mp.data) : [];
     if (!cc.error && cc.data) {
       cc.data.forEach(r => { CONFIG_CUSTOS[r.chave] = Number(r.valor); });
     }
@@ -6480,6 +6532,7 @@ const TODOS_MODULOS = [
   { id: 'pedidos',      nome: 'Pedidos' },
   { id: 'oficina',      nome: 'Oficina' },
   { id: 'sac',          nome: 'SAC' },
+  { id: 'montagens',    nome: 'Montagens' },
   { id: 'clientes',     nome: 'Clientes' },
   { id: 'contratos',    nome: 'Contrato' },
   { id: 'admin',        nome: 'Administração' },
@@ -6492,7 +6545,7 @@ const TODOS_MODULOS = [
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
   vendedor:    ['dashboard', 'pedidos', 'oficina', 'sac', 'clientes', 'contratos'],
-  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'vendas', 'pedidos', 'oficina', 'sac', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos'],
+  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'vendas', 'pedidos', 'oficina', 'sac', 'montagens', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos'],
   customizado: null, // usa user.modulosPermitidos
 };
 function modulosPermitidos(user) {
@@ -11833,6 +11886,103 @@ async function _ofSalvarReal(editId) {
 // ══════════════════════════════════════════
 //  SAC
 // ══════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// MONTAGENS — gestão de lotes enviados a montadores externos.
+// Sub-commit B: esqueleto (UI + carregamento). Lógica de
+// negócio (criar/editar lote, registrar pagamento, vincular
+// itens a lançamento) virá nos próximos sub-commits.
+// ══════════════════════════════════════════════════════════════
+let montadores            = [];
+let montagensLotes        = [];
+let montagensItens        = [];
+let montagensPagamentos   = [];
+let _montagensAbaAtiva    = 'andamento'; // 'andamento' | 'concluidos' | 'montadores' — não persiste
+
+async function initMontagens() {
+  const [mt, ml, mi, mp] = await Promise.all([
+    sb.from('montadores').select('*').order('principal', { ascending: false }).order('nome'),
+    sb.from('montagens_lotes').select('*').order('numero_lote', { ascending: false }),
+    sb.from('montagens_itens').select('*'),
+    sb.from('montagens_pagamentos').select('*'),
+  ]);
+  montadores          = (!mt.error && mt.data) ? toCamelArr(mt.data) : [];
+  montagensLotes      = (!ml.error && ml.data) ? toCamelArr(ml.data) : [];
+  montagensItens      = (!mi.error && mi.data) ? toCamelArr(mi.data) : [];
+  montagensPagamentos = (!mp.error && mp.data) ? toCamelArr(mp.data) : [];
+  console.log('[montagens] montadores=' + montadores.length
+    + ' lotes=' + montagensLotes.length
+    + ' itens=' + montagensItens.length
+    + ' pagamentos=' + montagensPagamentos.length);
+
+  // Estado inicial: filtros zerados; dropdown de montadores populado a partir do seed.
+  ['mont-filtro-status','mont-busca'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const selMontador = document.getElementById('mont-filtro-montador');
+  if (selMontador) {
+    const sel = selMontador.value;
+    selMontador.innerHTML = '<option value="">Todos montadores</option>'
+      + montadores.map(m => `<option value="${m.id}">${m.nome}${m.principal ? ' ⭐' : ''}</option>`).join('');
+    selMontador.value = sel || '';
+  }
+
+  renderMontagensKpis();
+  switchMontagensTab('andamento'); // reseta aba ao abrir + renderiza
+}
+
+function switchMontagensTab(t) {
+  if (!['andamento','concluidos','montadores'].includes(t)) return;
+  _montagensAbaAtiva = t;
+  document.querySelectorAll('.fin-tab-btn[data-monttab]').forEach(b =>
+    b.classList.toggle('active', b.dataset.monttab === t));
+  renderMontagens();
+}
+
+function renderMontagens() {
+  const el  = document.getElementById('mont-lista');
+  const sub = document.getElementById('mont-sub');
+  const cnt = document.getElementById('mont-count');
+  if (!el) return;
+
+  // Contadores das tabs — independem de filtros/busca.
+  const emAndamento = montagensLotes.filter(l => l.statusPagamento !== 'pago');
+  const concluidos  = montagensLotes.filter(l => l.statusPagamento === 'pago');
+  const setCnt = (id, n) => { const e = document.getElementById(id); if (e) e.textContent = n; };
+  setCnt('mont-cnt-andamento', emAndamento.length);
+  setCnt('mont-cnt-concluidos', concluidos.length);
+  setCnt('mont-cnt-montadores', montadores.length);
+
+  // Sub-commit B: lista vazia (sem dados ainda — feature em construção).
+  el.innerHTML = `<div style="padding:40px 20px;text-align:center;color:var(--text3);">
+    <div style="font-size:32px;margin-bottom:10px;">🔧</div>
+    <div style="font-size:13px;font-weight:600;color:var(--text2);">Nenhum lote cadastrado</div>
+    <div style="font-size:11px;margin-top:4px;">Cadastre um lote pelo botão "+ Novo lote" — feature em construção.</div>
+  </div>`;
+  if (sub) sub.textContent = '—';
+  if (cnt) cnt.textContent = '—';
+}
+
+function renderMontagensKpis() {
+  const el = document.getElementById('mont-kpis');
+  if (!el) return;
+  // Placeholders — cálculos reais virão no sub-commit C.
+  const itensEmMontagem = 0;
+  const lotesAguardando = 0;
+  const pagoNoMes       = 0;
+  const enviadoNoMes    = 0;
+  const fmtBR = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  el.innerHTML =
+      `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">🔴 Em montagem</div><div class="kpi-value red">${itensEmMontagem}</div><div class="kpi-change">itens em fila/montando</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">🟡 Aguardando pgto</div><div class="kpi-value gold">${lotesAguardando}</div><div class="kpi-change">lotes pendente/parcial</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">🟢 Pago no mês</div><div class="kpi-value green">${fmtBR(pagoNoMes)}</div><div class="kpi-change">pagamentos do mês</div></div>`
+    + `<div class="kpi"><div class="kpi-label">📊 Enviado no mês</div><div class="kpi-value">${fmtBR(enviadoNoMes)}</div><div class="kpi-change">valor de lotes abertos</div></div>`;
+}
+
+// Stub do modal — implementado no próximo sub-commit (C).
+function abrirMontagemModal() {
+  smAlert('Cadastro de novo lote — feature em construção (próximo sub-commit).');
+}
+
 let sacCasos = [];
 let sacAbaAtiva = 'abertos'; // 'abertos' | 'finalizados' — não persiste entre navegações
 let sacFiltroVencidos = false; // filtro "contato vencido" — ativado só pelo card homônimo
