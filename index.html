@@ -3762,30 +3762,43 @@ function renderizarRankingVendedores(ranking) {
   el.innerHTML = rows;
 }
 
-function buscarPedidosCompletos(dataInicial, dataFinal, forcar) {
+// comMeta (4º parâmetro) controla o formato do retorno:
+//  - false (default): resolve com o array de pedidos — callers existentes
+//    não mudam.
+//  - true: resolve com { pedidos, parcial, total, retornados }, expondo
+//    os metadados que o backend manda quando a busca ao Tiny foi parcial.
+function buscarPedidosCompletos(dataInicial, dataFinal, forcar, comMeta) {
   var url = API_URL + '/pedidos-completos'
     + '?dataInicial=' + encodeURIComponent(dataInicial)
     + '&dataFinal='   + encodeURIComponent(dataFinal)
     + (forcar ? '&forcar=true' : '');
   console.log('[pedidos-completos] GET', url);
+  function vazio() {
+    return comMeta ? { pedidos: [], parcial: false, total: 0, retornados: 0 } : [];
+  }
   return fetch(url)
     .then(function(r){
       console.log('[pedidos-completos] status', r.status, r.statusText);
       if (!r.ok) {
         return r.text().then(function(txt){
           console.warn('[pedidos-completos] resposta nao-OK:', txt.slice(0, 300));
-          return [];
+          return vazio();
         });
       }
       return r.json().then(function(data){
         var arr = Array.isArray(data) ? data : (data && data.pedidos) || [];
         console.log('[pedidos-completos] recebidos', arr.length, 'pedidos');
+        if (comMeta) {
+          var total      = (data && typeof data.total      === 'number') ? data.total      : arr.length;
+          var retornados = (data && typeof data.retornados === 'number') ? data.retornados : arr.length;
+          return { pedidos: arr, parcial: !!(data && data.parcial), total: total, retornados: retornados };
+        }
         return arr;
       });
     })
     .catch(function(err){
       console.error('[pedidos-completos] erro de rede:', err.message);
-      return [];
+      return vazio();
     });
 }
 
@@ -4367,12 +4380,12 @@ async function gerarFechamentoMes() {
         { v: dre.pctRes/100, t: 'n', z: '0.0%', s: TOTAL_ROW }
       ],
     ];
-    // Aviso de instabilidade do Tiny — mesma sinalização do widget DRE.
+    // Aviso de resultado parcial do Tiny — mesma sinalização do widget DRE.
     if (dre.tinyEstabilidade && !dre.tinyEstabilidade.estavel) {
       const [c1, c2] = dre.tinyEstabilidade.contagens || [0, 0];
       resumoRows.push(
         [],
-        [{ v: `⚠️ Dados Tiny instáveis — o Tiny retornou ${c1} e ${c2} pedidos em buscas seguidas do mesmo período; os valores acima podem variar ao gerar de novo.`, s: SUBTITLE }]
+        [{ v: `⚠️ Resultado parcial (${c1} de ${c2} pedidos) — o Tiny não retornou todos os pedidos do período; os valores acima podem estar subestimados.`, s: SUBTITLE }]
       );
     }
     const ws1 = XLSX.utils.aoa_to_sheet(resumoRows);
@@ -4931,18 +4944,18 @@ const _DRE_CATEGORIAS_FORA_DESPESA = [
   'Comissão de Vendas', 'Investimento em Ponto',
 ];
 
-// Faz 2 buscas forçadas ao Tiny pro mesmo período. Se a contagem de
-// pedidos diverge, os dados estão instáveis (paginação/erro 500 do
-// Tiny) — o DRE sinaliza isso visualmente. Retorna também os pedidos
-// (o conjunto de maior cobertura) pro calcularDRE reusar.
+// Faz 1 busca (não-forçada) ao Tiny pro período, pedindo os metadados
+// (comMeta=true). O próprio backend já sabe se o resultado veio parcial
+// (paginação incompleta/erro 500 do Tiny) — o DRE sinaliza isso
+// visualmente. Retorna também os pedidos pro calcularDRE reusar.
+// contagens = [retornados, total]; estavel = !parcial.
 async function _tinyStabilityCheck(iniBR, fimBR) {
-  let a = [], b = [];
-  try { a = (await buscarPedidosCompletos(iniBR, fimBR, true)) || []; } catch(e) {}
-  try { b = (await buscarPedidosCompletos(iniBR, fimBR, true)) || []; } catch(e) {}
+  let meta = { pedidos: [], parcial: false, total: 0, retornados: 0 };
+  try { meta = (await buscarPedidosCompletos(iniBR, fimBR, false, true)) || meta; } catch(e) {}
   return {
-    estavel: a.length === b.length,
-    contagens: [a.length, b.length],
-    pedidos: a.length >= b.length ? a : b,
+    estavel: !meta.parcial,
+    contagens: [meta.retornados, meta.total],
+    pedidos: meta.pedidos || [],
   };
 }
 
@@ -5161,17 +5174,17 @@ async function renderDashDreMes() {
           despPlanejado: planejado, despPlanejadoBaseMeses, empValor, empCount,
           resultado, pctRes, tinyEstabilidade } = dre;
 
-  // Subtítulo do widget + badge de instabilidade do Tiny.
+  // Subtítulo do widget + badge de resultado parcial do Tiny.
   const subEl = document.getElementById('dash-dre-mes-sub');
   if (subEl) {
     const base = `Demonstração do Resultado simplificada (regime de competência) · ${mesLabelCap}`;
     if (tinyEstabilidade && !tinyEstabilidade.estavel) {
       const [c1, c2] = tinyEstabilidade.contagens || [0, 0];
-      const tip = `O Tiny retornou ${c1} e ${c2} pedidos em buscas seguidas do mesmo período. O DRE pode mudar ao recarregar.`;
+      const tip = `O Tiny não retornou todos os pedidos do período (${c1} de ${c2}). O DRE pode estar subestimado.`;
       subEl.innerHTML = escHtml(base)
         + ` <span title="${escHtml(tip)}" style="display:inline-block;margin-left:6px;`
         + `font-size:10px;font-weight:700;color:var(--red);border:1px solid var(--red);`
-        + `border-radius:4px;padding:1px 6px;">⚠️ Dados Tiny instáveis</span>`;
+        + `border-radius:4px;padding:1px 6px;">⚠️ Resultado parcial (${escHtml(c1 + ' de ' + c2 + ' pedidos')})</span>`;
     } else {
       subEl.textContent = base;
     }
