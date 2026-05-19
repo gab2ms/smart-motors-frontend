@@ -1130,7 +1130,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-dot" id="dot-sac"></span>
     </button>
     <button class="nav-item" onclick="showPage('montagens')">
-      <span class="nav-icon">🔧</span> Montagens
+      <span class="nav-icon">🛠️</span> Montagens
       <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('clientes')">
@@ -11944,43 +11944,366 @@ function renderMontagens() {
   const cnt = document.getElementById('mont-count');
   if (!el) return;
 
-  // Contadores das tabs — independem de filtros/busca.
-  const emAndamento = montagensLotes.filter(l => l.statusPagamento !== 'pago');
-  const concluidos  = montagensLotes.filter(l => l.statusPagamento === 'pago');
+  const fmtBR   = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const fmtData = d => d ? d.split('-').reverse().join('/') : '—';
+  const padLote = n => 'LOTE-' + String(n || 0).padStart(4, '0');
+  const nomeMontador = id => (montadores.find(m => m.id === id) || {}).nome || '—';
+
+  // Itens agrupados por lote (uma passagem só) — usado em vários lugares.
+  const itensPorLote = montagensItens.reduce((acc, i) => {
+    (acc[i.loteId] = acc[i.loteId] || []).push(i);
+    return acc;
+  }, {});
+
+  // "Concluído" = pagamento pago E todos itens recebidos. Lote sem itens
+  // nunca é concluído (caso de canto — ainda em montagem de cadastro).
+  const isConcluido = lote => {
+    if (lote.statusPagamento !== 'pago') return false;
+    const its = itensPorLote[lote.id] || [];
+    if (!its.length) return false;
+    return its.every(i => i.statusMontagem === 'recebida');
+  };
+  const emAndamento = montagensLotes.filter(l => !isConcluido(l));
+  const concluidos  = montagensLotes.filter(l =>  isConcluido(l));
   const setCnt = (id, n) => { const e = document.getElementById(id); if (e) e.textContent = n; };
   setCnt('mont-cnt-andamento', emAndamento.length);
   setCnt('mont-cnt-concluidos', concluidos.length);
   setCnt('mont-cnt-montadores', montadores.length);
 
-  // Sub-commit B: lista vazia (sem dados ainda — feature em construção).
-  el.innerHTML = `<div style="padding:40px 20px;text-align:center;color:var(--text3);">
-    <div style="font-size:32px;margin-bottom:10px;">🔧</div>
-    <div style="font-size:13px;font-weight:600;color:var(--text2);">Nenhum lote cadastrado</div>
-    <div style="font-size:11px;margin-top:4px;">Cadastre um lote pelo botão "+ Novo lote" — feature em construção.</div>
-  </div>`;
-  if (sub) sub.textContent = '—';
-  if (cnt) cnt.textContent = '—';
+  // ── Tab Montadores: cards read-only (CRUD em sub-commit futuro) ──
+  if (_montagensAbaAtiva === 'montadores') {
+    if (!montadores.length) {
+      el.innerHTML = '<div class="empty" style="padding:32px;">Nenhum montador cadastrado</div>';
+      if (sub) sub.textContent = '—';
+      if (cnt) cnt.textContent = '—';
+      return;
+    }
+    const statsDe = id => {
+      const lts = montagensLotes.filter(l => l.montadorId === id);
+      const total = lts.reduce((a, l) => a + Number(l.valorTotal || 0), 0);
+      return { lotes: lts.length, total };
+    };
+    el.innerHTML = montadores.map(m => {
+      const s = statsDe(m.id);
+      const inativoBadge = m.ativo === false
+        ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">inativo</span>'
+        : '';
+      return `<div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:14px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);">
+        <div style="font-size:22px;">${m.principal ? '⭐' : '👷'}</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;">${escHtml(m.nome)}${inativoBadge}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;">${m.telefone ? escHtml(m.telefone) : 'sem telefone'} · padrão ${fmtBR(m.precoPadrao)}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;">Lotes</div>
+          <div style="font-size:14px;font-weight:800;">${s.lotes}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;">Enviado</div>
+          <div style="font-size:14px;font-weight:800;color:var(--gold);">${fmtBR(s.total)}</div>
+        </div>
+      </div>`;
+    }).join('');
+    if (sub) sub.textContent = montadores.length + ' montador' + (montadores.length===1?'':'es') + ' cadastrado' + (montadores.length===1?'':'s');
+    if (cnt) cnt.textContent = '—';
+    return;
+  }
+
+  // ── Tabs Em andamento / Concluídos: cards expansíveis ──
+  let base = (_montagensAbaAtiva === 'concluidos' ? concluidos : emAndamento).slice();
+
+  const fMont   = document.getElementById('mont-filtro-montador')?.value || '';
+  const fStatus = document.getElementById('mont-filtro-status')?.value || '';
+  const q       = (document.getElementById('mont-busca')?.value || '').trim().toLowerCase();
+  if (fMont)   base = base.filter(l => l.montadorId === fMont);
+  if (fStatus) base = base.filter(l => l.statusPagamento === fStatus);
+  if (q) {
+    base = base.filter(l => {
+      if (nomeMontador(l.montadorId).toLowerCase().includes(q)) return true;
+      const its = itensPorLote[l.id] || [];
+      return its.some(i =>
+        (i.chassi || '').toLowerCase().includes(q) ||
+        (i.modelo || '').toLowerCase().includes(q));
+    });
+  }
+
+  if (sub) sub.textContent = base.length + ' lote' + (base.length===1?'':'s') + ' exibido' + (base.length===1?'':'s');
+  if (cnt) cnt.textContent = montagensLotes.length + ' lote' + (montagensLotes.length===1?'':'s') + ' no total';
+
+  if (!base.length) {
+    const vazio = _montagensAbaAtiva === 'concluidos' ? 'Nenhum lote concluído' : 'Nenhum lote em andamento';
+    el.innerHTML = '<div class="empty" style="padding:32px;">' + vazio + '</div>';
+    return;
+  }
+
+  const stStyle = {
+    pendente: { bg: 'var(--red-dim)',                       cor: 'var(--red)',   label: '🔴 Pendente' },
+    parcial:  { bg: 'rgba(255,200,0,0.15)',                 cor: 'var(--gold)',  label: '🟡 Parcial' },
+    pago:     { bg: 'var(--green-dim, rgba(46,196,128,0.15))', cor: 'var(--green)', label: '🟢 Pago' },
+  };
+  const statusCount = its => {
+    const c = its.reduce((a, i) => { a[i.statusMontagem] = (a[i.statusMontagem]||0)+1; return a; }, {});
+    const order = ['fila','montando','montada','recebida'];
+    return order.filter(s => c[s]).map(s => c[s] + ' ' + s).join(', ');
+  };
+
+  el.innerHTML = base.map(lote => {
+    const its = itensPorLote[lote.id] || [];
+    const st  = stStyle[lote.statusPagamento] || stStyle.pendente;
+    const resumo = its.length
+      ? its.length + ' ' + (its.length===1?'moto':'motos') + (statusCount(its) ? ': ' + statusCount(its) : '')
+      : '— sem itens —';
+    const pagoLinha = Number(lote.valorPago) > 0
+      ? `<div style="font-size:10px;color:var(--green);font-weight:600;">pago ${fmtBR(lote.valorPago)}</div>`
+      : '';
+    const itensHTML = its.length
+      ? `<div style="padding:0 20px 14px 20px;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="background:var(--surface2);color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;">
+              <th style="text-align:left;padding:6px 10px;font-weight:700;">Modelo</th>
+              <th style="text-align:left;padding:6px 10px;font-weight:700;">Cor</th>
+              <th style="text-align:left;padding:6px 10px;font-weight:700;font-family:var(--mono,monospace);">Chassi</th>
+              <th style="text-align:right;padding:6px 10px;font-weight:700;">Preço</th>
+              <th style="text-align:left;padding:6px 10px;font-weight:700;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${its.map(i => `<tr style="border-top:1px solid var(--border);">
+              <td style="padding:6px 10px;">${escHtml(i.modelo)}</td>
+              <td style="padding:6px 10px;">${escHtml(i.cor)}</td>
+              <td style="padding:6px 10px;font-family:var(--mono,monospace);">${escHtml(i.chassi)}</td>
+              <td style="padding:6px 10px;text-align:right;font-family:var(--mono,monospace);">${fmtBR(i.precoMontagem)}</td>
+              <td style="padding:6px 10px;font-size:11px;">${escHtml(i.statusMontagem)}${i.dataRecebimento ? ' <span style="color:var(--text3);">('+fmtData(i.dataRecebimento)+')</span>' : ''}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>`
+      : '<div style="padding:0 20px 14px 20px;color:var(--text3);font-size:11px;font-style:italic;">Lote sem itens cadastrados.</div>';
+    return `<details style="border-bottom:1px solid var(--border);">
+      <summary style="display:grid;grid-template-columns:80px 1.4fr 1fr 110px 130px;gap:12px;align-items:center;padding:12px 20px;cursor:pointer;list-style:none;">
+        <div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;font-size:12px;">${padLote(lote.numeroLote)}</div>
+        <div style="min-width:0;">
+          <div style="font-weight:700;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(nomeMontador(lote.montadorId))}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(resumo)}</div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);">Envio: ${fmtData(lote.dataEnvio)}${lote.dataUltimoRecebimento ? '<br>Receb: '+fmtData(lote.dataUltimoRecebimento) : ''}</div>
+        <div class="td-mono" style="font-weight:700;color:var(--gold);text-align:right;">${fmtBR(lote.valorTotal)}${pagoLinha}</div>
+        <div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>
+      </summary>
+      ${itensHTML}
+    </details>`;
+  }).join('');
 }
 
 function renderMontagensKpis() {
   const el = document.getElementById('mont-kpis');
   if (!el) return;
-  // Placeholders — cálculos reais virão no sub-commit C.
-  const itensEmMontagem = 0;
-  const lotesAguardando = 0;
-  const pagoNoMes       = 0;
-  const enviadoNoMes    = 0;
+  const fila    = montagensItens.filter(i => i.statusMontagem === 'fila').length;
+  const montand = montagensItens.filter(i => i.statusMontagem === 'montando').length;
+  const itensEmMontagem = fila + montand;
+  const lotesAguardando = montagensLotes.filter(l => l.statusPagamento !== 'pago').length;
+  const mesPref = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const pagoNoMes = montagensPagamentos
+    .filter(p => (p.dataPagamento || '').startsWith(mesPref))
+    .reduce((acc, p) => acc + Number(p.valor || 0), 0);
+  const enviadoNoMes = montagensLotes
+    .filter(l => (l.dataEnvio || '').startsWith(mesPref))
+    .reduce((acc, l) => acc + Number(l.valorTotal || 0), 0);
   const fmtBR = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
   el.innerHTML =
-      `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">🔴 Em montagem</div><div class="kpi-value red">${itensEmMontagem}</div><div class="kpi-change">itens em fila/montando</div></div>`
+      `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">🔴 Em montagem</div><div class="kpi-value red">${itensEmMontagem}</div><div class="kpi-change">${fila} fila · ${montand} montando</div></div>`
     + `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">🟡 Aguardando pgto</div><div class="kpi-value gold">${lotesAguardando}</div><div class="kpi-change">lotes pendente/parcial</div></div>`
     + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">🟢 Pago no mês</div><div class="kpi-value green">${fmtBR(pagoNoMes)}</div><div class="kpi-change">pagamentos do mês</div></div>`
-    + `<div class="kpi"><div class="kpi-label">📊 Enviado no mês</div><div class="kpi-value">${fmtBR(enviadoNoMes)}</div><div class="kpi-change">valor de lotes abertos</div></div>`;
+    + `<div class="kpi"><div class="kpi-label">📊 Enviado no mês</div><div class="kpi-value">${fmtBR(enviadoNoMes)}</div><div class="kpi-change">valor de lotes do mês</div></div>`;
 }
 
-// Stub do modal — implementado no próximo sub-commit (C).
+// ── Modal "Novo lote" ──
 function abrirMontagemModal() {
-  smAlert('Cadastro de novo lote — feature em construção (próximo sub-commit).');
+  const old = document.getElementById('mont-modal');
+  if (old) old.remove();
+
+  const ativos = montadores.filter(m => m.ativo !== false);
+  if (!ativos.length) { smAlert('Cadastre um montador ativo antes de criar um lote.'); return; }
+
+  const hoje      = new Date().toISOString().split('T')[0];
+  const principal = ativos.find(m => m.principal) || ativos[0];
+  const montadorOpts = ativos.map(m =>
+    `<option value="${m.id}" data-preco="${Number(m.precoPadrao || 0)}"${m.id === principal.id ? ' selected' : ''}>${escHtml(m.nome)}${m.principal ? ' ⭐' : ''}</option>`
+  ).join('');
+  // Datalist de modelos — só produtos ativos (convenção 'ativo !== false').
+  const modelosOpts = (products || [])
+    .filter(p => p.ativo !== false)
+    .map(p => `<option value="${escHtml(p.modelo)}"></option>`)
+    .join('');
+
+  const shell = document.createElement('div');
+  shell.id = 'mont-modal';
+  shell.className = 'modal-overlay open';
+  shell.innerHTML =
+      `<div class="modal" style="width:880px;max-width:96vw;">`
+    +   `<div class="modal-title">Novo <span>lote de montagem</span></div>`
+    +   `<datalist id="mont-modelos-list">${modelosOpts}</datalist>`
+    +   `<div class="modal-bloco">`
+    +     `<div class="modal-bloco-titulo">📦 Lote</div>`
+    +     `<div class="form-grid">`
+    +       `<div class="form-group"><label>Montador</label><select class="form-input" id="mont-modal-montador" onchange="_montagensTrocarMontador()">${montadorOpts}</select></div>`
+    +       `<div class="form-group"><label>Data de envio</label><input class="form-input" id="mont-modal-data" type="date" value="${hoje}"></div>`
+    +       `<div class="form-group full"><label>Observações (opcional)</label><textarea class="form-input" id="mont-modal-obs" rows="2" placeholder="—"></textarea></div>`
+    +     `</div>`
+    +   `</div>`
+    +   `<div class="modal-bloco">`
+    +     `<div class="modal-bloco-titulo">🛵 Motos do lote</div>`
+    +     `<div style="overflow-x:auto;">`
+    +       `<table id="mont-modal-tbl" style="width:100%;border-collapse:collapse;font-size:12px;">`
+    +         `<thead>`
+    +           `<tr style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;text-align:left;">`
+    +             `<th style="padding:6px 4px;width:24%;">Modelo</th>`
+    +             `<th style="padding:6px 4px;width:16%;">Cor</th>`
+    +             `<th style="padding:6px 4px;width:28%;">Chassi</th>`
+    +             `<th style="padding:6px 4px;width:18%;text-align:right;">Preço (R$)</th>`
+    +             `<th style="padding:6px 4px;width:14%;text-align:center;">—</th>`
+    +           `</tr>`
+    +         `</thead>`
+    +         `<tbody id="mont-modal-tbody"></tbody>`
+    +       `</table>`
+    +     `</div>`
+    +     `<button class="btn" type="button" onclick="_montagensAddRow()" style="margin-top:10px;">+ Adicionar moto</button>`
+    +     `<div id="mont-modal-total" style="margin-top:12px;font-size:13px;font-weight:700;text-align:right;color:var(--gold);">0 motos · R$ 0,00</div>`
+    +   `</div>`
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('mont-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="mont-modal-btn-salvar" onclick="_montagensSalvarLote()">Cadastrar lote</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+  _montagensAddRow(); // 1 linha vazia inicial
+}
+
+function _montagensAddRow() {
+  const tbody = document.getElementById('mont-modal-tbody');
+  if (!tbody) return;
+  const sel = document.getElementById('mont-modal-montador');
+  const precoDefault = sel ? Number(sel.selectedOptions[0]?.dataset?.preco || 0) : 110;
+  const tr = document.createElement('tr');
+  tr.className = 'mont-modal-row';
+  tr.innerHTML =
+      `<td style="padding:4px;"><input list="mont-modelos-list" class="form-input mont-modal-modelo" type="text" placeholder="Modelo"></td>`
+    + `<td style="padding:4px;"><input class="form-input mont-modal-cor" type="text" placeholder="Cor"></td>`
+    + `<td style="padding:4px;"><input class="form-input mont-modal-chassi" type="text" placeholder="Chassi" style="font-family:var(--mono,monospace);text-transform:uppercase;"></td>`
+    + `<td style="padding:4px;"><input class="form-input mont-modal-preco" type="number" step="0.01" value="${precoDefault.toFixed(2)}" data-touched="0" oninput="this.dataset.touched='1';_montagensRecalcTotal()" style="text-align:right;"></td>`
+    + `<td style="padding:4px;text-align:center;"><button class="action-btn del-btn" type="button" onclick="_montagensRemoveRow(this)" title="Remover">✕</button></td>`;
+  tbody.appendChild(tr);
+  _montagensRecalcTotal();
+}
+
+function _montagensRemoveRow(btn) {
+  const tr = btn.closest('tr');
+  if (tr) tr.remove();
+  _montagensRecalcTotal();
+}
+
+function _montagensRecalcTotal() {
+  const rows = document.querySelectorAll('#mont-modal-tbody .mont-modal-row');
+  let total = 0;
+  rows.forEach(r => { total += Number(r.querySelector('.mont-modal-preco')?.value || 0); });
+  const el = document.getElementById('mont-modal-total');
+  if (!el) return;
+  el.textContent = rows.length + ' moto' + (rows.length===1?'':'s')
+    + ' · R$ ' + total.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+// Trocar montador: só sobrescreve preços ainda não tocados (data-touched=0).
+// Linhas onde o usuário já editou o preço manualmente ficam intactas.
+function _montagensTrocarMontador() {
+  const sel = document.getElementById('mont-modal-montador');
+  if (!sel) return;
+  const novoPreco = Number(sel.selectedOptions[0]?.dataset?.preco || 0);
+  document.querySelectorAll('#mont-modal-tbody .mont-modal-row').forEach(r => {
+    const inp = r.querySelector('.mont-modal-preco');
+    if (inp && inp.dataset.touched !== '1') inp.value = novoPreco.toFixed(2);
+  });
+  _montagensRecalcTotal();
+}
+
+async function _montagensSalvarLote() {
+  const btn = document.getElementById('mont-modal-btn-salvar');
+  if (btn?.disabled) return;
+
+  const montadorId = document.getElementById('mont-modal-montador')?.value || '';
+  const dataEnvio  = document.getElementById('mont-modal-data')?.value || '';
+  const obs        = (document.getElementById('mont-modal-obs')?.value || '').trim();
+  if (!montadorId) { smAlert('Escolha o montador.'); return; }
+  if (!dataEnvio)  { smAlert('Informe a data de envio.'); return; }
+
+  const rows = [...document.querySelectorAll('#mont-modal-tbody .mont-modal-row')];
+  if (!rows.length) { smAlert('Adicione pelo menos uma moto.'); return; }
+
+  const itens = [];
+  for (let idx = 0; idx < rows.length; idx++) {
+    const r = rows[idx];
+    const modelo = (r.querySelector('.mont-modal-modelo')?.value || '').trim();
+    const cor    = (r.querySelector('.mont-modal-cor')?.value || '').trim();
+    const chassi = (r.querySelector('.mont-modal-chassi')?.value || '').trim().toUpperCase(); // UPPER(TRIM) no app
+    const preco  = Number(r.querySelector('.mont-modal-preco')?.value || 0);
+    if (!modelo)      { smAlert('Linha ' + (idx+1) + ': preencha o modelo.'); return; }
+    if (!cor)         { smAlert('Linha ' + (idx+1) + ': preencha a cor.'); return; }
+    if (!chassi)      { smAlert('Linha ' + (idx+1) + ': preencha o chassi.'); return; }
+    if (!(preco > 0)) { smAlert('Linha ' + (idx+1) + ': preço inválido.'); return; }
+    itens.push({ modelo, cor, chassi, preco_montagem: preco });
+  }
+
+  // Duplicidade dentro do próprio lote (antes de bater no banco)
+  const seen = new Map();
+  for (let idx = 0; idx < itens.length; idx++) {
+    const c = itens[idx].chassi;
+    if (seen.has(c)) {
+      smAlert('Chassi ' + c + ' aparece duas vezes no lote (linhas ' + (seen.get(c)+1) + ' e ' + (idx+1) + ').');
+      return;
+    }
+    seen.set(c, idx);
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    // Espelha o índice UNIQUE parcial: chassi não pode estar em outro lote ativo.
+    const { data: dupData, error: dupErr } = await sb.from('montagens_itens')
+      .select('chassi, lote_id')
+      .in('chassi', itens.map(i => i.chassi))
+      .neq('status_montagem', 'recebida');
+    if (dupErr) throw new Error('Falha ao checar duplicidade: ' + dupErr.message);
+    if (dupData?.length) {
+      const numeroDe = id => {
+        const l = montagensLotes.find(x => x.id === id);
+        return l ? 'LOTE-' + String(l.numeroLote).padStart(4,'0') : '?';
+      };
+      const lista = dupData.map(d => '• ' + d.chassi + ' já está em ' + numeroDe(d.lote_id)).join('\n');
+      smAlert('Chassi duplicado:\n\n' + lista + '\n\nUm chassi só pode estar em um lote ativo (não-recebido).');
+      throw new Error('chassi_duplicado');
+    }
+
+    // INSERT do lote (valor_total começa 0; trigger ajusta no INSERT dos itens).
+    const { data: novoLote, error: errLote } = await sb.from('montagens_lotes')
+      .insert({ montador_id: montadorId, data_envio: dataEnvio, observacoes: obs || null })
+      .select().single();
+    if (errLote) throw new Error('Erro ao criar lote: ' + errLote.message);
+
+    // INSERT em batch dos itens. Se falhar, rollback manual (CASCADE limpa
+    // o que tiver entrado parcialmente). Sem transação porque o client JS
+    // do Supabase não expõe BEGIN/COMMIT — alternativa seria RPC, fora do escopo.
+    const itensPayload = itens.map(i => ({ ...i, lote_id: novoLote.id }));
+    const { error: errItens } = await sb.from('montagens_itens').insert(itensPayload);
+    if (errItens) {
+      await sb.from('montagens_lotes').delete().eq('id', novoLote.id);
+      throw new Error('Erro ao inserir itens: ' + errItens.message + '\n(Lote removido — refaça o cadastro.)');
+    }
+
+    document.getElementById('mont-modal')?.remove();
+    await initMontagens();
+  } catch (e) {
+    if (e.message !== 'chassi_duplicado') smAlert(e.message || 'Erro desconhecido.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Cadastrar lote'; }
+  }
 }
 
 let sacCasos = [];
