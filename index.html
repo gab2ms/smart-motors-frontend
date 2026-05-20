@@ -10897,6 +10897,7 @@ const OS_STATUS = {
   aguardando_terceiro:{ label: '⏳ Aguardando terceiro', cor: 'var(--gold-bright)',bg: 'var(--gold-dim)' },
   pronto_entrega:     { label: '✅ Pronto pra entrega',  cor: 'var(--green)',      bg: 'var(--green-dim)' },
   finalizado:         { label: '🏁 Finalizado',          cor: 'var(--text2)',      bg: 'var(--surface3)' },
+  transferido:        { label: '🔄 Transferido',         cor: 'var(--text3)',      bg: 'var(--surface3)' },
 };
 // Tipos de problema unificados
 const TIPOS_PROBLEMA = {
@@ -11316,7 +11317,12 @@ function renderOficina() {
   // Bases por tab — contador independe de busca/select. A regra sacDestinoId
   // (ocultar OS ligada a SAC ativo) define a tab "Em aberto"; "Finalizadas"
   // mostra tudo que estiver finalizado.
+  // Transferido nunca aparece (nem em abertas, nem em finalizadas). Mantemos
+  // a regra antiga de sacDestinoId pra defesa em profundidade: OSes movidas
+  // pra SAC ativo ficam escondidas mesmo se alguém setar manualmente outro
+  // status sem zerar o ponteiro.
   const abertasBase     = oficinaOrdens.filter(o => o.status !== 'finalizado'
+    && o.status !== 'transferido'
     && (!o.sacDestinoId || !sacAtivosIds.has(o.sacDestinoId)));
   const finalizadasBase = oficinaOrdens.filter(o => o.status === 'finalizado');
   const elCntA = document.getElementById('of-cnt-abertas');     if (elCntA) elCntA.textContent = abertasBase.length;
@@ -11429,8 +11435,10 @@ async function ofMoverParaSac(id) {
     categoria: 'abertura',
     descricao: 'Caso originado da OS #' + o.numero,
   });
+  // status='transferido' (antes era 'aguardando_terceiro'): paridade com a
+  // direção SAC→Oficina e separação semântica entre "movido" e "em andamento".
   const updOs = {
-    status: 'aguardando_terceiro',
+    status: 'transferido',
     sac_destino_id: novoSac.id,
     atualizado_em: new Date().toISOString(),
   };
@@ -11463,11 +11471,25 @@ function ofAbrirSacDestino(osId) {
   abrirSacModal(o.sacDestinoId);
 }
 
+function ofAbrirSacOrigem(osId) {
+  const o = (oficinaOrdens || []).find(x => x.id === osId);
+  if (!o || !o.sacOrigemId) { smAlert('SAC de origem não encontrado.'); return; }
+  document.getElementById('of-modal')?.remove();
+  abrirSacModal(o.sacOrigemId);
+}
+
 function sacAbrirOsOrigem(sacId) {
   const c = (sacCasos || []).find(x => x.id === sacId);
   if (!c || !c.osOrigemId) { smAlert('OS de origem não encontrada.'); return; }
   document.getElementById('sac-modal')?.remove();
   abrirOfModal(c.osOrigemId);
+}
+
+function sacAbrirOficinaDestino(sacId) {
+  const c = (sacCasos || []).find(x => x.id === sacId);
+  if (!c || !c.oficinaDestinoId) { smAlert('OS de destino não encontrada.'); return; }
+  document.getElementById('sac-modal')?.remove();
+  abrirOfModal(c.oficinaDestinoId);
 }
 
 function ofImprimir(id) {
@@ -11621,7 +11643,9 @@ function abrirOfModal(id) {
   const shell = document.createElement('div');
   shell.id = 'of-modal';
   shell.className = 'modal-overlay open';
-  const statusOpts = Object.keys(OF_STATUS).map(k =>
+  // 'transferido' fica fora do dropdown — é estado setado programaticamente
+  // por ofMoverParaSac/sacMoverParaOficina, não escolha manual.
+  const statusOpts = Object.keys(OF_STATUS).filter(k => k !== 'transferido').map(k =>
     `<option value="${k}"${(o?o.status===k:k==='acao_interna')?' selected':''}>${OF_STATUS[k].label}</option>`).join('');
   const tipoOpts = '<option value="">—</option>' + Object.keys(TIPOS_PROBLEMA).map(k =>
     `<option value="${k}"${(o&&o.tipoProblema===k)?' selected':''}>${TIPOS_PROBLEMA[k]}</option>`).join('');
@@ -11647,6 +11671,15 @@ function abrirOfModal(id) {
       + (sacDestino.status === 'finalizado' ? ' Caso SAC já finalizado.' : ' Para retornar pra Oficina, peça ao admin.')
       + '</div>'
     : '';
+  // OS originada de um SAC (via sacMoverParaOficina) — banner inverso.
+  const sacOrigem = (isEdit && o && o.sacOrigemId)
+    ? (sacCasos || []).find(c => c.id === o.sacOrigemId) : null;
+  const bannerSacOrigem = sacOrigem
+    ? '<div style="margin-bottom:12px;padding:10px 12px;background:rgba(245,197,24,0.10);border:1px solid var(--gold);border-radius:var(--r-sm);font-size:11px;line-height:1.5;">'
+      + '🔄 OS originada do <a href="javascript:void(0)" onclick="ofAbrirSacOrigem(\'' + o.id + '\')" style="color:var(--gold);font-weight:700;text-decoration:underline;">SAC #' + sacOrigem.numero + '</a>'
+      + ' — status atual: <strong>' + ((SAC_STATUS[sacOrigem.status]||{}).label || sacOrigem.status) + '</strong>.'
+      + '</div>'
+    : '';
 
   const tipoOutroDisplay = (o && o.tipoProblema === 'outro') ? '' : 'display:none;';
   const ofIsAdmin = _isAdminUser();
@@ -11663,6 +11696,7 @@ function abrirOfModal(id) {
     `<div class="modal" style="width:760px;max-width:95vw;">`
     + `<div class="modal-title">${isEdit?('Editar OS #'+o.numero):'Nova <span>OS</span>'}</div>`
     + bannerSac
+    + bannerSacOrigem
     // ── Bloco 1 — Cliente ──
     + `<div class="modal-bloco">`
     +   `<div class="modal-bloco-titulo">🧑 Cliente</div>`
@@ -12355,7 +12389,7 @@ function atualizarDotSac() {
   if (!dot) return;
   const hoje = new Date().toISOString().split('T')[0];
   const alerta = sacCasos.some(c =>
-    c.status !== 'finalizado' &&
+    c.status !== 'finalizado' && c.status !== 'transferido' &&
     ((c.dataProximoContato && c.dataProximoContato <= hoje) || c.prioridade === 'alta')
   );
   dot.style.background = alerta ? 'var(--red)' : 'var(--border2)';
@@ -12365,9 +12399,10 @@ function atualizarDotSac() {
 function renderSacKpis() {
   const hoje = new Date().toISOString().split('T')[0];
   const mesPref = hoje.slice(0, 7);
-  const abertos    = sacCasos.filter(c => c.status !== 'finalizado').length;
-  const altas      = sacCasos.filter(c => c.status !== 'finalizado' && c.prioridade === 'alta').length;
-  const vencidos   = sacCasos.filter(c => c.status !== 'finalizado' && c.dataProximoContato && c.dataProximoContato <= hoje).length;
+  // Transferido não conta como aberto nem alimenta os 3 cards de "ativos".
+  const abertos    = sacCasos.filter(c => c.status !== 'finalizado' && c.status !== 'transferido').length;
+  const altas      = sacCasos.filter(c => c.status !== 'finalizado' && c.status !== 'transferido' && c.prioridade === 'alta').length;
+  const vencidos   = sacCasos.filter(c => c.status !== 'finalizado' && c.status !== 'transferido' && c.dataProximoContato && c.dataProximoContato <= hoje).length;
   const finalMes   = sacCasos.filter(c => c.status === 'finalizado' && (c.dataResolucao || '').startsWith(mesPref)).length;
   document.getElementById('sac-kpis').innerHTML =
     `<div class="kpi kpi-clickable" data-sac-card="todos-abertos" onclick="filtrarSacPorCard('todos-abertos')" style="border-top:2px solid var(--gold);"><div class="kpi-label">Casos abertos</div><div class="kpi-value gold">${abertos}</div><div class="kpi-change">em aberto</div></div>`
@@ -12429,8 +12464,9 @@ function renderSac() {
   const fT = document.getElementById('sac-filtro-tipo')?.value || '';
   const q  = (document.getElementById('sac-busca')?.value || '').toLowerCase();
 
-  // Bases por tab — contador independe de busca/filtros.
-  const abertosBase     = sacCasos.filter(c => c.status !== 'finalizado');
+  // Bases por tab — contador independe de busca/filtros. Transferido nunca
+  // aparece em nenhuma das duas (caso saiu da fila de resolução).
+  const abertosBase     = sacCasos.filter(c => c.status !== 'finalizado' && c.status !== 'transferido');
   const finalizadosBase = sacCasos.filter(c => c.status === 'finalizado');
   const elCntA = document.getElementById('sac-cnt-abertos');     if (elCntA) elCntA.textContent = abertosBase.length;
   const elCntF = document.getElementById('sac-cnt-finalizados'); if (elCntF) elCntF.textContent = finalizadosBase.length;
@@ -12489,7 +12525,9 @@ function abrirSacModal(id) {
   const shell = document.createElement('div');
   shell.id = 'sac-modal';
   shell.className = 'modal-overlay open';
-  const statusOpts = Object.keys(SAC_STATUS).map(k =>
+  // 'transferido' fica fora do dropdown — é estado setado programaticamente
+  // por sacMoverParaOficina/sacVoltarParaOficina, não escolha manual.
+  const statusOpts = Object.keys(SAC_STATUS).filter(k => k !== 'transferido').map(k =>
     `<option value="${k}"${(c?c.status===k:k==='acao_interna')?' selected':''}>${SAC_STATUS[k].label}</option>`).join('');
   const prioOpts = Object.keys(SAC_PRIO).map(k =>
     `<option value="${k}"${(c?c.prioridade===k:k==='media')?' selected':''}>${SAC_PRIO[k].label}</option>`).join('');
@@ -12511,7 +12549,18 @@ function abrirSacModal(id) {
       + '.' + (camposVazios ? ' <strong>Preencha os campos de garantia abaixo (fornecedor, próximo contato).</strong>' : '')
       + '</div>'
     : '';
-  const podeReverter = isEdit && c && c.osOrigemId && isAdminUser && c.status !== 'finalizado';
+  // Caso transferido pra Oficina (via sacMoverParaOficina) — banner inverso.
+  const oficinaDestino = (isEdit && c && c.oficinaDestinoId)
+    ? (oficinaOrdens || []).find(x => x.id === c.oficinaDestinoId) : null;
+  const bannerOficinaDestino = oficinaDestino
+    ? '<div style="margin-bottom:12px;padding:10px 12px;background:rgba(255,77,77,0.10);border:1px solid var(--red);border-radius:var(--r-sm);font-size:11px;line-height:1.5;">'
+      + '🔄 Caso transferido pra <a href="javascript:void(0)" onclick="sacAbrirOficinaDestino(\'' + c.id + '\')" style="color:var(--gold);font-weight:700;text-decoration:underline;">OS #' + oficinaDestino.numero + '</a>'
+      + ' — status atual: <strong>' + ((OF_STATUS[oficinaDestino.status]||{}).label || oficinaDestino.status) + '</strong>.'
+      + '</div>'
+    : '';
+  const podeReverter = isEdit && c && c.osOrigemId && isAdminUser && c.status !== 'finalizado' && c.status !== 'transferido';
+  // Mover pra Oficina: qualquer usuário com perm Oficina, caso não-transferido.
+  const podeMoverOf  = isEdit && c && !c.oficinaDestinoId && c.status !== 'transferido' && _u && modulosPermitidos(_u).includes('oficina');
 
   // CPF: prefere o que está no caso; fallback no cadastro de clientes
   let cpfInicial = (c && c.clienteCpf) || '';
@@ -12533,6 +12582,7 @@ function abrirSacModal(id) {
     `<div class="modal" style="width:760px;max-width:95vw;">`
     + `<div class="modal-title">${isEdit?('Caso #'+c.numero):'Novo <span>caso</span>'}</div>`
     + bannerOrigem
+    + bannerOficinaDestino
     // ── Bloco 1 — Cliente ──
     + `<div class="modal-bloco">`
     +   `<div class="modal-bloco-titulo">🧑 Cliente</div>`
@@ -12588,7 +12638,8 @@ function abrirSacModal(id) {
     + `</div>`
     + `<div class="modal-actions">`
     +   `<button class="btn" onclick="document.getElementById('sac-modal').remove();">Cancelar</button>`
-    +   (podeReverter ? `<button class="btn" style="border-color:var(--orange);color:var(--orange);" onclick="sacVoltarParaOficina('${c.id}')" title="Reverter pra Oficina (apenas admin)">↩ Voltar pra Oficina</button>` : '')
+    +   (podeReverter ? `<button class="btn" style="border-color:var(--orange);color:var(--orange);" onclick="sacVoltarParaOficina('${c.id}')" title="Reverter pra OS de origem (apenas admin)">↩ Voltar pra Oficina</button>` : '')
+    +   (podeMoverOf  ? `<button class="btn" style="border-color:var(--gold);color:var(--gold);" onclick="sacMoverParaOficina('${c.id}')" title="Mover pra Oficina — cria OS nova">🔧 Mover pra Oficina</button>` : '')
     +   `<button class="btn btn-gold" onclick="sacSalvar('${isEdit?c.id:''}')">${isEdit?'Salvar':'Cadastrar caso'}</button>`
     + `</div>`
     + `</div>`;
@@ -12812,9 +12863,10 @@ async function sacVoltarParaOficina(id) {
     });
   }
 
-  // 2) Marca SAC como finalizado
+  // 2) Marca SAC como transferido (antes era 'finalizado' — poluía o KPI
+  //    "Finalizados no mês" com casos que foram só revertidos, não resolvidos).
   const updSac = {
-    status: 'finalizado',
+    status: 'transferido',
     data_resolucao: new Date().toISOString().split('T')[0],
     atualizado_em: new Date().toISOString(),
   };
@@ -12836,6 +12888,81 @@ async function sacVoltarParaOficina(id) {
   renderSacKpis(); renderSac(); atualizarDotSac();
   if (typeof renderOficinaKpis === 'function') { renderOficinaKpis(); renderOficina(); }
   smAlert('OS #' + numeroOs + ' revertida pra Oficina.');
+}
+
+// Mover SAC pra Oficina — espelho de ofMoverParaSac. Qualquer usuário com
+// perm Oficina pode (paridade com perm SAC da direção inversa). Cria OS
+// nova com sac_origem_id setado; marca o SAC como 'transferido' e popula
+// oficina_destino_id apontando pra OS recém-criada. Reflete em timeline
+// nos 2 lados.
+async function sacMoverParaOficina(sacId) {
+  let _u = null;
+  try { _u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
+  if (!_u) { smAlert('Sessão inválida.'); return; }
+  if (!modulosPermitidos(_u).includes('oficina')) { smAlert('Sem permissão para acessar o módulo Oficina.'); return; }
+  const c = sacCasos.find(x => x.id === sacId);
+  if (!c) return;
+  if (c.oficinaDestinoId) { smAlert('Este caso já foi transferido pra Oficina.'); return; }
+  const ok = await smConfirm(
+    'Mover caso SAC #' + c.numero + ' pra Oficina?\n\n' +
+    'O caso sai da lista de ativos do SAC e vira uma OS nova com tudo copiado (cliente, veículo, problema, prioridade).'
+  );
+  if (!ok) return;
+  const osPayload = {
+    cliente_id: c.clienteId || null,
+    cliente_nome: c.clienteNome,
+    cliente_telefone: c.clienteTelefone || null,
+    cliente_cpf: c.clienteCpf || null,
+    modelo_scooter: c.modeloScooter || null,
+    cor: c.cor || null,
+    chassi: c.chassi || null,
+    tipo_problema: c.tipoProblema || null,
+    tipo_problema_outro: c.tipoProblemaOutro || null,
+    prioridade: c.prioridade || 'media',
+    status: 'acao_interna',
+    data_abertura: new Date().toISOString().split('T')[0],
+    data_proximo_contato: null,
+    prazo_alerta: c.prazoAlerta || 3,
+    problema_relatado: c.problemaRelatado || '(sem descrição)',
+    itens_deixados: c.itensDeixados || null,
+    sac_origem_id: c.id,
+  };
+  const { data: novoOs, error: errOs } = await sb.from('oficina_ordens').insert(osPayload).select().single();
+  if (errOs) { smAlert('Erro ao criar OS: ' + errOs.message); return; }
+  await _smTimelineCriar({
+    casoId: novoOs.id,
+    modulo: 'oficina',
+    categoria: 'abertura',
+    descricao: 'OS originada do SAC #' + c.numero,
+  });
+  const updSac = {
+    status: 'transferido',
+    oficina_destino_id: novoOs.id,
+    atualizado_em: new Date().toISOString(),
+  };
+  const { data: sacAtualizado, error: errSac } = await sb.from('sac_casos').update(updSac).eq('id', sacId).select().single();
+  if (errSac) {
+    // OS foi criada mas o SAC não atualizou — situação rara; deixa registrado
+    // pra correção manual em vez de tentar rollback (não dá pra desfazer a
+    // criação da OS sem cascata; o usuário decide via UI).
+    oficinaOrdens.unshift(toCamel(novoOs));
+    renderOficinaKpis(); renderOficina();
+    smAlert('OS #' + novoOs.numero + ' criada, mas falha ao atualizar o caso SAC:\n' + errSac.message + '\n\nVerifique manualmente.');
+    return;
+  }
+  await _smTimelineCriar({
+    casoId: c.id,
+    modulo: 'sac',
+    categoria: 'observacao',
+    descricao: 'Movido pra Oficina #' + novoOs.numero,
+  });
+  const i = sacCasos.findIndex(x => x.id === sacId);
+  if (i >= 0) sacCasos[i] = toCamel(sacAtualizado);
+  oficinaOrdens.unshift(toCamel(novoOs));
+  document.getElementById('sac-modal')?.remove();
+  renderSacKpis(); renderSac(); atualizarDotSac();
+  renderOficinaKpis(); renderOficina();
+  smAlert('Caso SAC #' + c.numero + ' movido para Oficina #' + novoOs.numero + '.');
 }
 
 // ══════════════════════════════════════════
