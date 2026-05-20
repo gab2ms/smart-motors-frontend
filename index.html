@@ -3908,10 +3908,13 @@ const _PRODUTO_PALAVRAS_RUIDO = ['elétrica', 'eletrica', 'elétrico', 'eletrico
 // tokens inteiros) no nome do Tiny. Use múltiplos tokens pra evitar
 // falso-positivo (ex: "Pit + suporte" precisa de "pit" E "1000w" pra
 // não capturar "Suporte Exclusivo Pit Bashi" indevidamente).
-const _PRODUTO_ALIASES = [
-  { triggerTokens: ['skylo'],         modeloAlvo: 'eskilo'        },
-  { triggerTokens: ['pit', '1000w'],  modeloAlvo: 'pit + suporte' },
-];
+// Esvaziado em 2026-05-19 após rename no catálogo: 'Eskilo'→'Skylo' e
+// 'Pit + suporte'→'Pit'. Os 2 aliases que existiam aqui mapeavam exatamente
+// esses casos; agora o cadastro tem o nome direto, e o matcher casa via
+// etapa 2 (exato case-insensitive) ou 3 (startsWith normalizado) sem
+// precisar de alias. Mantém o array vazio: ainda é o fallback final da
+// cascata de _matchProdutoPorNome (linha de defesa pra casos futuros).
+const _PRODUTO_ALIASES = [];
 
 function _stripPrefixoTiny(low) {
   for (const pref of _PRODUTO_PREFIXOS_TINY) {
@@ -11983,9 +11986,13 @@ function renderMontagens() {
   const padLote = n => 'LOTE-' + String(n || 0).padStart(4, '0');
   const nomeMontador = id => (montadores.find(m => m.id === id) || {}).nome || '—';
 
-  // Itens agrupados por lote (uma passagem só) — usado em vários lugares.
+  // Itens e pagamentos agrupados por lote (uma passagem só de cada).
   const itensPorLote = montagensItens.reduce((acc, i) => {
     (acc[i.loteId] = acc[i.loteId] || []).push(i);
+    return acc;
+  }, {});
+  const pagamentosPorLote = montagensPagamentos.reduce((acc, p) => {
+    (acc[p.loteId] = acc[p.loteId] || []).push(p);
     return acc;
   }, {});
 
@@ -12004,40 +12011,61 @@ function renderMontagens() {
   setCnt('mont-cnt-concluidos', concluidos.length);
   setCnt('mont-cnt-montadores', montadores.length);
 
-  // ── Tab Montadores: cards read-only (CRUD em sub-commit futuro) ──
+  // ── Tab Montadores: CRUD ──
   if (_montagensAbaAtiva === 'montadores') {
-    if (!montadores.length) {
-      el.innerHTML = '<div class="empty" style="padding:32px;">Nenhum montador cadastrado</div>';
-      if (sub) sub.textContent = '—';
-      if (cnt) cnt.textContent = '—';
-      return;
-    }
+    // Stat "Motos montadas total" = count cumulativo de itens em todos
+    // os lotes do montador, qualquer status_montagem (decisão do usuário).
     const statsDe = id => {
-      const lts = montagensLotes.filter(l => l.montadorId === id);
-      const total = lts.reduce((a, l) => a + Number(l.valorTotal || 0), 0);
-      return { lotes: lts.length, total };
+      const loteIdsDoMont = new Set(
+        montagensLotes.filter(l => l.montadorId === id).map(l => l.id)
+      );
+      const motos = montagensItens.filter(i => loteIdsDoMont.has(i.loteId)).length;
+      const totalEnviado = montagensLotes
+        .filter(l => l.montadorId === id)
+        .reduce((a, l) => a + Number(l.valorTotal || 0), 0);
+      return { motos, totalEnviado, lotes: loteIdsDoMont.size };
     };
-    el.innerHTML = montadores.map(m => {
-      const s = statsDe(m.id);
-      const inativoBadge = m.ativo === false
-        ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">inativo</span>'
-        : '';
-      return `<div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:14px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);">
-        <div style="font-size:22px;">${m.principal ? '⭐' : '👷'}</div>
-        <div>
-          <div style="font-size:13px;font-weight:700;">${escHtml(m.nome)}${inativoBadge}</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:2px;">${m.telefone ? escHtml(m.telefone) : 'sem telefone'} · padrão ${fmtBR(m.precoPadrao)}</div>
-        </div>
-        <div style="text-align:right;">
-          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;">Lotes</div>
-          <div style="font-size:14px;font-weight:800;">${s.lotes}</div>
-        </div>
-        <div style="text-align:right;">
-          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;">Enviado</div>
-          <div style="font-size:14px;font-weight:800;color:var(--gold);">${fmtBR(s.total)}</div>
-        </div>
-      </div>`;
-    }).join('');
+    // Ativos no topo (principal primeiro), inativos no fim com opacity reduzida.
+    const ordenados = montadores.slice().sort((a, b) => {
+      const aInat = a.ativo === false, bInat = b.ativo === false;
+      if (aInat !== bInat) return aInat ? 1 : -1;
+      if (!!a.principal !== !!b.principal) return a.principal ? -1 : 1;
+      return (a.nome || '').localeCompare(b.nome || '');
+    });
+    const headerHTML = `<div style="padding:14px 20px;display:flex;justify-content:flex-end;border-bottom:1px solid var(--border);">
+      <button class="btn btn-gold" onclick="abrirMontadorModal()">+ Novo montador</button>
+    </div>`;
+    const cardsHTML = ordenados.length
+      ? ordenados.map(m => {
+          const s = statsDe(m.id);
+          const inativo = m.ativo === false;
+          const inativoBadge = inativo
+            ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">inativo</span>'
+            : '';
+          return `<div style="display:grid;grid-template-columns:auto 1fr auto auto auto;gap:14px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);${inativo ? 'opacity:0.55;' : ''}">
+            <div style="font-size:22px;">${m.principal ? '⭐' : '👷'}</div>
+            <div>
+              <div style="font-size:13px;font-weight:700;">${escHtml(m.nome)}${inativoBadge}</div>
+              <div style="font-size:10px;color:var(--text3);margin-top:2px;">${m.telefone ? escHtml(m.telefone) : 'sem telefone'} · padrão ${fmtBR(m.precoPadrao)}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;">Motos</div>
+              <div style="font-size:14px;font-weight:800;">${s.motos}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;">Enviado</div>
+              <div style="font-size:14px;font-weight:800;color:var(--gold);">${fmtBR(s.totalEnviado)}</div>
+            </div>
+            <div style="display:flex;gap:5px;">
+              <button class="action-btn edit-btn" onclick="abrirMontadorModal('${m.id}')" title="Editar">✏</button>
+              ${inativo
+                ? `<button class="action-btn" onclick="_alternarStatusMontador('${m.id}', true)" title="Reativar" style="color:var(--green);">↻</button>`
+                : `<button class="action-btn del-btn" onclick="_alternarStatusMontador('${m.id}', false)" title="Desativar">⊘</button>`}
+            </div>
+          </div>`;
+        }).join('')
+      : '<div class="empty" style="padding:32px;">Nenhum montador cadastrado. Clique em "+ Novo montador" pra começar.</div>';
+    el.innerHTML = headerHTML + cardsHTML;
     if (sub) sub.textContent = montadores.length + ' montador' + (montadores.length===1?'':'es') + ' cadastrado' + (montadores.length===1?'':'s');
     if (cnt) cnt.textContent = '—';
     return;
@@ -12081,8 +12109,14 @@ function renderMontagens() {
     return order.filter(s => c[s]).map(s => c[s] + ' ' + s).join(', ');
   };
 
+  // event.stopPropagation+preventDefault: senão o <details> também toggle ao
+  // clicar nos botões de ação dentro do summary.
+  const stopClick = "event.stopPropagation();event.preventDefault();";
+
   el.innerHTML = base.map(lote => {
     const its = itensPorLote[lote.id] || [];
+    const pgs = (pagamentosPorLote[lote.id] || []).slice()
+      .sort((a, b) => (a.dataPagamento || '').localeCompare(b.dataPagamento || ''));
     const st  = stStyle[lote.statusPagamento] || stStyle.pendente;
     const resumo = its.length
       ? its.length + ' ' + (its.length===1?'moto':'motos') + (statusCount(its) ? ': ' + statusCount(its) : '')
@@ -12090,8 +12124,18 @@ function renderMontagens() {
     const pagoLinha = Number(lote.valorPago) > 0
       ? `<div style="font-size:10px;color:var(--green);font-weight:600;">pago ${fmtBR(lote.valorPago)}</div>`
       : '';
+    // Botões: ✏️ só em 'pendente' (após qualquer pagamento, lote é congelado
+    // pra não dessincronizar valor_pago); 🖨️ e 💰 em todos os status.
+    const podeEditar = lote.statusPagamento === 'pendente';
+    const acoesHTML =
+        `<button class="action-btn" onclick="${stopClick}imprimirMontagemOS('${lote.id}')" title="Imprimir OS de montagem (2 vias)">🖨️</button>`
+      + (podeEditar
+          ? `<button class="action-btn edit-btn" onclick="${stopClick}abrirMontagemModal('${lote.id}')" title="Editar lote">✏</button>`
+          : '')
+      + `<button class="action-btn" style="color:var(--gold);" onclick="${stopClick}abrirMontagemPagarModal('${lote.id}')" title="Pagar lote / ver histórico">💰</button>`;
+
     const itensHTML = its.length
-      ? `<div style="padding:0 20px 14px 20px;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
+      ? `<div style="padding:0 20px 10px 20px;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead>
             <tr style="background:var(--surface2);color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;">
               <th style="text-align:left;padding:6px 10px;font-weight:700;">Modelo</th>
@@ -12105,15 +12149,42 @@ function renderMontagens() {
             ${its.map(i => `<tr style="border-top:1px solid var(--border);">
               <td style="padding:6px 10px;">${escHtml(i.modelo)}</td>
               <td style="padding:6px 10px;">${escHtml(i.cor)}</td>
-              <td style="padding:6px 10px;font-family:var(--mono,monospace);">${escHtml(i.chassi)}</td>
+              <td style="padding:6px 10px;font-family:var(--mono,monospace);">${i.chassi ? escHtml(i.chassi) : '<span style="color:var(--text3);">—</span>'}</td>
               <td style="padding:6px 10px;text-align:right;font-family:var(--mono,monospace);">${fmtBR(i.precoMontagem)}</td>
               <td style="padding:6px 10px;font-size:11px;">${escHtml(i.statusMontagem)}${i.dataRecebimento ? ' <span style="color:var(--text3);">('+fmtData(i.dataRecebimento)+')</span>' : ''}</td>
             </tr>`).join('')}
           </tbody>
         </table></div>`
-      : '<div style="padding:0 20px 14px 20px;color:var(--text3);font-size:11px;font-style:italic;">Lote sem itens cadastrados.</div>';
+      : '<div style="padding:0 20px 10px 20px;color:var(--text3);font-size:11px;font-style:italic;">Lote sem itens cadastrados.</div>';
+
+    // Histórico de pagamentos — visível sempre que houver pagamentos. Crítico
+    // pra auditoria das transações com o montador (decisão do usuário).
+    const pagamentosHTML = pgs.length
+      ? `<div style="padding:0 20px 14px 20px;margin-top:4px;">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">💰 Histórico de pagamentos</div>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead>
+              <tr style="background:var(--surface2);color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;">
+                <th style="text-align:left;padding:6px 10px;font-weight:700;">Data</th>
+                <th style="text-align:right;padding:6px 10px;font-weight:700;">Valor</th>
+                <th style="text-align:left;padding:6px 10px;font-weight:700;">Observações</th>
+                <th style="text-align:left;padding:6px 10px;font-weight:700;">Vínculo</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pgs.map(p => `<tr style="border-top:1px solid var(--border);">
+                <td style="padding:6px 10px;font-family:var(--mono,monospace);">${fmtData(p.dataPagamento)}</td>
+                <td style="padding:6px 10px;text-align:right;font-family:var(--mono,monospace);color:var(--green);font-weight:600;">${fmtBR(p.valor)}</td>
+                <td style="padding:6px 10px;font-size:11px;">${escHtml(p.observacoes || '—')}</td>
+                <td style="padding:6px 10px;font-size:10px;color:${p.lancamentoId ? 'var(--gold)' : 'var(--text3)'};">${p.lancamentoId ? '🔗 lançamento' : 'só registro'}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`
+      : '';
+
     return `<details style="border-bottom:1px solid var(--border);">
-      <summary style="display:grid;grid-template-columns:80px 1.4fr 1fr 110px 130px;gap:12px;align-items:center;padding:12px 20px;cursor:pointer;list-style:none;">
+      <summary style="display:grid;grid-template-columns:80px 1.4fr 1fr 110px 120px 130px;gap:12px;align-items:center;padding:12px 20px;cursor:pointer;list-style:none;">
         <div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;font-size:12px;">${padLote(lote.numeroLote)}</div>
         <div style="min-width:0;">
           <div style="font-weight:700;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(nomeMontador(lote.montadorId))}</div>
@@ -12122,8 +12193,10 @@ function renderMontagens() {
         <div style="font-size:11px;color:var(--text3);">Envio: ${fmtData(lote.dataEnvio)}${lote.dataUltimoRecebimento ? '<br>Receb: '+fmtData(lote.dataUltimoRecebimento) : ''}</div>
         <div class="td-mono" style="font-weight:700;color:var(--gold);text-align:right;">${fmtBR(lote.valorTotal)}${pagoLinha}</div>
         <div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>
+        <div style="display:flex;gap:4px;justify-content:flex-end;">${acoesHTML}</div>
       </summary>
       ${itensHTML}
+      ${pagamentosHTML}
     </details>`;
   }).join('');
 }
@@ -12150,18 +12223,37 @@ function renderMontagensKpis() {
     + `<div class="kpi"><div class="kpi-label">📊 Enviado no mês</div><div class="kpi-value">${fmtBR(enviadoNoMes)}</div><div class="kpi-change">valor de lotes do mês</div></div>`;
 }
 
-// ── Modal "Novo lote" ──
-function abrirMontagemModal() {
+// ── Modal "Novo lote" / "Editar lote" ──
+// loteId opcional: presente = modo edição (carrega lote + itens; lote precisa
+// ser 'pendente' — senão bloqueia pra não dessincronizar valor_pago).
+function abrirMontagemModal(loteId) {
   const old = document.getElementById('mont-modal');
   if (old) old.remove();
 
   const ativos = montadores.filter(m => m.ativo !== false);
   if (!ativos.length) { smAlert('Cadastre um montador ativo antes de criar um lote.'); return; }
 
+  const lote = loteId ? montagensLotes.find(l => l.id === loteId) : null;
+  const isEdit = !!lote;
+  if (isEdit && lote.statusPagamento !== 'pendente') {
+    smAlert('Não dá pra editar lote com pagamento já registrado (status ' + lote.statusPagamento + '). Crie outro lote ou estorne o pagamento.');
+    return;
+  }
+  const itensExistentes = isEdit
+    ? montagensItens.filter(i => i.loteId === loteId)
+    : [];
+
   const hoje      = new Date().toISOString().split('T')[0];
   const principal = ativos.find(m => m.principal) || ativos[0];
-  const montadorOpts = ativos.map(m =>
-    `<option value="${m.id}" data-preco="${Number(m.precoPadrao || 0)}"${m.id === principal.id ? ' selected' : ''}>${escHtml(m.nome)}${m.principal ? ' ⭐' : ''}</option>`
+  // Em edição: garante que o montador atual apareça mesmo se estiver inativo.
+  const opcoesPara = ativos.slice();
+  if (isEdit && lote.montadorId && !opcoesPara.find(m => m.id === lote.montadorId)) {
+    const m = montadores.find(x => x.id === lote.montadorId);
+    if (m) opcoesPara.unshift(m);
+  }
+  const selectedId = isEdit ? (lote.montadorId || '') : principal.id;
+  const montadorOpts = opcoesPara.map(m =>
+    `<option value="${m.id}" data-preco="${Number(m.precoPadrao || 0)}"${m.id === selectedId ? ' selected' : ''}>${escHtml(m.nome)}${m.principal ? ' ⭐' : ''}${m.ativo === false ? ' (inativo)' : ''}</option>`
   ).join('');
   // Datalist de modelos — só produtos ativos (convenção 'ativo !== false').
   const modelosOpts = (products || [])
@@ -12169,19 +12261,27 @@ function abrirMontagemModal() {
     .map(p => `<option value="${escHtml(p.modelo)}"></option>`)
     .join('');
 
+  const dataValue = isEdit ? (lote.dataEnvio || hoje) : hoje;
+  const obsValue  = isEdit ? (lote.observacoes || '') : '';
+  const titulo    = isEdit
+    ? `Editar <span>lote #${String(lote.numeroLote).padStart(4,'0')}</span>`
+    : `Novo <span>lote de montagem</span>`;
+  const btnSalvar = isEdit ? 'Salvar alterações' : 'Cadastrar lote';
+
   const shell = document.createElement('div');
   shell.id = 'mont-modal';
   shell.className = 'modal-overlay open';
+  shell.dataset.loteId = isEdit ? loteId : ''; // consumido por _montagensSalvarLote
   shell.innerHTML =
       `<div class="modal" style="width:880px;max-width:96vw;">`
-    +   `<div class="modal-title">Novo <span>lote de montagem</span></div>`
+    +   `<div class="modal-title">${titulo}</div>`
     +   `<datalist id="mont-modelos-list">${modelosOpts}</datalist>`
     +   `<div class="modal-bloco">`
     +     `<div class="modal-bloco-titulo">📦 Lote</div>`
     +     `<div class="form-grid">`
     +       `<div class="form-group"><label>Montador</label><select class="form-input" id="mont-modal-montador" onchange="_montagensTrocarMontador()">${montadorOpts}</select></div>`
-    +       `<div class="form-group"><label>Data de envio</label><input class="form-input" id="mont-modal-data" type="date" value="${hoje}"></div>`
-    +       `<div class="form-group full"><label>Observações (opcional)</label><textarea class="form-input" id="mont-modal-obs" rows="2" placeholder="—"></textarea></div>`
+    +       `<div class="form-group"><label>Data de envio</label><input class="form-input" id="mont-modal-data" type="date" value="${dataValue}"></div>`
+    +       `<div class="form-group full"><label>Observações (opcional)</label><textarea class="form-input" id="mont-modal-obs" rows="2" placeholder="—">${escHtml(obsValue)}</textarea></div>`
     +     `</div>`
     +   `</div>`
     +   `<div class="modal-bloco">`
@@ -12192,7 +12292,7 @@ function abrirMontagemModal() {
     +           `<tr style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;text-align:left;">`
     +             `<th style="padding:6px 4px;width:24%;">Modelo</th>`
     +             `<th style="padding:6px 4px;width:16%;">Cor</th>`
-    +             `<th style="padding:6px 4px;width:28%;">Chassi</th>`
+    +             `<th style="padding:6px 4px;width:28%;">Chassi <span style="font-size:8px;color:var(--text3);text-transform:none;">(opcional)</span></th>`
     +             `<th style="padding:6px 4px;width:18%;text-align:right;">Preço (R$)</th>`
     +             `<th style="padding:6px 4px;width:14%;text-align:center;">—</th>`
     +           `</tr>`
@@ -12205,26 +12305,38 @@ function abrirMontagemModal() {
     +   `</div>`
     +   `<div class="modal-actions">`
     +     `<button class="btn" type="button" onclick="document.getElementById('mont-modal').remove();">Cancelar</button>`
-    +     `<button class="btn btn-gold" type="button" id="mont-modal-btn-salvar" onclick="_montagensSalvarLote()">Cadastrar lote</button>`
+    +     `<button class="btn btn-gold" type="button" id="mont-modal-btn-salvar" onclick="_montagensSalvarLote()">${btnSalvar}</button>`
     +   `</div>`
     + `</div>`;
   document.body.appendChild(shell);
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
-  _montagensAddRow(); // 1 linha vazia inicial
+  // Pre-popula itens existentes (modo edição) ou 1 linha vazia (modo criação).
+  if (isEdit && itensExistentes.length) {
+    itensExistentes.forEach(it => _montagensAddRow(it));
+  } else {
+    _montagensAddRow();
+  }
 }
 
-function _montagensAddRow() {
+// item opcional: presente = pre-fill (modo edição). Sem item = linha vazia.
+function _montagensAddRow(item) {
   const tbody = document.getElementById('mont-modal-tbody');
   if (!tbody) return;
   const sel = document.getElementById('mont-modal-montador');
   const precoDefault = sel ? Number(sel.selectedOptions[0]?.dataset?.preco || 0) : 110;
+  const modelo = item ? (item.modelo || '') : '';
+  const cor    = item ? (item.cor    || '') : '';
+  const chassi = item ? (item.chassi || '') : '';
+  const preco  = item != null ? Number(item.precoMontagem || precoDefault) : precoDefault;
+  // Item pre-populado já vem com data-touched=1 → trocar montador não sobrescreve seu preço.
+  const touched = item ? '1' : '0';
   const tr = document.createElement('tr');
   tr.className = 'mont-modal-row';
   tr.innerHTML =
-      `<td style="padding:4px;"><input list="mont-modelos-list" class="form-input mont-modal-modelo" type="text" placeholder="Modelo"></td>`
-    + `<td style="padding:4px;"><input class="form-input mont-modal-cor" type="text" placeholder="Cor"></td>`
-    + `<td style="padding:4px;"><input class="form-input mont-modal-chassi" type="text" placeholder="Chassi" style="font-family:var(--mono,monospace);text-transform:uppercase;"></td>`
-    + `<td style="padding:4px;"><input class="form-input mont-modal-preco" type="number" step="0.01" value="${precoDefault.toFixed(2)}" data-touched="0" oninput="this.dataset.touched='1';_montagensRecalcTotal()" style="text-align:right;"></td>`
+      `<td style="padding:4px;"><input list="mont-modelos-list" class="form-input mont-modal-modelo" type="text" placeholder="Modelo" value="${escHtml(modelo).replace(/"/g,'&quot;')}"></td>`
+    + `<td style="padding:4px;"><input class="form-input mont-modal-cor" type="text" placeholder="Cor" value="${escHtml(cor).replace(/"/g,'&quot;')}"></td>`
+    + `<td style="padding:4px;"><input class="form-input mont-modal-chassi" type="text" placeholder="(opcional)" value="${escHtml(chassi).replace(/"/g,'&quot;')}" style="font-family:var(--mono,monospace);text-transform:uppercase;"></td>`
+    + `<td style="padding:4px;"><input class="form-input mont-modal-preco" type="number" step="0.01" value="${preco.toFixed(2)}" data-touched="${touched}" oninput="this.dataset.touched='1';_montagensRecalcTotal()" style="text-align:right;"></td>`
     + `<td style="padding:4px;text-align:center;"><button class="action-btn del-btn" type="button" onclick="_montagensRemoveRow(this)" title="Remover">✕</button></td>`;
   tbody.appendChild(tr);
   _montagensRecalcTotal();
@@ -12262,6 +12374,8 @@ function _montagensTrocarMontador() {
 async function _montagensSalvarLote() {
   const btn = document.getElementById('mont-modal-btn-salvar');
   if (btn?.disabled) return;
+  const loteId = document.getElementById('mont-modal')?.dataset.loteId || '';
+  const isEdit = !!loteId;
 
   const montadorId = document.getElementById('mont-modal-montador')?.value || '';
   const dataEnvio  = document.getElementById('mont-modal-data')?.value || '';
@@ -12275,21 +12389,22 @@ async function _montagensSalvarLote() {
   const itens = [];
   for (let idx = 0; idx < rows.length; idx++) {
     const r = rows[idx];
-    const modelo = (r.querySelector('.mont-modal-modelo')?.value || '').trim();
-    const cor    = (r.querySelector('.mont-modal-cor')?.value || '').trim();
-    const chassi = (r.querySelector('.mont-modal-chassi')?.value || '').trim().toUpperCase(); // UPPER(TRIM) no app
-    const preco  = Number(r.querySelector('.mont-modal-preco')?.value || 0);
+    const modelo    = (r.querySelector('.mont-modal-modelo')?.value || '').trim();
+    const cor       = (r.querySelector('.mont-modal-cor')?.value || '').trim();
+    const chassiRaw = (r.querySelector('.mont-modal-chassi')?.value || '').trim().toUpperCase(); // UPPER(TRIM) no app
+    const chassi    = chassiRaw || null; // NULL quando vazio — chassi é opcional desde 2026-05-19
+    const preco     = Number(r.querySelector('.mont-modal-preco')?.value || 0);
     if (!modelo)      { smAlert('Linha ' + (idx+1) + ': preencha o modelo.'); return; }
     if (!cor)         { smAlert('Linha ' + (idx+1) + ': preencha a cor.'); return; }
-    if (!chassi)      { smAlert('Linha ' + (idx+1) + ': preencha o chassi.'); return; }
     if (!(preco > 0)) { smAlert('Linha ' + (idx+1) + ': preço inválido.'); return; }
     itens.push({ modelo, cor, chassi, preco_montagem: preco });
   }
 
-  // Duplicidade dentro do próprio lote (antes de bater no banco)
+  // Duplicidade interna — só pra chassis NÃO-NULL (múltiplos NULLs são ok).
   const seen = new Map();
   for (let idx = 0; idx < itens.length; idx++) {
     const c = itens[idx].chassi;
+    if (!c) continue;
     if (seen.has(c)) {
       smAlert('Chassi ' + c + ' aparece duas vezes no lote (linhas ' + (seen.get(c)+1) + ' e ' + (idx+1) + ').');
       return;
@@ -12299,36 +12414,55 @@ async function _montagensSalvarLote() {
 
   if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
   try {
-    // Espelha o índice UNIQUE parcial: chassi não pode estar em outro lote ativo.
-    const { data: dupData, error: dupErr } = await sb.from('montagens_itens')
-      .select('chassi, lote_id')
-      .in('chassi', itens.map(i => i.chassi))
-      .neq('status_montagem', 'recebida');
-    if (dupErr) throw new Error('Falha ao checar duplicidade: ' + dupErr.message);
-    if (dupData?.length) {
-      const numeroDe = id => {
-        const l = montagensLotes.find(x => x.id === id);
-        return l ? 'LOTE-' + String(l.numeroLote).padStart(4,'0') : '?';
-      };
-      const lista = dupData.map(d => '• ' + d.chassi + ' já está em ' + numeroDe(d.lote_id)).join('\n');
-      smAlert('Chassi duplicado:\n\n' + lista + '\n\nUm chassi só pode estar em um lote ativo (não-recebido).');
-      throw new Error('chassi_duplicado');
+    // Duplicidade no banco — também só pra chassis não-vazios. Em edição,
+    // chassis do próprio lote (que vamos deletar antes do INSERT) são ignorados.
+    const chassisNaoNulos = itens.map(i => i.chassi).filter(Boolean);
+    if (chassisNaoNulos.length) {
+      const { data: dupData, error: dupErr } = await sb.from('montagens_itens')
+        .select('chassi, lote_id')
+        .in('chassi', chassisNaoNulos)
+        .neq('status_montagem', 'recebida');
+      if (dupErr) throw new Error('Falha ao checar duplicidade: ' + dupErr.message);
+      const dupReal = (dupData || []).filter(d => d.lote_id !== loteId);
+      if (dupReal.length) {
+        const numeroDe = id => {
+          const l = montagensLotes.find(x => x.id === id);
+          return l ? 'LOTE-' + String(l.numeroLote).padStart(4,'0') : '?';
+        };
+        const lista = dupReal.map(d => '• ' + d.chassi + ' já está em ' + numeroDe(d.lote_id)).join('\n');
+        smAlert('Chassi duplicado:\n\n' + lista + '\n\nUm chassi só pode estar em um lote ativo (não-recebido).');
+        throw new Error('chassi_duplicado');
+      }
     }
 
-    // INSERT do lote (valor_total começa 0; trigger ajusta no INSERT dos itens).
-    const { data: novoLote, error: errLote } = await sb.from('montagens_lotes')
-      .insert({ montador_id: montadorId, data_envio: dataEnvio, observacoes: obs || null })
-      .select().single();
-    if (errLote) throw new Error('Erro ao criar lote: ' + errLote.message);
+    let loteAlvoId;
+    if (isEdit) {
+      // UPDATE do lote + wipe-and-replace dos itens. Como o lote é pendente
+      // (validado em abrirMontagemModal), não há pagamento em jogo — sem risco
+      // de quebrar histórico de caixa. Trigger recalcula valor_total no INSERT.
+      const { error: errLote } = await sb.from('montagens_lotes')
+        .update({ montador_id: montadorId, data_envio: dataEnvio, observacoes: obs || null })
+        .eq('id', loteId);
+      if (errLote) throw new Error('Erro ao atualizar lote: ' + errLote.message);
+      const { error: errDel } = await sb.from('montagens_itens').delete().eq('lote_id', loteId);
+      if (errDel) throw new Error('Erro ao limpar itens antigos: ' + errDel.message);
+      loteAlvoId = loteId;
+    } else {
+      const { data: novoLote, error: errLote } = await sb.from('montagens_lotes')
+        .insert({ montador_id: montadorId, data_envio: dataEnvio, observacoes: obs || null })
+        .select().single();
+      if (errLote) throw new Error('Erro ao criar lote: ' + errLote.message);
+      loteAlvoId = novoLote.id;
+    }
 
-    // INSERT em batch dos itens. Se falhar, rollback manual (CASCADE limpa
-    // o que tiver entrado parcialmente). Sem transação porque o client JS
-    // do Supabase não expõe BEGIN/COMMIT — alternativa seria RPC, fora do escopo.
-    const itensPayload = itens.map(i => ({ ...i, lote_id: novoLote.id }));
+    // INSERT batch dos itens. Sem transação no client JS — em caso de erro,
+    // a estratégia muda: criação deleta o lote (rollback); edição deixa o lote
+    // sem itens (acidente raro; usuário refaz pelo modal de edição).
+    const itensPayload = itens.map(i => ({ ...i, lote_id: loteAlvoId }));
     const { error: errItens } = await sb.from('montagens_itens').insert(itensPayload);
     if (errItens) {
-      await sb.from('montagens_lotes').delete().eq('id', novoLote.id);
-      throw new Error('Erro ao inserir itens: ' + errItens.message + '\n(Lote removido — refaça o cadastro.)');
+      if (!isEdit) await sb.from('montagens_lotes').delete().eq('id', loteAlvoId);
+      throw new Error('Erro ao inserir itens: ' + errItens.message + (isEdit ? '\n(Lote ficou sem itens — abra novamente e refaça.)' : '\n(Lote removido — refaça o cadastro.)'));
     }
 
     document.getElementById('mont-modal')?.remove();
@@ -12336,8 +12470,372 @@ async function _montagensSalvarLote() {
   } catch (e) {
     if (e.message !== 'chassi_duplicado') smAlert(e.message || 'Erro desconhecido.');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Cadastrar lote'; }
+    if (btn) { btn.disabled = false; btn.textContent = isEdit ? 'Salvar alterações' : 'Cadastrar lote'; }
   }
+}
+
+// ── Imprimir OS de Montagem (2 vias na mesma folha A4) ──
+// Modelado em ofImprimir. Linha tracejada separa as 2 vias; cada via tem
+// header + tabela de itens + total + linha de assinatura.
+function imprimirMontagemOS(loteId) {
+  const lote = montagensLotes.find(l => l.id === loteId);
+  if (!lote) { smAlert('Lote não encontrado.'); return; }
+  const itens = montagensItens.filter(i => i.loteId === loteId);
+  const montador = montadores.find(m => m.id === lote.montadorId);
+  const esc = s => String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const fmtData = iso => {
+    if (!iso) return '—';
+    const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? (m[3]+'/'+m[2]+'/'+m[1]) : iso;
+  };
+  const fmtBR = v => Number(v || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+  const numStr = 'LOTE-' + String(lote.numeroLote || 0).padStart(4, '0');
+  const agora = new Date();
+  const dd = String(agora.getDate()).padStart(2,'0');
+  const mm = String(agora.getMonth()+1).padStart(2,'0');
+  const yy = agora.getFullYear();
+  const hh = String(agora.getHours()).padStart(2,'0');
+  const mi = String(agora.getMinutes()).padStart(2,'0');
+  const impressoEm = `${dd}/${mm}/${yy} ${hh}:${mi}`;
+
+  const totalLote = itens.reduce((a, i) => a + Number(i.precoMontagem || 0), 0);
+  const linhasItens = itens.length
+    ? itens.map(i => `<tr>
+        <td>${esc(i.modelo)}</td>
+        <td>${esc(i.cor)}</td>
+        <td class="mono">${i.chassi ? esc(i.chassi) : '—'}</td>
+        <td class="right mono">${esc(fmtBR(i.precoMontagem))}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="4" style="text-align:center;color:#666;padding:10px;">Lote sem itens.</td></tr>`;
+
+  // Bloco de uma via — repetido 2x na folha
+  const viaHTML = (titulo) => `
+    <div class="via">
+      <div class="via-head">
+        <div class="brand">
+          <svg class="brand-logo" viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M24 2L4 28h14l-4 20L36 22H22L26 2z" stroke="#b8860b" stroke-width="2.5" stroke-linejoin="round" fill="#f5c518"/>
+          </svg>
+          <div class="brand-name">Smart <span>Motors</span></div>
+        </div>
+        <div class="via-tag">${esc(titulo)}</div>
+      </div>
+      <div class="via-title">ORDEM DE SERVIÇO DE MONTAGEM</div>
+      <div class="via-meta">
+        <div><span class="lbl">Lote:</span> <strong>${esc(numStr)}</strong></div>
+        <div><span class="lbl">Montador:</span> <strong>${esc(montador?.nome || '—')}</strong></div>
+        <div><span class="lbl">Data envio:</span> <strong>${esc(fmtData(lote.dataEnvio))}</strong></div>
+      </div>
+      <table class="itens">
+        <thead>
+          <tr>
+            <th>Modelo</th>
+            <th>Cor</th>
+            <th>Chassi</th>
+            <th class="right">Preço montagem</th>
+          </tr>
+        </thead>
+        <tbody>${linhasItens}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3" class="right" style="font-weight:700;">Total</td>
+            <td class="right mono" style="font-weight:800;">${esc(fmtBR(totalLote))}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="assinatura">
+        <div class="ass-line"></div>
+        <div class="ass-label">Assinatura ${esc(titulo === 'VIA DO MONTADOR' ? 'do montador' : 'da loja')}</div>
+      </div>
+    </div>`;
+
+  const html = `<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<title>OS Montagem ${esc(numStr)} — Smart Motors</title>
+<style>
+  @page { size: A4 portrait; margin: 10mm; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:#fff; color:#111; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 10.5pt; line-height: 1.35; }
+  .sheet { width: 100%; display:flex; flex-direction:column; gap: 0; }
+  .via { padding: 4mm 0 6mm; }
+  .via-head { display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom: 2px solid #111; padding-bottom: 4px; margin-bottom: 6px; }
+  .brand { display:flex; align-items:center; gap:8px; }
+  .brand-logo { width: 26px; height: 33px; }
+  .brand-name { font-size: 11pt; font-weight: 800; letter-spacing: 0.4px; }
+  .brand-name span { color:#b8860b; }
+  .via-tag { font-size: 11pt; font-weight: 800; padding: 3px 10px; border: 1.5px solid #111; border-radius: 4px; letter-spacing: 0.5px; }
+  .via-title { font-size: 13pt; font-weight: 900; text-align: center; letter-spacing: 0.6px; margin: 4px 0 8px; }
+  .via-meta { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; border: 1.5px solid #111; border-radius: 3px; padding: 5px 8px; margin-bottom: 8px; font-size: 10.5pt; }
+  .via-meta .lbl { color:#555; font-size:8pt; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
+  table.itens { width: 100%; border-collapse: collapse; font-size: 10.5pt; }
+  table.itens th, table.itens td { border: 1px solid #111; padding: 5px 8px; }
+  table.itens th { background: #ececec; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.5px; text-align:left; }
+  table.itens .right { text-align:right; }
+  table.itens .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  table.itens tfoot td { background: #f4f4f4; }
+  .assinatura { margin-top: 14mm; }
+  .ass-line { border-bottom: 1px solid #111; height: 0; margin-bottom: 4px; }
+  .ass-label { font-size: 9pt; color: #555; text-align: center; letter-spacing: 0.4px; }
+  .divider { border: 0; border-top: 1.5px dashed #999; margin: 6mm 0 4mm; }
+  .footer { font-size: 8pt; color: #666; text-align: center; margin-top: 4mm; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+  <div class="sheet">
+    ${viaHTML('VIA DO MONTADOR')}
+    <hr class="divider">
+    ${viaHTML('VIA DA LOJA')}
+    <div class="footer">Impresso em ${esc(impressoEm)} · ${esc(numStr)} · Smart Motors</div>
+  </div>
+  <script>
+    window.addEventListener('load', function(){
+      setTimeout(function(){ try { window.focus(); window.print(); } catch(e){} }, 250);
+    });
+  <\/script>
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { smAlert('Permita pop-ups para imprimir a OS de montagem.'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
+// ── Modal "Pagar lote" ──
+// Mostra totais, escolhe entre "só registrar" e "criar lançamento financeiro",
+// e fecha integrando trigger de recálculo no banco.
+function abrirMontagemPagarModal(loteId) {
+  const old = document.getElementById('mont-pagar-modal');
+  if (old) old.remove();
+  const lote = montagensLotes.find(l => l.id === loteId);
+  if (!lote) { smAlert('Lote não encontrado.'); return; }
+  const montador = montadores.find(m => m.id === lote.montadorId);
+  const total  = Number(lote.valorTotal || 0);
+  const pago   = Number(lote.valorPago || 0);
+  const aPagar = Math.max(total - pago, 0);
+  const fmtBR = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  const contaOpts = '<option value="">Selecione uma conta...</option>'
+    + (contas || []).map(c => `<option value="${escHtml(c.nome).replace(/"/g,'&quot;')}">${escHtml(c.nome)}</option>`).join('');
+  const hoje = new Date().toISOString().split('T')[0];
+
+  // Sem saldo a pagar: bloqueia "Confirmar" mas deixa o modal aberto pra
+  // o usuário ver o histórico (que já está visível no card expandido).
+  const semSaldo = aPagar <= 0;
+
+  const shell = document.createElement('div');
+  shell.id = 'mont-pagar-modal';
+  shell.className = 'modal-overlay open';
+  shell.dataset.loteId = loteId;
+  shell.innerHTML =
+      `<div class="modal" style="width:520px;max-width:96vw;">`
+    +   `<div class="modal-title">Pagar <span>LOTE-${String(lote.numeroLote).padStart(4,'0')}</span></div>`
+    +   `<div style="margin-bottom:14px;padding:10px 12px;background:var(--surface2);border-radius:var(--r-sm);font-size:12px;line-height:1.5;">`
+    +     `<div><strong>Montador:</strong> ${escHtml(montador?.nome || '—')}</div>`
+    +     `<div style="margin-top:4px;color:var(--text2);font-size:11px;">Valor total: <strong style="color:var(--gold);">${fmtBR(total)}</strong> · Já pago: <strong style="color:var(--green);">${fmtBR(pago)}</strong> · A pagar: <strong style="color:var(--red);">${fmtBR(aPagar)}</strong></div>`
+    +   `</div>`
+    +   (semSaldo ? `<div style="margin-bottom:12px;padding:8px 10px;background:rgba(46,196,128,0.12);border:1px solid var(--green);border-radius:var(--r-sm);font-size:11px;">✅ Lote já está totalmente pago. Você pode ver o histórico no card expandido.</div>` : '')
+    +   `<div class="form-grid">`
+    +     `<div class="form-group"><label>Pagar agora (R$)</label><input class="form-input" id="mont-pag-valor" type="number" step="0.01" min="0.01" value="${aPagar.toFixed(2)}"></div>`
+    +     `<div class="form-group"><label>Data pagamento</label><input class="form-input" id="mont-pag-data" type="date" value="${hoje}"></div>`
+    +     `<div class="form-group full"><label>Conta</label><select class="form-input" id="mont-pag-conta">${contaOpts}</select></div>`
+    +     `<div class="form-group full"><label>Observações (opcional)</label><textarea class="form-input" id="mont-pag-obs" rows="2" placeholder="—"></textarea></div>`
+    +   `</div>`
+    +   `<div class="modal-bloco" style="margin-top:14px;">`
+    +     `<div class="modal-bloco-titulo">Tipo de registro</div>`
+    +     `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;cursor:pointer;padding:6px 0;">`
+    +       `<input type="radio" name="mont-pag-tipo" value="lancamento" checked style="margin-top:2px;">`
+    +       `<span><strong>Gerar lançamento no financeiro</strong> <span style="color:var(--text3);font-size:10px;">(padrão)</span><br><span style="color:var(--text3);font-size:10px;">Cria entrada em lançamentos · categoria <em>Montagem / Serviço Técnico</em> · tipo saída · conta da seleção acima.</span></span>`
+    +     `</label>`
+    +     `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;cursor:pointer;padding:6px 0;">`
+    +       `<input type="radio" name="mont-pag-tipo" value="so-registrar" style="margin-top:2px;">`
+    +       `<span><strong>Já paguei externamente</strong> <span style="color:var(--text3);font-size:10px;">(só registrar)</span><br><span style="color:var(--text3);font-size:10px;">Registra o pagamento aqui sem mexer no financeiro.</span></span>`
+    +     `</label>`
+    +   `</div>`
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('mont-pagar-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="mont-pag-btn-confirmar" onclick="_montagensConfirmarPagamento()"${semSaldo ? ' disabled' : ''}>Confirmar pagamento</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _montagensConfirmarPagamento() {
+  const btn = document.getElementById('mont-pag-btn-confirmar');
+  if (btn?.disabled) return;
+  const loteId = document.getElementById('mont-pagar-modal')?.dataset.loteId;
+  if (!loteId) { smAlert('Lote não encontrado.'); return; }
+  const lote = montagensLotes.find(l => l.id === loteId);
+  if (!lote) { smAlert('Lote não encontrado.'); return; }
+  const montador = montadores.find(m => m.id === lote.montadorId);
+
+  const valor    = Number(document.getElementById('mont-pag-valor')?.value || 0);
+  const data     = document.getElementById('mont-pag-data')?.value || '';
+  const contaNm  = document.getElementById('mont-pag-conta')?.value || '';
+  const obs      = (document.getElementById('mont-pag-obs')?.value || '').trim();
+  const tipo     = document.querySelector('input[name="mont-pag-tipo"]:checked')?.value || 'lancamento';
+  const gerarLan = tipo === 'lancamento';
+
+  if (!(valor > 0)) { smAlert('Informe um valor maior que zero.'); return; }
+  if (!data)        { smAlert('Informe a data do pagamento.'); return; }
+  if (gerarLan && !contaNm) { smAlert('Escolha a conta bancária pro lançamento.'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    let lancamentoId = null;
+    if (gerarLan) {
+      // ID textual com prefixo identificável (lancamentos.id é TEXT).
+      lancamentoId = 'montagem_lote_' + loteId + '_' + Date.now();
+      const ctaBanco = (contas || []).find(c => c.nome === contaNm);
+      const lancPayload = {
+        id: lancamentoId,
+        tipo: 'saida',
+        descricao: 'Pagamento LOTE-' + String(lote.numeroLote).padStart(4,'0') + (montador ? ' · ' + montador.nome : ''),
+        valor,
+        data,
+        categoria: 'Montagem / Serviço Técnico',
+        conta_id: ctaBanco?.id || null,
+        conta_nome: contaNm,
+        observacao: obs || ('Pagamento de montagem · LOTE-' + String(lote.numeroLote).padStart(4,'0')),
+      };
+      const { error: errLanc } = await sb.from('lancamentos').insert(lancPayload);
+      if (errLanc) throw new Error('Erro ao criar lançamento: ' + errLanc.message);
+      // Atualiza memória + saldo da conta (igual o salvarLancamento manual faz).
+      lancamentos.unshift(toCamel(lancPayload));
+      if (ctaBanco) ctaBanco.saldo = Number(ctaBanco.saldo || 0) - valor;
+    }
+
+    // INSERT do pagamento. Trigger no banco recalcula valor_pago e
+    // status_pagamento ('pendente'/'parcial'/'pago') no lote.
+    const { error: errPag } = await sb.from('montagens_pagamentos').insert({
+      lote_id: loteId,
+      data_pagamento: data,
+      valor,
+      lancamento_id: lancamentoId,
+      observacoes: obs || null,
+    });
+    if (errPag) {
+      // Rollback do lançamento se a inserção do pagamento falhou.
+      if (lancamentoId) {
+        await sb.from('lancamentos').delete().eq('id', lancamentoId);
+        lancamentos = lancamentos.filter(l => l.id !== lancamentoId);
+      }
+      throw new Error('Erro ao registrar pagamento: ' + errPag.message);
+    }
+
+    document.getElementById('mont-pagar-modal')?.remove();
+    await initMontagens();
+    // Atualiza consumidores de lancamentos (saldo já foi mexido em memória).
+    if (typeof renderFinKpis === 'function') { try { renderFinKpis(); } catch(e){} }
+    if (typeof renderLancamentos === 'function') { try { renderLancamentos(); } catch(e){} }
+  } catch (e) {
+    smAlert(e.message || 'Erro desconhecido.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar pagamento'; }
+  }
+}
+
+// ── CRUD de Montadores ──
+function abrirMontadorModal(montadorId) {
+  const old = document.getElementById('mont-montador-modal');
+  if (old) old.remove();
+  const m = montadorId ? montadores.find(x => x.id === montadorId) : null;
+  const isEdit = !!m;
+  const titulo = isEdit ? `Editar <span>montador</span>` : `Novo <span>montador</span>`;
+
+  const shell = document.createElement('div');
+  shell.id = 'mont-montador-modal';
+  shell.className = 'modal-overlay open';
+  shell.dataset.montadorId = isEdit ? montadorId : '';
+  shell.innerHTML =
+      `<div class="modal" style="width:460px;max-width:96vw;">`
+    +   `<div class="modal-title">${titulo}</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group full"><label>Nome</label><input class="form-input" id="mtd-nome" type="text" value="${escHtml(m?.nome || '').replace(/"/g,'&quot;')}" placeholder="Nome do montador"></div>`
+    +     `<div class="form-group"><label>Telefone (opcional)</label><input class="form-input" id="mtd-tel" type="text" value="${escHtml(m?.telefone || '').replace(/"/g,'&quot;')}" placeholder="(00) 00000-0000"></div>`
+    +     `<div class="form-group"><label>Preço padrão (R$)</label><input class="form-input" id="mtd-preco" type="number" step="0.01" min="0" value="${Number(m?.precoPadrao ?? 110).toFixed(2)}"></div>`
+    +     `<div class="form-group full"><label>Observações (opcional)</label><textarea class="form-input" id="mtd-obs" rows="2" placeholder="—">${escHtml(m?.observacoes || '')}</textarea></div>`
+    +     `<div class="form-group full" style="display:flex;gap:14px;align-items:center;font-size:12px;">`
+    +       `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="mtd-principal"${m?.principal ? ' checked' : ''}> ⭐ Principal</label>`
+    +       `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="mtd-ativo"${m?.ativo !== false ? ' checked' : ''}> Ativo</label>`
+    +     `</div>`
+    +   `</div>`
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('mont-montador-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="mtd-btn-salvar" onclick="_salvarMontador()">${isEdit ? 'Salvar alterações' : 'Cadastrar'}</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _salvarMontador() {
+  const btn = document.getElementById('mtd-btn-salvar');
+  if (btn?.disabled) return;
+  const montadorId = document.getElementById('mont-montador-modal')?.dataset.montadorId || '';
+  const isEdit = !!montadorId;
+
+  const nome      = (document.getElementById('mtd-nome')?.value || '').trim();
+  const telefone  = (document.getElementById('mtd-tel')?.value || '').trim();
+  const precoPad  = Number(document.getElementById('mtd-preco')?.value || 0);
+  const obs       = (document.getElementById('mtd-obs')?.value || '').trim();
+  const principal = !!document.getElementById('mtd-principal')?.checked;
+  const ativo     = !!document.getElementById('mtd-ativo')?.checked;
+
+  if (!nome)         { smAlert('Informe o nome do montador.'); return; }
+  if (!(precoPad >= 0)) { smAlert('Preço padrão inválido.'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    // Convenção do projeto: só 1 principal. Se marcou principal, desmarca
+    // todos os outros antes do UPDATE/INSERT.
+    if (principal) {
+      const { error: errClear } = await sb.from('montadores')
+        .update({ principal: false })
+        .neq('id', montadorId || '00000000-0000-0000-0000-000000000000');
+      if (errClear) throw new Error('Erro ao desmarcar principal anterior: ' + errClear.message);
+    }
+    const payload = {
+      nome,
+      telefone: telefone || null,
+      preco_padrao: precoPad,
+      principal,
+      ativo,
+      observacoes: obs || null,
+    };
+    if (isEdit) {
+      const { error: errUpd } = await sb.from('montadores').update(payload).eq('id', montadorId);
+      if (errUpd) throw new Error('Erro ao atualizar: ' + errUpd.message);
+    } else {
+      const { error: errIns } = await sb.from('montadores').insert(payload);
+      if (errIns) throw new Error('Erro ao cadastrar: ' + errIns.message);
+    }
+    document.getElementById('mont-montador-modal')?.remove();
+    await initMontagens();
+  } catch (e) {
+    smAlert(e.message || 'Erro desconhecido.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = isEdit ? 'Salvar alterações' : 'Cadastrar'; }
+  }
+}
+
+// Desativar/Reativar — sem DELETE (preserva histórico de lotes vinculados).
+async function _alternarStatusMontador(montadorId, novoAtivo) {
+  const m = montadores.find(x => x.id === montadorId);
+  if (!m) return;
+  const acao = novoAtivo ? 'reativar' : 'desativar';
+  const ok = await smConfirm(`${novoAtivo ? 'Reativar' : 'Desativar'} o montador "${m.nome}"?` + (novoAtivo ? '' : '\n\nMontadores inativos não aparecem no select de "Novo lote".'));
+  if (!ok) return;
+  const upd = { ativo: novoAtivo };
+  // Se está desativando o principal, automaticamente tira a flag principal.
+  if (!novoAtivo && m.principal) upd.principal = false;
+  const { error } = await sb.from('montadores').update(upd).eq('id', montadorId);
+  if (error) { smAlert('Erro ao ' + acao + ': ' + error.message); return; }
+  await initMontagens();
 }
 
 let sacCasos = [];
