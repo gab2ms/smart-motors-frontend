@@ -155,6 +155,30 @@ UPDATE que troca `lote_id` (mover item/pagamento entre lotes) recalcula os dois 
 
 **Convenção — `principal` sem UNIQUE.** A flag `montadores.principal BOOLEAN` marca o montador de maior volume (hoje: Marcos). **Não há índice UNIQUE parcial forçando "só um"** — é convenção de uso, não constraint. UI ordena `principal DESC, nome`. Reatribuir é só UPDATE em 2 linhas; sem complicação de constraint para um valor que muda raramente.
 
+## Oficina ↔ SAC — paridade bidirecional + status `transferido`
+
+Feature 2026-05-19 — fluxo bidirecional simétrico Oficina↔SAC com status separado pra **movimentações** (≠ conclusão). Antes só existia Oficina→SAC (`ofMoverParaSac`) + uma reversão admin-only (`sacReverterParaOficina`); agora os dois lados são genuínos. **Sub-commit A** (este) cobre só o schema + migração retroativa; **sub-commit B** (frontend) traz `sacMoverParaOficina`, botão "🔧 Mover pra Oficina" no modal SAC, banners condicionais nos dois sentidos, e ajuste dos filtros/KPIs.
+
+**Colunas — par espelho:**
+
+| Tabela | Coluna | Aponta pra | Significado |
+|---|---|---|---|
+| `oficina_ordens` | `sac_destino_id UUID` *(preexistente)* | `sac_casos(id)` | "Esta OS foi transferida pro SAC #Y" |
+| `oficina_ordens` | `sac_origem_id UUID` *(novo)* | `sac_casos(id)` | "Esta OS foi criada a partir do SAC #X" |
+| `sac_casos` | `os_origem_id UUID` *(preexistente)* | `oficina_ordens(id)` | "Este caso foi criado a partir da OS #X" |
+| `sac_casos` | `oficina_destino_id UUID` *(novo)* | `oficina_ordens(id)` | "Este caso foi transferido pra OS #Y" |
+
+Todas `ON DELETE SET NULL` (preserva histórico, zera ponteiro órfão — convenção do projeto pra FKs de relacionamento entre tabelas operacionais). Índices parciais nas 4 (`WHERE col IS NOT NULL`).
+
+**Status `'transferido'`** — novo valor adicionado ao CHECK de `oficina_ordens.status` e `sac_casos.status` (antes: `acao_interna|aguardando_terceiro|pronto_entrega|finalizado` — agora idem + `transferido`). A distinção é semântica: `finalizado` = caso resolvido; `transferido` = caso migrou pra outra fila e **não deve poluir KPIs de resolução**. Listagens "Em aberto" / "Finalizados" e KPIs filtram `status != 'transferido'` no front (não via DB).
+
+Defaults pré-existentes (`oficina_ordens.status = 'aguardando'` e `sac_casos.status = 'aberto'`) seguem **fora** do CHECK — inconsistência herdada antes desta feature, fora do escopo.
+
+**Migração retroativa (2026-05-19):**
+
+- **Oficina — 2 linhas** mudaram pra `'transferido'`: OS #10 (Ademar, antes `finalizado`) e OS #13 (Gabriel, antes `aguardando_terceiro`). O plano original filtrava `status='finalizado'`, mas isso pegava só a #10. Ajustamos pra usar o **marcador semântico** (`sac_destino_id IS NOT NULL`) — o status atual era ruído de fluxos diferentes ao longo do tempo.
+- **SAC — 0 linhas** migradas. A heurística usa `timeline_eventos` (`descricao = 'Revertido pra Oficina'`, `excluido_em IS NULL`) pra distinguir **revertidos** (via `sacReverterParaOficina`) de **finalizados normais** — ambos têm `os_origem_id` + `status='finalizado'`, então só a timeline diferencia. Nenhuma reversão existia no histórico; query fica registrada na migração pro caso de aparecerem no futuro.
+
 ---
 
 ## Armadilha #1 — `pg_trigger_depth()` na cláusula WHEN
