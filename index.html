@@ -12189,11 +12189,26 @@ function renderMontagens() {
     const checkDisabled = (lote.statusPagamento === 'pago')
       || (_montagensMontadorLock && _montagensMontadorLock !== lote.montadorId);
     const checkboxHTML = `<input type="checkbox" class="mont-lote-check" ${selecionado ? 'checked' : ''} ${checkDisabled ? 'disabled' : ''} onclick="${stopClick}_toggleSelLote('${lote.id}')" style="cursor:${checkDisabled?'not-allowed':'pointer'};${checkDisabled?'opacity:0.35;':''}">`;
+    // 📦 só visível enquanto há motos não-recebidas. 🗑️ sempre (validação interna
+    // bloqueia se houver pagamentos). ✏️ só em pendente.
+    const temMotosARRecber = its.some(i => i.statusMontagem !== 'recebida');
     const acoesHTML =
         `<button class="action-btn" onclick="${stopClick}imprimirMontagemOS('${lote.id}')" title="Imprimir OS (2 vias)">🖨️</button>`
       + (podeEditar ? `<button class="action-btn edit-btn" onclick="${stopClick}abrirMontagemModal('${lote.id}')" title="Editar lote">✏</button>` : '')
-      + (podePagar  ? `<button class="btn btn-gold" style="font-size:10px;padding:4px 10px;line-height:1.2;" onclick="${stopClick}abrirMontagemPagarModal('${lote.id}')" title="Pagar este lote">💰 Pagar</button>` : '');
+      + (temMotosARRecber ? `<button class="action-btn" style="color:var(--green);" onclick="${stopClick}_montagensReceberLoteCompleto('${lote.id}')" title="Marcar todas as motos como recebidas">📦</button>` : '')
+      + (podePagar  ? `<button class="btn btn-gold" style="font-size:10px;padding:4px 10px;line-height:1.2;" onclick="${stopClick}abrirMontagemPagarModal('${lote.id}')" title="Pagar este lote">💰 Pagar</button>` : '')
+      + `<button class="action-btn del-btn" onclick="${stopClick}_montagensExcluirLote('${lote.id}')" title="Excluir lote">🗑️</button>`;
 
+    // Cores de fundo por status (visual diferenciado na coluna Status).
+    const corPorStatus = {
+      fila:     'rgba(255,200,0,0.10)',
+      montando: 'rgba(80,150,255,0.15)',
+      montada:  'rgba(46,196,128,0.12)',
+      recebida: 'rgba(46,196,128,0.25)',
+    };
+    const labelStatus = {
+      fila: '🟡 Fila', montando: '🔵 Montando', montada: '🟢 Montada', recebida: '✅ Recebida',
+    };
     const itensHTML = its.length
       ? `<div style="padding:0 20px 10px 52px;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead>
@@ -12206,13 +12221,24 @@ function renderMontagens() {
             </tr>
           </thead>
           <tbody>
-            ${its.map(i => `<tr style="border-top:1px solid var(--border);">
-              <td style="padding:6px 10px;">${escHtml(i.modelo)}</td>
-              <td style="padding:6px 10px;">${escHtml(i.cor)}</td>
-              <td style="padding:6px 10px;font-family:var(--mono,monospace);">${i.chassi ? escHtml(i.chassi) : '<span style="color:var(--text3);">—</span>'}</td>
-              <td style="padding:6px 10px;text-align:right;font-family:var(--mono,monospace);">${fmtBR(i.precoMontagem)}</td>
-              <td style="padding:6px 10px;font-size:11px;">${escHtml(i.statusMontagem)}${i.dataRecebimento ? ' <span style="color:var(--text3);">('+fmtData(i.dataRecebimento)+')</span>' : ''}</td>
-            </tr>`).join('')}
+            ${its.map(i => {
+              const bg = corPorStatus[i.statusMontagem] || '';
+              const opts = ['fila','montando','montada','recebida'].map(s =>
+                `<option value="${s}"${i.statusMontagem===s?' selected':''}>${labelStatus[s]}</option>`
+              ).join('');
+              const dataLbl = (i.statusMontagem === 'recebida' && i.dataRecebimento)
+                ? ` <span style="color:var(--text3);font-size:10px;">(${fmtData(i.dataRecebimento)})</span>`
+                : '';
+              return `<tr style="border-top:1px solid var(--border);">
+                <td style="padding:6px 10px;">${escHtml(i.modelo)}</td>
+                <td style="padding:6px 10px;">${escHtml(i.cor)}</td>
+                <td style="padding:6px 10px;font-family:var(--mono,monospace);">${i.chassi ? escHtml(i.chassi) : '<span style="color:var(--text3);">—</span>'}</td>
+                <td style="padding:6px 10px;text-align:right;font-family:var(--mono,monospace);">${fmtBR(i.precoMontagem)}</td>
+                <td style="padding:6px 10px;background:${bg};">
+                  <select class="form-input" style="font-size:11px;padding:2px 6px;width:auto;min-width:120px;" onchange="_montagensSetStatus('${i.id}', this.value)">${opts}</select>${dataLbl}
+                </td>
+              </tr>`;
+            }).join('')}
           </tbody>
         </table></div>`
       : '<div style="padding:0 20px 10px 52px;color:var(--text3);font-size:11px;font-style:italic;">Lote sem itens cadastrados.</div>';
@@ -12227,6 +12253,7 @@ function renderMontagens() {
                 <th style="text-align:right;padding:6px 10px;font-weight:700;">Valor</th>
                 <th style="text-align:left;padding:6px 10px;font-weight:700;">Observações</th>
                 <th style="text-align:left;padding:6px 10px;font-weight:700;">Vínculo</th>
+                <th style="text-align:center;padding:6px 10px;font-weight:700;width:60px;">Ação</th>
               </tr>
             </thead>
             <tbody>
@@ -12235,18 +12262,37 @@ function renderMontagens() {
                 <td style="padding:6px 10px;text-align:right;font-family:var(--mono,monospace);color:var(--green);font-weight:600;">${fmtBR(p.valor)}</td>
                 <td style="padding:6px 10px;font-size:11px;">${escHtml(p.observacoes || '—')}</td>
                 <td style="padding:6px 10px;font-size:10px;color:${p.lancamentoId ? 'var(--gold)' : 'var(--text3)'};">${p.lancamentoId ? '🔗 lançamento' : 'só registro'}</td>
+                <td style="padding:6px 10px;text-align:center;">
+                  <button class="action-btn del-btn" onclick="_montagensCancelarPagamento('${p.id}')" title="Cancelar este pagamento">✕</button>
+                </td>
               </tr>`).join('')}
             </tbody>
           </table>
         </div>`
       : '';
 
+    // "envio → recebimento (N dias)": se finalizado mostra dias totais;
+    // se ainda em andamento, mostra dias decorridos desde envio.
+    const diffDias = (de, ate) => {
+      if (!de || !ate) return null;
+      return Math.max(0, Math.round((new Date(ate) - new Date(de)) / 86400000));
+    };
+    let labelDatas;
+    if (lote.dataUltimoRecebimento && !temMotosARRecber) {
+      const d = diffDias(lote.dataEnvio, lote.dataUltimoRecebimento);
+      labelDatas = `${fmtData(lote.dataEnvio)} → ${fmtData(lote.dataUltimoRecebimento)}<br><span style="color:var(--text2);">(${d ?? '?'} dia${d===1?'':'s'})</span>`;
+    } else {
+      const hojeStr = new Date().toISOString().slice(0,10);
+      const d = diffDias(lote.dataEnvio, hojeStr);
+      labelDatas = `${fmtData(lote.dataEnvio)} → <em style="color:var(--text3);">em andamento</em>${d!=null ? '<br><span style="color:var(--text2);">('+d+' dia'+(d===1?'':'s')+')</span>' : ''}`;
+    }
+
     return `<details style="border-bottom:1px solid var(--border);">
-      <summary style="display:grid;grid-template-columns:32px 80px 1fr 110px 110px auto;gap:10px;align-items:center;padding:10px 20px 10px 32px;cursor:pointer;list-style:none;">
+      <summary style="display:grid;grid-template-columns:32px 80px 1fr 130px 110px auto;gap:10px;align-items:center;padding:10px 20px 10px 32px;cursor:pointer;list-style:none;">
         <div onclick="event.stopPropagation();">${checkboxHTML}</div>
         <div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;font-size:12px;">${padLote(lote.numeroLote)}</div>
         <div style="min-width:0;font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(resumo)}</div>
-        <div style="font-size:11px;color:var(--text3);">Envio: ${fmtData(lote.dataEnvio)}${lote.dataUltimoRecebimento ? '<br>Receb: '+fmtData(lote.dataUltimoRecebimento) : ''}</div>
+        <div style="font-size:11px;color:var(--text3);line-height:1.4;">${labelDatas}</div>
         <div class="td-mono" style="font-weight:700;color:var(--gold);text-align:right;">${fmtBR(lote.valorTotal)}${pagoLinha}</div>
         <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:nowrap;"><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span>${acoesHTML}</div>
       </summary>
@@ -12310,12 +12356,30 @@ function renderMontagensKpis() {
   const enviadoNoMes = montagensLotes
     .filter(l => (l.dataEnvio || '').startsWith(mesPref))
     .reduce((acc, l) => acc + Number(l.valorTotal || 0), 0);
+  // Tempo médio de montagem: dias entre data_envio e data_ultimo_recebimento
+  // dos lotes com TODAS as motos recebidas que foram recebidos no mês atual.
+  const lotesRecebidosMes = montagensLotes.filter(l => {
+    if (!l.dataUltimoRecebimento || !l.dataUltimoRecebimento.startsWith(mesPref)) return false;
+    const its = montagensItens.filter(i => i.loteId === l.id);
+    return its.length > 0 && its.every(i => i.statusMontagem === 'recebida');
+  });
+  let tempoMedio = null;
+  if (lotesRecebidosMes.length > 0) {
+    const dias = lotesRecebidosMes.map(l =>
+      Math.max(0, Math.round((new Date(l.dataUltimoRecebimento) - new Date(l.dataEnvio)) / 86400000))
+    );
+    tempoMedio = dias.reduce((a, d) => a + d, 0) / dias.length;
+  }
+  const tempoMedioTxt = tempoMedio !== null
+    ? tempoMedio.toFixed(1).replace('.', ',') + ' dias'
+    : '—';
   const fmtBR = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
   el.innerHTML =
       `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">🔴 Em montagem</div><div class="kpi-value red">${itensEmMontagem}</div><div class="kpi-change">${fila} fila · ${montand} montando</div></div>`
     + `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">🟡 Aguardando pgto</div><div class="kpi-value gold">${lotesAguardando}</div><div class="kpi-change">lotes pendente/parcial</div></div>`
     + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">🟢 Pago no mês</div><div class="kpi-value green">${fmtBR(pagoNoMes)}</div><div class="kpi-change">pagamentos do mês</div></div>`
-    + `<div class="kpi"><div class="kpi-label">📊 Enviado no mês</div><div class="kpi-value">${fmtBR(enviadoNoMes)}</div><div class="kpi-change">valor de lotes do mês</div></div>`;
+    + `<div class="kpi"><div class="kpi-label">📊 Enviado no mês</div><div class="kpi-value">${fmtBR(enviadoNoMes)}</div><div class="kpi-change">valor de lotes do mês</div></div>`
+    + `<div class="kpi" style="border-top:2px solid #5096ff;"><div class="kpi-label">⏱️ Tempo médio</div><div class="kpi-value" style="color:#5096ff;">${tempoMedioTxt}</div><div class="kpi-change">montagem no mês atual</div></div>`;
 }
 
 // ── Modal "Novo lote" / "Editar lote" ──
@@ -13035,6 +13099,165 @@ function _cancelarSelMontagens() {
 function _montPagarSelecionados() {
   if (!_montagensSelecionados.size) return;
   abrirMontagemPagarModal([..._montagensSelecionados]);
+}
+
+// ── Cancelar 1 pagamento (com tratamento de lançamento único vs. agregado) ──
+// Lançamento agregado (multi-lote): reduz o valor proporcionalmente. Se zerar,
+// deleta o lançamento. Lançamento único: deleta direto. Reverte saldo da conta
+// em ambos os casos. Trigger AFTER DELETE em montagens_pagamentos recalcula
+// valor_pago + status_pagamento do lote.
+async function _montagensCancelarPagamento(pagamentoId) {
+  const pag = montagensPagamentos.find(p => p.id === pagamentoId);
+  if (!pag) { smAlert('Pagamento não encontrado.'); return; }
+  const fmtBRloc = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fmtDataLoc = iso => iso ? iso.split('-').reverse().join('/') : '—';
+  const ok = await smConfirm(
+    `Cancelar pagamento de ${fmtBRloc(pag.valor)} de ${fmtDataLoc(pag.dataPagamento)}?\n\nEsta ação não pode ser desfeita.`
+  );
+  if (!ok) return;
+  try {
+    // Trata o lançamento vinculado, se existir.
+    if (pag.lancamentoId) {
+      const lanc = lancamentos.find(l => l.id === pag.lancamentoId);
+      if (lanc) {
+        // Quantos OUTROS pagamentos compartilham esse lançamento? (Não inclui o atual.)
+        const compartilhado = montagensPagamentos
+          .filter(p => p.id !== pagamentoId && p.lancamentoId === pag.lancamentoId)
+          .length > 0;
+        const ctBanco = (contas || []).find(c => c.nome === lanc.conta);
+        if (compartilhado) {
+          // Reduz valor do lançamento (lançamento agregado multi-lote).
+          const novoValor = +(Number(lanc.valor||0) - Number(pag.valor||0)).toFixed(2);
+          if (novoValor <= 0.005) {
+            // Caso de canto: pagamento cancela mais do que o lançamento tem → deleta.
+            const { error } = await sb.from('lancamentos').delete().eq('id', pag.lancamentoId);
+            if (error) throw new Error('Erro ao deletar lançamento: ' + error.message);
+            if (ctBanco) ctBanco.saldo = Number(ctBanco.saldo||0) + Number(lanc.valor||0);
+            lancamentos = lancamentos.filter(l => l.id !== pag.lancamentoId);
+          } else {
+            const { error } = await sb.from('lancamentos')
+              .update({ valor: novoValor })
+              .eq('id', pag.lancamentoId);
+            if (error) throw new Error('Erro ao atualizar lançamento: ' + error.message);
+            if (ctBanco) ctBanco.saldo = Number(ctBanco.saldo||0) + Number(pag.valor||0);
+            lanc.valor = novoValor;
+          }
+        } else {
+          // Lançamento único — deleta inteiro.
+          const { error } = await sb.from('lancamentos').delete().eq('id', pag.lancamentoId);
+          if (error) throw new Error('Erro ao deletar lançamento: ' + error.message);
+          if (ctBanco) ctBanco.saldo = Number(ctBanco.saldo||0) + Number(lanc.valor||0);
+          lancamentos = lancamentos.filter(l => l.id !== pag.lancamentoId);
+        }
+      }
+    }
+    // DELETE do pagamento — trigger faz o resto.
+    const { error: errPag } = await sb.from('montagens_pagamentos').delete().eq('id', pagamentoId);
+    if (errPag) throw new Error('Erro ao cancelar pagamento: ' + errPag.message);
+    await initMontagens();
+    if (typeof renderFinKpis === 'function') { try { renderFinKpis(); } catch(e){} }
+    if (typeof renderLancamentos === 'function') { try { renderLancamentos(); } catch(e){} }
+  } catch (e) {
+    smAlert(e.message || 'Erro desconhecido.');
+  }
+}
+
+// ── Excluir lote permanentemente ──
+// Validação: lote com pagamentos é bloqueado (usuário cancela os pagamentos
+// primeiro). Sem pagamentos: DELETE → CASCADE limpa itens.
+async function _montagensExcluirLote(loteId) {
+  const lote = montagensLotes.find(l => l.id === loteId);
+  if (!lote) { smAlert('Lote não encontrado.'); return; }
+  const pagsDoLote = montagensPagamentos.filter(p => p.loteId === loteId);
+  if (pagsDoLote.length > 0) {
+    smAlert(
+      `LOTE-${String(lote.numeroLote).padStart(4,'0')} tem ${pagsDoLote.length} pagamento${pagsDoLote.length===1?'':'s'} registrado${pagsDoLote.length===1?'':'s'}.\n\n` +
+      'Cancele os pagamentos primeiro (botão ✕ no histórico) pra poder excluir o lote.'
+    );
+    return;
+  }
+  const itensDoLote = montagensItens.filter(i => i.loteId === loteId);
+  const ok = await smConfirm(
+    `Excluir LOTE-${String(lote.numeroLote).padStart(4,'0')} permanentemente?\n\n` +
+    `Isso vai apagar ${itensDoLote.length} moto${itensDoLote.length===1?'':'s'} vinculada${itensDoLote.length===1?'':'s'}. Esta ação não pode ser desfeita.`
+  );
+  if (!ok) return;
+  const { error } = await sb.from('montagens_lotes').delete().eq('id', loteId);
+  if (error) { smAlert('Erro ao excluir lote: ' + error.message); return; }
+  // Limpa seleção caso esse lote estivesse marcado.
+  _montagensSelecionados.delete(loteId);
+  if (_montagensSelecionados.size === 0) _montagensMontadorLock = null;
+  await initMontagens();
+}
+
+// ── Helper: modal de data pra recebimento. Retorna Promise<string|null>.
+function _montagensPedirData(titulo) {
+  return new Promise(resolve => {
+    const old = document.getElementById('mont-data-modal');
+    if (old) old.remove();
+    const hoje = new Date().toISOString().split('T')[0];
+    const shell = document.createElement('div');
+    shell.id = 'mont-data-modal';
+    shell.className = 'modal-overlay open';
+    shell.innerHTML =
+        `<div class="modal" style="width:380px;max-width:96vw;">`
+      +   `<div class="modal-title">${escHtml(titulo)}</div>`
+      +   `<div class="form-grid">`
+      +     `<div class="form-group full"><label>Data</label><input class="form-input" id="mont-data-input" type="date" value="${hoje}"></div>`
+      +   `</div>`
+      +   `<div class="modal-actions">`
+      +     `<button class="btn" type="button" id="mont-data-cancelar">Cancelar</button>`
+      +     `<button class="btn btn-gold" type="button" id="mont-data-confirmar">Confirmar</button>`
+      +   `</div>`
+      + `</div>`;
+    document.body.appendChild(shell);
+    const cleanup = (v) => { shell.remove(); resolve(v); };
+    shell.querySelector('#mont-data-cancelar').onclick = () => cleanup(null);
+    shell.querySelector('#mont-data-confirmar').onclick = () => {
+      const v = shell.querySelector('#mont-data-input').value;
+      if (!v) { smAlert('Informe a data.'); return; }
+      cleanup(v);
+    };
+    shell.addEventListener('click', e => { if (e.target === shell) cleanup(null); });
+  });
+}
+
+// ── Mudar status de UMA moto. Pra 'recebida', pede data primeiro;
+//    pra outros status, UPDATE direto + zera data_recebimento.
+async function _montagensSetStatus(itemId, novoStatus) {
+  if (!['fila','montando','montada','recebida'].includes(novoStatus)) return;
+  const item = montagensItens.find(i => i.id === itemId);
+  if (!item) return;
+  if (item.statusMontagem === novoStatus) return; // no-op
+  let payload;
+  if (novoStatus === 'recebida') {
+    const data = await _montagensPedirData('Data de recebimento');
+    if (!data) { await initMontagens(); return; } // cancelou → re-render restaura o select
+    payload = { status_montagem: 'recebida', data_recebimento: data };
+  } else {
+    // Sair de 'recebida' (ou trocar entre fila/montando/montada) → zera data_recebimento.
+    payload = { status_montagem: novoStatus, data_recebimento: null };
+  }
+  const { error } = await sb.from('montagens_itens').update(payload).eq('id', itemId);
+  if (error) { smAlert('Erro ao atualizar status: ' + error.message); await initMontagens(); return; }
+  await initMontagens();
+}
+
+// ── Receber lote inteiro: marca todas as motos não-recebidas como recebidas
+//    na mesma data. Usa UPDATE batch + filtro (status != 'recebida').
+async function _montagensReceberLoteCompleto(loteId) {
+  const lote = montagensLotes.find(l => l.id === loteId);
+  if (!lote) return;
+  const naoRecebidas = montagensItens.filter(i => i.loteId === loteId && i.statusMontagem !== 'recebida');
+  if (!naoRecebidas.length) { smAlert('Todas as motos deste lote já estão recebidas.'); return; }
+  const data = await _montagensPedirData(`Receber ${naoRecebidas.length} moto${naoRecebidas.length===1?'':'s'} do LOTE-${String(lote.numeroLote).padStart(4,'0')}`);
+  if (!data) return;
+  const { error } = await sb.from('montagens_itens')
+    .update({ status_montagem: 'recebida', data_recebimento: data })
+    .eq('lote_id', loteId)
+    .neq('status_montagem', 'recebida');
+  if (error) { smAlert('Erro ao receber lote: ' + error.message); return; }
+  await initMontagens();
 }
 
 // Desativar/Reativar — sem DELETE (preserva histórico de lotes vinculados).
