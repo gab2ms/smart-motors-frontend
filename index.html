@@ -1119,6 +1119,10 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-icon">🏷️</span> Custos de Produtos
       <span class="nav-dot"></span>
     </button>
+    <button class="nav-item" onclick="showPage('montagens')">
+      <span class="nav-icon">🛠️</span> Montagens
+      <span class="nav-dot"></span>
+    </button>
 
     <div class="nav-label">Operação</div>
     <button class="nav-item" onclick="showPage('oficina')">
@@ -1128,10 +1132,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     <button class="nav-item" onclick="showPage('sac')">
       <span class="nav-icon">📞</span> SAC
       <span class="nav-dot" id="dot-sac"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('montagens')">
-      <span class="nav-icon">🛠️</span> Montagens
-      <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('clientes')">
       <span class="nav-icon">👥</span> Clientes
@@ -2966,7 +2966,7 @@ const BREADCRUMB_MAP = {
   precos:          ['Produtos', 'Preços & Margens'],
   oficina:         ['Operação', 'Oficina'],
   sac:             ['Operação', 'SAC'],
-  montagens:       ['Operação', 'Montagens'],
+  montagens:       ['Produtos', 'Montagens'],
   clientes:        ['Operação', 'Clientes'],
   contratos:       ['Operação', 'Contrato'],
   financeiro:      ['Financeiro', 'Caixa'],
