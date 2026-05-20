@@ -2824,7 +2824,7 @@ const PRODUCTS_SEED = [
   {modelo:"Best",fornecedor:"HAO",custo:6985,montagem:110,comissao:100,nfCompra:69.85,nf:30,jonosake:1157.30,financeiro:94.99,venda:9499},
   {modelo:"G7",fornecedor:"GARRA MOBILIDADE",custo:6900,montagem:110,comissao:100,nfCompra:69,nf:30,jonosake:1157.30,financeiro:92,venda:9200},
   {modelo:"Harley 16",fornecedor:"HAO",custo:5500,montagem:110,comissao:100,nfCompra:290,nf:30,jonosake:0,financeiro:87,venda:8700},
-  {modelo:"Pixel",fornecedor:"ZVT",custo:6790,montagem:110,comissao:0,nfCompra:0,nf:170,jonosake:0,financeiro:90,venda:9000},
+  {modelo:"Pixxel",fornecedor:"ZVT",custo:6790,montagem:110,comissao:0,nfCompra:0,nf:170,jonosake:0,financeiro:90,venda:9000},
   {modelo:"Eskilo",fornecedor:"ZVT",custo:7190,montagem:110,comissao:0,nfCompra:0,nf:500,jonosake:0,financeiro:110,venda:11000},
   {modelo:"Dot",fornecedor:"MOTO CHEFE",custo:6262,montagem:110,comissao:100,nfCompra:62.62,nf:30,jonosake:0,financeiro:85,venda:8500},
   {modelo:"Conquest",fornecedor:"HAO",custo:4550,montagem:110,comissao:100,nfCompra:45.50,nf:30,jonosake:0,financeiro:80,venda:8000},
@@ -3892,8 +3892,8 @@ function renderDashRanking() {
 // (mais longo primeiro, ex: 'KRONOS' vs 'KRONOS Pro').
 // Prefixos que o Tiny adiciona antes do modelo do produto. Quando o
 // nome do Tiny começa com um desses, tentamos um match adicional pelo
-// restante: "MOTONETA PIXEL VERMELHA" → "PIXEL VERMELHA" → startsWith
-// match com cadastro "Pixel".
+// restante: "MOTONETA PIXXEL VERMELHA" → "PIXXEL VERMELHA" → startsWith
+// match com cadastro "Pixxel".
 const _PRODUTO_PREFIXOS_TINY = ['motoneta ', 'bicicleta ', 'triciclo ', 'moto ', 'bike ', 'patinete ', 'scooter '];
 
 // Palavras que o Tiny intercala entre o prefixo e o modelo (ou no meio do
@@ -3914,7 +3914,14 @@ const _PRODUTO_PALAVRAS_RUIDO = ['elétrica', 'eletrica', 'elétrico', 'eletrico
 // etapa 2 (exato case-insensitive) ou 3 (startsWith normalizado) sem
 // precisar de alias. Mantém o array vazio: ainda é o fallback final da
 // cascata de _matchProdutoPorNome (linha de defesa pra casos futuros).
-const _PRODUTO_ALIASES = [];
+//
+// PONTE TEMPORÁRIA (2026-05-19): rename 'Pixel'→'Pixxel' no cadastro foi
+// feito antes do equivalente no Tiny. Enquanto o Tiny ainda manda
+// "MOTONETA PIXEL …", este alias mapeia pra Pixxel. **REMOVER depois que
+// o nome do produto for corrigido no Tiny.**
+const _PRODUTO_ALIASES = [
+  { triggerTokens: ['pixel'], modeloAlvo: 'pixxel' },
+];
 
 function _stripPrefixoTiny(low) {
   for (const pref of _PRODUTO_PREFIXOS_TINY) {
