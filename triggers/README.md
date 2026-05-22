@@ -25,6 +25,7 @@ Link: `contas_pagar.emprestimo_parcela_id UUID REFERENCES emprestimo_parcelas(id
 - `lancamentos.conta_receber_id TEXT NULL REFERENCES contas_receber(id) ON DELETE SET NULL` — vincula o lançamento de caixa gerado pelo recebimento de uma conta a receber. Espelha `conta_pagar_id`; `ON DELETE SET NULL` preserva o histórico financeiro mesmo se a `contas_receber` for deletada.
 - `sac_casos.cliente_id UUID NULL REFERENCES clientes(id) ON DELETE SET NULL` + `idx_sac_casos_cliente_id` (parcial, WHERE cliente_id IS NOT NULL) — vincula o caso SAC ao cliente cadastrado. Antes o SAC só guardava snapshot (`cliente_nome`/`cliente_telefone`/`cliente_cpf`, sem FK); agora espelha `oficina_ordens` e `contas_receber`. `ON DELETE SET NULL` preserva o caso e zera o ponteiro órfão. Casos antigos ficam com `cliente_id = NULL` (sem backfill — snapshot de nome continua válido). Não há `TABLE_MAP` entry pra `sac_casos`: usa os mappers genéricos `toSnake`/`toCamel`, que já fazem o round-trip `clienteId` ↔ `cliente_id`.
 - `produtos_precos.ativo BOOLEAN NOT NULL DEFAULT true` — flag pra separar catálogo vivo de produtos descontinuados. Ver seção "Ativo/Inativo de produtos" abaixo.
+- `whatsapp_destinatarios` (tabela) — destinatários dos resumos executivos diários enviados via CallMeBot. Colunas: `nome`, `numero` (só dígitos com DDI), `api_key`, `receber_manha`/`receber_noite`/`ativo` BOOLEAN, `observacoes`, `criado_em`. RLS ativa + policy `acesso_total`. Sem `TABLE_MAP` entry — mappers genéricos `toSnake`/`toCamel` cobrem. Seed do Gabriel feito em JS (`_seedWhatsappDest`) a partir das constantes `WA_NUMBER`/`WA_APIKEY`, não na migration. Sub-commit A da feature de notificações WhatsApp.
 
 ## Ativo/Inativo de produtos
 
@@ -64,7 +65,7 @@ Acessórios (capacete, retrovisor, suporte) e serviços (frete, manutenção) n�
 
 **Princípio — caixa × competência.** O DRE mistura faturamento Tiny (competência) com lançamentos de caixa. O risco é duplicar: qualquer lançamento que pague algo **já embutido no CPV** conta duas vezes. Por isso o `despReal` exclui a constante `_DRE_CATEGORIAS_FORA_DESPESA`:
 
-- `Fornecedores`, `Motonetas`, `Montagem / Serviço Técnico`, `Nota Fiscal e Imposto` — custo de produto, já no CPV.
+- `Fornecedores`, `Motonetas`, `Montagem`, `Nota Fiscal e Imposto` — custo de produto, já no CPV.
 - `Empréstimos` — amortização de dívida; entra só na linha própria, vinda de `emprestimo_parcelas` (não dos lançamentos). Antes contava em dobro.
 - `Acerto de Caixa`, `Estorno`, `Transferência` — movimentações não-operacionais.
 - `Comissão de Vendas` — comissão de venda, já contada no CPV (componente `comissao` do `ctReal`). Categoria criada na reclassificação de `custos_fixos` (2026-05-17) — quando o lançamento de comissão for separado do salário, cai aqui e não duplica.

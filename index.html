@@ -1664,6 +1664,22 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         </div>
       </div>
     </div>
+
+    <!-- Notificações WhatsApp -->
+    <div class="section-gap">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">📱 Notificações WhatsApp</div>
+            <div class="card-sub">Resumos executivos automáticos enviados aos sócios (manhã 8h e noite 20h)</div>
+          </div>
+          <button class="btn btn-gold" onclick="abrirWhatsappDestModal()" style="font-size:11px;padding:6px 12px;">+ Adicionar destinatário</button>
+        </div>
+        <div id="whatsapp-dest-list">
+          <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+        </div>
+      </div>
+    </div>
   </div>
 
     <!-- ══════════════ FINANCEIRO ══════════════ -->
@@ -10623,6 +10639,12 @@ async function renderAdmin() {
     await recarregarVendedoresMapeamento();
     renderMapeamentoVendedores();
   } catch(e) { console.warn('[renderAdmin] mapeamento vendedores falhou:', e.message); }
+  // Destinatários de notificação WhatsApp (carrega, seed inicial, renderiza)
+  try {
+    await _carregarWhatsappDest();
+    await _seedWhatsappDest();
+    renderWhatsappDest();
+  } catch(e) { console.warn('[renderAdmin] whatsapp destinatarios falhou:', e.message); }
   const users    = await getUsers();
   const pendente = users.filter(u=>u.status==='pendente');
   const ativo    = users.filter(u=>u.status==='aprovado');
@@ -14604,18 +14626,27 @@ const WA_NUMBER  = '5521997507738';
 const WA_APIKEY  = '6372158';
 const WA_API_URL = 'https://api.callmebot.com/whatsapp.php';
 
-async function enviarWhatsApp(mensagem) {
-  if (!mensagem) return false;
+// Envio parametrizado — base de qualquer disparo (notificações de evento,
+// teste de destinatário, resumos). CallMeBot responde texto simples; no-cors
+// evita erro de CORS, mas em troca não dá pra ler a resposta: sucesso aqui
+// significa "requisição saiu", não "mensagem entregue".
+async function _enviarWhatsAppRaw(numero, apikey, mensagem) {
+  if (!mensagem || !numero || !apikey) return false;
   try {
-    const url = `${WA_API_URL}?phone=${WA_NUMBER}&text=${encodeURIComponent(mensagem)}&apikey=${WA_APIKEY}`;
-    // CallMeBot responde texto simples; usar no-cors para evitar erro de CORS no fetch.
+    const url = `${WA_API_URL}?phone=${encodeURIComponent(numero)}&text=${encodeURIComponent(mensagem)}&apikey=${encodeURIComponent(apikey)}`;
     await fetch(url, { method: 'GET', mode: 'no-cors' });
-    console.log('[whatsapp] enviado:', mensagem.split('\n')[0]);
+    console.log('[whatsapp] enviado p/', numero, ':', mensagem.split('\n')[0]);
     return true;
   } catch (e) {
     console.warn('[whatsapp] falhou:', e.message);
     return false;
   }
+}
+
+// Wrapper p/ o número fixo da loja — usado pelas notificações de evento.
+async function enviarWhatsApp(mensagem) {
+  if (!mensagem) return false;
+  return _enviarWhatsAppRaw(WA_NUMBER, WA_APIKEY, mensagem);
 }
 
 function _waHoje() { return new Date().toISOString().slice(0,10); }
@@ -14720,6 +14751,194 @@ async function checarWhatsAppGlobais() {
   try { await checarWhatsAppContasPagar(); }     catch(e) { console.warn('[wa] cp falhou:', e.message); }
   try { await checarWhatsAppOficinaPronto(); }   catch(e) { console.warn('[wa] of falhou:', e.message); }
   try { await checarWhatsAppSacVencido(); }      catch(e) { console.warn('[wa] sac falhou:', e.message); }
+}
+
+// ══════════════════════════════════════════
+//  WHATSAPP — DESTINATÁRIOS DE RESUMO (admin)
+//  Sub-commit A: cadastro + UI. O disparo do resumo vem nos sub-commits B/C.
+// ══════════════════════════════════════════
+let whatsappDestinatarios = [];
+
+// Número no formato que o CallMeBot espera: só dígitos, com DDI.
+function _waNormalizarNumero(s) { return (s || '').replace(/\D/g, ''); }
+
+// Exibição amigável: +55 21 99750-7738 (best-effort; cai pro cru se não casar).
+function _waFormatarNumero(s) {
+  const d = _waNormalizarNumero(s);
+  if (d.length < 12 || d.length > 13) return s || '—';
+  const ddi = d.slice(0, 2), ddd = d.slice(2, 4), resto = d.slice(4);
+  const meio = resto.length === 9
+    ? resto.slice(0, 5) + '-' + resto.slice(5)
+    : resto.slice(0, 4) + '-' + resto.slice(4);
+  return `+${ddi} ${ddd} ${meio}`;
+}
+
+// API key mascarada na listagem (informação sensível).
+function _waMascararKey(k) {
+  k = (k || '').trim();
+  return k.length <= 2 ? '••••' : '••••' + k.slice(-2);
+}
+
+async function _carregarWhatsappDest() {
+  const { data, error } = await sb.from('whatsapp_destinatarios').select('*').order('criado_em');
+  if (error) { console.warn('[wa-dest] carga falhou:', error.message); whatsappDestinatarios = []; return; }
+  whatsappDestinatarios = toCamelArr(data || []);
+}
+
+// Seed idempotente: na 1ª abertura insere o Gabriel a partir das constantes
+// WA_NUMBER/WA_APIKEY já existentes — fonte única, sem duplicar a key.
+async function _seedWhatsappDest() {
+  if (whatsappDestinatarios.length) return;
+  const { error } = await sb.from('whatsapp_destinatarios').insert({
+    nome: 'Gabriel', numero: WA_NUMBER, api_key: WA_APIKEY,
+    receber_manha: true, receber_noite: true, ativo: true,
+  });
+  if (error) { console.warn('[wa-dest] seed falhou:', error.message); return; }
+  await _carregarWhatsappDest();
+}
+
+function renderWhatsappDest() {
+  const el = document.getElementById('whatsapp-dest-list');
+  if (!el) return;
+  // Ativos primeiro; dentro de cada grupo, ordem alfabética.
+  const ordenados = whatsappDestinatarios.slice().sort((a, b) => {
+    const aInat = a.ativo === false, bInat = b.ativo === false;
+    if (aInat !== bInat) return aInat ? 1 : -1;
+    return (a.nome || '').localeCompare(b.nome || '');
+  });
+  if (!ordenados.length) {
+    el.innerHTML = '<div class="empty" style="padding:24px;font-size:11px;">Nenhum destinatário cadastrado. Clique em "+ Adicionar destinatário".</div>';
+    return;
+  }
+  el.innerHTML = ordenados.map(d => {
+    const inativo = d.ativo === false;
+    const badge = inativo
+      ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">inativo</span>' : '';
+    const periodos = [
+      d.receberManha ? '🌅 manhã' : null,
+      d.receberNoite ? '🌙 noite' : null,
+    ].filter(Boolean).join(' · ') || 'sem horário';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);gap:12px;flex-wrap:wrap;${inativo ? 'opacity:0.55;' : ''}">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="font-size:22px;">📱</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;">${escHtml(d.nome)}${badge}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(_waFormatarNumero(d.numero))} · ${periodos} · 🔑 ${escHtml(_waMascararKey(d.apiKey))}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:5px;">
+        <button class="action-btn edit-btn" onclick="abrirWhatsappDestModal('${d.id}')" title="Editar">✏</button>
+        ${inativo
+          ? `<button class="action-btn" onclick="_alternarStatusWhatsappDest('${d.id}', true)" title="Reativar" style="color:var(--green);">↻</button>`
+          : `<button class="action-btn del-btn" onclick="_alternarStatusWhatsappDest('${d.id}', false)" title="Desativar">⊘</button>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function abrirWhatsappDestModal(destId) {
+  const old = document.getElementById('wa-dest-modal');
+  if (old) old.remove();
+  const d = destId ? whatsappDestinatarios.find(x => x.id === destId) : null;
+  const isEdit = !!d;
+  const shell = document.createElement('div');
+  shell.id = 'wa-dest-modal';
+  shell.className = 'modal-overlay open';
+  shell.dataset.destId = isEdit ? destId : '';
+  shell.innerHTML =
+      `<div class="modal" style="width:460px;max-width:96vw;">`
+    +   `<div class="modal-title">${isEdit ? 'Editar' : 'Novo'} <span>destinatário</span></div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group full"><label>Nome</label><input class="form-input" id="wad-nome" type="text" value="${escHtml(d?.nome || '').replace(/"/g,'&quot;')}" placeholder="Nome do sócio"></div>`
+    +     `<div class="form-group full"><label>Número WhatsApp (com DDI)</label><input class="form-input" id="wad-numero" type="text" value="${escHtml(d?.numero || '').replace(/"/g,'&quot;')}" placeholder="+55 21 99999-9999"></div>`
+    +     `<div class="form-group full"><label>API Key do CallMeBot</label><input class="form-input" id="wad-apikey" type="password" autocomplete="off" value="${escHtml(d?.apiKey || '').replace(/"/g,'&quot;')}" placeholder="ex: 1234567"></div>`
+    +     `<div class="form-group full" style="display:flex;flex-direction:column;gap:8px;font-size:12px;">`
+    +       `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="wad-manha"${d?.receberManha !== false ? ' checked' : ''}> 🌅 Receber resumo manhã (8h)</label>`
+    +       `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="wad-noite"${d?.receberNoite !== false ? ' checked' : ''}> 🌙 Receber resumo noite (20h)</label>`
+    +       `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="wad-ativo"${d?.ativo !== false ? ' checked' : ''}> Ativo</label>`
+    +     `</div>`
+    +     `<div class="form-group full"><label>Observações (opcional)</label><textarea class="form-input" id="wad-obs" rows="2" placeholder="—">${escHtml(d?.observacoes || '')}</textarea></div>`
+    +   `</div>`
+    +   `<div style="margin-top:2px;">`
+    +     `<button class="btn" type="button" id="wad-btn-teste" onclick="_enviarWhatsAppTeste()">🧪 Enviar mensagem teste</button>`
+    +     `<div style="font-size:10px;color:var(--text3);margin-top:5px;">Usa o número e a API key digitados acima. Confirma que o envio saiu — não a entrega.</div>`
+    +   `</div>`
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('wa-dest-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="wad-btn-salvar" onclick="_salvarWhatsappDest()">${isEdit ? 'Salvar alterações' : 'Cadastrar'}</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _salvarWhatsappDest() {
+  const btn = document.getElementById('wad-btn-salvar');
+  if (btn?.disabled) return;
+  const destId = document.getElementById('wa-dest-modal')?.dataset.destId || '';
+  const isEdit = !!destId;
+
+  const nome   = (document.getElementById('wad-nome')?.value || '').trim();
+  const numero = _waNormalizarNumero(document.getElementById('wad-numero')?.value);
+  const apikey = (document.getElementById('wad-apikey')?.value || '').trim();
+  const manha  = !!document.getElementById('wad-manha')?.checked;
+  const noite  = !!document.getElementById('wad-noite')?.checked;
+  const ativo  = !!document.getElementById('wad-ativo')?.checked;
+  const obs    = (document.getElementById('wad-obs')?.value || '').trim();
+
+  if (!nome)              { smAlert('Informe o nome do destinatário.'); return; }
+  if (numero.length < 12) { smAlert('Número inválido. Use o formato com DDI, ex: +55 21 99999-9999.'); return; }
+  if (!apikey)            { smAlert('Informe a API key do CallMeBot.'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    const payload = {
+      nome, numero, api_key: apikey,
+      receber_manha: manha, receber_noite: noite, ativo,
+      observacoes: obs || null,
+    };
+    if (isEdit) {
+      const { error } = await sb.from('whatsapp_destinatarios').update(payload).eq('id', destId);
+      if (error) throw new Error('Erro ao atualizar: ' + error.message);
+    } else {
+      const { error } = await sb.from('whatsapp_destinatarios').insert(payload);
+      if (error) throw new Error('Erro ao cadastrar: ' + error.message);
+    }
+    document.getElementById('wa-dest-modal')?.remove();
+    await _carregarWhatsappDest();
+    renderWhatsappDest();
+    smToast('Destinatário ' + (isEdit ? 'atualizado' : 'cadastrado') + '.');
+  } catch (e) {
+    smAlert(e.message || 'Erro desconhecido.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = isEdit ? 'Salvar alterações' : 'Cadastrar'; }
+  }
+}
+
+async function _alternarStatusWhatsappDest(destId, novoAtivo) {
+  const d = whatsappDestinatarios.find(x => x.id === destId);
+  if (!d) return;
+  if (!novoAtivo && !(await smConfirm(`Desativar "${d.nome}"? Deixa de receber os resumos.`))) return;
+  const { error } = await sb.from('whatsapp_destinatarios').update({ ativo: novoAtivo }).eq('id', destId);
+  if (error) { smAlert('Erro ao atualizar status: ' + error.message); return; }
+  await _carregarWhatsappDest();
+  renderWhatsappDest();
+}
+
+async function _enviarWhatsAppTeste() {
+  const btn = document.getElementById('wad-btn-teste');
+  if (btn?.disabled) return;
+  const numero = _waNormalizarNumero(document.getElementById('wad-numero')?.value);
+  const apikey = (document.getElementById('wad-apikey')?.value || '').trim();
+  if (numero.length < 12) { smAlert('Preencha um número válido (com DDI) antes de testar.'); return; }
+  if (!apikey)            { smAlert('Preencha a API key antes de testar.'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+  try {
+    await _enviarWhatsAppRaw(numero, apikey, '🧪 Teste de conexão Smart Motors ✅');
+    smToast('Mensagem teste enviada — confira o WhatsApp do destinatário.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🧪 Enviar mensagem teste'; }
+  }
 }
 
 // ══════════════════════════════════════════
