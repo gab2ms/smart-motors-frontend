@@ -1689,6 +1689,22 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         </div>
       </div>
     </div>
+
+    <!-- Categorias de Lançamento -->
+    <div class="section-gap">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">📋 Categorias de Lançamento</div>
+            <div class="card-sub">Categorias do modal de lançamento, agrupadas por tipo · contador de lançamentos vinculados</div>
+          </div>
+          <button class="btn btn-gold" onclick="abrirCategoriaModal()" style="font-size:11px;padding:6px 12px;">+ Nova categoria</button>
+        </div>
+        <div id="categorias-lanc-list">
+          <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+        </div>
+      </div>
+    </div>
   </div>
 
     <!-- ══════════════ FINANCEIRO ══════════════ -->
@@ -3179,7 +3195,7 @@ async function _enviarParaBanco() {
 async function carregarDados() {
   console.log('[carregarDados] iniciando fetch de todas as tabelas');
   try {
-    const [c, l, cp, cr, cf, pr, sc, vm, oo, cc, mt, ml, mi, mp] = await Promise.all([
+    const [c, l, cp, cr, cf, pr, sc, vm, oo, cc, mt, ml, mi, mp, clg] = await Promise.all([
       sb.from('contas_bancarias').select('*').order('id'),
       sb.from('lancamentos').select('*').order('data', { ascending: false }).order('id', { ascending: false }),
       sb.from('contas_pagar').select('*'),
@@ -3194,10 +3210,11 @@ async function carregarDados() {
       sb.from('montagens_lotes').select('*').order('numero_lote', { ascending: false }),
       sb.from('montagens_itens').select('*'),
       sb.from('montagens_pagamentos').select('*'),
+      sb.from('categorias_lancamento').select('*').order('ordem').order('nome'),
     ]);
 
     // Loga resultado (e erros explicitos) de cada tabela
-    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['contas_receber',cr],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc],['vendedores_mapeamento',vm],['oficina_ordens',oo],['config_custos',cc],['montadores',mt],['montagens_lotes',ml],['montagens_itens',mi],['montagens_pagamentos',mp]]
+    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['contas_receber',cr],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc],['vendedores_mapeamento',vm],['oficina_ordens',oo],['config_custos',cc],['montadores',mt],['montagens_lotes',ml],['montagens_itens',mi],['montagens_pagamentos',mp],['categorias_lancamento',clg]]
       .forEach(([n, r]) => {
         if (r.error) console.error('[carregarDados] ERRO em ' + n + ':', r.error.message, r.error);
         else console.log('[carregarDados] ' + n + ': ' + (r.data?.length || 0) + ' rows');
@@ -3206,6 +3223,7 @@ async function carregarDados() {
     const fromDb = name => (TABLE_MAP[name] || { fromDb: toCamel }).fromDb;
     contas       = (!c.error  && c.data?.length)  ? c.data.map(fromDb('contas_bancarias')) : [];
     lancamentos  = (!l.error  && l.data)          ? l.data.map(fromDb('lancamentos'))      : [];
+    categoriasLancamento = (!clg.error && clg.data) ? toCamelArr(clg.data)                 : [];
     contasPagar  = (!cp.error && cp.data)         ? cp.data.map(fromDb('contas_pagar'))    : [];
     contasReceber= (!cr.error && cr.data)         ? cr.data.map(fromDb('contas_receber'))  : [];
     custosFixos  = (!cf.error && cf.data?.length) ? cf.data.map(fromDb('custos_fixos'))    : [];
@@ -8488,6 +8506,11 @@ function setLanTipo(tipo) {
   const transfMode = (tipo === 'transferencia');
   document.querySelectorAll('#lan-modal .lan-mode-normal').forEach(el => el.style.display = transfMode ? 'none' : '');
   document.querySelectorAll('#lan-modal .lan-mode-transf').forEach(el => el.style.display = transfMode ? '' : 'none');
+  // Re-filtra o select de categoria pelo tipo escolhido (entrada/saída).
+  if (!transfMode) {
+    const selCat = document.getElementById('lan-categoria');
+    popularLanCategorias(tipo, selCat ? selCat.value : '', false);
+  }
   lanCategoriaHint();
 }
 
@@ -8701,7 +8724,7 @@ function editarLancamento(id) {
   document.getElementById('lan-descricao').value = l.descricao||'';
   document.getElementById('lan-valor').value     = l.valor||0;
   document.getElementById('lan-data').value      = l.data||'';
-  document.getElementById('lan-categoria').value = l.categoria||'';
+  popularLanCategorias(l.tipo, l.categoria || '', true);
   lanCategoriaHint();
   document.getElementById('lan-obs').value       = l.obs||'';
   populateLanConta();
@@ -8903,7 +8926,7 @@ async function sugerirCategoriaAI() {
           content: `Você é assistente financeiro de uma loja de scooters elétricos chamada Smart Motors.
 Dado o seguinte lançamento financeiro: "${desc}"
 Escolha UMA categoria da lista abaixo que melhor se encaixa:
-${CATEGORIAS_SMART.join(', ')}
+${_catNomesAtivas().join(', ')}
 
 Responda APENAS com o nome exato da categoria, sem explicação.`
         }]
@@ -8912,7 +8935,7 @@ Responda APENAS com o nome exato da categoria, sem explicação.`
     const data = await res.json();
     const cat = (data.content?.[0]?.text || '').trim();
 
-    if (CATEGORIAS_SMART.includes(cat)) {
+    if (_catNomesAtivas().includes(cat)) {
       // Auto-fill category
       document.getElementById('lan-categoria').value = cat;
       div.innerHTML = `✅ Categoria sugerida: <strong>${cat}</strong> — aplicada automaticamente`;
@@ -10654,6 +10677,11 @@ async function renderAdmin() {
     await _seedWhatsappDest();
     renderWhatsappDest();
   } catch(e) { console.warn('[renderAdmin] whatsapp destinatarios falhou:', e.message); }
+  // Categorias de lançamento (CRUD)
+  try {
+    await recarregarCategorias();
+    renderCategoriasLancamento();
+  } catch(e) { console.warn('[renderAdmin] categorias falhou:', e.message); }
   const users    = await getUsers();
   const pendente = users.filter(u=>u.status==='pendente');
   const ativo    = users.filter(u=>u.status==='aprovado');
@@ -15207,6 +15235,206 @@ async function dispararResumoAgora() {
 }
 
 // ══════════════════════════════════════════
+//  CATEGORIAS DE LANÇAMENTO — CRUD
+//  Tabela categorias_lancamento. Alimenta o select do modal de lançamento.
+// ══════════════════════════════════════════
+let categoriasLancamento = [];
+const CAT_CORES = ['#e0564f','#e0903e','#e0c83e','#5cb85c','#3ea0e0','#7b6cf0','#c764d6','#8a94a6'];
+
+// Categorias ativas válidas pra um lançamento de 'entrada' ou 'saida'.
+function _catsParaTipo(tipoLanc) {
+  return categoriasLancamento
+    .filter(c => c.ativa !== false && (c.tipo === 'ambos' || c.tipo === tipoLanc))
+    .sort((a, b) => (Number(a.ordem||0) - Number(b.ordem||0)) || (a.nome||'').localeCompare(b.nome||''));
+}
+// Nomes das categorias ativas — usado pela categorização por IA (fallback: lista antiga).
+function _catNomesAtivas() {
+  const ns = categoriasLancamento.filter(c => c.ativa !== false).map(c => c.nome);
+  return ns.length ? ns : CATEGORIAS_SMART;
+}
+// Nº de lançamentos vinculados a uma categoria (conta em memória).
+function _catContagem(nome) {
+  return (lancamentos || []).filter(l => l.categoria === nome).length;
+}
+
+async function recarregarCategorias() {
+  const { data, error } = await sb.from('categorias_lancamento').select('*').order('ordem').order('nome');
+  if (error) { console.warn('[categorias] carga falhou:', error.message); return; }
+  categoriasLancamento = toCamelArr(data || []);
+}
+
+// Reconstrói o <select id="lan-categoria"> filtrado pelo tipo do lançamento.
+// manterForaFiltro=true (edição) injeta a categoria atual mesmo se inativa/outro tipo.
+function popularLanCategorias(tipoLanc, catSel, manterForaFiltro) {
+  const sel = document.getElementById('lan-categoria');
+  if (!sel) return;
+  const cats = _catsParaTipo(tipoLanc);
+  const noFiltro = !!(catSel && cats.some(c => c.nome === catSel));
+  let html = '<option value="">Selecionar...</option>'
+    + cats.map(c => `<option value="${escHtml(c.nome).replace(/"/g,'&quot;')}">${escHtml(c.nome)}</option>`).join('');
+  if (catSel && !noFiltro && manterForaFiltro) {
+    html += `<option value="${escHtml(catSel).replace(/"/g,'&quot;')}">${escHtml(catSel)} — inativa/outro tipo</option>`;
+  }
+  sel.innerHTML = html;
+  sel.value = (catSel && (noFiltro || manterForaFiltro)) ? catSel : '';
+}
+
+function renderCategoriasLancamento() {
+  const el = document.getElementById('categorias-lanc-list');
+  if (!el) return;
+  if (!categoriasLancamento.length) {
+    el.innerHTML = '<div class="empty" style="padding:24px;font-size:11px;">Nenhuma categoria. Clique em "+ Nova categoria".</div>';
+    return;
+  }
+  const TIPO_LABEL = { entrada: '↑ Entradas', saida: '↓ Saídas', ambos: '↕ Ambos (entrada e saída)' };
+  let html = '';
+  for (const g of ['entrada','saida','ambos']) {
+    const cats = categoriasLancamento.filter(c => c.tipo === g).sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+    if (!cats.length) continue;
+    html += `<div style="padding:11px 20px 5px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.7px;color:var(--text3);">${TIPO_LABEL[g]} (${cats.length})</div>`;
+    html += cats.map(c => {
+      const n = _catContagem(c.nome);
+      const inativa = c.ativa === false;
+      const dot = c.cor
+        ? `<span style="width:11px;height:11px;border-radius:50%;background:${escHtml(c.cor)};display:inline-block;flex-shrink:0;"></span>`
+        : '<span style="width:11px;height:11px;border-radius:50%;border:1px dashed var(--border2);display:inline-block;flex-shrink:0;"></span>';
+      const badge = inativa ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">inativa</span>' : '';
+      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 20px;border-bottom:1px solid var(--border);${inativa?'opacity:0.55;':''}">
+        <div style="display:flex;align-items:center;gap:9px;">${dot}<span style="font-size:13px;font-weight:600;">${escHtml(c.nome)}${badge}</span></div>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="font-size:10px;color:var(--text3);margin-right:4px;white-space:nowrap;">${n} lanç.</span>
+          <button class="action-btn edit-btn" onclick="abrirCategoriaModal('${c.id}')" title="Editar">✏</button>
+          ${inativa
+            ? `<button class="action-btn" onclick="_toggleAtivaCategoria('${c.id}', true)" title="Reativar" style="color:var(--green);">↻</button>`
+            : `<button class="action-btn del-btn" onclick="_toggleAtivaCategoria('${c.id}', false)" title="Desativar">⊘</button>`}
+          <button class="action-btn del-btn" onclick="_excluirCategoria('${c.id}')" title="Excluir">🗑</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  el.innerHTML = html;
+}
+
+function abrirCategoriaModal(catId) {
+  const old = document.getElementById('cat-modal');
+  if (old) old.remove();
+  const c = catId ? categoriasLancamento.find(x => x.id === catId) : null;
+  const isEdit = !!c;
+  const tipo = c?.tipo || 'saida';
+  const corSel = c?.cor || '';
+  const shell = document.createElement('div');
+  shell.id = 'cat-modal';
+  shell.className = 'modal-overlay open';
+  shell.dataset.catId = isEdit ? catId : '';
+  const radio = (v, lbl) => `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;"><input type="radio" name="cat-tipo" value="${v}"${tipo===v?' checked':''}> ${lbl}</label>`;
+  const swatch = (cor, vazio) => `<button type="button" class="cat-cor-sw" data-cor="${cor}" onclick="_catSelCor('${cor}')" style="width:26px;height:26px;border-radius:50%;background:${vazio?'var(--surface3)':cor};border:2px solid ${corSel===cor?'var(--text)':'transparent'};cursor:pointer;${vazio?'font-size:11px;color:var(--text3);':''}">${vazio?'∅':''}</button>`;
+  shell.innerHTML =
+      `<div class="modal" style="width:440px;max-width:96vw;">`
+    +   `<div class="modal-title">${isEdit ? 'Editar' : 'Nova'} <span>categoria</span></div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group full"><label>Nome</label><input class="form-input" id="cat-nome" type="text" value="${escHtml(c?.nome||'').replace(/"/g,'&quot;')}" placeholder="Nome da categoria"></div>`
+    +     `<div class="form-group full"><label>Tipo</label><div style="display:flex;gap:18px;padding-top:5px;">${radio('entrada','Entrada')}${radio('saida','Saída')}${radio('ambos','Ambos')}</div></div>`
+    +     `<div class="form-group full"><label>Cor (opcional)</label><div id="cat-cores" style="display:flex;gap:8px;flex-wrap:wrap;padding-top:5px;">${swatch('',true)}${CAT_CORES.map(cor => swatch(cor,false)).join('')}</div><input type="hidden" id="cat-cor" value="${escHtml(corSel)}"></div>`
+    +     `<div class="form-group full" style="font-size:12px;"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="cat-ativa"${c?.ativa!==false?' checked':''}> Ativa (aparece em novos lançamentos)</label></div>`
+    +   `</div>`
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('cat-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="cat-btn-salvar" onclick="_salvarCategoria()">${isEdit ? 'Salvar alterações' : 'Criar'}</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+function _catSelCor(cor) {
+  const inp = document.getElementById('cat-cor');
+  if (inp) inp.value = cor;
+  document.querySelectorAll('#cat-cores .cat-cor-sw').forEach(b => {
+    b.style.border = '2px solid ' + (b.dataset.cor === cor ? 'var(--text)' : 'transparent');
+  });
+}
+
+async function _salvarCategoria() {
+  const btn = document.getElementById('cat-btn-salvar');
+  if (btn?.disabled) return;
+  const catId = document.getElementById('cat-modal')?.dataset.catId || '';
+  const isEdit = !!catId;
+  const c = isEdit ? categoriasLancamento.find(x => x.id === catId) : null;
+  if (isEdit && !c) { smAlert('Categoria não encontrada.'); return; }
+
+  const nome  = (document.getElementById('cat-nome')?.value || '').trim();
+  const tipo  = document.querySelector('#cat-modal input[name="cat-tipo"]:checked')?.value || 'saida';
+  const ativa = !!document.getElementById('cat-ativa')?.checked;
+  const cor   = (document.getElementById('cat-cor')?.value || '') || null;
+
+  if (!nome) { smAlert('Informe o nome da categoria.'); return; }
+  const dup = categoriasLancamento.find(x => x.id !== catId && (x.nome||'').toLowerCase() === nome.toLowerCase());
+  if (dup) { smAlert(`Já existe uma categoria chamada "${dup.nome}".`); return; }
+
+  const renomeando = isEdit && c.nome !== nome;
+  // Aviso (não bloqueia): renomear categoria usada na regra hardcoded do DRE.
+  if (renomeando && _DRE_CATEGORIAS_FORA_DESPESA.includes(c.nome)) {
+    const ok = await smConfirm(
+      `⚠️ "${c.nome}" é usada na regra do DRE (constante _DRE_CATEGORIAS_FORA_DESPESA no código). `
+      + `Renomear para "${nome}" exige editar o código do DRE manualmente — senão o cálculo do resultado fica errado. Continuar?`);
+    if (!ok) return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    if (isEdit) {
+      const { error } = await sb.from('categorias_lancamento').update({ nome, tipo, ativa, cor }).eq('id', catId);
+      if (error) throw new Error(error.code === '23505' ? `Já existe uma categoria "${nome}".` : 'Erro ao salvar: ' + error.message);
+      // Edição de nome é retroativa: propaga pra todos os lançamentos antigos.
+      if (renomeando) {
+        const { error: e2 } = await sb.from('lancamentos').update({ categoria: nome }).eq('categoria', c.nome);
+        if (e2) throw new Error('Categoria salva, mas falhou ao atualizar lançamentos antigos: ' + e2.message);
+        (lancamentos || []).forEach(l => { if (l.categoria === c.nome) l.categoria = nome; });
+      }
+    } else {
+      const { error } = await sb.from('categorias_lancamento').insert({ nome, tipo, ativa, cor });
+      if (error) throw new Error(error.code === '23505' ? `Já existe uma categoria "${nome}".` : 'Erro ao criar: ' + error.message);
+    }
+    document.getElementById('cat-modal')?.remove();
+    await recarregarCategorias();
+    renderCategoriasLancamento();
+    if (typeof renderLancamentos === 'function') { try { renderLancamentos(); } catch(e) {} }
+    smToast('Categoria ' + (isEdit ? 'atualizada' : 'criada') + '.');
+  } catch (e) {
+    smAlert(e.message || 'Erro desconhecido.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = isEdit ? 'Salvar alterações' : 'Criar'; }
+  }
+}
+
+async function _toggleAtivaCategoria(catId, nova) {
+  const c = categoriasLancamento.find(x => x.id === catId);
+  if (!c) return;
+  if (!nova && !(await smConfirm(`Desativar "${c.nome}"? Ela some dos novos lançamentos, mas o histórico continua intacto.`))) return;
+  const { error } = await sb.from('categorias_lancamento').update({ ativa: nova }).eq('id', catId);
+  if (error) { smAlert('Erro ao atualizar status: ' + error.message); return; }
+  await recarregarCategorias();
+  renderCategoriasLancamento();
+}
+
+async function _excluirCategoria(catId) {
+  const c = categoriasLancamento.find(x => x.id === catId);
+  if (!c) return;
+  const n = _catContagem(c.nome);
+  if (n > 0) {
+    smAlert(`A categoria "${c.nome}" tem ${n} lançamento${n>1?'s':''} vinculado${n>1?'s':''} e não pode ser excluída.\n\n`
+      + 'Para tirá-la dos novos lançamentos sem perder o histórico, use Desativar (⊘).');
+    return;
+  }
+  if (!(await smConfirm(`Excluir a categoria "${c.nome}"? Ela não tem lançamentos — a exclusão é definitiva.`))) return;
+  const { error } = await sb.from('categorias_lancamento').delete().eq('id', catId);
+  if (error) { smAlert('Erro ao excluir: ' + error.message); return; }
+  await recarregarCategorias();
+  renderCategoriasLancamento();
+  smToast('Categoria excluída.');
+}
+
+// ══════════════════════════════════════════
 //  MAPEAMENTO DE VENDEDORES
 //  Permite agrupar varios "nomes do Tiny" sob um nome real unico.
 //  Ex: "Rafael Quiosque" e "Rafael Matriz" -> "Rafael" no ranking.
@@ -15535,51 +15763,9 @@ renderDashboard();
       </div>
       <div class="form-group lan-mode-normal">
         <label>Categoria</label>
+        <!-- Populado por popularLanCategorias() a partir da tabela categorias_lancamento, filtrado pelo tipo. -->
         <select class="form-input" id="lan-categoria" onchange="lanCategoriaHint()">
           <option value="">Selecionar...</option>
-          <optgroup label="↑ Entradas">
-            <option value="Motonetas">Motonetas</option>
-            <option value="Acessórios">Acessórios</option>
-            <option value="Rendimento Conta">Rendimento Conta</option>
-            <option value="Estorno">Estorno</option>
-            <option value="Aportes">Aportes</option>
-            <option value="Comissão Indicação">Comissão Indicação</option>
-            <option value="Investimentos">Investimentos</option>
-          </optgroup>
-          <optgroup label="↓ Saídas fixas">
-            <option value="Aluguel e Condomínio">Aluguel e Condomínio</option>
-            <option value="Funcionários">Funcionários</option>
-            <option value="Comissão de Vendas">Comissão de Vendas</option>
-            <option value="Sócios">Sócios</option>
-            <option value="Empréstimos">Empréstimos</option>
-            <option value="Marketing">Marketing</option>
-            <option value="Sistemas / Ferramenta Gestão">Sistemas / Ferramenta Gestão</option>
-            <option value="Seguro">Seguro</option>
-            <option value="Segurança">Segurança</option>
-            <option value="Telecomunicação, Internet">Telecomunicação, Internet</option>
-            <option value="Água, Luz, Internet">Água, Luz, Internet</option>
-            <option value="Veículos, transportes">Veículos, transportes</option>
-            <option value="Imposto e Tributos">Imposto e Tributos</option>
-          </optgroup>
-          <optgroup label="↓ Saídas variáveis">
-            <option value="Fornecedores">Fornecedores</option>
-            <option value="Parcerias Comerciais">Parcerias Comerciais</option>
-            <option value="Montagem">Montagem</option>
-            <option value="Serviços Terceirizados">Serviços Terceirizados</option>
-            <option value="Oficina - Peças e Serviços">Oficina - Peças e Serviços</option>
-            <option value="Nota Fiscal e Imposto">Nota Fiscal e Imposto</option>
-            <option value="Taxas">Taxas</option>
-            <option value="Compras Gerais">Compras Gerais</option>
-          </optgroup>
-          <optgroup label="Outros">
-            <option value="Acerto de Caixa">Acerto de Caixa</option>
-            <option value="Investimento em Ponto">Investimento em Ponto</option>
-            <option value="Bloqueado">Bloqueado</option>
-            <option value="Outros">Outros</option>
-          </optgroup>
-          <optgroup label="Movimentação interna">
-            <option value="Transferência" disabled>Transferência (use o botão ⇄)</option>
-          </optgroup>
         </select>
       </div>
       <div class="form-group full lan-mode-normal" id="lan-hint-comissao" style="display:none;">
