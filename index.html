@@ -2221,7 +2221,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
             <optgroup label="Variáveis">
               <option>Fornecedores</option>
               <option>Jonosake</option>
-              <option>Montagem / Serviço Técnico</option>
+              <option>Montagem</option>
               <option>Serviços Terceirizados</option>
               <option>Nota Fiscal e Imposto</option>
               <option>Taxas</option>
@@ -4999,7 +4999,7 @@ let dashDreMesExpandido = false;
 // movimentações não-operacionais. Ver triggers/README.md.
 const _DRE_CATEGORIAS_FORA_DESPESA = [
   'Empréstimos', 'Fornecedores', 'Motonetas',
-  'Montagem / Serviço Técnico', 'Nota Fiscal e Imposto',
+  'Montagem', 'Nota Fiscal e Imposto',
   'Acerto de Caixa', 'Estorno', 'Transferência',
   // Comissão de Vendas — já contada no CPV (componente comissao do ctReal).
   // Investimento em Ponto — caução/abertura de unidade, não-recorrente.
@@ -8852,7 +8852,7 @@ const CATEGORIAS_SMART = [
   'Aluguel e Condomínio','Funcionários','SÓCIOS','Empréstimos','Marketing',
   'Sistemas / Ferramenta Gestão','Seguro','Segurança','Telecomunicação, Internet',
   'Água, Luz, Internet','Veículos, transportes','Fornecedores','Jonosake',
-  'Montagem / Serviço Técnico','Serviços Terceirizados','Nota Fiscal e Imposto',
+  'Montagem','Serviços Terceirizados','Nota Fiscal e Imposto',
   'Taxas','Compras Gerais','Investimentos','Acerto de Caixa','Bloqueado','Outros',
 ];
 
@@ -9907,7 +9907,8 @@ function mapearCategoria(cat) {
   if (c.includes('veiculo') || c.includes('veículo') || c.includes('combustivel') || c.includes('combustível') || c.includes('frete') || c.includes('transporte')) return 'Veículos, transportes';
   if (c.includes('fornecedor'))                         return 'Fornecedores';
   if (c.includes('jonosake'))                           return 'Jonosake';
-  if (c.includes('montagem') || c.includes('manutencao') || c.includes('manutenção') || c.includes('servico tecnico') || c.includes('serviço técnico')) return 'Montagem / Serviço Técnico';
+  if (c.includes('montagem'))                           return 'Montagem';
+  if (c.includes('manutencao') || c.includes('manutenção') || c.includes('servico tecnico') || c.includes('serviço técnico')) return 'Oficina - Peças e Serviços';
   if (c.includes('terceirizado'))                       return 'Serviços Terceirizados';
   if (c.includes('nota fiscal') || c.includes('imposto') || c.includes('das') || c.includes('nf')) return 'Nota Fiscal e Imposto';
   if (c.includes('taxa'))                               return 'Taxas';
@@ -10022,7 +10023,7 @@ function renderCPImportList() {
             <div>
               <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.7px;font-weight:700;margin-bottom:4px;">Categoria <span style="color:var(--gold);">(auto)</span></div>
               <select class="form-input" id="cp-cat-${i}" style="font-size:12px;padding:6px 10px;" ${jaImportada?'disabled':''}>
-                ${['Aluguel e Condomínio','Funcionários','SÓCIOS','Empréstimos','Marketing','Sistemas / Ferramenta Gestão','Seguro','Segurança','Telecomunicação, Internet','Água, Luz, Internet','Veículos, transportes','Fornecedores','Jonosake','Montagem / Serviço Técnico','Serviços Terceirizados','Nota Fiscal e Imposto','Taxas','Compras Gerais','Investimentos','Acerto de Caixa','Outros']
+                ${['Aluguel e Condomínio','Funcionários','SÓCIOS','Empréstimos','Marketing','Sistemas / Ferramenta Gestão','Seguro','Segurança','Telecomunicação, Internet','Água, Luz, Internet','Veículos, transportes','Fornecedores','Jonosake','Montagem','Serviços Terceirizados','Nota Fiscal e Imposto','Taxas','Compras Gerais','Investimentos','Acerto de Caixa','Outros']
                   .map(cat=>`<option value="${cat}" ${cat===catSugerida?'selected':''}>${cat}</option>`).join('')}
               </select>
             </div>
@@ -12846,7 +12847,7 @@ function abrirMontagemPagarModal(loteIdOrArray) {
     +     `<div class="modal-bloco-titulo">Tipo de registro</div>`
     +     `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;cursor:pointer;padding:6px 0;">`
     +       `<input type="radio" name="mont-pag-tipo" value="lancamento" checked style="margin-top:2px;">`
-    +       `<span><strong>Gerar lançamento no financeiro</strong> <span style="color:var(--text3);font-size:10px;">(padrão)</span><br><span style="color:var(--text3);font-size:10px;">Cria <strong>1</strong> entrada em lançamentos${isMulti ? ' agregando os '+lotes.length+' lotes' : ''} · categoria <em>Montagem / Serviço Técnico</em> · tipo saída · conta da seleção acima.</span></span>`
+    +       `<span><strong>Gerar lançamento no financeiro</strong> <span style="color:var(--text3);font-size:10px;">(padrão)</span><br><span style="color:var(--text3);font-size:10px;">Cria <strong>1</strong> entrada em lançamentos${isMulti ? ' agregando os '+lotes.length+' lotes' : ''} · categoria <em>Montagem</em> · tipo saída · conta da seleção acima.</span></span>`
     +     `</label>`
     +     `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;cursor:pointer;padding:6px 0;">`
     +       `<input type="radio" name="mont-pag-tipo" value="so-registrar" style="margin-top:2px;">`
@@ -12935,7 +12936,7 @@ async function _montagensConfirmarPagamento() {
         descricao,
         valor: valorTotal,
         data,
-        categoria: 'Montagem / Serviço Técnico',
+        categoria: 'Montagem',
         conta_id: ctaBanco?.id || null,
         conta_nome: contaNm,
         observacao: obs || ('Pagamento de montagem · ' + lotesStr),
@@ -15079,7 +15080,7 @@ renderDashboard();
           <optgroup label="↓ Saídas variáveis">
             <option value="Fornecedores">Fornecedores</option>
             <option value="Jonosake">Jonosake</option>
-            <option value="Montagem / Serviço Técnico">Montagem / Serviço Técnico</option>
+            <option value="Montagem">Montagem</option>
             <option value="Serviços Terceirizados">Serviços Terceirizados</option>
             <option value="Oficina - Peças e Serviços">Oficina - Peças e Serviços</option>
             <option value="Nota Fiscal e Imposto">Nota Fiscal e Imposto</option>
