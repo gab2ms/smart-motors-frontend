@@ -1678,6 +1678,15 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         <div id="whatsapp-dest-list">
           <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
         </div>
+        <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.6px;">Disparo de resumo</span>
+          <select id="wa-resumo-periodo" class="search-input" style="max-width:230px;">
+            <option value="manha">☀️ Manhã — planejamento do dia</option>
+            <option value="noite">🌙 Noite — fechamento do dia</option>
+          </select>
+          <button class="btn" type="button" onclick="abrirPreviewResumo()">🧪 Gerar prévia</button>
+          <button class="btn btn-gold" type="button" onclick="dispararResumoAgora()">🚀 Disparar agora</button>
+        </div>
       </div>
     </div>
   </div>
@@ -14939,6 +14948,262 @@ async function _enviarWhatsAppTeste() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '🧪 Enviar mensagem teste'; }
   }
+}
+
+// ══════════════════════════════════════════
+//  WHATSAPP — RESUMO EXECUTIVO (geração + disparo manual)
+//  Sub-commit B: coleta de dados local + formatador JS + preview + disparo.
+//  Sem IA — a redação por IA entra no sub-commit C, no backend (chave segura).
+// ══════════════════════════════════════════
+const WA_RESUMO_MAX = 1200; // teto de caracteres por mensagem (CallMeBot/WhatsApp)
+
+// Data ISO com offset de dias a partir de hoje (mesma base de _waHoje).
+function _waOffsetDias(n) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function _waSoma(arr) { return (arr || []).reduce((a, x) => a + Number(x.valor || 0), 0); }
+function _truncarResumo(s) {
+  s = String(s || '');
+  return s.length <= WA_RESUMO_MAX ? s : s.slice(0, WA_RESUMO_MAX - 1) + '…';
+}
+
+// ── Coleta de dados (lê só os arrays já carregados em memória; sem Tiny/DRE,
+//    pra ser síncrona, rápida e o sub-commit se validar sozinho) ──
+function _coletarDadosManha() {
+  const hoje  = _waHoje();
+  const ontem = _waOffsetDias(-1);
+
+  const cp = Array.isArray(contasPagar) ? contasPagar : [];
+  const contasHoje      = cp.filter(c => !c.paga && c.vencimento === hoje);
+  const contasAtrasadas = cp.filter(c => !c.paga && c.vencimento && diasAteVencimento(c.vencimento) < 0);
+  const contasProx      = cp.filter(c => { if (c.paga || !c.vencimento) return false; const d = diasAteVencimento(c.vencimento); return d > 0 && d <= 3; });
+
+  const cr = Array.isArray(contasReceber) ? contasReceber : [];
+  const receberPend = cr.filter(c => !c.recebido);
+
+  const os = Array.isArray(oficinaOrdens) ? oficinaOrdens : [];
+  const osAbertas = os.filter(o => o.status !== 'finalizado' && o.status !== 'transferido');
+  const osProntas = os.filter(o => o.status === 'pronto_entrega');
+
+  const sac = Array.isArray(sacCasos) ? sacCasos : [];
+  const sacAbertos  = sac.filter(c => c.status !== 'finalizado' && c.status !== 'transferido');
+  const sacVencidos = sacAbertos.filter(c => c.dataProximoContato && c.dataProximoContato <= hoje);
+
+  const lotes = Array.isArray(montagensLotes) ? montagensLotes : [];
+  const lotesPendentes = lotes.filter(l => l.statusPagamento !== 'pago');
+
+  const lanc = Array.isArray(lancamentos) ? lancamentos : [];
+  const vendasOntem = lanc.filter(l => l.tipo === 'entrada' && l.categoria === 'Motonetas' && l.data === ontem);
+
+  return {
+    hoje, contasHoje, contasAtrasadas, contasProx, receberPend,
+    osAbertas, osProntas, sacAbertos, sacVencidos, lotesPendentes, vendasOntem,
+    totalContasHoje:   _waSoma(contasHoje),
+    totalAtrasadas:    _waSoma(contasAtrasadas),
+    totalProx:         _waSoma(contasProx),
+    totalReceberPend:  _waSoma(receberPend),
+    totalVendasOntem:  _waSoma(vendasOntem),
+  };
+}
+
+function _coletarDadosNoite() {
+  const hoje      = _waHoje();
+  const amanha    = _waOffsetDias(1);
+  const mesPrefix = hoje.slice(0, 7);
+
+  const lanc  = Array.isArray(lancamentos) ? lancamentos : [];
+  const opera = l => l.tipo !== 'transferencia' && !l.transferenciaId; // ignora transferências
+  const lancHoje       = lanc.filter(l => l.data === hoje && opera(l));
+  const vendasHoje     = lancHoje.filter(l => l.tipo === 'entrada' && l.categoria === 'Motonetas');
+  const outrasEntradas = lancHoje.filter(l => l.tipo === 'entrada' && l.categoria !== 'Motonetas');
+  const saidasHoje     = lancHoje.filter(l => l.tipo === 'saida');
+  const lancMes     = lanc.filter(l => l.data && l.data.slice(0, 7) === mesPrefix && opera(l));
+  const entradasMes = lancMes.filter(l => l.tipo === 'entrada');
+  const saidasMes   = lancMes.filter(l => l.tipo === 'saida');
+
+  const os = Array.isArray(oficinaOrdens) ? oficinaOrdens : [];
+  const osFinalizadasHoje = os.filter(o => o.status === 'finalizado' && o.dataConclusao === hoje);
+  const osAbertas         = os.filter(o => o.status !== 'finalizado' && o.status !== 'transferido');
+
+  const itens = Array.isArray(montagensItens) ? montagensItens : [];
+  const itensRecebidosHoje = itens.filter(i => i.dataRecebimento === hoje);
+
+  const cp = Array.isArray(contasPagar) ? contasPagar : [];
+  const contasAmanha = cp.filter(c => !c.paga && c.vencimento === amanha);
+
+  const totalVendasHoje     = _waSoma(vendasHoje);
+  const totalOutrasEntradas = _waSoma(outrasEntradas);
+  const totalSaidasHoje     = _waSoma(saidasHoje);
+  const totalEntradasMes    = _waSoma(entradasMes);
+  const totalSaidasMes      = _waSoma(saidasMes);
+
+  return {
+    hoje, vendasHoje, outrasEntradas, saidasHoje, osFinalizadasHoje, osAbertas,
+    itensRecebidosHoje, contasAmanha,
+    totalVendasHoje, totalOutrasEntradas, totalSaidasHoje,
+    saldoDia: totalVendasHoje + totalOutrasEntradas - totalSaidasHoje,
+    totalEntradasMes, totalSaidasMes,
+    saldoMes: totalEntradasMes - totalSaidasMes,
+    totalContasAmanha: _waSoma(contasAmanha),
+  };
+}
+
+// ── Formatadores: dados → texto WhatsApp (negrito *asterisco*) ──
+function _formatarResumoManha(d) {
+  const L = [];
+  L.push('☀️ *Smart Motors* — Resumo da manhã');
+  L.push(`📅 ${_fmtBR(d.hoje)} (${_diaSemanaCurto(d.hoje)})`);
+  L.push('');
+  L.push('💰 *Financeiro hoje*');
+  L.push(`• A pagar hoje: ${d.contasHoje.length} · ${fmt(d.totalContasHoje)}`);
+  if (d.contasAtrasadas.length) L.push(`• ⚠️ Atrasadas: ${d.contasAtrasadas.length} · ${fmt(d.totalAtrasadas)}`);
+  if (d.contasProx.length)      L.push(`• Próx. 3 dias: ${d.contasProx.length} · ${fmt(d.totalProx)}`);
+  L.push(`• A receber pendente: ${d.receberPend.length} · ${fmt(d.totalReceberPend)}`);
+  L.push('');
+  L.push('🔧 *Operacional aberto*');
+  L.push(`• OS na oficina: ${d.osAbertas.length}${d.osProntas.length ? ` (${d.osProntas.length} pronta${d.osProntas.length > 1 ? 's' : ''} p/ entrega)` : ''}`);
+  L.push(`• Casos SAC abertos: ${d.sacAbertos.length}`);
+  L.push(`• Lotes de montagem pendentes: ${d.lotesPendentes.length}`);
+  const alertas = [];
+  d.contasHoje.forEach(c => alertas.push(`Conta "${c.nome || 'sem nome'}" vence hoje`));
+  if (d.contasAtrasadas.length) alertas.push(`${d.contasAtrasadas.length} conta(s) atrasada(s)`);
+  if (d.sacVencidos.length)     alertas.push(`${d.sacVencidos.length} caso(s) SAC com contato vencido`);
+  if (d.osProntas.length)       alertas.push(`${d.osProntas.length} OS aguardando retirada`);
+  if (alertas.length) {
+    L.push('');
+    L.push('🚨 *Alertas*');
+    alertas.slice(0, 6).forEach(a => L.push(`• ${a}`));
+  }
+  L.push('');
+  L.push(`📊 Vendas de ontem: ${d.vendasOntem.length} · ${fmt(d.totalVendasOntem)}`);
+  return L.join('\n');
+}
+
+function _formatarResumoNoite(d) {
+  const L = [];
+  L.push('🌙 *Smart Motors* — Fechamento do dia');
+  L.push(`📅 ${_fmtBR(d.hoje)} (${_diaSemanaCurto(d.hoje)})`);
+  L.push('');
+  L.push('💰 *Vendas do dia*');
+  L.push(`• Motonetas: ${d.vendasHoje.length} · ${fmt(d.totalVendasHoje)}`);
+  if (d.totalOutrasEntradas > 0) L.push(`• Outras entradas: ${fmt(d.totalOutrasEntradas)}`);
+  L.push(`• Saídas do dia: ${fmt(d.totalSaidasHoje)}`);
+  L.push(`• Saldo do dia: ${fmtSigned(d.saldoDia)}`);
+  L.push('');
+  L.push('📈 *Acumulado do mês*');
+  L.push(`• Entradas: ${fmt(d.totalEntradasMes)}`);
+  L.push(`• Saídas: ${fmt(d.totalSaidasMes)}`);
+  L.push(`• Saldo: ${fmtSigned(d.saldoMes)}`);
+  L.push('');
+  L.push('🔧 *Fechamento operacional*');
+  L.push(`• OS finalizadas hoje: ${d.osFinalizadasHoje.length}`);
+  L.push(`• Itens de montagem recebidos hoje: ${d.itensRecebidosHoje.length}`);
+  L.push(`• OS ainda abertas: ${d.osAbertas.length}`);
+  L.push('');
+  L.push('🔮 *Amanhã*');
+  L.push(`• Contas a pagar: ${d.contasAmanha.length} · ${fmt(d.totalContasAmanha)}`);
+  return L.join('\n');
+}
+
+// Gera o texto do resumo de um período (coleta + formata + trunca).
+function _gerarResumoTexto(periodo) {
+  const txt = periodo === 'noite'
+    ? _formatarResumoNoite(_coletarDadosNoite())
+    : _formatarResumoManha(_coletarDadosManha());
+  return _truncarResumo(txt);
+}
+
+// Grava 1 linha em whatsapp_envios_log. Falha de log nunca interrompe o envio.
+async function _logEnvioWhatsapp(destinatarioId, periodo, conteudo, sucesso, erro) {
+  try {
+    await sb.from('whatsapp_envios_log').insert({
+      destinatario_id: destinatarioId || null,
+      periodo, conteudo,
+      sucesso: !!sucesso,
+      erro: erro || null,
+    });
+  } catch (e) { console.warn('[wa-log] falhou:', e.message); }
+}
+
+// ── Preview: gera o resumo, mostra editável, envia ao número da loja ──
+function abrirPreviewResumo() {
+  const periodo = document.getElementById('wa-resumo-periodo')?.value || 'manha';
+  const texto = _gerarResumoTexto(periodo);
+  const old = document.getElementById('wa-preview-modal');
+  if (old) old.remove();
+  const shell = document.createElement('div');
+  shell.id = 'wa-preview-modal';
+  shell.className = 'modal-overlay open';
+  shell.innerHTML =
+      `<div class="modal" style="width:540px;max-width:96vw;">`
+    +   `<div class="modal-title">Prévia — resumo da <span>${periodo === 'noite' ? 'noite' : 'manhã'}</span></div>`
+    +   `<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">Gerado a partir dos dados atuais do sistema. Edite livremente antes de enviar.</div>`
+    +   `<textarea class="form-input" id="wa-preview-texto" rows="18" style="font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.5;" oninput="_waPreviewContar()">${escHtml(texto)}</textarea>`
+    +   `<div id="wa-preview-contador" style="font-size:10px;color:var(--text3);margin-top:4px;"></div>`
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('wa-preview-modal').remove();">Fechar</button>`
+    +     `<button class="btn btn-gold" type="button" id="wa-preview-btn-enviar" onclick="_enviarPreviaResumo()">📲 Enviar prévia pro meu WhatsApp</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+  _waPreviewContar();
+}
+
+function _waPreviewContar() {
+  const t = document.getElementById('wa-preview-texto');
+  const c = document.getElementById('wa-preview-contador');
+  if (!t || !c) return;
+  const n = t.value.length;
+  const excede = n > WA_RESUMO_MAX;
+  c.textContent = `${n} caractere(s)` + (excede ? ` — acima de ${WA_RESUMO_MAX}, será cortado no envio` : '');
+  c.style.color = excede ? 'var(--red)' : 'var(--text3)';
+}
+
+async function _enviarPreviaResumo() {
+  const btn = document.getElementById('wa-preview-btn-enviar');
+  if (btn?.disabled) return;
+  const t = document.getElementById('wa-preview-texto');
+  if (!t) return;
+  const texto = _truncarResumo((t.value || '').trim());
+  if (!texto) { smAlert('A prévia está vazia.'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+  try {
+    const ok = await _enviarWhatsAppRaw(WA_NUMBER, WA_APIKEY, texto);
+    await _logEnvioWhatsapp(null, 'previa', texto, ok, ok ? null : 'falha no envio');
+    smToast('Prévia enviada — confira o WhatsApp.');
+    document.getElementById('wa-preview-modal')?.remove();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📲 Enviar prévia pro meu WhatsApp'; }
+  }
+}
+
+// ── Disparo manual: envia o resumo a todos os destinatários ativos do período ──
+async function dispararResumoAgora() {
+  const periodo = document.getElementById('wa-resumo-periodo')?.value || 'manha';
+  const campo   = periodo === 'noite' ? 'receberNoite' : 'receberManha';
+  const nomeP   = periodo === 'noite' ? 'noite' : 'manhã';
+  const alvos = (whatsappDestinatarios || []).filter(d => d.ativo !== false && d[campo] !== false);
+  if (!alvos.length) {
+    smAlert(`Nenhum destinatário ativo configurado para receber o resumo da ${nomeP}.`);
+    return;
+  }
+  if (!(await smConfirm(`Disparar o resumo da ${nomeP} agora para ${alvos.length} destinatário(s)?`))) return;
+
+  const texto = _gerarResumoTexto(periodo);
+  let ok = 0, falha = 0;
+  for (const d of alvos) {
+    let enviado = false, erro = null;
+    try {
+      enviado = await _enviarWhatsAppRaw(_waNormalizarNumero(d.numero), d.apiKey, texto);
+      if (!enviado) erro = 'falha no envio';
+    } catch (e) { erro = e.message || 'erro desconhecido'; }
+    await _logEnvioWhatsapp(d.id, periodo, texto, enviado, erro);
+    if (enviado) ok++; else falha++;
+  }
+  smToast(`Resumo da ${nomeP} disparado — ${ok} envio(s) ok${falha ? `, ${falha} falha(s)` : ''}.`);
 }
 
 // ══════════════════════════════════════════
