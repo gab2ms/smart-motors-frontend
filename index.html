@@ -2233,7 +2233,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
             <optgroup label="Fixas mensais">
               <option>Aluguel e Condomínio</option>
               <option>Funcionários</option>
-              <option>SÓCIOS</option>
+              <option>Sócios</option>
               <option>Empréstimos</option>
               <option>Marketing</option>
               <option>Sistemas / Ferramenta Gestão</option>
@@ -2245,7 +2245,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
             </optgroup>
             <optgroup label="Variáveis">
               <option>Fornecedores</option>
-              <option>Jonosake</option>
+              <option>Parcerias Comerciais</option>
               <option>Montagem</option>
               <option>Serviços Terceirizados</option>
               <option>Nota Fiscal e Imposto</option>
@@ -8874,9 +8874,9 @@ async function sincFinanceiro() {
 // ══════════════════════════════════════════
 const CATEGORIAS_SMART = [
   'Motonetas','Acessórios','Rendimento Conta','Estorno','Aportes','Comissão Indicação',
-  'Aluguel e Condomínio','Funcionários','SÓCIOS','Empréstimos','Marketing',
+  'Aluguel e Condomínio','Funcionários','Sócios','Empréstimos','Marketing',
   'Sistemas / Ferramenta Gestão','Seguro','Segurança','Telecomunicação, Internet',
-  'Água, Luz, Internet','Veículos, transportes','Fornecedores','Jonosake',
+  'Água, Luz, Internet','Veículos, transportes','Fornecedores','Parcerias Comerciais',
   'Montagem','Serviços Terceirizados','Nota Fiscal e Imposto',
   'Taxas','Compras Gerais','Investimentos','Acerto de Caixa','Bloqueado','Outros',
 ];
@@ -9921,7 +9921,7 @@ function mapearCategoria(cat) {
   const c = cat.toLowerCase();
   if (c.includes('aluguel') || c.includes('condomin'))  return 'Aluguel e Condomínio';
   if (c.includes('funcionario') || c.includes('salario') || c.includes('funcionário')) return 'Funcionários';
-  if (c.includes('socio') || c.includes('sócio') || c.includes('pro-labore') || c.includes('pró-labore')) return 'SÓCIOS';
+  if (c.includes('socio') || c.includes('sócio') || c.includes('pro-labore') || c.includes('pró-labore')) return 'Sócios';
   if (c.includes('emprest'))                            return 'Empréstimos';
   if (c.includes('marketing') || c.includes('ads') || c.includes('trafego') || c.includes('tráfego')) return 'Marketing';
   if (c.includes('sistema') || c.includes('ferramenta') || c.includes('software') || c.includes('erp')) return 'Sistemas / Ferramenta Gestão';
@@ -9931,7 +9931,7 @@ function mapearCategoria(cat) {
   if (c.includes('agua') || c.includes('água') || c.includes('luz') || c.includes('energia') || c.includes('light')) return 'Água, Luz, Internet';
   if (c.includes('veiculo') || c.includes('veículo') || c.includes('combustivel') || c.includes('combustível') || c.includes('frete') || c.includes('transporte')) return 'Veículos, transportes';
   if (c.includes('fornecedor'))                         return 'Fornecedores';
-  if (c.includes('jonosake'))                           return 'Jonosake';
+  if (c.includes('jonosake'))                           return 'Parcerias Comerciais';
   if (c.includes('montagem'))                           return 'Montagem';
   if (c.includes('manutencao') || c.includes('manutenção') || c.includes('servico tecnico') || c.includes('serviço técnico')) return 'Oficina - Peças e Serviços';
   if (c.includes('terceirizado'))                       return 'Serviços Terceirizados';
@@ -10048,7 +10048,7 @@ function renderCPImportList() {
             <div>
               <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.7px;font-weight:700;margin-bottom:4px;">Categoria <span style="color:var(--gold);">(auto)</span></div>
               <select class="form-input" id="cp-cat-${i}" style="font-size:12px;padding:6px 10px;" ${jaImportada?'disabled':''}>
-                ${['Aluguel e Condomínio','Funcionários','SÓCIOS','Empréstimos','Marketing','Sistemas / Ferramenta Gestão','Seguro','Segurança','Telecomunicação, Internet','Água, Luz, Internet','Veículos, transportes','Fornecedores','Jonosake','Montagem','Serviços Terceirizados','Nota Fiscal e Imposto','Taxas','Compras Gerais','Investimentos','Acerto de Caixa','Outros']
+                ${['Aluguel e Condomínio','Funcionários','Sócios','Empréstimos','Marketing','Sistemas / Ferramenta Gestão','Seguro','Segurança','Telecomunicação, Internet','Água, Luz, Internet','Veículos, transportes','Fornecedores','Parcerias Comerciais','Montagem','Serviços Terceirizados','Nota Fiscal e Imposto','Taxas','Compras Gerais','Investimentos','Acerto de Caixa','Outros']
                   .map(cat=>`<option value="${cat}" ${cat===catSugerida?'selected':''}>${cat}</option>`).join('')}
               </select>
             </div>
@@ -15550,7 +15550,7 @@ renderDashboard();
             <option value="Aluguel e Condomínio">Aluguel e Condomínio</option>
             <option value="Funcionários">Funcionários</option>
             <option value="Comissão de Vendas">Comissão de Vendas</option>
-            <option value="SÓCIOS">SÓCIOS</option>
+            <option value="Sócios">Sócios</option>
             <option value="Empréstimos">Empréstimos</option>
             <option value="Marketing">Marketing</option>
             <option value="Sistemas / Ferramenta Gestão">Sistemas / Ferramenta Gestão</option>
@@ -15563,7 +15563,7 @@ renderDashboard();
           </optgroup>
           <optgroup label="↓ Saídas variáveis">
             <option value="Fornecedores">Fornecedores</option>
-            <option value="Jonosake">Jonosake</option>
+            <option value="Parcerias Comerciais">Parcerias Comerciais</option>
             <option value="Montagem">Montagem</option>
             <option value="Serviços Terceirizados">Serviços Terceirizados</option>
             <option value="Oficina - Peças e Serviços">Oficina - Peças e Serviços</option>
