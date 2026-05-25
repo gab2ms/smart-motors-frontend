@@ -14661,7 +14661,7 @@ async function _contratoGerarPdf() {
 // ══════════════════════════════════════════
 const WA_NUMBER  = '5521997507738';
 const WA_APIKEY  = '6372158';
-const WA_API_URL = 'https://api.callmebot.com/whatsapp.php';
+const WA_API_URL = 'https://api.textmebot.com/send.php';
 
 // Envio parametrizado — base de qualquer disparo (notificações de evento,
 // teste de destinatário, resumos). CallMeBot responde texto simples; no-cors
@@ -14670,7 +14670,7 @@ const WA_API_URL = 'https://api.callmebot.com/whatsapp.php';
 async function _enviarWhatsAppRaw(numero, apikey, mensagem) {
   if (!mensagem || !numero || !apikey) return false;
   try {
-    const url = `${WA_API_URL}?phone=${encodeURIComponent(numero)}&text=${encodeURIComponent(mensagem)}&apikey=${encodeURIComponent(apikey)}`;
+    const url = `${WA_API_URL}?recipient=+${encodeURIComponent(numero)}&text=${encodeURIComponent(mensagem)}&apikey=${encodeURIComponent(apikey)}`;
     await fetch(url, { method: 'GET', mode: 'no-cors' });
     console.log('[whatsapp] enviado p/', numero, ':', mensagem.split('\n')[0]);
     return true;
