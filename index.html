@@ -13292,7 +13292,11 @@ async function _montagensSetStatus(itemId, novoStatus) {
   let payload;
   if (novoStatus === 'recebida') {
     const data = await _montagensPedirData('Data de recebimento');
-    if (!data) { await initMontagens(); return; } // cancelou → re-render restaura o select
+    if (!data) {
+      smAlert('Operação cancelada — status não foi alterado.');
+      await initMontagens(); // re-render restaura o select
+      return;
+    }
     payload = { status_montagem: 'recebida', data_recebimento: data };
   } else {
     // Sair de 'recebida' (ou trocar entre fila/montando/montada) → zera data_recebimento.
@@ -13311,7 +13315,7 @@ async function _montagensReceberLoteCompleto(loteId) {
   const naoRecebidas = montagensItens.filter(i => i.loteId === loteId && i.statusMontagem !== 'recebida');
   if (!naoRecebidas.length) { smAlert('Todas as motos deste lote já estão recebidas.'); return; }
   const data = await _montagensPedirData(`Receber ${naoRecebidas.length} moto${naoRecebidas.length===1?'':'s'} do LOTE-${String(lote.numeroLote).padStart(4,'0')}`);
-  if (!data) return;
+  if (!data) { smAlert('Operação cancelada — nenhuma moto foi marcada como recebida.'); return; }
   const { error } = await sb.from('montagens_itens')
     .update({ status_montagem: 'recebida', data_recebimento: data })
     .eq('lote_id', loteId)
