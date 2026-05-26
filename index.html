@@ -1963,6 +1963,21 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       </div>
     </div>
 
+    <!-- SELETOR DE PERÍODO (afeta apenas os KPIs abaixo; a lista de lotes
+         continua usando os filtros próprios — montador, status, busca) -->
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+      <span style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.6px;">Período dos KPIs:</span>
+      <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;" id="mont-preset-row">
+        <button class="btn dash-preset-btn mont-preset-btn" data-preset="mes-atual"    onclick="setMontPeriodoPreset('mes-atual')"    style="font-size:10px;padding:5px 9px;">Este mês</button>
+        <button class="btn dash-preset-btn mont-preset-btn" data-preset="mes-anterior" onclick="setMontPeriodoPreset('mes-anterior')" style="font-size:10px;padding:5px 9px;">Mês anterior</button>
+        <button class="btn dash-preset-btn mont-preset-btn" data-preset="7d"           onclick="setMontPeriodoPreset('7d')"           style="font-size:10px;padding:5px 9px;">7 dias</button>
+        <button class="btn dash-preset-btn mont-preset-btn" data-preset="30d"          onclick="setMontPeriodoPreset('30d')"          style="font-size:10px;padding:5px 9px;">30 dias</button>
+      </div>
+      <input type="date" id="mont-periodo-ini" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;" onchange="onMontDateChange()">
+      <span style="color:var(--text3);font-size:11px;">até</span>
+      <input type="date" id="mont-periodo-fim" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;" onchange="onMontDateChange()">
+    </div>
+
     <div class="kpi-grid" id="mont-kpis"></div>
 
     <div class="card">
@@ -12039,8 +12054,8 @@ async function initMontagens() {
     selMontador.value = sel || '';
   }
 
-  renderMontagensKpis();
-  switchMontagensTab('andamento'); // reseta aba ao abrir + renderiza
+  setMontPeriodoPreset('mes-atual'); // popula inputs date + chama renderMontagensKpis
+  switchMontagensTab('andamento');   // reseta aba ao abrir + renderiza
 }
 
 function switchMontagensTab(t) {
@@ -12402,44 +12417,64 @@ function renderMontagens() {
     + grupoOrfaosHTML;
 }
 
+// Presets de período pros KPIs de montagens (mesma lógica de setPeriodoPreset
+// do dashboard de faturamento). Padrão = mês atual; preencher inputs date e
+// marcar o botão ativo. Mudança de input direto cai em onMontDateChange.
+function setMontPeriodoPreset(preset) {
+  const elIni = document.getElementById('mont-periodo-ini');
+  const elFim = document.getElementById('mont-periodo-fim');
+  if (!elIni || !elFim) return;
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  let ini, fim;
+  if (preset === 'mes-atual')         { ini = new Date(hoje.getFullYear(), hoje.getMonth(),     1); fim = hoje; }
+  else if (preset === 'mes-anterior') { ini = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1); fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0); }
+  else if (preset === '7d')           { fim = hoje; ini = new Date(hoje.getTime() -  6 * 86400000); }
+  else if (preset === '30d')          { fim = hoje; ini = new Date(hoje.getTime() - 29 * 86400000); }
+  else return;
+  elIni.value = ini.toISOString().split('T')[0];
+  elFim.value = fim.toISOString().split('T')[0];
+  document.querySelectorAll('.mont-preset-btn').forEach(b => b.classList.toggle('active', b.dataset.preset === preset));
+  renderMontagensKpis();
+}
+
+function onMontDateChange() {
+  document.querySelectorAll('.mont-preset-btn').forEach(b => b.classList.remove('active'));
+  renderMontagensKpis();
+}
+
 function renderMontagensKpis() {
   const el = document.getElementById('mont-kpis');
   if (!el) return;
-  const fila    = montagensItens.filter(i => i.statusMontagem === 'fila').length;
-  const montand = montagensItens.filter(i => i.statusMontagem === 'montando').length;
-  const itensEmMontagem = fila + montand;
-  const lotesAguardando = montagensLotes.filter(l => l.statusPagamento !== 'pago').length;
-  const mesPref = new Date().toISOString().slice(0, 7); // YYYY-MM
-  const pagoNoMes = montagensPagamentos
-    .filter(p => (p.dataPagamento || '').startsWith(mesPref))
-    .reduce((acc, p) => acc + Number(p.valor || 0), 0);
-  const enviadoNoMes = montagensLotes
-    .filter(l => (l.dataEnvio || '').startsWith(mesPref))
-    .reduce((acc, l) => acc + Number(l.valorTotal || 0), 0);
-  // Tempo médio de montagem: dias entre data_envio e data_ultimo_recebimento
-  // dos lotes com TODAS as motos recebidas que foram recebidos no mês atual.
-  const lotesRecebidosMes = montagensLotes.filter(l => {
-    if (!l.dataUltimoRecebimento || !l.dataUltimoRecebimento.startsWith(mesPref)) return false;
-    const its = montagensItens.filter(i => i.loteId === l.id);
-    return its.length > 0 && its.every(i => i.statusMontagem === 'recebida');
-  });
-  let tempoMedio = null;
-  if (lotesRecebidosMes.length > 0) {
-    const dias = lotesRecebidosMes.map(l =>
-      Math.max(0, Math.round((new Date(l.dataUltimoRecebimento) - new Date(l.dataEnvio)) / 86400000))
-    );
-    tempoMedio = dias.reduce((a, d) => a + d, 0) / dias.length;
-  }
-  const tempoMedioTxt = tempoMedio !== null
-    ? tempoMedio.toFixed(1).replace('.', ',') + ' dias'
-    : '—';
+  const ini = document.getElementById('mont-periodo-ini')?.value || '';
+  const fim = document.getElementById('mont-periodo-fim')?.value || '';
+  const noPeriodo = d => !!d && (!ini || d >= ini) && (!fim || d <= fim);
+
+  // 1) Em montagem AGORA — estado atual, ignora período. Motos individuais
+  //    (não lotes), pois um lote pode ter parte recebida e parte na fila.
+  const fila  = montagensItens.filter(i => i.statusMontagem === 'fila').length;
+  const montd = montagensItens.filter(i => i.statusMontagem === 'montando').length;
+  const emMontagem = fila + montd;
+
+  // 2) Enviadas no período — somar motos dos lotes com data_envio no período.
+  const lotesEnv = montagensLotes.filter(l => noPeriodo(l.dataEnvio));
+  const enviadas = lotesEnv.reduce((s, l) => s + montagensItens.filter(i => i.loteId === l.id).length, 0);
+
+  // 3) Recebidas no período — itens com data_recebimento no período.
+  const recebidas = montagensItens.filter(i => noPeriodo(i.dataRecebimento)).length;
+
+  // 4/5) Pago e A pagar — filtro pela data de ENVIO do lote (não pela data
+  //      do pagamento), pra ser consistente com #2 e não misturar pagamento
+  //      de mês passado referente a lote enviado neste mês.
+  const pago   = lotesEnv.reduce((s, l) => s + Number(l.valorPago || 0), 0);
+  const aPagar = lotesEnv.reduce((s, l) => s + Math.max(0, Number(l.valorTotal || 0) - Number(l.valorPago || 0)), 0);
+
   const fmtBR = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
   el.innerHTML =
-      `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">🔴 Em montagem</div><div class="kpi-value red">${itensEmMontagem}</div><div class="kpi-change">${fila} fila · ${montand} montando</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">🟡 Aguardando pgto</div><div class="kpi-value gold">${lotesAguardando}</div><div class="kpi-change">lotes pendente/parcial</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">🟢 Pago no mês</div><div class="kpi-value green">${fmtBR(pagoNoMes)}</div><div class="kpi-change">pagamentos do mês</div></div>`
-    + `<div class="kpi"><div class="kpi-label">📊 Enviado no mês</div><div class="kpi-value">${fmtBR(enviadoNoMes)}</div><div class="kpi-change">valor de lotes do mês</div></div>`
-    + `<div class="kpi" style="border-top:2px solid #5096ff;"><div class="kpi-label">⏱️ Tempo médio</div><div class="kpi-value" style="color:#5096ff;">${tempoMedioTxt}</div><div class="kpi-change">montagem no mês atual</div></div>`;
+      `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">🔴 Em montagem agora</div><div class="kpi-value red">${emMontagem}</div><div class="kpi-change">${fila} fila · ${montd} montando</div></div>`
+    + `<div class="kpi"><div class="kpi-label">📤 Enviadas no período</div><div class="kpi-value">${enviadas}</div><div class="kpi-change">${lotesEnv.length} lote${lotesEnv.length===1?'':'s'} no período</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">✅ Recebidas no período</div><div class="kpi-value green">${recebidas}</div><div class="kpi-change">motos individuais</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">💰 Pago no período</div><div class="kpi-value green">${fmtBR(pago)}</div><div class="kpi-change">de lotes enviados</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">⏳ A pagar</div><div class="kpi-value gold">${fmtBR(aPagar)}</div><div class="kpi-change">de lotes enviados</div></div>`;
 }
 
 // ── Modal "Novo lote" / "Editar lote" ──
