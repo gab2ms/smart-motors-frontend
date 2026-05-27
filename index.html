@@ -2992,6 +2992,102 @@ function mcBar(pct){
 }
 
 // ══════════════════════════════════════════
+//  PREÇO DE VENDA — FONTE OFICIAL = TINY
+// ══════════════════════════════════════════
+// CUSTO vem do Supabase (Custos de Produtos é a fonte oficial — Gabriel edita só lá).
+// VENDA vem do Tiny (vendedores atualizam no PDV todo dia). Esta seção carrega
+// preços do Tiny on-demand (primeira tela que precise dispara o fetch) e mantém
+// cache local de 30min alinhado com o cache backend (/produtos PRODUTOS_CACHE_TTL).
+// Match products[i].modelo ↔ produto Tiny usa _matchProdutoPorNome invertido.
+let _TINY_PRECOS_CACHE   = null;            // { ts, items: [{nome, preco}, ...] }
+let _TINY_PRECOS_FETCH   = null;            // Promise em vôo (evita refetch concorrente)
+let TINY_PRECOS_IDX      = new Map();       // products[i].modelo → preço Tiny
+let TINY_PRECOS_SEM_MATCH = [];             // products[i].modelo SEM correspondência no Tiny
+const TINY_PRECOS_TTL_MS = 30 * 60 * 1000;
+
+function _tinyPrecosCacheValido() {
+  return _TINY_PRECOS_CACHE && (Date.now() - _TINY_PRECOS_CACHE.ts) < TINY_PRECOS_TTL_MS;
+}
+
+// Reconstrói o índice modelo→preço usando o matcher invertido. Iterando
+// produtos Tiny e chamando _matchProdutoPorNome garante consistência com
+// o que o DRE/ranking já fazem em outras telas.
+function _rebuildTinyPrecosIdx() {
+  TINY_PRECOS_IDX = new Map();
+  TINY_PRECOS_SEM_MATCH = [];
+  if (!_TINY_PRECOS_CACHE) return;
+  const modelosBatidos = new Set();
+  for (const t of _TINY_PRECOS_CACHE.items) {
+    const prod = _matchProdutoPorNome(t.nome);
+    if (prod && prod.modelo) {
+      // Se um produto cadastrado bate com vários itens Tiny, mantém o primeiro
+      // preço (geralmente o canônico). Variantes com preço 0 não sobrescrevem.
+      if (!TINY_PRECOS_IDX.has(prod.modelo) || (Number(t.preco) > 0 && !TINY_PRECOS_IDX.get(prod.modelo))) {
+        TINY_PRECOS_IDX.set(prod.modelo, Number(t.preco) || 0);
+      }
+      modelosBatidos.add(prod.modelo);
+    }
+  }
+  // Lista de products[].modelo que nunca apareceram em nenhum item Tiny —
+  // serve pra Gabriel decidir caso a caso (cadastrar no Tiny / renomear / desativar).
+  for (const p of (products || [])) {
+    if (p && p.ativo !== false && p.modelo && !modelosBatidos.has(p.modelo)) {
+      TINY_PRECOS_SEM_MATCH.push(p.modelo);
+    }
+  }
+  if (TINY_PRECOS_SEM_MATCH.length) {
+    console.warn('[tiny-precos] products[] sem match no Tiny:', TINY_PRECOS_SEM_MATCH);
+  }
+}
+
+// On-demand: chamada por toda render() que precise de preço Tiny. Cache válido?
+// retorna instantâneo. Senão dispara fetch único (subsequentes esperam o mesmo).
+async function carregarTinyPrecos({ force = false } = {}) {
+  if (!force && _tinyPrecosCacheValido()) return;
+  if (_TINY_PRECOS_FETCH) return _TINY_PRECOS_FETCH;
+  _TINY_PRECOS_FETCH = (async () => {
+    try {
+      const items = [];
+      let pagina = 1, totalPaginas = 1;
+      do {
+        const r = await fetch(`${API_URL}/produtos?situacao=A&comEstoque=0&pagina=${pagina}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        for (const p of (data.produtos || [])) {
+          items.push({ nome: p.nome || '', preco: Number(p.preco) || 0 });
+        }
+        totalPaginas = Number(data.totalPaginas) || 1;
+        pagina++;
+      } while (pagina <= totalPaginas && pagina <= 50);
+      _TINY_PRECOS_CACHE = { ts: Date.now(), items };
+      _rebuildTinyPrecosIdx();
+    } catch (e) {
+      console.warn('[tiny-precos] falha ao carregar:', e.message);
+      // Degrada: índice fica vazio, telas mostram "—". Cache não-válido pra
+      // que próxima render tente de novo.
+    } finally {
+      _TINY_PRECOS_FETCH = null;
+    }
+  })();
+  return _TINY_PRECOS_FETCH;
+}
+
+// Lookup síncrono O(1). Retorna 0 quando o produto não bateu com nenhum item
+// Tiny — chamadores tratam 0 como "sem dado" (mostram "—" ou pulam cálculo).
+function _precoTinyDe(p) {
+  if (!p || !p.modelo) return 0;
+  return TINY_PRECOS_IDX.get(p.modelo) || 0;
+}
+
+// Helpers de margem com preço Tiny. Paralelos ao mc/mcp legacy — estes leem
+// p.venda do objeto e são mantidos pros modais que montam objetos sintéticos.
+const mcReal  = p => _precoTinyDe(p) - ct(p);
+const mcpReal = p => {
+  const v = _precoTinyDe(p);
+  return v > 0 ? (mcReal(p) / v) * 100 : 0;
+};
+
+// ══════════════════════════════════════════
 //  PAGE ROUTING
 // ══════════════════════════════════════════
 const pageMeta={
@@ -3684,9 +3780,10 @@ function esconderBootLoader() {
 
 
 // ── KPIs internos (sem API) ─────────────────
-function renderDashInternal(){
-  const avgMC      = products.length ? products.reduce((s,p)=>s+mcp(p),0)/products.length : 0;
-  const lowCount   = products.filter(p=>mcp(p)<15).length;
+async function renderDashInternal(){
+  await carregarTinyPrecos();
+  const avgMC      = products.length ? products.reduce((s,p)=>s+mcpReal(p),0)/products.length : 0;
+  const lowCount   = products.filter(p=>mcpReal(p)<15).length;
   // Achata parcelas mantendo referência ao credor pra título/click.
   const todasParc = (emprestimos||[]).flatMap(e =>
     (e.pagamentos||[]).map(p => ({ ...p, _credor: e.nome }))
@@ -3743,29 +3840,32 @@ function renderDashInternal(){
 }
 
 // ── Top 5 e alertas ────────────────────────
-function renderDashMargens(){
+async function renderDashMargens(){
   if (!products || !products.length) {
     document.getElementById('dash-top-margins').innerHTML = '<tr><td colspan="3" class="empty" style="padding:16px;font-size:11px;">Sincronize os produtos na aba Produtos & Estoque</td></tr>';
     document.getElementById('dash-low-margins').innerHTML = '<tr><td colspan="3" class="empty" style="padding:16px;font-size:11px;">—</td></tr>';
     return;
   }
-  const sorted = [...products].sort(function(a,b){return mcp(b)-mcp(a);});
+  await carregarTinyPrecos();
+  const sorted = [...products].sort(function(a,b){return mcpReal(b)-mcpReal(a);});
   var topRows = '';
   sorted.slice(0,5).forEach(function(p){
+    var vendaTiny = _precoTinyDe(p);
     topRows += '<tr onclick="showPage(&quot;precos&quot;)" style="cursor:pointer;">'
       + '<td class="td-model" style="font-size:12px;">' + p.modelo + '</td>'
-      + '<td class="td-mono" style="font-size:11px;">' + fmt(p.venda) + '</td>'
-      + '<td>' + mcBadge(mcp(p)) + '</td></tr>';
+      + '<td class="td-mono" style="font-size:11px;">' + (vendaTiny > 0 ? fmt(vendaTiny) : '—') + '</td>'
+      + '<td>' + mcBadge(mcpReal(p)) + '</td></tr>';
   });
   document.getElementById('dash-top-margins').innerHTML = topRows || '<tr><td colspan="3" class="empty">—</td></tr>';
 
-  const low = products.filter(function(p){return mcp(p)<15;});
+  const low = products.filter(function(p){return mcpReal(p)<15;});
   var lowRows = '';
   low.forEach(function(p){
+    var vendaTiny = _precoTinyDe(p);
     lowRows += '<tr onclick="showPage(&quot;precos&quot;)" style="cursor:pointer;">'
       + '<td class="td-model" style="font-size:12px;">' + p.modelo + '</td>'
-      + '<td class="td-mono" style="font-size:11px;">' + fmt(p.venda) + '</td>'
-      + '<td>' + mcBadge(mcp(p)) + '</td></tr>';
+      + '<td class="td-mono" style="font-size:11px;">' + (vendaTiny > 0 ? fmt(vendaTiny) : '—') + '</td>'
+      + '<td>' + mcBadge(mcpReal(p)) + '</td></tr>';
   });
   document.getElementById('dash-low-margins').innerHTML = low.length
     ? lowRows
@@ -4052,7 +4152,7 @@ function _isAdminUser() {
   } catch(e) { return false; }
 }
 
-function renderizarRankingScooters(ranking, receitaTotal) {
+async function renderizarRankingScooters(ranking, receitaTotal) {
   var el  = document.getElementById('dash-ranking-body');
   var sub = document.getElementById('dash-ranking-sub');
   if (!el) return;
@@ -4062,6 +4162,8 @@ function renderizarRankingScooters(ranking, receitaTotal) {
     el.innerHTML = '<div class="empty" style="padding:20px;font-size:11px;">Nenhuma venda no período.<br>Verifique se os pedidos têm itens no Tiny.</div>';
     return;
   }
+
+  await carregarTinyPrecos();
 
   var maxQtd = ranking[0].qtd || 1;
   if (sub) sub.textContent = 'Top ' + ranking.length + ' modelos · dados do Tiny ERP';
@@ -4074,16 +4176,16 @@ function renderizarRankingScooters(ranking, receitaTotal) {
     var recPct  = receitaTotal > 0 ? (item.receita/receitaTotal*100).toFixed(1) : '0';
     var barColor = i===0?'var(--gold)':i<3?'var(--green)':'var(--text3)';
 
-    // MC% só para admin — calcula a partir de produtos_precos
+    // MC% só para admin — calcula com preço Tiny via mcpReal
     var mcHTML = '';
     if (isAdmin) {
       var prod = _matchProdutoPorNome(item.nome);
-      if (prod && prod.venda) {
-        var m = mcp(prod);
+      if (prod && _precoTinyDe(prod) > 0) {
+        var m = mcpReal(prod);
         var cor = m >= 30 ? 'var(--gold)' : m >= 15 ? 'var(--orange)' : 'var(--red)';
-        mcHTML = '<span style="font-size:10px;color:' + cor + ';font-weight:700;font-family:var(--mono,monospace);" title="MC% bruta de ' + prod.modelo + '">MC ' + m.toFixed(1) + '%</span>';
+        mcHTML = '<span style="font-size:10px;color:' + cor + ';font-weight:700;font-family:var(--mono,monospace);" title="MC% bruta de ' + prod.modelo + ' (preco Tiny)">MC ' + m.toFixed(1) + '%</span>';
       } else {
-        mcHTML = '<span style="font-size:10px;color:var(--text3);font-family:var(--mono,monospace);" title="modelo nao encontrado em produtos_precos">MC —</span>';
+        mcHTML = '<span style="font-size:10px;color:var(--text3);font-family:var(--mono,monospace);" title="modelo sem preco no Tiny ou nao cadastrado">MC —</span>';
       }
     }
 
@@ -4396,7 +4498,7 @@ async function gerarFechamentoMes() {
 
     vendasArr.forEach(v => {
       const prod = _matchProdutoPorNome(v.nome);
-      if (prod && prod.venda) {
+      if (prod && _precoTinyDe(prod) > 0) {
         v.custoUnit = ct(prod);
         v.mcRS  = v.receita - v.custoUnit * v.qtd;
         v.mcPct = v.receita > 0 ? (v.mcRS / v.receita) * 100 : 0;
@@ -4717,11 +4819,12 @@ async function carregarFaturamentoDash(forcar) {
       return p[2]+'/'+p[1]+'/'+p[0];
     };
 
-    // Período atual + anterior em paralelo
+    // Período atual + anterior + preços Tiny (avgMCpct usa preço Tiny) em paralelo
     var anterior = calcPeriodoAnterior(iniISO, fimISO);
     var resultados = await Promise.all([
       buscarPedidosCompletos(fmtDate(iniISO), fmtDate(fimISO), forcar),
       buscarPedidosCompletos(fmtDate(anterior.ini), fmtDate(anterior.fim), forcar),
+      carregarTinyPrecos(),
     ]);
     var pedidos    = resultados[0];
     var pedidosAnt = resultados[1];
@@ -4739,7 +4842,7 @@ async function carregarFaturamentoDash(forcar) {
     var totalPedidos = kc.qtd;
     var ticketMedio  = kc.ticket;
     var custoFixoMensal = _despPlanejadoHistorico().media;
-    var avgMCpct    = products.length ? products.reduce(function(s,p){return s+mcp(p);},0)/products.length/100 : 0;
+    var avgMCpct    = products.length ? products.reduce(function(s,p){return s+mcpReal(p);},0)/products.length/100 : 0;
     var lucroBruto  = receitaTotal * avgMCpct;
     // Lucro bruto do período anterior (para o delta comparativo).
     // O lucro líquido saiu daqui — o widget DRE é a fonte autoritativa.
@@ -5095,11 +5198,15 @@ async function calcularDRE(iniISO, fimISO) {
     console.warn('[calcularDRE] falha ao buscar pedidos:', e.message);
   }
 
+  // avgMCpct usa preço do Tiny (fonte oficial). Sem Tiny carregado o índice
+  // fica vazio, mcpReal retorna 0 e cai pro caso "todos zero" → avgMCpct=0.
+  await carregarTinyPrecos();
+
   // Só produtos ativos entram na média de MC% do CPV estimado.
   // `ativo !== false` → registros antigos/seed sem a flag contam como ativos.
   const produtosAtivos = (products || []).filter(p => p.ativo !== false);
   const avgMCpct = produtosAtivos.length
-    ? produtosAtivos.reduce((s,p) => s + mcp(p), 0) / produtosAtivos.length / 100
+    ? produtosAtivos.reduce((s,p) => s + mcpReal(p), 0) / produtosAtivos.length / 100
     : 0;
   // CPV real (estrutura Custos de Produtos): por item matchado soma
   // custoPuro + montagem + comissão; a NF entra 1× por pedido
@@ -5429,7 +5536,7 @@ function _dashDreIrDespesas(mesAtual) {
 // ══════════════════════════════════════════
 //  PREÇOS
 // ══════════════════════════════════════════
-function renderPrecos(){
+async function renderPrecos(){
   const sel=document.getElementById('filter-fornecedor');
   if(sel.options.length<=0){
     sel.innerHTML='<option value="">Todos fornecedores</option>';
@@ -5444,6 +5551,7 @@ function renderPrecos(){
       const o=document.createElement('option');o.value=i;o.textContent=p.modelo;selPM.appendChild(o);
     });
   }
+  await carregarTinyPrecos();
   const q=(document.getElementById('search-modelo')?.value||'').toLowerCase();
   const forn=document.getElementById('filter-fornecedor')?.value||'';
   const marg=document.getElementById('filter-margem')?.value||'';
@@ -5453,7 +5561,7 @@ function renderPrecos(){
     if(!mostrarInativos&&p.ativo===false)return false;
     if(q&&!p.modelo.toLowerCase().includes(q))return false;
     if(forn&&p.fornecedor!==forn)return false;
-    const m=mcp(p);
+    const m=mcpReal(p);
     if(marg==='alta'&&m<30)return false;
     if(marg==='media'&&(m<15||m>=30))return false;
     if(marg==='baixa'&&m>=15)return false;
@@ -5461,7 +5569,10 @@ function renderPrecos(){
   });
 
   document.getElementById('precos-count').textContent=`${filtered.length} produto${filtered.length!==1?'s':''} encontrado${filtered.length!==1?'s':''}`;
-  document.getElementById('precos-table').innerHTML=filtered.length?filtered.map(p=>`
+  document.getElementById('precos-table').innerHTML=filtered.length?filtered.map(p=>{
+    const vendaTiny=_precoTinyDe(p);
+    const mR=mcReal(p), mpR=mcpReal(p);
+    return `
     <tr${p.ativo===false?' style="opacity:0.5;"':''}>
       <td class="td-model">${p.ativo===false
         ?`<s>${escHtml(p.modelo)}</s> <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;">inativo</span>`
@@ -5469,14 +5580,15 @@ function renderPrecos(){
       <td><span class="td-supplier">${escHtml(p.fornecedor)}</span></td>
       <td class="td-mono">${fmt(p.custo)}</td>
       <td class="td-mono">${fmt(ct(p))}</td>
-      <td class="td-mono" style="font-weight:700;">${fmt(p.venda)}</td>
-      <td class="td-mono" style="color:${mc(p)>=0?'var(--green)':'var(--red)'};">${mc(p)<0?'-':''}${fmt(Math.abs(mc(p)))}</td>
-      <td>${mcBar(mcp(p))}</td>
+      <td class="td-mono" style="font-weight:700;">${vendaTiny>0?fmt(vendaTiny):'<span style="color:var(--text3);">—</span>'}</td>
+      <td class="td-mono" style="color:${vendaTiny>0?(mR>=0?'var(--green)':'var(--red)'):'var(--text3)'};">${vendaTiny>0?((mR<0?'-':'')+fmt(Math.abs(mR))):'—'}</td>
+      <td>${vendaTiny>0?mcBar(mpR):'<span style="color:var(--text3);font-size:11px;">—</span>'}</td>
       <td><div class="row-actions">
         <button class="action-btn edit-btn" onclick="openEdit(${p._i})">Editar</button>
         <button class="action-btn del-btn" onclick="delProduct(${p._i})">Del</button>
       </div></td>
-    </tr>`).join('')
+    </tr>`;
+  }).join('')
     :`<tr><td colspan="8" class="empty">Nenhum produto encontrado</td></tr>`;
 }
 
@@ -5485,7 +5597,7 @@ function renderPrecos(){
 // ══════════════════════════════════════════
 // Listagem dos componentes de custo da estrutura nova (custoPuro,
 // montagem, comissao, categoria) + ctReal calculado. Edição: Sub-commit 4b.
-function renderCustosProdutos(){
+async function renderCustosProdutos(){
   const nfEl=document.getElementById('cp-nf-valor');
   if(nfEl)nfEl.textContent=fmt(CONFIG_CUSTOS.nf_pedido||0);
 
@@ -5496,6 +5608,7 @@ function renderCustosProdutos(){
       const o=document.createElement('option');o.value=s;o.textContent=s;selF.appendChild(o);
     });
   }
+  await carregarTinyPrecos();
   const q=(document.getElementById('cp-search')?.value||'').toLowerCase();
   const forn=document.getElementById('cp-filter-fornecedor')?.value||'';
   const cat=document.getElementById('cp-filter-categoria')?.value||'';
@@ -5513,9 +5626,11 @@ function renderCustosProdutos(){
   document.getElementById('cp-count').textContent=`${filtered.length} produto${filtered.length!==1?'s':''}`;
   document.getElementById('cp-table').innerHTML=filtered.length?filtered.map(p=>{
     const ctr=ctReal(p);
-    const venda=p.venda||0;
-    const mcpReal=venda>0?((venda-ctr)/venda*100):0;
-    const mcCor=mcpReal>=30?'var(--gold)':mcpReal>=15?'var(--orange)':'var(--red)';
+    // Preço de venda vem do Tiny (fonte oficial). 0 = sem match → mostra "—".
+    const venda=_precoTinyDe(p);
+    const temVenda=venda>0;
+    const mcpV=temVenda?((venda-ctr)/venda*100):0;
+    const mcCor=!temVenda?'var(--text3)':mcpV>=30?'var(--gold)':mcpV>=15?'var(--orange)':'var(--red)';
     const inativo=p.ativo===false;
     const catLabel=(p.categoria||'motoneta')==='acessorio'?'Acessório':'Motoneta';
     return `<tr onclick="cpOpenEdit(${p._i})" style="cursor:pointer;${inativo?'opacity:0.5;':''}">
@@ -5528,8 +5643,8 @@ function renderCustosProdutos(){
       <td class="td-mono">${fmt(p.montagem||0)}</td>
       <td class="td-mono">${fmt(p.comissao||0)}</td>
       <td class="td-mono" style="font-weight:700;">${fmt(ctr)}</td>
-      <td class="td-mono">${fmt(venda)}</td>
-      <td class="td-mono" style="color:${mcCor};font-weight:700;">${fmtP(mcpReal)}</td>
+      <td class="td-mono">${temVenda?fmt(venda):'<span style="color:var(--text3);">—</span>'}</td>
+      <td class="td-mono" style="color:${mcCor};font-weight:700;">${temVenda?fmtP(mcpV):'—'}</td>
     </tr>`;
   }).join('')
     :`<tr><td colspan="9" class="empty">Nenhum produto encontrado</td></tr>`;
@@ -5645,7 +5760,7 @@ async function cpSaveNf(){
 // ══════════════════════════════════════════
 //  MODAL
 // ══════════════════════════════════════════
-function openEdit(i){
+async function openEdit(i){
   const p=products[i];
   document.getElementById('modal-title').innerHTML=`Editar — <span>${escHtml(p.modelo)}</span>`;
   document.getElementById('edit-idx').value=i;
@@ -5659,10 +5774,19 @@ function openEdit(i){
   document.getElementById('edit-nf').value=p.nf||0;
   document.getElementById('edit-jonosake').value=p.jonosake||0;
   document.getElementById('edit-financeiro').value=p.financeiro||0;
-  document.getElementById('edit-venda').value=p.venda||0;
   document.getElementById('edit-ativo').checked=p.ativo!==false;
-  updateModalComputed();
   document.getElementById('edit-modal').classList.add('open');
+  // Pré-preenche venda com preço Tiny atual (fonte oficial). Fallback: p.venda
+  // histórico do Supabase se não bateu com Tiny. Modal abre na frente já com
+  // valor antigo pra responsividade, e atualiza quando Tiny resolve.
+  document.getElementById('edit-venda').value=p.venda||0;
+  updateModalComputed();
+  await carregarTinyPrecos();
+  const vendaTiny=_precoTinyDe(p);
+  if (vendaTiny>0) {
+    document.getElementById('edit-venda').value=vendaTiny;
+    updateModalComputed();
+  }
 }
 function closeModal(){document.getElementById('edit-modal').classList.remove('open');}
 // Botão "Ir pra Custos de Produtos" do modal de #precos — leva o produto
@@ -6463,12 +6587,13 @@ async function carregarVendasDoMes() {
   }
 }
 
-function renderizarDREVendas(pedidos) {
+async function renderizarDREVendas(pedidos) {
+  await carregarTinyPrecos();
   var receitaTotal = pedidos.reduce(function(s,p){return s+(p.valor||0);}, 0);
   var qtdPedidos   = pedidos.length;
   var ticketMedio  = qtdPedidos > 0 ? receitaTotal / qtdPedidos : 0;
   var custoFixo    = _despPlanejadoHistorico().media;
-  var avgMC        = products.length ? products.reduce(function(s,p){return s+mcp(p);},0)/products.length/100 : 0;
+  var avgMC        = products.length ? products.reduce(function(s,p){return s+mcpReal(p);},0)/products.length/100 : 0;
   var lucroBruto   = receitaTotal * avgMC;
   // Lucro líquido saiu daqui — widget DRE do Dashboard é a fonte única.
 
