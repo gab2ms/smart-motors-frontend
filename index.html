@@ -1109,6 +1109,14 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-icon">📈</span> Vendas do Mês
       <span class="nav-dot"></span>
     </button>
+    <button class="nav-item" onclick="showPage('pdv')" id="nav-pdv">
+      <span class="nav-icon">🛒</span> PDV
+      <span class="nav-dot"></span>
+    </button>
+    <button class="nav-item" onclick="showPage('pdv-pedidos')" id="nav-pdv-pedidos">
+      <span class="nav-icon">📋</span> Pedidos PDV
+      <span class="nav-dot"></span>
+    </button>
     <button class="nav-item" onclick="showPage('pdv-vendedores')" id="nav-pdv-vendedores">
       <span class="nav-icon">🧑‍💼</span> Vendedores PDV
       <span class="nav-dot"></span>
@@ -2496,6 +2504,33 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     <div id="custos-secoes"></div>
   </div>
 
+  <!-- ══════════════ PDV — TELA PRINCIPAL (painel + wizard) ══════════════ -->
+  <div class="page content" id="page-pdv">
+    <div id="pdv-root"></div>
+  </div>
+
+  <!-- ══════════════ PDV — LISTA DE PEDIDOS ══════════════ -->
+  <div class="page content" id="page-pdv-pedidos">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;">Pedidos do PDV</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="pdvp-sub">—</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select class="search-input" id="pdvp-filtro-status" onchange="renderPdvPedidos()" style="max-width:200px;">
+          <option value="">Todos status</option>
+          <option value="aguardando_entrega">⏳ Aguardando entrega</option>
+          <option value="entregue">✅ Entregue</option>
+          <option value="cancelado">⊘ Cancelado</option>
+        </select>
+        <input type="text" class="search-input" id="pdvp-busca" placeholder="🔍 nº pedido, cliente, vendedor..." oninput="renderPdvPedidos()" style="min-width:240px;">
+      </div>
+    </div>
+    <div class="card">
+      <div id="pdvp-lista"></div>
+    </div>
+  </div>
+
   <!-- ══════════════ PDV — VENDEDORES ══════════════ -->
   <div class="page content" id="page-pdv-vendedores">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
@@ -2854,6 +2889,9 @@ const TABLE_MAP = {
   contas_bancarias:{ toDb: toSnake, fromDb: toCamel },
   pdv_vendedores:  { toDb: toSnake, fromDb: toCamel },
   pdv_locais_venda:{ toDb: toSnake, fromDb: toCamel },
+  pdv_pedidos:     { toDb: toSnake, fromDb: toCamel },
+  pdv_itens_pedido:{ toDb: toSnake, fromDb: toCamel },
+  pdv_auditoria_log:{ toDb: toSnake, fromDb: toCamel },
   lancamentos: {
     // schema usa 'observacao' e 'conta_nome' (FK conta_id também existe mas não usamos)
     toDb: l => {
@@ -3151,6 +3189,8 @@ const pageMeta={
   'custos-produtos':['Custos de Produtos','Gerencie os componentes de custo de cada produto'],
   'pdv-vendedores':['Vendedores PDV','Cadastro de vendedores que operam o PDV interno'],
   'pdv-locais':    ['Locais de Venda','Cadastro de pontos de venda (matriz, quiosque, tráfego pago)'],
+  pdv:             ['PDV','Painel de operação — criar novas vendas'],
+  'pdv-pedidos':   ['Pedidos PDV','Histórico de pedidos criados pelo PDV interno'],
 };
 // Breadcrumb hierárquico — pai não-clicável (etiqueta visual), atual em destaque.
 // Dashboard NÃO aparece (raiz). Pais espelham os agrupadores da sidebar.
@@ -3172,6 +3212,8 @@ const BREADCRUMB_MAP = {
   'custos-produtos':['Produtos', 'Custos de Produtos'],
   'pdv-vendedores':['Vendas', 'Vendedores PDV'],
   'pdv-locais':    ['Vendas', 'Locais de Venda'],
+  pdv:             ['Vendas', 'PDV'],
+  'pdv-pedidos':   ['Vendas', 'Pedidos PDV'],
 };
 // Sub-tabs do módulo Financeiro: troca de sub-tab deve refletir em
 // título, subtítulo e breadcrumb (não rerenderiza pelo showPage).
@@ -3265,6 +3307,8 @@ function showPage(id, opts){
   if(id==='contratos')initContratos();
   if(id==='pdv-vendedores')initPdvVendedores();
   if(id==='pdv-locais')initPdvLocais();
+  if(id==='pdv')initPdv();
+  if(id==='pdv-pedidos')initPdvPedidos();
 }
 
 // Detecta voltar/avançar do navegador
@@ -6784,11 +6828,13 @@ const TODOS_MODULOS = [
   { id: 'custos-produtos', nome: 'Custos de Produtos' },
   { id: 'pdv-vendedores',  nome: 'PDV — Vendedores' },
   { id: 'pdv-locais',      nome: 'PDV — Locais de Venda' },
+  { id: 'pdv',             nome: 'PDV — Operação' },
+  { id: 'pdv-pedidos',     nome: 'PDV — Lista de Pedidos' },
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
-  vendedor:    ['dashboard', 'vendas', 'estoque', 'pedidos', 'oficina', 'sac', 'montagens', 'clientes', 'contratos'],
-  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'vendas', 'pedidos', 'oficina', 'sac', 'montagens', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos'],
+  vendedor:    ['dashboard', 'vendas', 'estoque', 'pedidos', 'oficina', 'sac', 'montagens', 'clientes', 'contratos', 'pdv', 'pdv-pedidos'],
+  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'vendas', 'pedidos', 'oficina', 'sac', 'montagens', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv', 'pdv-pedidos'],
   customizado: null, // usa user.modulosPermitidos
 };
 function modulosPermitidos(user) {
@@ -13816,6 +13862,661 @@ async function _alternarStatusLocal(localId, novoAtivo) {
   const { error } = await sb.from('pdv_locais_venda').update({ ativo: novoAtivo }).eq('id', localId);
   if (error) { smAlert('Erro: ' + error.message); return; }
   await initPdvLocais();
+}
+
+// ═══════════════════════════════════════════════════════════
+// PDV — MVP (Etapa 2)
+// Wizard de 4 steps em page-pdv + lista em page-pdv-pedidos.
+// sincronizado_tiny = false em TODOS os pedidos (sync vem Etapa 4).
+// ═══════════════════════════════════════════════════════════
+let _pdvStep                = 0;     // 0=painel | 1=montar | 2=finalizar | 3=sucesso
+let _pdvVenda               = null;  // state da venda em progresso (em memória)
+let _pdvPedidosLista        = [];    // cache da lista de pedidos PDV
+let _pdvUltimoPedidoCriado  = null;  // mostrado no step 3 (sucesso)
+
+const PDV_PAGTO_TIPOS = [
+  { code: 'dinheiro',       label: '💵 Dinheiro' },
+  { code: 'pix',            label: '⚡ PIX' },
+  { code: 'cartao_credito', label: '💳 Cartão de Crédito' },
+  { code: 'cartao_debito',  label: '💳 Cartão de Débito' },
+];
+
+const PDV_STATUS_LABEL = {
+  aguardando_entrega: { label: '⏳ Aguardando entrega', cor: 'var(--orange)', bg: 'rgba(255,165,0,0.12)' },
+  entregue:           { label: '✅ Entregue',           cor: 'var(--green)',  bg: 'rgba(0,200,83,0.12)' },
+  cancelado:          { label: '⊘ Cancelado',           cor: 'var(--text3)',  bg: 'var(--surface3)' },
+};
+
+const _fmtBRMoney = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 });
+
+function _pdvVendaNova() {
+  return {
+    vendedorId: '', localId: '', itens: [],
+    cliente: { nome:'', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'' },
+    dataPrevistaEntrega: '', observacao: '', desconto: 0, pagamentos: [],
+  };
+}
+
+async function initPdv() {
+  if (!pdvVendedores.length) try { await initPdvVendedores(); } catch(e) {}
+  if (!pdvLocais.length)     try { await initPdvLocais();     } catch(e) {}
+  _pdvGarantirProdutos();  // não bloqueia
+  if (![0,1,2,3].includes(_pdvStep)) _pdvStep = 0;
+  // Reset pra painel se não há venda em andamento E não está mostrando sucesso
+  if (!_pdvVenda && _pdvStep !== 3) _pdvStep = 0;
+  renderPdv();
+}
+
+// Carrega produtosTiny sem depender do DOM de page-estoque (que usa btn-sync).
+async function _pdvGarantirProdutos() {
+  if (produtosTiny.length) return;
+  try {
+    const res = await fetch(`${API_URL}/produtos?situacao=A&pagina=1`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.erro || 'erro Tiny');
+    produtosTiny = data.produtos || [];
+    if (data.total > 1) {
+      const promises = [];
+      for (let p = 2; p <= data.total; p++) {
+        promises.push(fetch(`${API_URL}/produtos?situacao=A&pagina=${p}`).then(r => r.json()));
+      }
+      const extras = await Promise.all(promises);
+      extras.forEach(e => { if (e.ok) produtosTiny.push(...(e.produtos || [])); });
+    }
+    console.log('[pdv] carregou ' + produtosTiny.length + ' produtos');
+    const inp = document.getElementById('pdv-busca-prod');
+    if (inp && /carregando/.test(inp.placeholder)) inp.placeholder = '🔍 Buscar produto por nome ou código...';
+  } catch (e) {
+    console.warn('[pdv] erro carregar produtos:', e.message);
+  }
+}
+
+function renderPdv() {
+  const root = document.getElementById('pdv-root');
+  if (!root) return;
+  if (_pdvStep === 1) return _pdvRenderNovaVenda(root);
+  if (_pdvStep === 2) return _pdvRenderFinalizacao(root);
+  if (_pdvStep === 3) return _pdvRenderSucesso(root);
+  return _pdvRenderPainel(root);
+}
+
+function _pdvIniciarVenda() {
+  _pdvVenda = _pdvVendaNova();
+  _pdvStep = 1;
+  renderPdv();
+}
+
+// ─── Step 0: Painel ─────────────────────────────────────────
+async function _pdvRenderPainel(root) {
+  // Esqueleto enquanto busca dados (evita "tela em branco" no 1º load)
+  root.innerHTML = `<div class="kpi-grid" style="margin-bottom:24px;">
+    <div class="kpi"><div class="kpi-label">💰 Vendido hoje</div><div class="kpi-value gold">…</div></div>
+    <div class="kpi"><div class="kpi-label">📊 Qtd vendas hoje</div><div class="kpi-value">…</div></div>
+    <div class="kpi"><div class="kpi-label">📈 Ticket médio hoje</div><div class="kpi-value">…</div></div>
+  </div>
+  <div style="text-align:center;margin:32px 0 36px;"><button class="btn btn-gold" onclick="_pdvIniciarVenda()" style="font-size:18px;padding:24px 56px;letter-spacing:1px;font-weight:800;">🛒 NOVA VENDA</button></div>
+  <div class="card"><div class="card-header"><div><div class="card-title">⏰ Top 5 pendentes de entrega</div><div class="card-sub">carregando…</div></div></div><div class="empty" style="padding:32px;">…</div></div>`;
+
+  const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const [r1, r2] = await Promise.all([
+    sb.from('pdv_pedidos').select('total,criado_em,status').gte('criado_em', hoje + 'T00:00:00').lte('criado_em', hoje + 'T23:59:59.999'),
+    sb.from('pdv_pedidos').select('id,numero_smart,total,vendedor_id,cliente_dados,data_prevista_entrega,criado_em').eq('status','aguardando_entrega').order('data_prevista_entrega', { ascending: true, nullsFirst: false }).limit(5),
+  ]);
+  let totalDia = 0, qtdDia = 0;
+  if (!r1.error && r1.data) {
+    const validos = r1.data.filter(r => r.status !== 'cancelado');
+    totalDia = validos.reduce((s,r) => s + Number(r.total||0), 0);
+    qtdDia = validos.length;
+  }
+  const ticketMedio = qtdDia ? totalDia/qtdDia : 0;
+  const pendentes = (!r2.error && r2.data) ? r2.data.map(toCamel) : [];
+
+  const vendedorNome = id => (pdvVendedores.find(v => v.id===id)||{}).nome || '—';
+  const fmtDT = iso => iso ? new Date(iso).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : 'sem data';
+  const fmtBR0 = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR', { minimumFractionDigits:0, maximumFractionDigits:0 });
+
+  root.innerHTML =
+      `<div class="kpi-grid" style="margin-bottom:24px;">`
+    +   `<div class="kpi"><div class="kpi-label">💰 Vendido hoje</div><div class="kpi-value gold">${fmtBR0(totalDia)}</div><div class="kpi-change">${hoje.split('-').reverse().slice(0,2).join('/')}</div></div>`
+    +   `<div class="kpi"><div class="kpi-label">📊 Qtd vendas hoje</div><div class="kpi-value">${qtdDia}</div><div class="kpi-change">pedidos PDV (sem cancelados)</div></div>`
+    +   `<div class="kpi"><div class="kpi-label">📈 Ticket médio hoje</div><div class="kpi-value">${fmtBR0(ticketMedio)}</div><div class="kpi-change">${qtdDia?'total ÷ qtd':'sem vendas ainda'}</div></div>`
+    + `</div>`
+    + `<div style="text-align:center;margin:32px 0 36px;">`
+    +   `<button class="btn btn-gold" onclick="_pdvIniciarVenda()" style="font-size:18px;padding:24px 56px;letter-spacing:1px;font-weight:800;">🛒 NOVA VENDA</button>`
+    + `</div>`
+    + `<div class="card">`
+    +   `<div class="card-header"><div><div class="card-title">⏰ Top 5 pendentes de entrega</div><div class="card-sub">${pendentes.length} pedidos aguardando</div></div></div>`
+    +   (pendentes.length
+        ? pendentes.map(p => {
+            const cli = p.clienteDados || {};
+            return `<div style="display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);">
+              <div style="font-size:14px;font-weight:800;color:var(--gold);font-family:var(--mono,monospace);">#${p.numeroSmart}</div>
+              <div>
+                <div style="font-size:13px;font-weight:700;">${escHtml(cli.nome || '—')}</div>
+                <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(vendedorNome(p.vendedorId))} · entrega ${fmtDT(p.dataPrevistaEntrega)}</div>
+              </div>
+              <div style="text-align:right;font-size:14px;font-weight:800;color:var(--gold);">${_fmtBRMoney(p.total)}</div>
+            </div>`;
+          }).join('')
+        : '<div class="empty" style="padding:32px;">Nenhum pedido pendente. 🎉</div>')
+    + `</div>`;
+}
+
+// ─── Step 1: Montar pedido ──────────────────────────────────
+function _pdvRenderNovaVenda(root) {
+  const v = _pdvVenda;
+  const subtotal = v.itens.reduce((s, it) => s + Number(it.qtd||0) * Number(it.precoUnit||0), 0);
+
+  const vendedoresAtivos = pdvVendedores.filter(x => x.ativo !== false).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  const locaisAtivos     = pdvLocais.filter(x => x.ativo !== false).sort((a,b)=>(Number(a.ordem)||0)-(Number(b.ordem)||0));
+  const semVendedor = !vendedoresAtivos.length;
+  const semLocal    = !locaisAtivos.length;
+
+  const optVendedor = '<option value="">Selecione vendedor *</option>' + vendedoresAtivos.map(x => `<option value="${x.id}"${v.vendedorId===x.id?' selected':''}>${escHtml(x.nome)}</option>`).join('');
+  const optLocal    = '<option value="">Selecione local *</option>'    + locaisAtivos.map(x =>     `<option value="${x.id}"${v.localId===x.id?' selected':''}>${escHtml(x.nome)}</option>`).join('');
+
+  root.innerHTML =
+      `<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap;">`
+    +   `<button class="btn" onclick="_pdvCancelarVenda()">← Voltar ao painel</button>`
+    +   `<div style="font-size:13px;color:var(--text3);">Nova venda — passo 1 de 2 (itens + cliente)</div>`
+    + `</div>`
+    + ((semVendedor || semLocal)
+        ? `<div style="background:rgba(255,0,0,0.10);border:1px solid var(--red);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:18px;font-size:12px;color:var(--text2);">⚠️ ${semVendedor?'Nenhum vendedor ativo cadastrado. ':''}${semLocal?'Nenhum local ativo cadastrado. ':''}Cadastre em <a onclick="showPage('pdv-vendedores')" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Vendedores PDV</a> / <a onclick="showPage('pdv-locais')" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Locais</a> antes de criar uma venda.</div>`
+        : '')
+    + `<div class="card" style="margin-bottom:18px;"><div style="padding:18px 20px;">`
+    +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:10px;">Vendedor + Local</div>`
+    +   `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">`
+    +     `<div class="form-group"><label>Vendedor *</label><select class="form-input" onchange="_pdvVenda.vendedorId=this.value;">${optVendedor}</select></div>`
+    +     `<div class="form-group"><label>Local *</label><select class="form-input" onchange="_pdvVenda.localId=this.value;">${optLocal}</select></div>`
+    +   `</div>`
+    + `</div></div>`
+
+    + `<div class="card" style="margin-bottom:18px;"><div style="padding:18px 20px;">`
+    +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:10px;">Itens da venda</div>`
+    +   `<div style="position:relative;margin-bottom:10px;">`
+    +     `<input type="text" class="search-input" id="pdv-busca-prod" placeholder="${produtosTiny.length?'🔍 Buscar produto por nome ou código...':'⏳ carregando produtos do Tiny...'}" style="width:100%;" oninput="_pdvFiltraProdutos()" onfocus="_pdvFiltraProdutos()" onblur="setTimeout(()=>{const el=document.getElementById('pdv-prod-dropdown');if(el)el.style.display='none';},200);">`
+    +     `<div id="pdv-prod-dropdown" style="display:none;position:absolute;top:40px;left:0;right:0;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:300px;overflow-y:auto;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>`
+    +   `</div>`
+    +   `<div id="pdv-itens-tabela">${_pdvRenderItensTabela()}</div>`
+    + `</div></div>`
+
+    + `<div class="card" style="margin-bottom:18px;"><div style="padding:18px 20px;">`
+    +   `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">`
+    +     `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;">Cliente</div>`
+    +     `<button class="btn" type="button" onclick="_pdvConsumidorFinal()" style="font-size:11px;padding:4px 10px;">👤 Consumidor Final</button>`
+    +   `</div>`
+    +   `<div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;">`
+    +     `<div class="form-group"><label>Nome *</label><input class="form-input" type="text" value="${escHtml(v.cliente.nome).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.nome=this.value;"></div>`
+    +     `<div class="form-group"><label>CPF / CNPJ</label><input class="form-input" type="text" value="${escHtml(v.cliente.cpfCnpj).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.cpfCnpj=this.value;"></div>`
+    +   `</div>`
+    +   `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">`
+    +     `<div class="form-group"><label>Telefone</label><input class="form-input" type="text" value="${escHtml(v.cliente.telefone).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.telefone=this.value;"></div>`
+    +     `<div class="form-group"><label>Email</label><input class="form-input" type="text" value="${escHtml(v.cliente.email).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.email=this.value;"></div>`
+    +   `</div>`
+    +   `<div style="display:grid;grid-template-columns:130px 1fr 100px 1fr;gap:10px;margin-top:8px;">`
+    +     `<div class="form-group"><label>CEP</label><input class="form-input" type="text" value="${escHtml(v.cliente.cep).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.cep=this.value;"></div>`
+    +     `<div class="form-group"><label>Rua</label><input class="form-input" type="text" value="${escHtml(v.cliente.rua).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.rua=this.value;"></div>`
+    +     `<div class="form-group"><label>Número</label><input class="form-input" type="text" value="${escHtml(v.cliente.numero).replace(/"/g,'&quot;')}" placeholder="—" oninput="_pdvVenda.cliente.numero=this.value;"></div>`
+    +     `<div class="form-group"><label>Complemento</label><input class="form-input" type="text" value="${escHtml(v.cliente.complemento).replace(/"/g,'&quot;')}" placeholder="apto, bloco, ref." oninput="_pdvVenda.cliente.complemento=this.value;"></div>`
+    +   `</div>`
+    +   `<div style="font-size:10px;color:var(--text3);margin-top:6px;font-style:italic;">Endereço opcional — se preencher, ideal informar CEP + Rua + Número juntos pra entrega.</div>`
+    + `</div></div>`
+
+    + `<div class="card" style="margin-bottom:18px;"><div style="padding:18px 20px;">`
+    +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:10px;">Entrega + observação</div>`
+    +   `<div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;">`
+    +     `<div class="form-group"><label>Data prevista de entrega</label><input class="form-input" type="datetime-local" value="${escHtml(v.dataPrevistaEntrega)}" oninput="_pdvVenda.dataPrevistaEntrega=this.value;"></div>`
+    +     `<div class="form-group"><label>Observação (opcional)</label><input class="form-input" type="text" value="${escHtml(v.observacao).replace(/"/g,'&quot;')}" placeholder="ex: entregar pela manhã" oninput="_pdvVenda.observacao=this.value;"></div>`
+    +   `</div>`
+    + `</div></div>`
+
+    + `<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:var(--surface2);border-radius:var(--r-sm);">`
+    +   `<div style="font-size:13px;color:var(--text3);">Subtotal (sem desconto)</div>`
+    +   `<div style="display:flex;gap:14px;align-items:center;">`
+    +     `<div id="pdv-rodape-subtotal" style="font-size:18px;font-weight:800;color:var(--gold);font-family:var(--mono,monospace);">${_fmtBRMoney(subtotal)}</div>`
+    +     `<button class="btn btn-gold" onclick="_pdvAvancarParaFinalizacao()">Avançar →</button>`
+    +   `</div>`
+    + `</div>`;
+}
+
+function _pdvRenderItensTabela() {
+  const v = _pdvVenda;
+  if (!v.itens.length) return '<div class="empty" style="padding:24px;font-size:12px;">Nenhum item adicionado. Use a busca acima.</div>';
+  return `<table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="background:var(--surface2);">
+      <th style="text-align:left;padding:8px;">Produto</th>
+      <th style="width:90px;text-align:center;padding:8px;">Qtd</th>
+      <th style="width:140px;text-align:right;padding:8px;">Preço unit. (R$)</th>
+      <th style="width:140px;text-align:right;padding:8px;">Subtotal</th>
+      <th style="width:36px;padding:8px;"></th>
+    </tr></thead>
+    <tbody>
+      ${v.itens.map((it, idx) => `
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;">
+            <div style="font-weight:700;">${escHtml(it.produtoNomeTiny)}</div>
+            <div style="font-size:10px;color:var(--text3);font-family:var(--mono,monospace);">${escHtml(it.codigo || 'sem código')}</div>
+          </td>
+          <td style="padding:6px;text-align:center;"><input class="form-input" type="number" min="1" step="1" value="${it.qtd}" style="width:64px;text-align:center;" oninput="_pdvSetItem(${idx},'qtd',this.value)"></td>
+          <td style="padding:6px;text-align:right;"><input class="form-input" type="number" min="0" step="0.01" value="${Number(it.precoUnit).toFixed(2)}" style="width:130px;text-align:right;" oninput="_pdvSetItem(${idx},'precoUnit',this.value)"></td>
+          <td style="padding:8px;text-align:right;font-weight:800;color:var(--gold);font-family:var(--mono,monospace);" id="pdv-row-${idx}-sub">${_fmtBRMoney(Number(it.qtd) * Number(it.precoUnit))}</td>
+          <td style="padding:6px;text-align:center;"><button class="action-btn del-btn" onclick="_pdvRemoveItem(${idx})" title="Remover">🗑</button></td>
+        </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+function _pdvSetItem(idx, campo, valor) {
+  if (!_pdvVenda?.itens?.[idx]) return;
+  const novo = (campo === 'qtd') ? parseInt(valor || 0, 10) : parseFloat(valor || 0);
+  _pdvVenda.itens[idx][campo] = isNaN(novo) ? 0 : novo;
+  const it = _pdvVenda.itens[idx];
+  const sub = Number(it.qtd||0) * Number(it.precoUnit||0);
+  const cell = document.getElementById(`pdv-row-${idx}-sub`);
+  if (cell) cell.textContent = _fmtBRMoney(sub);
+  _pdvAtualizaSubtotalRodape();
+}
+
+function _pdvAtualizaSubtotalRodape() {
+  const v = _pdvVenda;
+  const subtotal = v.itens.reduce((s, it) => s + Number(it.qtd||0) * Number(it.precoUnit||0), 0);
+  const el = document.getElementById('pdv-rodape-subtotal');
+  if (el) el.textContent = _fmtBRMoney(subtotal);
+}
+
+function _pdvRemoveItem(idx) {
+  _pdvVenda.itens.splice(idx, 1);
+  document.getElementById('pdv-itens-tabela').innerHTML = _pdvRenderItensTabela();
+  _pdvAtualizaSubtotalRodape();
+}
+
+function _pdvAddItemFromIdx(idx) {
+  const p = produtosTiny[idx];
+  if (!p) return;
+  // Se já tem o mesmo produto, soma 1 na qtd em vez de criar linha nova
+  const existente = _pdvVenda.itens.find(it => String(it.tinyProdutoId||'') === String(p.id||''));
+  if (existente) {
+    existente.qtd = Number(existente.qtd||0) + 1;
+  } else {
+    _pdvVenda.itens.push({
+      tinyProdutoId: p.id ? String(p.id) : '',
+      codigo: p.codigo || '',
+      produtoNomeTiny: p.nome || '',
+      produtoModelo: null,
+      qtd: 1,
+      precoUnit: Number(p.preco) || 0,
+    });
+  }
+  document.getElementById('pdv-itens-tabela').innerHTML = _pdvRenderItensTabela();
+  _pdvAtualizaSubtotalRodape();
+  const inp = document.getElementById('pdv-busca-prod');
+  if (inp) { inp.value = ''; inp.focus(); }
+  const dd = document.getElementById('pdv-prod-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+
+function _pdvFiltraProdutos() {
+  const q = (document.getElementById('pdv-busca-prod')?.value || '').trim().toLowerCase();
+  const dd = document.getElementById('pdv-prod-dropdown');
+  if (!dd) return;
+  if (!q || !produtosTiny.length) { dd.style.display = 'none'; return; }
+  const matches = produtosTiny
+    .map((p, i) => ({ p, i }))
+    .filter(({p}) => (p.nome || '').toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q))
+    .slice(0, 8);
+  if (!matches.length) {
+    dd.innerHTML = '<div style="padding:14px;color:var(--text3);font-size:12px;">Nenhum produto encontrado.</div>';
+    dd.style.display = 'block';
+    return;
+  }
+  dd.innerHTML = matches.map(({p, i}) => `
+    <div onmousedown="_pdvAddItemFromIdx(${i})" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;justify-content:space-between;align-items:center;" onmouseenter="this.style.background='var(--surface3)'" onmouseleave="this.style.background='transparent'">
+      <div style="min-width:0;">
+        <div style="font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(p.nome||'')}</div>
+        <div style="font-size:10px;color:var(--text3);font-family:var(--mono,monospace);">${escHtml(p.codigo||'sem código')}</div>
+      </div>
+      <div style="text-align:right;margin-left:14px;flex-shrink:0;">
+        <div style="font-size:13px;font-weight:800;color:var(--gold);">${_fmtBRMoney(p.preco)}</div>
+        <div style="font-size:10px;color:var(--text3);">${p.estoque||0} em estoque</div>
+      </div>
+    </div>`).join('');
+  dd.style.display = 'block';
+}
+
+function _pdvConsumidorFinal() {
+  if (!_pdvVenda) return;
+  _pdvVenda.cliente = { nome:'Consumidor Final', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'' };
+  renderPdv();
+}
+
+async function _pdvCancelarVenda() {
+  const ok = await smConfirm('Descartar a venda em andamento? Os itens adicionados serão perdidos.');
+  if (!ok) return;
+  _pdvVenda = null;
+  _pdvStep = 0;
+  renderPdv();
+}
+
+function _pdvAvancarParaFinalizacao() {
+  const v = _pdvVenda;
+  if (!v.vendedorId)   return smAlert('Selecione um vendedor.');
+  if (!v.localId)      return smAlert('Selecione um local.');
+  if (!v.itens.length) return smAlert('Adicione pelo menos um item.');
+  if (v.itens.some(it => !(Number(it.qtd) > 0)))      return smAlert('Todo item precisa ter quantidade ≥ 1.');
+  if (v.itens.some(it => !(Number(it.precoUnit) >= 0))) return smAlert('Preço inválido em algum item.');
+  if (!(v.cliente.nome || '').trim()) return smAlert('Nome do cliente é obrigatório.');
+  const subtotal = v.itens.reduce((s, it) => s + Number(it.qtd) * Number(it.precoUnit), 0);
+  if (!v.pagamentos.length) v.pagamentos = [{ tipo: 'dinheiro', valor: subtotal }];
+  _pdvStep = 2;
+  renderPdv();
+}
+
+// ─── Step 2: Finalização (pagamento) ────────────────────────
+function _pdvRenderFinalizacao(root) {
+  const v = _pdvVenda;
+  const subtotal = v.itens.reduce((s, it) => s + Number(it.qtd) * Number(it.precoUnit), 0);
+  const apagar   = Math.max(0, subtotal - Number(v.desconto || 0));
+  const soma     = v.pagamentos.reduce((s, p) => s + Number(p.valor || 0), 0);
+  const restante = apagar - soma;
+
+  root.innerHTML =
+      `<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap;">`
+    +   `<button class="btn" onclick="_pdvStep=1;renderPdv();">← Voltar</button>`
+    +   `<div style="font-size:13px;color:var(--text3);">Nova venda — passo 2 de 2 (pagamento)</div>`
+    + `</div>`
+    + `<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:20px;align-items:start;">`
+    + `<div class="card"><div style="padding:18px 20px;">`
+    +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:14px;">Formas de pagamento <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;">(pode dividir)</span></div>`
+    +   `<div id="pdv-pgto-lista">${_pdvRenderPagamentos()}</div>`
+    +   `<button class="btn" type="button" onclick="_pdvAddPagamento()" style="margin-top:10px;font-size:11px;">+ Adicionar forma</button>`
+    + `</div></div>`
+    + `<div class="card"><div style="padding:18px 20px;">`
+    +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:14px;">Resumo</div>`
+    +   `<div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;"><span>Total dos itens</span><span style="font-family:var(--mono,monospace);">${_fmtBRMoney(subtotal)}</span></div>`
+    +   `<div style="display:flex;justify-content:space-between;margin-bottom:14px;font-size:13px;align-items:center;"><span>Desconto (R$)</span><input type="number" min="0" step="0.01" class="form-input" value="${Number(v.desconto).toFixed(2)}" style="width:130px;text-align:right;" oninput="_pdvSetDesconto(this.value)"></div>`
+    +   `<div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid var(--border);font-size:16px;font-weight:800;"><span>A PAGAR</span><span style="color:var(--gold);font-family:var(--mono,monospace);" id="pdv-apagar">${_fmtBRMoney(apagar)}</span></div>`
+    +   `<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:12px;"><span>Restante</span><span id="pdv-restante" style="font-weight:800;font-family:var(--mono,monospace);color:${Math.abs(restante)<0.01?'var(--green)':'var(--red)'};">${_fmtBRMoney(restante)}</span></div>`
+    +   `<button class="btn btn-gold" id="pdv-btn-finalizar" onclick="_pdvFinalizarVenda()" style="width:100%;margin-top:18px;padding:14px;font-size:13px;font-weight:800;" ${Math.abs(restante)<0.01?'':'disabled'}>Finalizar venda ✓</button>`
+    + `</div></div>`
+    + `</div>`;
+}
+
+function _pdvRenderPagamentos() {
+  const v = _pdvVenda;
+  if (!v.pagamentos.length) return '<div class="empty" style="padding:14px;font-size:12px;">Nenhuma forma. Clique em "+ Adicionar forma".</div>';
+  const tiposOpts = sel => PDV_PAGTO_TIPOS.map(t => `<option value="${t.code}"${sel===t.code?' selected':''}>${t.label}</option>`).join('');
+  return v.pagamentos.map((p, idx) => {
+    const isCred = p.tipo === 'cartao_credito';
+    const parcelasOpts = Array.from({length: 18}, (_, i) => i+1).map(n => `<option value="${n}"${(p.parcelas||1)===n?' selected':''}>${n}x</option>`).join('');
+    return `<div style="display:grid;grid-template-columns:1fr 110px 130px 32px;gap:8px;align-items:end;margin-bottom:8px;">
+      <div class="form-group" style="margin:0;"><label style="font-size:9px;">Tipo</label><select class="form-input" onchange="_pdvSetPagto(${idx},'tipo',this.value)">${tiposOpts(p.tipo)}</select></div>
+      <div class="form-group" style="margin:0;">${isCred?`<label style="font-size:9px;">Parcelas</label><select class="form-input" onchange="_pdvSetPagto(${idx},'parcelas',this.value)">${parcelasOpts}</select>`:`<label style="font-size:9px;">&nbsp;</label><input class="form-input" type="text" value="—" disabled style="text-align:center;color:var(--text3);">`}</div>
+      <div class="form-group" style="margin:0;"><label style="font-size:9px;">Valor (R$)</label><input class="form-input" type="number" min="0" step="0.01" value="${Number(p.valor||0).toFixed(2)}" style="text-align:right;" oninput="_pdvSetPagto(${idx},'valor',this.value)"></div>
+      <button class="action-btn del-btn" onclick="_pdvRemovePagto(${idx})" title="Remover" style="margin-bottom:0;">🗑</button>
+    </div>`;
+  }).join('');
+}
+
+function _pdvAddPagamento() {
+  const v = _pdvVenda;
+  const subtotal = v.itens.reduce((s, it) => s + Number(it.qtd) * Number(it.precoUnit), 0);
+  const apagar   = Math.max(0, subtotal - Number(v.desconto||0));
+  const soma     = v.pagamentos.reduce((s, p) => s + Number(p.valor||0), 0);
+  v.pagamentos.push({ tipo: 'dinheiro', valor: Math.max(0, apagar - soma) });
+  renderPdv();
+}
+
+function _pdvRemovePagto(idx) {
+  _pdvVenda.pagamentos.splice(idx, 1);
+  renderPdv();
+}
+
+function _pdvSetPagto(idx, campo, valor) {
+  const p = _pdvVenda.pagamentos[idx];
+  if (!p) return;
+  if (campo === 'tipo') {
+    p.tipo = valor;
+    if (valor === 'cartao_credito' && !p.parcelas) p.parcelas = 1;
+    if (valor !== 'cartao_credito') delete p.parcelas;
+    renderPdv();
+    return;
+  }
+  if (campo === 'parcelas') { p.parcelas = parseInt(valor || 1, 10); return; }
+  if (campo === 'valor')    { p.valor    = parseFloat(valor || 0); _pdvAtualizaRestante(); return; }
+}
+
+function _pdvSetDesconto(valor) {
+  _pdvVenda.desconto = parseFloat(valor || 0);
+  _pdvAtualizaRestante();
+}
+
+function _pdvAtualizaRestante() {
+  const v = _pdvVenda;
+  const subtotal = v.itens.reduce((s, it) => s + Number(it.qtd) * Number(it.precoUnit), 0);
+  const apagar   = Math.max(0, subtotal - Number(v.desconto||0));
+  const soma     = v.pagamentos.reduce((s, p) => s + Number(p.valor||0), 0);
+  const restante = apagar - soma;
+  const ap = document.getElementById('pdv-apagar');     if (ap) ap.textContent = _fmtBRMoney(apagar);
+  const r  = document.getElementById('pdv-restante');
+  if (r) {
+    r.textContent  = _fmtBRMoney(restante);
+    r.style.color  = Math.abs(restante)<0.01 ? 'var(--green)' : 'var(--red)';
+  }
+  const btn = document.getElementById('pdv-btn-finalizar');
+  if (btn) btn.disabled = !(Math.abs(restante)<0.01);
+}
+
+async function _pdvFinalizarVenda() {
+  const v = _pdvVenda;
+  const subtotal = v.itens.reduce((s, it) => s + Number(it.qtd) * Number(it.precoUnit), 0);
+  const desconto = Number(v.desconto || 0);
+  const total    = Math.max(0, subtotal - desconto);
+  const soma     = v.pagamentos.reduce((s, p) => s + Number(p.valor||0), 0);
+  if (Math.abs(total - soma) >= 0.01) return smAlert('Soma dos pagamentos não bate com o total a pagar.');
+
+  let user = null;
+  try { user = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
+  const criadoPor = user?.id || null;
+
+  const cli = v.cliente;
+  const clienteDados = { nome: cli.nome.trim() };
+  if (cli.cpfCnpj?.trim())     clienteDados.cpf_cnpj    = cli.cpfCnpj.trim();
+  if (cli.telefone?.trim())    clienteDados.telefone    = cli.telefone.trim();
+  if (cli.email?.trim())       clienteDados.email       = cli.email.trim();
+  if (cli.cep?.trim())         clienteDados.cep         = cli.cep.trim();
+  if (cli.rua?.trim())         clienteDados.rua         = cli.rua.trim();
+  if (cli.numero?.trim())      clienteDados.numero      = cli.numero.trim();
+  if (cli.complemento?.trim()) clienteDados.complemento = cli.complemento.trim();
+
+  const formaPagamento = {
+    desconto,
+    metodos: v.pagamentos.map(p => {
+      const m = { tipo: p.tipo, valor: Number(p.valor||0) };
+      if (p.tipo === 'cartao_credito') m.parcelas = parseInt(p.parcelas || 1, 10);
+      return m;
+    }),
+  };
+
+  const btn = document.getElementById('pdv-btn-finalizar');
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    const dataEntrega = v.dataPrevistaEntrega ? new Date(v.dataPrevistaEntrega).toISOString() : null;
+    const { data: ped, error: errP } = await sb.from('pdv_pedidos').insert({
+      vendedor_id: v.vendedorId,
+      local_venda_id: v.localId,
+      cliente_dados: clienteDados,
+      forma_pagamento: formaPagamento,
+      desconto,
+      total,
+      data_prevista_entrega: dataEntrega,
+      status: 'aguardando_entrega',
+      observacao: v.observacao?.trim() || null,
+      criado_por: criadoPor,
+      sincronizado_tiny: false,
+    }).select().single();
+    if (errP) throw new Error('Erro ao salvar pedido: ' + errP.message);
+
+    const itensRows = v.itens.map((it, idx) => ({
+      pedido_id: ped.id,
+      produto_modelo: it.produtoModelo || null,
+      produto_nome_tiny: it.produtoNomeTiny,
+      tiny_produto_id: it.tinyProdutoId || null,
+      quantidade: parseInt(it.qtd, 10),
+      valor_unitario: Number(it.precoUnit),
+      valor_total: Number(it.qtd) * Number(it.precoUnit),
+      ordem: idx,
+    }));
+    if (itensRows.length) {
+      const { error: errI } = await sb.from('pdv_itens_pedido').insert(itensRows);
+      if (errI) throw new Error('Pedido #' + ped.numero_smart + ' salvo, mas itens falharam: ' + errI.message);
+    }
+
+    await sb.from('pdv_auditoria_log').insert({
+      pedido_id: ped.id,
+      acao: 'criou',
+      quem: criadoPor,
+    });
+
+    _pdvUltimoPedidoCriado = toCamel(ped);
+    _pdvVenda = null;
+    _pdvStep  = 3;
+    renderPdv();
+  } catch (e) {
+    smAlert(e.message || 'Erro desconhecido.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Finalizar venda ✓'; }
+  }
+}
+
+// ─── Step 3: Sucesso ────────────────────────────────────────
+function _pdvRenderSucesso(root) {
+  const p = _pdvUltimoPedidoCriado || {};
+  const cli = p.clienteDados || {};
+  root.innerHTML =
+      `<div style="text-align:center;padding:60px 20px;">`
+    +   `<div style="font-size:72px;line-height:1;">✅</div>`
+    +   `<div style="font-size:24px;font-weight:800;margin-top:14px;">Venda criada</div>`
+    +   `<div style="font-size:14px;color:var(--text3);margin-top:6px;">Pedido <span style="font-family:var(--mono,monospace);font-weight:800;color:var(--gold);">#${p.numeroSmart ?? '?'}</span></div>`
+    +   `<div style="font-size:13px;color:var(--text2);margin-top:14px;">${escHtml(cli.nome || '—')} · ${_fmtBRMoney(p.total || 0)}</div>`
+    +   `<div style="margin-top:36px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">`
+    +     `<button class="btn btn-gold" onclick="_pdvIniciarVenda()" style="padding:12px 24px;">🛒 Nova venda</button>`
+    +     `<button class="btn" onclick="showPage('pdv-pedidos')" style="padding:12px 24px;">📋 Ver lista</button>`
+    +     `<button class="btn" onclick="_pdvStep=0;_pdvUltimoPedidoCriado=null;renderPdv();" style="padding:12px 24px;">← Voltar ao painel</button>`
+    +   `</div>`
+    + `</div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// page-pdv-pedidos — Lista + detalhe (read-only)
+// ═══════════════════════════════════════════════════════════
+
+async function initPdvPedidos() {
+  if (!pdvVendedores.length) try { await initPdvVendedores(); } catch(e) {}
+  if (!pdvLocais.length)     try { await initPdvLocais();     } catch(e) {}
+  const { data, error } = await sb.from('pdv_pedidos').select('*').order('criado_em', { ascending: false }).limit(500);
+  if (error) { console.warn('[pdv-pedidos] load:', error.message); _pdvPedidosLista = []; }
+  else _pdvPedidosLista = (data || []).map(toCamel);
+  renderPdvPedidos();
+}
+
+function renderPdvPedidos() {
+  const el  = document.getElementById('pdvp-lista');
+  const sub = document.getElementById('pdvp-sub');
+  if (!el) return;
+  const status = document.getElementById('pdvp-filtro-status')?.value || '';
+  const q      = (document.getElementById('pdvp-busca')?.value || '').trim().toLowerCase();
+  const vNome  = id => (pdvVendedores.find(v => v.id===id)||{}).nome || '—';
+  const lNome  = id => (pdvLocais.find(l => l.id===id)||{}).nome || '—';
+
+  let base = _pdvPedidosLista.slice();
+  if (status) base = base.filter(p => p.status === status);
+  if (q)      base = base.filter(p =>
+    String(p.numeroSmart||'').includes(q) ||
+    (p.clienteDados?.nome || '').toLowerCase().includes(q) ||
+    vNome(p.vendedorId).toLowerCase().includes(q));
+
+  if (sub) sub.textContent = `${base.length} pedido${base.length===1?'':'s'}${status?' · filtro: '+status:''}`;
+  if (!base.length) { el.innerHTML = '<div class="empty" style="padding:32px;">Nenhum pedido encontrado.</div>'; return; }
+  const fmtDT = iso => iso ? new Date(iso).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
+
+  el.innerHTML = base.map(p => {
+    const cli = p.clienteDados || {};
+    const stMeta = PDV_STATUS_LABEL[p.status] || PDV_STATUS_LABEL.aguardando_entrega;
+    const metodos = (p.formaPagamento?.metodos || []).map(m => PDV_PAGTO_TIPOS.find(t => t.code===m.tipo)?.label || m.tipo).join(' + ');
+    return `<div style="display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);">
+      <div>
+        <div style="font-size:14px;font-weight:800;color:var(--gold);font-family:var(--mono,monospace);">#${p.numeroSmart}</div>
+        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;">${fmtDT(p.criadoEm)}</div>
+      </div>
+      <div>
+        <div style="font-size:13px;font-weight:700;">${escHtml(cli.nome || '—')}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(vNome(p.vendedorId))} · ${escHtml(lNome(p.localVendaId))} · ${escHtml(metodos || '—')}</div>
+        <div style="font-size:10px;margin-top:4px;"><span style="background:${stMeta.bg};color:${stMeta.cor};padding:2px 8px;border-radius:10px;font-weight:700;font-size:10px;">${stMeta.label}</span>${p.sincronizadoTiny===false?' <span style="color:var(--text3);margin-left:4px;">·</span> <span style="color:var(--orange);font-size:9px;">não sincronizado com Tiny</span>':''}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+        <div style="font-size:14px;font-weight:800;color:var(--gold);">${_fmtBRMoney(p.total)}</div>
+        <button class="btn" style="font-size:10px;padding:4px 10px;" onclick="_pdvAbrirDetalhe('${p.id}')">Ver detalhe</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function _pdvAbrirDetalhe(pedidoId) {
+  const p = _pdvPedidosLista.find(x => x.id === pedidoId);
+  if (!p) return;
+  const [r1, r2] = await Promise.all([
+    sb.from('pdv_itens_pedido').select('*').eq('pedido_id', pedidoId).order('ordem'),
+    sb.from('pdv_auditoria_log').select('*').eq('pedido_id', pedidoId).order('quando', { ascending: true }),
+  ]);
+  if (r1.error) { smAlert('Erro: ' + r1.error.message); return; }
+  const itensCam = (r1.data || []).map(toCamel);
+  const auditCam = (!r2.error && r2.data) ? r2.data.map(toCamel) : [];
+  const cli = p.clienteDados || {};
+  const vNome = (pdvVendedores.find(x => x.id===p.vendedorId)||{}).nome || '—';
+  const lNome = (pdvLocais.find(x => x.id===p.localVendaId)||{}).nome || '—';
+  const stMeta = PDV_STATUS_LABEL[p.status] || PDV_STATUS_LABEL.aguardando_entrega;
+  const fmtDT = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '—';
+
+  const old = document.getElementById('pdvp-det-modal');
+  if (old) old.remove();
+  const shell = document.createElement('div');
+  shell.id = 'pdvp-det-modal';
+  shell.className = 'modal-overlay open';
+  shell.innerHTML =
+      `<div class="modal" style="width:680px;max-width:96vw;max-height:90vh;overflow-y:auto;">`
+    +   `<div class="modal-title">Pedido <span style="font-family:var(--mono,monospace);">#${p.numeroSmart}</span></div>`
+    +   `<div style="margin-bottom:14px;"><span style="background:${stMeta.bg};color:${stMeta.cor};padding:3px 10px;border-radius:10px;font-weight:700;font-size:11px;">${stMeta.label}</span>${p.sincronizadoTiny===false?' <span style="color:var(--orange);font-size:10px;margin-left:8px;">⚠️ Não sincronizado com Tiny</span>':''}</div>`
+    +   `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;margin-bottom:18px;">`
+    +     `<div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;">Vendedor</div><div>${escHtml(vNome)}</div></div>`
+    +     `<div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;">Local</div><div>${escHtml(lNome)}</div></div>`
+    +     `<div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;">Criado em</div><div>${fmtDT(p.criadoEm)}</div></div>`
+    +     `<div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;">Entrega prevista</div><div>${fmtDT(p.dataPrevistaEntrega)}</div></div>`
+    +   `</div>`
+    +   `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Cliente</div>`
+    +   `<div style="background:var(--surface2);padding:10px 12px;border-radius:var(--r-sm);font-size:12px;margin-bottom:18px;">`
+    +     `<div style="font-weight:700;">${escHtml(cli.nome||'—')}</div>`
+    +     `${cli.cpf_cnpj?`<div>CPF/CNPJ: ${escHtml(cli.cpf_cnpj)}</div>`:''}`
+    +     `${cli.telefone?`<div>Tel: ${escHtml(cli.telefone)}</div>`:''}`
+    +     `${cli.email?`<div>Email: ${escHtml(cli.email)}</div>`:''}`
+    +     `${(cli.cep||cli.rua||cli.numero||cli.complemento)?`<div style="margin-top:4px;color:var(--text3);">${escHtml([cli.cep,cli.rua,cli.numero,cli.complemento].filter(Boolean).join(' · '))}</div>`:''}`
+    +   `</div>`
+    +   `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Itens (${itensCam.length})</div>`
+    +   `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:18px;">`
+    +     `<thead><tr style="background:var(--surface2);"><th style="text-align:left;padding:6px;">Produto</th><th style="text-align:center;padding:6px;">Qtd</th><th style="text-align:right;padding:6px;">Unit</th><th style="text-align:right;padding:6px;">Total</th></tr></thead>`
+    +     `<tbody>${itensCam.map(it => `<tr style="border-bottom:1px solid var(--border);"><td style="padding:6px;"><div style="font-weight:700;">${escHtml(it.produtoNomeTiny)}</div>${it.codigo?`<div style="font-size:9px;color:var(--text3);font-family:var(--mono,monospace);">${escHtml(it.codigo)}</div>`:''}</td><td style="padding:6px;text-align:center;">${it.quantidade}</td><td style="padding:6px;text-align:right;">${_fmtBRMoney(it.valorUnitario)}</td><td style="padding:6px;text-align:right;font-weight:800;color:var(--gold);">${_fmtBRMoney(it.valorTotal)}</td></tr>`).join('')}</tbody>`
+    +   `</table>`
+    +   `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Pagamento</div>`
+    +   `<div style="background:var(--surface2);padding:10px 12px;border-radius:var(--r-sm);font-size:12px;margin-bottom:18px;">`
+    +     `${(p.formaPagamento?.metodos || []).map(m => `<div style="display:flex;justify-content:space-between;padding:3px 0;"><span>${PDV_PAGTO_TIPOS.find(t=>t.code===m.tipo)?.label || m.tipo}${m.parcelas?` <span style="color:var(--text3);font-size:10px;">(${m.parcelas}x sem juros)</span>`:''}</span><span style="font-weight:700;font-family:var(--mono,monospace);">${_fmtBRMoney(m.valor)}</span></div>`).join('')}`
+    +     `${Number(p.desconto||0)>0?`<div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);color:var(--text3);"><span>Desconto</span><span>− ${_fmtBRMoney(p.desconto)}</span></div>`:''}`
+    +     `<div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-weight:800;font-size:13px;color:var(--gold);"><span>TOTAL</span><span style="font-family:var(--mono,monospace);">${_fmtBRMoney(p.total)}</span></div>`
+    +   `</div>`
+    +   `${p.observacao?`<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Observação</div><div style="font-size:12px;background:var(--surface2);padding:10px 12px;border-radius:var(--r-sm);margin-bottom:18px;">${escHtml(p.observacao)}</div>`:''}`
+    +   `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Histórico</div>`
+    +   `<div style="font-size:11px;color:var(--text2);margin-bottom:18px;">${auditCam.length?auditCam.map(a => `<div style="padding:4px 0;border-bottom:1px solid var(--border);">${fmtDT(a.quando)} — <b>${escHtml(a.acao)}</b>${a.motivo?` · ${escHtml(a.motivo)}`:''}</div>`).join(''):'<div style="color:var(--text3);">sem registros</div>'}</div>`
+    +   `<div class="modal-actions"><button class="btn" type="button" onclick="document.getElementById('pdvp-det-modal').remove();">Fechar</button></div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
 }
 
 let sacCasos = [];
