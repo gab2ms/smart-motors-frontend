@@ -1109,6 +1109,14 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-icon">📈</span> Vendas do Mês
       <span class="nav-dot"></span>
     </button>
+    <button class="nav-item" onclick="showPage('pdv-vendedores')" id="nav-pdv-vendedores">
+      <span class="nav-icon">🧑‍💼</span> Vendedores PDV
+      <span class="nav-dot"></span>
+    </button>
+    <button class="nav-item" onclick="showPage('pdv-locais')" id="nav-pdv-locais">
+      <span class="nav-icon">📍</span> Locais de Venda
+      <span class="nav-dot"></span>
+    </button>
 
     <div class="nav-label">Produtos</div>
     <button class="nav-item" onclick="showPage('estoque')">
@@ -2487,6 +2495,38 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     <!-- Seções (Fixos / Variáveis / Inativos) -->
     <div id="custos-secoes"></div>
   </div>
+
+  <!-- ══════════════ PDV — VENDEDORES ══════════════ -->
+  <div class="page content" id="page-pdv-vendedores">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;">Vendedores do PDV</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="pdvv-sub">—</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-gold" onclick="abrirVendedorModal()">+ Novo vendedor</button>
+      </div>
+    </div>
+    <div class="card">
+      <div id="pdvv-lista"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════ PDV — LOCAIS DE VENDA ══════════════ -->
+  <div class="page content" id="page-pdv-locais">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;">Locais de venda</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="pdvl-sub">—</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-gold" onclick="abrirLocalModal()">+ Novo local</button>
+      </div>
+    </div>
+    <div class="card">
+      <div id="pdvl-lista"></div>
+    </div>
+  </div>
 </div><!-- /main -->
 </div><!-- /layout -->
 
@@ -2812,6 +2852,8 @@ const TABLE_MAP = {
     },
   },
   contas_bancarias:{ toDb: toSnake, fromDb: toCamel },
+  pdv_vendedores:  { toDb: toSnake, fromDb: toCamel },
+  pdv_locais_venda:{ toDb: toSnake, fromDb: toCamel },
   lancamentos: {
     // schema usa 'observacao' e 'conta_nome' (FK conta_id também existe mas não usamos)
     toDb: l => {
@@ -3107,6 +3149,8 @@ const pageMeta={
   'contas-receber':['Contas a Receber','Gerencie recebimentos do mês'],
   custos:['Custos Operacionais','Análise inteligente baseada em lançamentos reais'],
   'custos-produtos':['Custos de Produtos','Gerencie os componentes de custo de cada produto'],
+  'pdv-vendedores':['Vendedores PDV','Cadastro de vendedores que operam o PDV interno'],
+  'pdv-locais':    ['Locais de Venda','Cadastro de pontos de venda (matriz, quiosque, tráfego pago)'],
 };
 // Breadcrumb hierárquico — pai não-clicável (etiqueta visual), atual em destaque.
 // Dashboard NÃO aparece (raiz). Pais espelham os agrupadores da sidebar.
@@ -3126,6 +3170,8 @@ const BREADCRUMB_MAP = {
   'contas-receber':['Financeiro', 'Contas a Receber'],
   custos:          ['Financeiro', 'Custos Operacionais'],
   'custos-produtos':['Produtos', 'Custos de Produtos'],
+  'pdv-vendedores':['Vendas', 'Vendedores PDV'],
+  'pdv-locais':    ['Vendas', 'Locais de Venda'],
 };
 // Sub-tabs do módulo Financeiro: troca de sub-tab deve refletir em
 // título, subtítulo e breadcrumb (não rerenderiza pelo showPage).
@@ -3217,6 +3263,8 @@ function showPage(id, opts){
   if(id==='montagens')initMontagens();
   if(id==='clientes')initClientes();
   if(id==='contratos')initContratos();
+  if(id==='pdv-vendedores')initPdvVendedores();
+  if(id==='pdv-locais')initPdvLocais();
 }
 
 // Detecta voltar/avançar do navegador
@@ -6734,6 +6782,8 @@ const TODOS_MODULOS = [
   { id: 'contas-receber', nome: 'Contas a Receber' },
   { id: 'custos',       nome: 'Custos Operacionais' },
   { id: 'custos-produtos', nome: 'Custos de Produtos' },
+  { id: 'pdv-vendedores',  nome: 'PDV — Vendedores' },
+  { id: 'pdv-locais',      nome: 'PDV — Locais de Venda' },
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
@@ -13497,6 +13547,275 @@ async function _alternarStatusMontador(montadorId, novoAtivo) {
   const { error } = await sb.from('montadores').update(upd).eq('id', montadorId);
   if (error) { smAlert('Erro ao ' + acao + ': ' + error.message); return; }
   await initMontagens();
+}
+
+// ═══════════════════════════════════════════════════════════
+// PDV — Vendedores + Locais de Venda (CRUDs básicos)
+// ═══════════════════════════════════════════════════════════
+let pdvVendedores       = [];
+let pdvLocais           = [];
+let _pdvUsuariosCache   = null; // [{id,nome,email,perfil}] — alimenta o select do modal
+
+async function initPdvVendedores() {
+  const [vRes, uRes] = await Promise.all([
+    sb.from('pdv_vendedores').select('*').order('nome'),
+    _pdvUsuariosCache
+      ? Promise.resolve({ data: _pdvUsuariosCache, error: null })
+      : sb.from('usuarios').select('id,nome,email,perfil').order('nome'),
+  ]);
+  if (vRes.error) console.warn('[pdv-vendedores] load:', vRes.error.message);
+  if (uRes.error) console.warn('[pdv-vendedores] usuarios:', uRes.error.message);
+  pdvVendedores     = (!vRes.error && vRes.data) ? toCamelArr(vRes.data) : [];
+  _pdvUsuariosCache = (!uRes.error && uRes.data) ? uRes.data            : (_pdvUsuariosCache || []);
+  renderPdvVendedores();
+}
+
+function renderPdvVendedores() {
+  const el  = document.getElementById('pdvv-lista');
+  const sub = document.getElementById('pdvv-sub');
+  if (!el) return;
+  const fmtBR = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const userById = id => (_pdvUsuariosCache || []).find(u => u.id === id);
+  // Ativos primeiro, depois ordem alfabética
+  const ordenados = pdvVendedores.slice().sort((a, b) => {
+    const aInat = a.ativo === false, bInat = b.ativo === false;
+    if (aInat !== bInat) return aInat ? 1 : -1;
+    return (a.nome || '').localeCompare(b.nome || '');
+  });
+  const ativos = pdvVendedores.filter(v => v.ativo !== false).length;
+  if (sub) sub.textContent = `${ativos} ativo${ativos===1?'':'s'} · ${pdvVendedores.length} no total`;
+  el.innerHTML = ordenados.length
+    ? ordenados.map(v => {
+        const u = v.loginUsuario ? userById(v.loginUsuario) : null;
+        const userLabel = u ? `${escHtml(u.nome || u.email)}` : '<span style="color:var(--text3);">sem login vinculado</span>';
+        const inativo = v.ativo === false;
+        const inativoBadge = inativo
+          ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">inativo</span>' : '';
+        return `<div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:14px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);${inativo ? 'opacity:0.55;' : ''}">
+          <div style="font-size:22px;">🧑‍💼</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;">${escHtml(v.nome)}${inativoBadge}</div>
+            <div style="font-size:10px;color:var(--text3);margin-top:2px;">${userLabel} · comissão ${fmtBR(v.comissaoMoto)}/moto</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;">Comissão</div>
+            <div style="font-size:14px;font-weight:800;color:var(--gold);">${fmtBR(v.comissaoMoto)}</div>
+          </div>
+          <div style="display:flex;gap:5px;">
+            <button class="action-btn edit-btn" onclick="abrirVendedorModal('${v.id}')" title="Editar">✏</button>
+            ${inativo
+              ? `<button class="action-btn" onclick="_alternarStatusVendedor('${v.id}', true)" title="Reativar" style="color:var(--green);">↻</button>`
+              : `<button class="action-btn del-btn" onclick="_alternarStatusVendedor('${v.id}', false)" title="Desativar">⊘</button>`}
+          </div>
+        </div>`;
+      }).join('')
+    : '<div class="empty" style="padding:32px;">Nenhum vendedor cadastrado. Clique em "+ Novo vendedor" pra começar.</div>';
+}
+
+function abrirVendedorModal(vendedorId) {
+  const old = document.getElementById('pdvv-modal');
+  if (old) old.remove();
+  const v = vendedorId ? pdvVendedores.find(x => x.id === vendedorId) : null;
+  const isEdit = !!v;
+  const titulo = isEdit ? `Editar <span>vendedor</span>` : `Novo <span>vendedor</span>`;
+
+  const usuarios = (_pdvUsuariosCache || []).slice().sort((a,b) =>
+    (a.nome || a.email || '').localeCompare(b.nome || b.email || ''));
+  const userOpts = '<option value="">— sem vínculo —</option>' + usuarios.map(u => {
+    const sel = (v?.loginUsuario === u.id) ? ' selected' : '';
+    const label = u.nome ? `${u.nome} (${u.email})` : u.email;
+    return `<option value="${u.id}"${sel}>${escHtml(label)}</option>`;
+  }).join('');
+
+  const shell = document.createElement('div');
+  shell.id = 'pdvv-modal';
+  shell.className = 'modal-overlay open';
+  shell.dataset.vendedorId = isEdit ? vendedorId : '';
+  shell.innerHTML =
+      `<div class="modal" style="width:480px;max-width:96vw;">`
+    +   `<div class="modal-title">${titulo}</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group full"><label>Nome</label><input class="form-input" id="pdvv-nome" type="text" value="${escHtml(v?.nome || '').replace(/"/g,'&quot;')}" placeholder="Nome do vendedor"></div>`
+    +     `<div class="form-group full"><label>Login (usuário do sistema, opcional)</label><select class="form-input" id="pdvv-login">${userOpts}</select></div>`
+    +     `<div class="form-group"><label>Comissão por moto (R$)</label><input class="form-input" id="pdvv-comissao" type="number" step="0.01" min="0" value="${Number(v?.comissaoMoto ?? 100).toFixed(2)}"></div>`
+    +     `<div class="form-group" style="display:flex;align-items:flex-end;font-size:12px;">`
+    +       `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="pdvv-ativo"${v?.ativo !== false ? ' checked' : ''}> Ativo</label>`
+    +     `</div>`
+    +   `</div>`
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('pdvv-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="pdvv-btn-salvar" onclick="_salvarVendedor()">${isEdit ? 'Salvar alterações' : 'Cadastrar'}</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _salvarVendedor() {
+  const btn = document.getElementById('pdvv-btn-salvar');
+  if (btn?.disabled) return;
+  const vendedorId = document.getElementById('pdvv-modal')?.dataset.vendedorId || '';
+  const isEdit = !!vendedorId;
+
+  const nome     = (document.getElementById('pdvv-nome')?.value || '').trim();
+  const login    = (document.getElementById('pdvv-login')?.value || '').trim() || null;
+  const comissao = Number(document.getElementById('pdvv-comissao')?.value || 0);
+  const ativo    = !!document.getElementById('pdvv-ativo')?.checked;
+
+  if (!nome) { smAlert('Informe o nome do vendedor.'); return; }
+  if (!(comissao >= 0)) { smAlert('Comissão inválida.'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    const payload = { nome, login_usuario: login, comissao_moto: comissao, ativo };
+    if (isEdit) {
+      const { error } = await sb.from('pdv_vendedores').update(payload).eq('id', vendedorId);
+      if (error) throw new Error('Erro ao atualizar: ' + error.message);
+    } else {
+      const { error } = await sb.from('pdv_vendedores').insert(payload);
+      if (error) throw new Error('Erro ao cadastrar: ' + error.message);
+    }
+    document.getElementById('pdvv-modal')?.remove();
+    await initPdvVendedores();
+  } catch (e) {
+    smAlert(e.message || 'Erro desconhecido.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = isEdit ? 'Salvar alterações' : 'Cadastrar'; }
+  }
+}
+
+async function _alternarStatusVendedor(vendedorId, novoAtivo) {
+  const v = pdvVendedores.find(x => x.id === vendedorId);
+  if (!v) return;
+  const ok = await smConfirm(`${novoAtivo ? 'Reativar' : 'Desativar'} o vendedor "${v.nome}"?` + (novoAtivo ? '' : '\n\nVendedores inativos não aparecem no select do PDV.'));
+  if (!ok) return;
+  const { error } = await sb.from('pdv_vendedores').update({ ativo: novoAtivo }).eq('id', vendedorId);
+  if (error) { smAlert('Erro: ' + error.message); return; }
+  await initPdvVendedores();
+}
+
+// ─── Locais de venda ─────────────────────────────────────────
+async function initPdvLocais() {
+  const { data, error } = await sb.from('pdv_locais_venda').select('*').order('ordem').order('nome');
+  if (error) console.warn('[pdv-locais] load:', error.message);
+  pdvLocais = (!error && data) ? toCamelArr(data) : [];
+  renderPdvLocais();
+}
+
+function renderPdvLocais() {
+  const el  = document.getElementById('pdvl-lista');
+  const sub = document.getElementById('pdvl-sub');
+  if (!el) return;
+  // Ativos por ordem ascendente; inativos no fim alfabético.
+  const ordenados = pdvLocais.slice().sort((a, b) => {
+    const aInat = a.ativo === false, bInat = b.ativo === false;
+    if (aInat !== bInat) return aInat ? 1 : -1;
+    const ordA = Number(a.ordem ?? 0), ordB = Number(b.ordem ?? 0);
+    if (ordA !== ordB) return ordA - ordB;
+    return (a.nome || '').localeCompare(b.nome || '');
+  });
+  const ativos = pdvLocais.filter(l => l.ativo !== false).length;
+  if (sub) sub.textContent = `${ativos} ativo${ativos===1?'':'s'} · ${pdvLocais.length} no total`;
+  el.innerHTML = ordenados.length
+    ? ordenados.map(l => {
+        const inativo = l.ativo === false;
+        const inativoBadge = inativo
+          ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">inativo</span>' : '';
+        return `<div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:14px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);${inativo ? 'opacity:0.55;' : ''}">
+          <div style="font-size:22px;">📍</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;">${escHtml(l.nome)}${inativoBadge}</div>
+            <div style="font-size:10px;color:var(--text3);margin-top:2px;font-family:var(--mono,monospace);">código: ${escHtml(l.codigo || '—')}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;">Ordem</div>
+            <div style="font-size:14px;font-weight:800;">${Number(l.ordem ?? 0)}</div>
+          </div>
+          <div style="display:flex;gap:5px;">
+            <button class="action-btn edit-btn" onclick="abrirLocalModal('${l.id}')" title="Editar">✏</button>
+            ${inativo
+              ? `<button class="action-btn" onclick="_alternarStatusLocal('${l.id}', true)" title="Reativar" style="color:var(--green);">↻</button>`
+              : `<button class="action-btn del-btn" onclick="_alternarStatusLocal('${l.id}', false)" title="Desativar">⊘</button>`}
+          </div>
+        </div>`;
+      }).join('')
+    : '<div class="empty" style="padding:32px;">Nenhum local cadastrado. Clique em "+ Novo local" pra começar.</div>';
+}
+
+function abrirLocalModal(localId) {
+  const old = document.getElementById('pdvl-modal');
+  if (old) old.remove();
+  const l = localId ? pdvLocais.find(x => x.id === localId) : null;
+  const isEdit = !!l;
+  const titulo = isEdit ? `Editar <span>local de venda</span>` : `Novo <span>local de venda</span>`;
+  const proxOrdem = isEdit ? l.ordem : (pdvLocais.reduce((m, x) => Math.max(m, Number(x.ordem) || 0), 0) + 1);
+
+  const shell = document.createElement('div');
+  shell.id = 'pdvl-modal';
+  shell.className = 'modal-overlay open';
+  shell.dataset.localId = isEdit ? localId : '';
+  shell.innerHTML =
+      `<div class="modal" style="width:460px;max-width:96vw;">`
+    +   `<div class="modal-title">${titulo}</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group full"><label>Nome</label><input class="form-input" id="pdvl-nome" type="text" value="${escHtml(l?.nome || '').replace(/"/g,'&quot;')}" placeholder="Ex: Loja Matriz"></div>`
+    +     `<div class="form-group"><label>Código (slug)</label><input class="form-input" id="pdvl-codigo" type="text" value="${escHtml(l?.codigo || '').replace(/"/g,'&quot;')}" placeholder="ex: matriz" style="font-family:var(--mono,monospace);"></div>`
+    +     `<div class="form-group"><label>Ordem</label><input class="form-input" id="pdvl-ordem" type="number" min="0" step="1" value="${Number(proxOrdem)}"></div>`
+    +     `<div class="form-group full" style="font-size:12px;">`
+    +       `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="pdvl-ativo"${l?.ativo !== false ? ' checked' : ''}> Ativo</label>`
+    +     `</div>`
+    +   `</div>`
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('pdvl-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="pdvl-btn-salvar" onclick="_salvarLocal()">${isEdit ? 'Salvar alterações' : 'Cadastrar'}</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _salvarLocal() {
+  const btn = document.getElementById('pdvl-btn-salvar');
+  if (btn?.disabled) return;
+  const localId = document.getElementById('pdvl-modal')?.dataset.localId || '';
+  const isEdit = !!localId;
+
+  const nome   = (document.getElementById('pdvl-nome')?.value   || '').trim();
+  const codigo = (document.getElementById('pdvl-codigo')?.value || '').trim();
+  const ordem  = parseInt(document.getElementById('pdvl-ordem')?.value || '0', 10);
+  const ativo  = !!document.getElementById('pdvl-ativo')?.checked;
+
+  if (!nome)   { smAlert('Informe o nome do local.'); return; }
+  if (!codigo) { smAlert('Informe o código (slug).'); return; }
+  if (!/^[a-z0-9_]+$/.test(codigo)) { smAlert('Código aceita só letras minúsculas, números e underscore (ex: matriz, quiosque, trafego_pago).'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    const payload = { nome, codigo, ordem: isNaN(ordem) ? 0 : ordem, ativo };
+    if (isEdit) {
+      const { error } = await sb.from('pdv_locais_venda').update(payload).eq('id', localId);
+      if (error) throw new Error('Erro ao atualizar: ' + (error.code === '23505' ? 'já existe outro local com esse código.' : error.message));
+    } else {
+      const { error } = await sb.from('pdv_locais_venda').insert(payload);
+      if (error) throw new Error('Erro ao cadastrar: ' + (error.code === '23505' ? 'já existe outro local com esse código.' : error.message));
+    }
+    document.getElementById('pdvl-modal')?.remove();
+    await initPdvLocais();
+  } catch (e) {
+    smAlert(e.message || 'Erro desconhecido.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = isEdit ? 'Salvar alterações' : 'Cadastrar'; }
+  }
+}
+
+async function _alternarStatusLocal(localId, novoAtivo) {
+  const l = pdvLocais.find(x => x.id === localId);
+  if (!l) return;
+  const ok = await smConfirm(`${novoAtivo ? 'Reativar' : 'Desativar'} o local "${l.nome}"?` + (novoAtivo ? '' : '\n\nLocais inativos não aparecem no select do PDV.'));
+  if (!ok) return;
+  const { error } = await sb.from('pdv_locais_venda').update({ ativo: novoAtivo }).eq('id', localId);
+  if (error) { smAlert('Erro: ' + error.message); return; }
+  await initPdvLocais();
 }
 
 let sacCasos = [];
