@@ -14081,7 +14081,7 @@ function _pdvRenderNovaVenda(root) {
     +   `</div>`
     + `</div></div>`
 
-    + `<div class="card" style="margin-bottom:18px;"><div style="padding:18px 20px;">`
+    + `<div class="card" style="margin-bottom:18px;overflow:visible;"><div style="padding:18px 20px;">`
     +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:10px;">Itens da venda</div>`
     +   `<div style="position:relative;margin-bottom:10px;">`
     +     `<input type="text" class="search-input" id="pdv-busca-prod" placeholder="${produtosTiny.length?'🔍 Buscar produto por nome ou código...':'⏳ carregando produtos do Tiny...'}" style="width:100%;" oninput="_pdvFiltraProdutos()" onfocus="_pdvFiltraProdutos()" onblur="setTimeout(()=>{const el=document.getElementById('pdv-prod-dropdown');if(el)el.style.display='none';},200);">`
