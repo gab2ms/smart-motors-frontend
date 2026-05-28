@@ -14054,7 +14054,7 @@ function _pdvVendaNova() {
   return {
     vendedorId: '', localId: '', itens: [],
     cliente: { nome:'', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'' },
-    dataPrevistaEntrega: '', observacao: '', desconto: 0, pagamentos: [],
+    dataPrevistaEntrega: '', entregaImediata: false, observacao: '', desconto: 0, pagamentos: [],
   };
 }
 
@@ -14231,10 +14231,17 @@ function _pdvRenderNovaVenda(root) {
 
     + `<div class="card" style="margin-bottom:18px;"><div style="padding:18px 20px;">`
     +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:10px;">Entrega + observação</div>`
-    +   `<div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;">`
-    +     `<div class="form-group"><label>Data prevista de entrega</label><input class="form-input" type="datetime-local" value="${escHtml(v.dataPrevistaEntrega)}" oninput="_pdvVenda.dataPrevistaEntrega=this.value;"></div>`
-    +     `<div class="form-group"><label>Observação (opcional)</label><input class="form-input" type="text" value="${escHtml(v.observacao).replace(/"/g,'&quot;')}" placeholder="ex: entregar pela manhã" oninput="_pdvVenda.observacao=this.value;"></div>`
+    +   `<div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;width:fit-content;margin-bottom:14px;">`
+    +     `<button type="button" onclick="_pdvSetEntregaImediata(false)" style="background:${v.entregaImediata?'transparent':'var(--gold)'};color:${v.entregaImediata?'var(--text2)':'#000'};padding:8px 14px;border:none;cursor:pointer;font-size:11px;font-weight:700;">📅 Entrega depois</button>`
+    +     `<button type="button" onclick="_pdvSetEntregaImediata(true)" style="background:${v.entregaImediata?'var(--gold)':'transparent'};color:${v.entregaImediata?'#000':'var(--text2)'};padding:8px 14px;border:none;cursor:pointer;font-size:11px;font-weight:700;border-left:1px solid var(--border);">🚚 Cliente leva agora</button>`
     +   `</div>`
+    +   (v.entregaImediata
+        ? `<div style="font-size:11px;color:var(--green);font-style:italic;margin-bottom:10px;">↳ Status do pedido será "Entregue" automaticamente (data registrada no momento do salvamento).</div>`
+          + `<div class="form-group" style="margin:0;"><label>Observação (opcional)</label><input class="form-input" type="text" value="${escHtml(v.observacao).replace(/"/g,'&quot;')}" placeholder="ex: cor sob encomenda" oninput="_pdvVenda.observacao=this.value;"></div>`
+        : `<div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;">`
+          + `<div class="form-group" style="margin:0;"><label>Data prevista de entrega *</label><input class="form-input" type="datetime-local" value="${escHtml(v.dataPrevistaEntrega)}" oninput="_pdvVenda.dataPrevistaEntrega=this.value;"></div>`
+          + `<div class="form-group" style="margin:0;"><label>Observação (opcional)</label><input class="form-input" type="text" value="${escHtml(v.observacao).replace(/"/g,'&quot;')}" placeholder="ex: entregar pela manhã" oninput="_pdvVenda.observacao=this.value;"></div>`
+          + `</div>`)
     + `</div></div>`
 
     + `<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;background:var(--surface2);border-radius:var(--r-sm);">`
@@ -14368,6 +14375,17 @@ function _pdvConsumidorFinal() {
   renderPdv();
 }
 
+// Toggle "Entrega depois" / "Cliente leva agora". Quando muda pra
+// imediata, limpa a data prevista pra não confundir com o caso
+// anterior; quando volta pra "depois", a data fica vazia e o usuário
+// preenche de novo (decisão consciente, não restaura input perdido).
+function _pdvSetEntregaImediata(imediata) {
+  if (!_pdvVenda) return;
+  _pdvVenda.entregaImediata = !!imediata;
+  if (imediata) _pdvVenda.dataPrevistaEntrega = '';
+  renderPdv();
+}
+
 // ─── ViaCEP — debounce + busca + preenche os 4 campos auto ──
 function _pdvAgendaCep() {
   clearTimeout(_pdvCepTimer);
@@ -14434,6 +14452,7 @@ function _pdvAvancarParaFinalizacao() {
   if (!v.itens.length) return smAlert('Adicione pelo menos um item.');
   if (v.itens.some(it => !(Number(it.qtd) > 0)))      return smAlert('Todo item precisa ter quantidade ≥ 1.');
   if (v.itens.some(it => !(Number(it.precoUnit) >= 0))) return smAlert('Preço inválido em algum item.');
+  if (!v.entregaImediata && !v.dataPrevistaEntrega)   return smAlert("Informe a data prevista de entrega ou marque 'Cliente leva agora'.");
   if (!(v.cliente.nome || '').trim()) return smAlert('Nome do cliente é obrigatório.');
   const subtotal = v.itens.reduce((s, it) => s + Number(it.qtd) * Number(it.precoUnit), 0);
   if (!v.pagamentos.length) v.pagamentos = [{ tipo: 'dinheiro', valor: subtotal }];
@@ -14573,20 +14592,29 @@ async function _pdvFinalizarVenda() {
   const btn = document.getElementById('pdv-btn-finalizar');
   if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
   try {
-    const dataEntrega = v.dataPrevistaEntrega ? new Date(v.dataPrevistaEntrega).toISOString() : null;
-    const { data: ped, error: errP } = await sb.from('pdv_pedidos').insert({
+    // "Cliente leva agora" → status='entregue' já na criação, data_entrega_real
+    // = now() e data_prevista_entrega fica null. Modo normal segue como antes.
+    const pedidoPayload = {
       vendedor_id: v.vendedorId,
       local_venda_id: v.localId,
       cliente_dados: clienteDados,
       forma_pagamento: formaPagamento,
       desconto,
       total,
-      data_prevista_entrega: dataEntrega,
-      status: 'aguardando_entrega',
       observacao: v.observacao?.trim() || null,
       criado_por: criadoPor,
       sincronizado_tiny: false,
-    }).select().single();
+    };
+    if (v.entregaImediata) {
+      pedidoPayload.status                = 'entregue';
+      pedidoPayload.data_entrega_real     = new Date().toISOString();
+      pedidoPayload.data_prevista_entrega = null;
+    } else {
+      pedidoPayload.status                = 'aguardando_entrega';
+      pedidoPayload.data_prevista_entrega = new Date(v.dataPrevistaEntrega).toISOString();
+      pedidoPayload.data_entrega_real     = null;
+    }
+    const { data: ped, error: errP } = await sb.from('pdv_pedidos').insert(pedidoPayload).select().single();
     if (errP) throw new Error('Erro ao salvar pedido: ' + errP.message);
 
     const itensRows = v.itens.map((it, idx) => ({
@@ -14673,7 +14701,7 @@ async function _pdvAbrirDetalhe(pedidoId) {
     +     `<div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;">Vendedor</div><div>${escHtml(vNome)}</div></div>`
     +     `<div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;">Local</div><div>${escHtml(lNome)}</div></div>`
     +     `<div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;">Criado em</div><div>${fmtDT(p.criadoEm)}</div></div>`
-    +     `<div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;">Entrega prevista</div><div>${fmtDT(p.dataPrevistaEntrega)}</div></div>`
+    +     `<div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;">${p.dataEntregaReal?'Entregue em':'Entrega prevista'}</div><div>${fmtDT(p.dataEntregaReal || p.dataPrevistaEntrega)}</div></div>`
     +   `</div>`
     +   `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Cliente</div>`
     +   `<div style="background:var(--surface2);padding:10px 12px;border-radius:var(--r-sm);font-size:12px;margin-bottom:18px;">`
