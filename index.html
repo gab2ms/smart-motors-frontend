@@ -13592,6 +13592,19 @@ async function _alternarStatusMontador(montadorId, novoAtivo) {
 let pdvVendedores       = [];
 let pdvLocais           = [];
 let _pdvUsuariosCache   = null; // [{id,nome,email,perfil}] — alimenta o select do modal
+// Sets de IDs que têm pedidos vinculados — usados pra esconder o botão
+// "Excluir" quando o registro está referenciado. Recarregam a cada init.
+// O ON DELETE RESTRICT do banco continua sendo a defesa última caso o
+// cache esteja stale (race entre múltiplos usuários).
+let _pdvVendedoresComPedido = new Set();
+let _pdvLocaisComPedido     = new Set();
+
+async function _pdvCarregaDeps() {
+  const { data, error } = await sb.from('pdv_pedidos').select('vendedor_id, local_venda_id');
+  if (error) { console.warn('[pdv-deps]:', error.message); _pdvVendedoresComPedido = new Set(); _pdvLocaisComPedido = new Set(); return; }
+  _pdvVendedoresComPedido = new Set((data||[]).map(p => p.vendedor_id).filter(Boolean));
+  _pdvLocaisComPedido     = new Set((data||[]).map(p => p.local_venda_id).filter(Boolean));
+}
 
 async function initPdvVendedores() {
   const [vRes, uRes] = await Promise.all([
@@ -13599,6 +13612,7 @@ async function initPdvVendedores() {
     _pdvUsuariosCache
       ? Promise.resolve({ data: _pdvUsuariosCache, error: null })
       : sb.from('usuarios').select('id,nome,email,perfil').order('nome'),
+    _pdvCarregaDeps(),
   ]);
   if (vRes.error) console.warn('[pdv-vendedores] load:', vRes.error.message);
   if (uRes.error) console.warn('[pdv-vendedores] usuarios:', uRes.error.message);
@@ -13643,6 +13657,8 @@ function renderPdvVendedores() {
             ${inativo
               ? `<button class="action-btn" onclick="_alternarStatusVendedor('${v.id}', true)" title="Reativar" style="color:var(--green);">↻</button>`
               : `<button class="action-btn del-btn" onclick="_alternarStatusVendedor('${v.id}', false)" title="Desativar">⊘</button>`}
+            ${_pdvVendedoresComPedido.has(v.id) ? '' :
+              `<button class="action-btn" onclick="_excluirVendedor('${v.id}')" title="Excluir permanentemente" style="color:var(--red);">🗑</button>`}
           </div>
         </div>`;
       }).join('')
@@ -13733,9 +13749,12 @@ async function _alternarStatusVendedor(vendedorId, novoAtivo) {
 
 // ─── Locais de venda ─────────────────────────────────────────
 async function initPdvLocais() {
-  const { data, error } = await sb.from('pdv_locais_venda').select('*').order('ordem').order('nome');
-  if (error) console.warn('[pdv-locais] load:', error.message);
-  pdvLocais = (!error && data) ? toCamelArr(data) : [];
+  const [lRes] = await Promise.all([
+    sb.from('pdv_locais_venda').select('*').order('ordem').order('nome'),
+    _pdvCarregaDeps(),
+  ]);
+  if (lRes.error) console.warn('[pdv-locais] load:', lRes.error.message);
+  pdvLocais = (!lRes.error && lRes.data) ? toCamelArr(lRes.data) : [];
   renderPdvLocais();
 }
 
@@ -13773,6 +13792,8 @@ function renderPdvLocais() {
             ${inativo
               ? `<button class="action-btn" onclick="_alternarStatusLocal('${l.id}', true)" title="Reativar" style="color:var(--green);">↻</button>`
               : `<button class="action-btn del-btn" onclick="_alternarStatusLocal('${l.id}', false)" title="Desativar">⊘</button>`}
+            ${_pdvLocaisComPedido.has(l.id) ? '' :
+              `<button class="action-btn" onclick="_excluirLocal('${l.id}')" title="Excluir permanentemente" style="color:var(--red);">🗑</button>`}
           </div>
         </div>`;
       }).join('')
@@ -13852,6 +13873,40 @@ async function _alternarStatusLocal(localId, novoAtivo) {
   if (!ok) return;
   const { error } = await sb.from('pdv_locais_venda').update({ ativo: novoAtivo }).eq('id', localId);
   if (error) { smAlert('Erro: ' + error.message); return; }
+  await initPdvLocais();
+}
+
+async function _excluirVendedor(vendedorId) {
+  const v = pdvVendedores.find(x => x.id === vendedorId);
+  if (!v) return;
+  const ok = await smConfirm(`Excluir permanentemente o vendedor "${v.nome}"? Esta ação não pode ser desfeita.`);
+  if (!ok) return;
+  const { error } = await sb.from('pdv_vendedores').delete().eq('id', vendedorId);
+  if (error) {
+    // ON DELETE RESTRICT pode bloquear caso o cache esteja stale e tenha
+    // surgido pedido entre o load e o click — mensagem amigável.
+    const msg = error.code === '23503'
+      ? `Não é possível excluir "${v.nome}" — existem pedidos vinculados. Desative em vez disso.`
+      : 'Erro ao excluir: ' + error.message;
+    smAlert(msg);
+    return;
+  }
+  await initPdvVendedores();
+}
+
+async function _excluirLocal(localId) {
+  const l = pdvLocais.find(x => x.id === localId);
+  if (!l) return;
+  const ok = await smConfirm(`Excluir permanentemente o local "${l.nome}"? Esta ação não pode ser desfeita.`);
+  if (!ok) return;
+  const { error } = await sb.from('pdv_locais_venda').delete().eq('id', localId);
+  if (error) {
+    const msg = error.code === '23503'
+      ? `Não é possível excluir "${l.nome}" — existem pedidos vinculados. Desative em vez disso.`
+      : 'Erro ao excluir: ' + error.message;
+    smAlert(msg);
+    return;
+  }
   await initPdvLocais();
 }
 
