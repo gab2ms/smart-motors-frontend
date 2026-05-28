@@ -6024,9 +6024,10 @@ function toAPIDate(iso) {
 }
 
 async function initPedidosUnif() {
-  // Default dates
+  // Default dates: últimos 30 dias (não os do mês corrente — diferente do dashboard).
   const hoje = new Date();
-  const ini  = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const ini  = new Date();
+  ini.setDate(ini.getDate() - 30);
   const toISO = d => d.toISOString().split('T')[0];
   const elIni = document.getElementById('ped-data-ini');
   const elFim = document.getElementById('ped-data-fim');
@@ -6036,8 +6037,13 @@ async function initPedidosUnif() {
   if (!pdvVendedores.length) try { await initPdvVendedores(); } catch(e) {}
   if (!pdvLocais.length)     try { await initPdvLocais();     } catch(e) {}
   _populaSelectVendedorFiltro();
-  // Se já tem cache, rerenderiza
-  if (pedidosUnif.length) renderPedidosUnif();
+  // Primeira entrada da sessão: dispara busca automática. Próximas
+  // visitas usam o cache em memória (rerender só).
+  if (pedidosUnif.length) {
+    renderPedidosUnif();
+  } else {
+    carregarPedidosUnif();
+  }
 }
 
 function _populaSelectVendedorFiltro() {
