@@ -13919,6 +13919,10 @@ let _pdvStep                = 0;     // 0=painel | 1=montar | 2=finalizar | 3=su
 let _pdvVenda               = null;  // state da venda em progresso (em memória)
 let _pdvPedidosLista        = [];    // cache da lista de pedidos PDV
 let _pdvUltimoPedidoCriado  = null;  // mostrado no step 3 (sucesso)
+let _pdvCepTimer            = null;  // debounce do ViaCEP
+
+// API pública gratuita — não precisa de token, retorna 8 dígitos do CEP.
+const VIACEP_URL = 'https://viacep.com.br/ws/{cep}/json/';
 
 const PDV_PAGTO_TIPOS = [
   { code: 'dinheiro',       label: '💵 Dinheiro' },
@@ -13938,7 +13942,7 @@ const _fmtBRMoney = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR', { minimumF
 function _pdvVendaNova() {
   return {
     vendedorId: '', localId: '', itens: [],
-    cliente: { nome:'', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'' },
+    cliente: { nome:'', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'' },
     dataPrevistaEntrega: '', observacao: '', desconto: 0, pagamentos: [],
   };
 }
@@ -14081,7 +14085,7 @@ function _pdvRenderNovaVenda(root) {
     +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:10px;">Itens da venda</div>`
     +   `<div style="position:relative;margin-bottom:10px;">`
     +     `<input type="text" class="search-input" id="pdv-busca-prod" placeholder="${produtosTiny.length?'🔍 Buscar produto por nome ou código...':'⏳ carregando produtos do Tiny...'}" style="width:100%;" oninput="_pdvFiltraProdutos()" onfocus="_pdvFiltraProdutos()" onblur="setTimeout(()=>{const el=document.getElementById('pdv-prod-dropdown');if(el)el.style.display='none';},200);">`
-    +     `<div id="pdv-prod-dropdown" style="display:none;position:absolute;top:40px;left:0;right:0;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:300px;overflow-y:auto;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>`
+    +     `<div id="pdv-prod-dropdown" style="display:none;position:absolute;top:40px;left:0;right:0;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:500px;overflow-y:auto;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>`
     +   `</div>`
     +   `<div id="pdv-itens-tabela">${_pdvRenderItensTabela()}</div>`
     + `</div></div>`
@@ -14099,13 +14103,19 @@ function _pdvRenderNovaVenda(root) {
     +     `<div class="form-group"><label>Telefone</label><input class="form-input" type="text" value="${escHtml(v.cliente.telefone).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.telefone=this.value;"></div>`
     +     `<div class="form-group"><label>Email</label><input class="form-input" type="text" value="${escHtml(v.cliente.email).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.email=this.value;"></div>`
     +   `</div>`
-    +   `<div style="display:grid;grid-template-columns:130px 1fr 100px 1fr;gap:10px;margin-top:8px;">`
-    +     `<div class="form-group"><label>CEP</label><input class="form-input" type="text" value="${escHtml(v.cliente.cep).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.cep=this.value;"></div>`
-    +     `<div class="form-group"><label>Rua</label><input class="form-input" type="text" value="${escHtml(v.cliente.rua).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.rua=this.value;"></div>`
-    +     `<div class="form-group"><label>Número</label><input class="form-input" type="text" value="${escHtml(v.cliente.numero).replace(/"/g,'&quot;')}" placeholder="—" oninput="_pdvVenda.cliente.numero=this.value;"></div>`
-    +     `<div class="form-group"><label>Complemento</label><input class="form-input" type="text" value="${escHtml(v.cliente.complemento).replace(/"/g,'&quot;')}" placeholder="apto, bloco, ref." oninput="_pdvVenda.cliente.complemento=this.value;"></div>`
+    +   `<div style="display:grid;grid-template-columns:130px 3fr 100px 1fr;gap:10px;margin-top:8px;">`
+    +     `<div class="form-group" style="margin:0;"><label>CEP</label><input class="form-input" id="pdv-cli-cep" type="text" value="${escHtml(v.cliente.cep).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.cep=this.value;_pdvAgendaCep();"></div>`
+    +     `<div class="form-group" style="margin:0;"><label>Rua</label><input class="form-input" id="pdv-cli-rua" type="text" value="${escHtml(v.cliente.rua).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.rua=this.value;"></div>`
+    +     `<div class="form-group" style="margin:0;"><label>Número</label><input class="form-input" id="pdv-cli-num" type="text" value="${escHtml(v.cliente.numero).replace(/"/g,'&quot;')}" placeholder="—" oninput="_pdvVenda.cliente.numero=this.value;"></div>`
+    +     `<div class="form-group" style="margin:0;"><label>Complemento</label><input class="form-input" type="text" value="${escHtml(v.cliente.complemento).replace(/"/g,'&quot;')}" placeholder="apto, bloco, ref." oninput="_pdvVenda.cliente.complemento=this.value;"></div>`
     +   `</div>`
-    +   `<div style="font-size:10px;color:var(--text3);margin-top:6px;font-style:italic;">Endereço opcional — se preencher, ideal informar CEP + Rua + Número juntos pra entrega.</div>`
+    +   `<div id="pdv-cli-cep-msg" style="font-size:10px;color:var(--text3);margin-top:4px;min-height:14px;"></div>`
+    +   `<div style="display:grid;grid-template-columns:2fr 2fr 70px;gap:10px;margin-top:4px;">`
+    +     `<div class="form-group" style="margin:0;"><label>Bairro</label><input class="form-input" id="pdv-cli-bairro" type="text" value="${escHtml(v.cliente.bairro).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.bairro=this.value;"></div>`
+    +     `<div class="form-group" style="margin:0;"><label>Cidade</label><input class="form-input" id="pdv-cli-cidade" type="text" value="${escHtml(v.cliente.cidade).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.cidade=this.value;"></div>`
+    +     `<div class="form-group" style="margin:0;"><label>UF</label><input class="form-input" id="pdv-cli-uf" type="text" maxlength="2" style="text-transform:uppercase;" value="${escHtml(v.cliente.uf).replace(/"/g,'&quot;')}" placeholder="—" oninput="_pdvVenda.cliente.uf=this.value.toUpperCase();this.value=this.value.toUpperCase();"></div>`
+    +   `</div>`
+    +   `<div style="font-size:10px;color:var(--text3);margin-top:6px;font-style:italic;">Endereço opcional — digite o CEP pra preencher automaticamente Rua, Bairro, Cidade e UF.</div>`
     + `</div></div>`
 
     + `<div class="card" style="margin-bottom:18px;"><div style="padding:18px 20px;">`
@@ -14176,9 +14186,14 @@ function _pdvRemoveItem(idx) {
   _pdvAtualizaSubtotalRodape();
 }
 
-function _pdvAddItemFromIdx(idx) {
+async function _pdvAddItemFromIdx(idx) {
   const p = produtosTiny[idx];
   if (!p) return;
+  // Se sem estoque, confirma antes — o badge no dropdown já avisou visualmente.
+  if (Number(p.estoque || 0) <= 0) {
+    const ok = await smConfirm(`⚠️ Produto sem estoque: "${p.nome || 'item'}".\n\nAdicionar mesmo assim?`);
+    if (!ok) return;
+  }
   // Se já tem o mesmo produto, soma 1 na qtd em vez de criar linha nova
   const existente = _pdvVenda.itens.find(it => String(it.tinyProdutoId||'') === String(p.id||''));
   if (existente) {
@@ -14209,30 +14224,88 @@ function _pdvFiltraProdutos() {
   const matches = produtosTiny
     .map((p, i) => ({ p, i }))
     .filter(({p}) => (p.nome || '').toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q))
-    .slice(0, 8);
+    .slice(0, 10);
   if (!matches.length) {
-    dd.innerHTML = '<div style="padding:14px;color:var(--text3);font-size:12px;">Nenhum produto encontrado.</div>';
+    dd.innerHTML = '<div style="padding:18px;color:var(--text3);font-size:12px;">Nenhum produto encontrado.</div>';
     dd.style.display = 'block';
     return;
   }
-  dd.innerHTML = matches.map(({p, i}) => `
-    <div onmousedown="_pdvAddItemFromIdx(${i})" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;justify-content:space-between;align-items:center;" onmouseenter="this.style.background='var(--surface3)'" onmouseleave="this.style.background='transparent'">
-      <div style="min-width:0;">
-        <div style="font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(p.nome||'')}</div>
-        <div style="font-size:10px;color:var(--text3);font-family:var(--mono,monospace);">${escHtml(p.codigo||'sem código')}</div>
+  dd.innerHTML = matches.map(({p, i}) => {
+    const est = Number(p.estoque || 0);
+    const semEstoque = est <= 0;
+    const precoCor   = semEstoque ? 'var(--text3)' : 'var(--gold)';
+    const estoqueBlock = semEstoque
+      ? `<div style="display:inline-block;background:var(--red);color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:0.3px;margin-top:3px;">🔴 SEM ESTOQUE</div>`
+      : `<div style="font-size:11px;color:var(--green);font-weight:600;margin-top:3px;">✅ ${est} em estoque</div>`;
+    return `<div onmousedown="_pdvAddItemFromIdx(${i})" style="padding:14px 18px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;justify-content:space-between;align-items:center;${semEstoque?'opacity:0.6;':''}" onmouseenter="this.style.background='var(--surface3)'" onmouseleave="this.style.background='transparent'">
+      <div style="min-width:0;flex:1;">
+        <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(p.nome||'')}</div>
+        <div style="font-size:11px;color:var(--text3);font-family:var(--mono,monospace);margin-top:2px;">${escHtml(p.codigo||'sem código')}</div>
       </div>
-      <div style="text-align:right;margin-left:14px;flex-shrink:0;">
-        <div style="font-size:13px;font-weight:800;color:var(--gold);">${_fmtBRMoney(p.preco)}</div>
-        <div style="font-size:10px;color:var(--text3);">${p.estoque||0} em estoque</div>
+      <div style="text-align:right;margin-left:18px;flex-shrink:0;">
+        <div style="font-size:15px;font-weight:700;color:${precoCor};font-family:var(--mono,monospace);">${_fmtBRMoney(p.preco)}</div>
+        ${estoqueBlock}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   dd.style.display = 'block';
 }
 
 function _pdvConsumidorFinal() {
   if (!_pdvVenda) return;
-  _pdvVenda.cliente = { nome:'Consumidor Final', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'' };
+  _pdvVenda.cliente = { nome:'Consumidor Final', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'' };
   renderPdv();
+}
+
+// ─── ViaCEP — debounce + busca + preenche os 4 campos auto ──
+function _pdvAgendaCep() {
+  clearTimeout(_pdvCepTimer);
+  _pdvCepTimer = setTimeout(_pdvBuscaCep, 500);
+}
+
+function _pdvMsgCep(texto, cor) {
+  const el = document.getElementById('pdv-cli-cep-msg');
+  if (!el) return;
+  el.textContent = texto || '';
+  el.style.color = cor || 'var(--text3)';
+}
+
+async function _pdvBuscaCep() {
+  if (!_pdvVenda) return;
+  const raw  = (document.getElementById('pdv-cli-cep')?.value || '').trim();
+  const cep8 = raw.replace(/\D/g, '');
+  if (cep8.length < 8) { _pdvMsgCep(''); return; }   // silencia até ter 8 dígitos
+
+  _pdvMsgCep('Buscando endereço…');
+  const ruaEl = document.getElementById('pdv-cli-rua');
+  if (ruaEl) ruaEl.style.opacity = '0.6';
+
+  try {
+    const res = await fetch(VIACEP_URL.replace('{cep}', cep8));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data?.erro) { _pdvMsgCep('CEP não encontrado'); return; }
+
+    const upd = (id, valor, campoState) => {
+      const el = document.getElementById(id);
+      if (el && valor != null) el.value = valor;
+      if (campoState) _pdvVenda.cliente[campoState] = valor || '';
+    };
+    upd('pdv-cli-rua',    data.logradouro || '', 'rua');
+    upd('pdv-cli-bairro', data.bairro     || '', 'bairro');
+    upd('pdv-cli-cidade', data.localidade || '', 'cidade');
+    upd('pdv-cli-uf',     (data.uf || '').toUpperCase(), 'uf');
+    _pdvMsgCep('');
+
+    // Foco no Número — vendedor só completa esse campo.
+    const numEl = document.getElementById('pdv-cli-num');
+    if (numEl) numEl.focus();
+  } catch (e) {
+    console.warn('[viacep]', e.message);
+    _pdvMsgCep('Não foi possível buscar o CEP — preencha manualmente');
+  } finally {
+    if (ruaEl) ruaEl.style.opacity = '';
+  }
 }
 
 async function _pdvCancelarVenda() {
@@ -14373,6 +14446,9 @@ async function _pdvFinalizarVenda() {
   if (cli.rua?.trim())         clienteDados.rua         = cli.rua.trim();
   if (cli.numero?.trim())      clienteDados.numero      = cli.numero.trim();
   if (cli.complemento?.trim()) clienteDados.complemento = cli.complemento.trim();
+  if (cli.bairro?.trim())      clienteDados.bairro      = cli.bairro.trim();
+  if (cli.cidade?.trim())      clienteDados.cidade      = cli.cidade.trim();
+  if (cli.uf?.trim())          clienteDados.uf          = cli.uf.trim().toUpperCase();
 
   const formaPagamento = {
     desconto,
@@ -14543,7 +14619,7 @@ async function _pdvAbrirDetalhe(pedidoId) {
     +     `${cli.cpf_cnpj?`<div>CPF/CNPJ: ${escHtml(cli.cpf_cnpj)}</div>`:''}`
     +     `${cli.telefone?`<div>Tel: ${escHtml(cli.telefone)}</div>`:''}`
     +     `${cli.email?`<div>Email: ${escHtml(cli.email)}</div>`:''}`
-    +     `${(cli.cep||cli.rua||cli.numero||cli.complemento)?`<div style="margin-top:4px;color:var(--text3);">${escHtml([cli.cep,cli.rua,cli.numero,cli.complemento].filter(Boolean).join(' · '))}</div>`:''}`
+    +     `${(cli.cep||cli.rua||cli.numero||cli.complemento||cli.bairro||cli.cidade||cli.uf)?`<div style="margin-top:4px;color:var(--text3);">${escHtml([cli.cep,cli.rua,cli.numero,cli.complemento,cli.bairro,cli.cidade,cli.uf].filter(Boolean).join(' · '))}</div>`:''}`
     +   `</div>`
     +   `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Itens (${itensCam.length})</div>`
     +   `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:18px;">`
