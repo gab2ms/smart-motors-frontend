@@ -6108,16 +6108,16 @@ async function carregarPedidosUnif() {
     }
 
     // ── Normaliza
-    const unifTinyArr = tinyArr.map(_unifTiny);
-    let unifPdvArr    = pdvArr.map(_unifPdv);
+    let unifTinyArr = tinyArr.map(_unifTiny);
+    const unifPdvArr = pdvArr.map(_unifPdv);
 
-    // HOOK DEDUP (ativar na Etapa 4 do PDV): quando pdv_pedidos.tiny_pedido_id
-    // estiver populado, filtrar do array Tiny os pedidos já representados em PDV.
-    // Hoje todos os pedidos PDV têm sincronizado_tiny=false e o campo vazio —
-    // não há match a fazer. Manter este bloco como gancho:
-    //
-    //   const tinyIdsNoPdv = new Set(unifPdvArr.map(p => p.raw.tinyPedidoId).filter(Boolean));
-    //   unifTinyFiltrado = unifTinyArr.filter(t => !tinyIdsNoPdv.has(String(t.raw.id)));
+    // DEDUP: pedidos PDV sincronizados têm tiny_pedido_id preenchido.
+    // Filtra do array Tiny os que já têm representação em PDV — evita
+    // mostrar 2 linhas (Tiny + PDV) pro mesmo pedido na lista unificada.
+    const tinyIdsNoPdv = new Set(unifPdvArr.map(p => p.raw.tinyPedidoId).filter(Boolean));
+    if (tinyIdsNoPdv.size) {
+      unifTinyArr = unifTinyArr.filter(t => !tinyIdsNoPdv.has(String(t.raw.id)));
+    }
 
     pedidosUnif = [...unifTinyArr, ...unifPdvArr]
       .sort((a, b) => (b.dataISO || '').localeCompare(a.dataISO || ''));
@@ -6186,9 +6186,11 @@ function renderPedidosUnif() {
 
   tbody.innerHTML = filtered.map(p => {
     const stMeta = PEDIDO_STATUS_GROUPS[p.statusGroup] || PEDIDO_STATUS_GROUPS.aguardando;
+    const pdvNaoSync = p.origem === 'pdv' && p.raw?.sincronizadoTiny === false;
     const seloHTML = p.origem === 'tiny'
       ? '<span style="background:rgba(58,134,255,0.18);color:#3a86ff;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:800;letter-spacing:0.5px;">TINY</span>'
-      : '<span style="background:rgba(245,197,24,0.18);color:var(--gold);padding:2px 8px;border-radius:10px;font-size:9px;font-weight:800;letter-spacing:0.5px;">PDV</span>';
+      : '<span style="background:rgba(245,197,24,0.18);color:var(--gold);padding:2px 8px;border-radius:10px;font-size:9px;font-weight:800;letter-spacing:0.5px;">PDV</span>'
+        + (pdvNaoSync ? ' <span title="Não sincronizado com Tiny — abrir detalhe pra tentar de novo" style="color:var(--orange);font-size:11px;">⚠️</span>' : '');
     const statusHTML = `<span style="background:${stMeta.bg};color:${stMeta.cor};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap;">${stMeta.label}</span>`;
     const vendedorCell = p.vendedor
       ? `<span style="color:var(--text2);">${escHtml(p.vendedor)}</span>`
@@ -14031,6 +14033,10 @@ let _pdvVenda               = null;  // state da venda em progresso (em memória
 let _pdvPedidosLista        = [];    // cache da lista de pedidos PDV
 let _pdvUltimoPedidoCriado  = null;  // mostrado no step 3 (sucesso)
 let _pdvCepTimer            = null;  // debounce do ViaCEP
+// State do sync Tiny por pedido. Map { pedidoId → { state, tinyNumero?, erro? } }.
+// state ∈ 'syncing' | 'success' | 'error'. Lido pelo step 3 (sucesso) e pelo
+// detail modal pra mostrar badge + botão retry.
+let _pdvSyncStatus = new Map();
 
 // API pública gratuita — não precisa de token, retorna 8 dígitos do CEP.
 const VIACEP_URL = 'https://viacep.com.br/ws/{cep}/json/';
@@ -14642,22 +14648,93 @@ async function _pdvFinalizarVenda() {
     _pdvVenda = null;
     _pdvStep  = 3;
     renderPdv();
+
+    // Sync Tiny em background — não bloqueia a UI; atualiza badge quando retorna.
+    _pdvSincronizarComTiny(ped.id);
   } catch (e) {
     smAlert(e.message || 'Erro desconhecido.');
     if (btn) { btn.disabled = false; btn.textContent = 'Finalizar venda ✓'; }
   }
 }
 
+// Tenta criar o pedido no Tiny via backend. Não bloqueia: chama
+// /pdv/pedido-incluir em background, atualiza o state local e
+// re-renderiza step 3 (se for o pedido atual) e detail modal (se aberto).
+async function _pdvSincronizarComTiny(pedidoId) {
+  if (!pedidoId) return;
+  _pdvSyncStatus.set(pedidoId, { state: 'syncing' });
+  // Re-render do que estiver visível
+  if (_pdvUltimoPedidoCriado?.id === pedidoId && _pdvStep === 3) renderPdv();
+  _pdvAtualizaDetalheModalSync(pedidoId);
+
+  try {
+    const res = await fetch(`${API_URL}/pdv/pedido-incluir`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pedidoPdvId: pedidoId }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.erro || 'erro desconhecido');
+
+    _pdvSyncStatus.set(pedidoId, { state: 'success', tinyNumero: data.tiny_numero, tinyId: data.tiny_id });
+
+    // Atualiza in-memory pra refletir na lista/detalhe sem refetch
+    if (_pdvUltimoPedidoCriado?.id === pedidoId) {
+      _pdvUltimoPedidoCriado.sincronizadoTiny = true;
+      _pdvUltimoPedidoCriado.tinyPedidoId     = data.tiny_id;
+      _pdvUltimoPedidoCriado.tinyNumero       = data.tiny_numero;
+      if (_pdvStep === 3) renderPdv();
+    }
+    const idx = (_pdvPedidosLista || []).findIndex(x => x.id === pedidoId);
+    if (idx >= 0) {
+      _pdvPedidosLista[idx].sincronizadoTiny = true;
+      _pdvPedidosLista[idx].tinyPedidoId     = data.tiny_id;
+      _pdvPedidosLista[idx].tinyNumero       = data.tiny_numero;
+      _pdvPedidosLista[idx].tinyErro         = null;
+    }
+    _pdvAtualizaDetalheModalSync(pedidoId);
+  } catch (e) {
+    console.warn('[pdv-sync]', e.message);
+    _pdvSyncStatus.set(pedidoId, { state: 'error', erro: e.message });
+    if (_pdvUltimoPedidoCriado?.id === pedidoId && _pdvStep === 3) renderPdv();
+    _pdvAtualizaDetalheModalSync(pedidoId);
+  }
+}
+
+// Helper: se o modal de detalhe deste pedido estiver aberto, re-renderiza.
+// Implementação simples: fecha + reabre (refetch). Pequeno custo, garante
+// consistência sem precisar dissecar o DOM do modal.
+function _pdvAtualizaDetalheModalSync(pedidoId) {
+  const modal = document.getElementById('pdvp-det-modal');
+  if (!modal) return;
+  // dataset.pedidoId é setado em _pdvAbrirDetalhe abaixo.
+  if (modal.dataset.pedidoId !== pedidoId) return;
+  _pdvAbrirDetalhe(pedidoId);
+}
+
 // ─── Step 3: Sucesso ────────────────────────────────────────
 function _pdvRenderSucesso(root) {
   const p = _pdvUltimoPedidoCriado || {};
   const cli = p.clienteDados || {};
+  const sync = (p.id && _pdvSyncStatus.get(p.id)) || (p.sincronizadoTiny ? { state:'success', tinyNumero: p.tinyNumero } : null);
+
+  let syncBlock = '';
+  if (sync?.state === 'syncing') {
+    syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--text3);">⏳ Sincronizando com Tiny…</div>`;
+  } else if (sync?.state === 'success') {
+    syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--green);font-weight:700;">✅ Sincronizado com Tiny — Pedido #${escHtml(sync.tinyNumero || '?')}</div>`;
+  } else if (sync?.state === 'error') {
+    syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--orange);">⚠️ Falha ao sincronizar com Tiny: <span style="color:var(--text3);">${escHtml(sync.erro || 'erro desconhecido')}</span></div>`
+              + `<div style="margin-top:8px;"><button class="btn" onclick="_pdvSincronizarComTiny('${p.id}')" style="font-size:11px;padding:6px 12px;">🔄 Tentar sincronizar de novo</button></div>`;
+  }
+
   root.innerHTML =
       `<div style="text-align:center;padding:60px 20px;">`
     +   `<div style="font-size:72px;line-height:1;">✅</div>`
     +   `<div style="font-size:24px;font-weight:800;margin-top:14px;">Venda criada</div>`
     +   `<div style="font-size:14px;color:var(--text3);margin-top:6px;">Pedido <span style="font-family:var(--mono,monospace);font-weight:800;color:var(--gold);">#${p.numeroSmart ?? '?'}</span></div>`
     +   `<div style="font-size:13px;color:var(--text2);margin-top:14px;">${escHtml(cli.nome || '—')} · ${_fmtBRMoney(p.total || 0)}</div>`
+    +   syncBlock
     +   `<div style="margin-top:36px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">`
     +     `<button class="btn btn-gold" onclick="_pdvIniciarVenda()" style="padding:12px 24px;">🛒 Nova venda</button>`
     +     `<button class="btn" onclick="showPage('pedidos')" style="padding:12px 24px;">📋 Ver lista</button>`
@@ -14692,11 +14769,28 @@ async function _pdvAbrirDetalhe(pedidoId) {
   if (old) old.remove();
   const shell = document.createElement('div');
   shell.id = 'pdvp-det-modal';
+  shell.dataset.pedidoId = pedidoId;
   shell.className = 'modal-overlay open';
+
+  // Bloco do sync Tiny — mostra estado live (do _pdvSyncStatus) ou persistido.
+  const syncLive = _pdvSyncStatus.get(p.id);
+  let syncBlock = '';
+  if (syncLive?.state === 'syncing') {
+    syncBlock = `<span style="color:var(--text3);font-size:10px;margin-left:8px;">⏳ Sincronizando com Tiny…</span>`;
+  } else if (p.sincronizadoTiny) {
+    syncBlock = `<span style="color:var(--green);font-size:10px;margin-left:8px;font-weight:700;">✅ Sincronizado · Tiny #${escHtml(p.tinyNumero || '?')}</span>`;
+  } else {
+    // Não sincronizado: warning + erro detalhado + botão retry
+    const erroTxt = (syncLive?.state === 'error' && syncLive.erro) || p.tinyErro || '';
+    syncBlock = `<span style="color:var(--orange);font-size:10px;margin-left:8px;">⚠️ Não sincronizado com Tiny</span>`
+              + `<button class="btn" onclick="_pdvSincronizarComTiny('${p.id}')" style="font-size:10px;padding:3px 10px;margin-left:8px;">🔄 Sincronizar</button>`
+              + (erroTxt ? `<div style="font-size:10px;color:var(--text3);margin-top:6px;background:var(--surface2);padding:8px 10px;border-radius:var(--r-sm);">Último erro: ${escHtml(erroTxt)}</div>` : '');
+  }
+
   shell.innerHTML =
       `<div class="modal" style="width:680px;max-width:96vw;max-height:90vh;overflow-y:auto;">`
     +   `<div class="modal-title">Pedido <span style="font-family:var(--mono,monospace);">#${p.numeroSmart}</span></div>`
-    +   `<div style="margin-bottom:14px;"><span style="background:${stMeta.bg};color:${stMeta.cor};padding:3px 10px;border-radius:10px;font-weight:700;font-size:11px;">${stMeta.label}</span>${p.sincronizadoTiny===false?' <span style="color:var(--orange);font-size:10px;margin-left:8px;">⚠️ Não sincronizado com Tiny</span>':''}</div>`
+    +   `<div style="margin-bottom:14px;"><span style="background:${stMeta.bg};color:${stMeta.cor};padding:3px 10px;border-radius:10px;font-weight:700;font-size:11px;">${stMeta.label}</span>${syncBlock}</div>`
     +   `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;margin-bottom:18px;">`
     +     `<div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;">Vendedor</div><div>${escHtml(vNome)}</div></div>`
     +     `<div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;">Local</div><div>${escHtml(lNome)}</div></div>`
