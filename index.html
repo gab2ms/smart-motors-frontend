@@ -1113,10 +1113,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-icon">🛒</span> PDV
       <span class="nav-dot"></span>
     </button>
-    <button class="nav-item" onclick="showPage('pdv-pedidos')" id="nav-pdv-pedidos">
-      <span class="nav-icon">📋</span> Pedidos PDV
-      <span class="nav-dot"></span>
-    </button>
 
     <div class="nav-label">Produtos</div>
     <button class="nav-item" onclick="showPage('estoque')">
@@ -1530,26 +1526,39 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
   <!-- ══════════════ PEDIDOS ══════════════ -->
   <div class="page content" id="page-pedidos">
 
-    <!-- Filtros -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <input type="date" id="ped-data-ini" class="search-input" style="max-width:150px;padding:7px 10px;font-size:12px;">
-        <span style="color:var(--text3);font-size:12px;">até</span>
-        <input type="date" id="ped-data-fim" class="search-input" style="max-width:150px;padding:7px 10px;font-size:12px;">
-        <select id="ped-situacao" class="search-input" style="max-width:160px;">
-          <option value="Faturado">Faturados</option>
-          <option value="Em aberto">Em aberto</option>
-          <option value="Aprovado">Aprovados</option>
-          <option value="Cancelado">Cancelados</option>
-          <option value="">Todos</option>
-        </select>
-        <button class="btn btn-gold" onclick="carregarPedidosTiny()" id="btn-ped-sync">⚡ Buscar</button>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div style="width:7px;height:7px;border-radius:50%;background:var(--text3);" id="ped-api-dot"></div>
-          <span style="font-size:10px;color:var(--text3);font-weight:600;" id="ped-api-label">Não carregado</span>
-        </div>
+    <!-- Filtros — linha 1: período + buscar -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+      <input type="date" id="ped-data-ini" class="search-input" style="max-width:150px;padding:7px 10px;font-size:12px;">
+      <span style="color:var(--text3);font-size:12px;">até</span>
+      <input type="date" id="ped-data-fim" class="search-input" style="max-width:150px;padding:7px 10px;font-size:12px;">
+      <button class="btn btn-gold" onclick="carregarPedidosUnif()" id="btn-ped-sync">⚡ Buscar</button>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div style="width:7px;height:7px;border-radius:50%;background:var(--text3);" id="ped-api-dot"></div>
+        <span style="font-size:10px;color:var(--text3);font-weight:600;" id="ped-api-label">Não carregado</span>
       </div>
-      <input type="text" class="search-input" id="ped-search" placeholder="🔍 Buscar cliente ou nº..." oninput="filtrarPedidos()" style="max-width:220px;">
+      <div style="flex:1;"></div>
+      <input type="text" class="search-input" id="ped-search" placeholder="🔍 Buscar cliente, vendedor ou nº..." oninput="filtrarPedidos()" style="max-width:260px;">
+    </div>
+
+    <!-- Filtros — linha 2: origem + status + vendedor -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+      <select id="ped-filtro-origem" class="search-input" onchange="filtrarPedidos()" style="max-width:140px;">
+        <option value="">Todas origens</option>
+        <option value="tiny">Tiny</option>
+        <option value="pdv">PDV</option>
+      </select>
+      <select id="ped-filtro-status" class="search-input" onchange="filtrarPedidos()" style="max-width:170px;">
+        <option value="">Todos status</option>
+        <option value="aguardando">⏳ Aguardando</option>
+        <option value="concluido">✅ Concluído</option>
+        <option value="cancelado">⊘ Cancelado</option>
+      </select>
+      <select id="ped-filtro-vendedor" class="search-input" onchange="filtrarPedidos()" style="max-width:200px;">
+        <option value="">Todos vendedores</option>
+      </select>
+    </div>
+    <div id="ped-aviso-vendedor" style="display:none;font-size:10px;color:var(--text3);font-style:italic;margin-bottom:14px;">
+      Filtro por vendedor restringe a pedidos PDV (Tiny não armazena vendedor).
     </div>
 
     <!-- KPIs do período -->
@@ -1567,13 +1576,13 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         <table>
           <thead>
             <tr>
-              <th onclick="sortPedidos('numero')" style="cursor:pointer;">Nº <span id="psort-numero">↕</span></th>
-              <th onclick="sortPedidos('data')" style="cursor:pointer;">Data <span id="psort-data">↕</span></th>
+              <th>Data</th>
+              <th>Origem</th>
               <th>Cliente</th>
-              <th onclick="sortPedidos('totalProdutos')" style="cursor:pointer;">Produtos <span id="psort-totalProdutos">↕</span></th>
-              <th onclick="sortPedidos('valorFrete')" style="cursor:pointer;">Frete <span id="psort-valorFrete">↕</span></th>
-              <th onclick="sortPedidos('valor')" style="cursor:pointer;">Total <span id="psort-valor">↕</span></th>
-              <th>Situação</th>
+              <th>Vendedor</th>
+              <th>Valor</th>
+              <th>Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="ped-table-body">
@@ -2533,28 +2542,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     <div id="pdv-root"></div>
   </div>
 
-  <!-- ══════════════ PDV — LISTA DE PEDIDOS ══════════════ -->
-  <div class="page content" id="page-pdv-pedidos">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
-      <div>
-        <div style="font-size:13px;font-weight:700;">Pedidos do PDV</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="pdvp-sub">—</div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <select class="search-input" id="pdvp-filtro-status" onchange="renderPdvPedidos()" style="max-width:200px;">
-          <option value="">Todos status</option>
-          <option value="aguardando_entrega">⏳ Aguardando entrega</option>
-          <option value="entregue">✅ Entregue</option>
-          <option value="cancelado">⊘ Cancelado</option>
-        </select>
-        <input type="text" class="search-input" id="pdvp-busca" placeholder="🔍 nº pedido, cliente, vendedor..." oninput="renderPdvPedidos()" style="min-width:240px;">
-      </div>
-    </div>
-    <div class="card">
-      <div id="pdvp-lista"></div>
-    </div>
-  </div>
-
 </div><!-- /main -->
 </div><!-- /layout -->
 
@@ -3168,7 +3155,7 @@ const pageMeta={
   precos:['Preços & Margens','Gerencie preços e veja margens de contribuição'],
   vendas:['Vendas do Mês','Importe o relatório do Tiny ERP e veja a margem líquida real'],
   estoque:['Produtos & Estoque','Produtos e estoque sincronizados do Tiny ERP em tempo real'],
-  pedidos:['Pedidos','Controle seus pedidos por fornecedor'],
+  pedidos:['Pedidos','Lista unificada de pedidos — Tiny e PDV no mesmo lugar'],
   oficina:['Oficina','Ordens de serviço e cadastro de clientes'],
   sac:['SAC','Atendimento pós-venda, garantias e contatos com fornecedores'],
   montagens:['Montagens','Controle de lotes enviados pra montadores externos'],
@@ -3181,7 +3168,6 @@ const pageMeta={
   custos:['Custos Operacionais','Análise inteligente baseada em lançamentos reais'],
   'custos-produtos':['Custos de Produtos','Gerencie os componentes de custo de cada produto'],
   pdv:             ['PDV','Painel de operação — criar novas vendas'],
-  'pdv-pedidos':   ['Pedidos PDV','Histórico de pedidos criados pelo PDV interno'],
 };
 // Breadcrumb hierárquico — pai não-clicável (etiqueta visual), atual em destaque.
 // Dashboard NÃO aparece (raiz). Pais espelham os agrupadores da sidebar.
@@ -3202,7 +3188,6 @@ const BREADCRUMB_MAP = {
   custos:          ['Financeiro', 'Custos Operacionais'],
   'custos-produtos':['Produtos', 'Custos de Produtos'],
   pdv:             ['Vendas', 'PDV'],
-  'pdv-pedidos':   ['Vendas', 'Pedidos PDV'],
 };
 // Sub-tabs do módulo Financeiro: troca de sub-tab deve refletir em
 // título, subtítulo e breadcrumb (não rerenderiza pelo showPage).
@@ -3282,7 +3267,7 @@ function showPage(id, opts){
   if(id==='precos')renderPrecos();
   if(id==='vendas'){popularSeletorPeriodo();carregarVendasDoMes();}
   if(id==='estoque')initEstoque();
-  if(id==='pedidos')initPedidosTiny();
+  if(id==='pedidos')initPedidosUnif();
   if(id==='admin')renderAdmin();
   if(id==='financeiro')initFinanceiro();
   if(id==='contas-pagar')initContasPagar();
@@ -3295,7 +3280,6 @@ function showPage(id, opts){
   if(id==='clientes')initClientes();
   if(id==='contratos')initContratos();
   if(id==='pdv')initPdv();
-  if(id==='pdv-pedidos')initPdvPedidos();
 }
 
 // Detecta voltar/avançar do navegador
@@ -5960,20 +5944,77 @@ async function delProduct(i){
 // ══════════════════════════════════════════
 //  PEDIDOS — TINY ERP
 // ══════════════════════════════════════════
-let pedidosTiny = [];
-let pedSortCol = 'data';
-let pedSortDir = -1;
+// ═══════════════════════════════════════════════════════════
+// PEDIDOS — Lista unificada (Tiny + PDV)
+// 2 origens, 1 tabela, status normalizado em 3 grupos.
+// ═══════════════════════════════════════════════════════════
+let pedidosUnif = [];
 
-function initPedidosTiny() {
-  // Set default dates
-  const hoje = new Date();
-  const ini  = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-  const toISO = d => d.toISOString().split('T')[0];
-  const elIni = document.getElementById('ped-data-ini');
-  const elFim = document.getElementById('ped-data-fim');
-  if (elIni && !elIni.value) elIni.value = toISO(ini);
-  if (elFim && !elFim.value) elFim.value = toISO(hoje);
-  if (pedidosTiny.length > 0) { renderPedidosTiny(); renderPedKpis(); }
+const PEDIDO_STATUS_GROUPS = {
+  aguardando: { label: '⏳ Aguardando', cor: 'var(--orange)', bg: 'rgba(255,165,0,0.12)' },
+  concluido:  { label: '✅ Concluído',  cor: 'var(--green)',  bg: 'rgba(0,200,83,0.12)' },
+  cancelado:  { label: '⊘ Cancelado',   cor: 'var(--text3)',  bg: 'var(--surface3)' },
+};
+
+// Mapeamento de status crus → 3 grupos unificados.
+const _STATUS_TINY_MAP = {
+  'aberto':'aguardando', 'em aberto':'aguardando',
+  'aprovado':'aguardando',
+  'preparando_envio':'aguardando', 'preparando envio':'aguardando',
+  'pronto_envio':'aguardando', 'pronto p/ envio':'aguardando',
+  'enviado':'aguardando',
+  'faturado':'concluido', 'atendido':'concluido',
+  'entregue':'concluido',
+  'cancelado':'cancelado',
+  'nao_entregue':'cancelado', 'não entregue':'cancelado',
+};
+const _STATUS_PDV_MAP = {
+  'aguardando_entrega':'aguardando',
+  'entregue':'concluido',
+  'cancelado':'cancelado',
+};
+function _pedStatusGroup(origem, statusRaw) {
+  const s = (statusRaw || '').toLowerCase().trim();
+  if (origem === 'tiny') return _STATUS_TINY_MAP[s] || 'aguardando';
+  return _STATUS_PDV_MAP[s] || 'aguardando';
+}
+
+function _unifTiny(p) {
+  // Tiny vem como "dd/mm/yyyy"
+  const [d, m, y] = (p.data || '').split('/');
+  const dataISO = (d && m && y) ? `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}` : '';
+  return {
+    uid: 'tiny-' + p.id,
+    origem: 'tiny',
+    numero: p.numero || p.id,
+    dataISO,
+    dataDisplay: p.data || '—',
+    cliente: p.cliente || '—',
+    vendedor: null,
+    valor: Number(p.valor) || 0,
+    statusOriginal: p.situacao || '',
+    statusGroup: _pedStatusGroup('tiny', p.situacao),
+    raw: p,
+  };
+}
+function _unifPdv(p) {
+  const cli = p.clienteDados || {};
+  const vNome = (pdvVendedores.find(v => v.id === p.vendedorId) || {}).nome || null;
+  const dataISO = (p.criadoEm || '').slice(0, 10);
+  const [y, m, d] = dataISO.split('-');
+  return {
+    uid: 'pdv-' + p.id,
+    origem: 'pdv',
+    numero: p.numeroSmart,
+    dataISO,
+    dataDisplay: (y && m && d) ? `${d}/${m}/${y}` : '—',
+    cliente: cli.nome || '—',
+    vendedor: vNome,
+    valor: Number(p.total) || 0,
+    statusOriginal: p.status || '',
+    statusGroup: _pedStatusGroup('pdv', p.status),
+    raw: p,
+  };
 }
 
 function toAPIDate(iso) {
@@ -5982,44 +6023,117 @@ function toAPIDate(iso) {
   return `${d}/${m}/${y}`;
 }
 
-async function carregarPedidosTiny() {
+async function initPedidosUnif() {
+  // Default dates
+  const hoje = new Date();
+  const ini  = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const toISO = d => d.toISOString().split('T')[0];
+  const elIni = document.getElementById('ped-data-ini');
+  const elFim = document.getElementById('ped-data-fim');
+  if (elIni && !elIni.value) elIni.value = toISO(ini);
+  if (elFim && !elFim.value) elFim.value = toISO(hoje);
+  // Carrega vendedores PDV pro filtro
+  if (!pdvVendedores.length) try { await initPdvVendedores(); } catch(e) {}
+  if (!pdvLocais.length)     try { await initPdvLocais();     } catch(e) {}
+  _populaSelectVendedorFiltro();
+  // Se já tem cache, rerenderiza
+  if (pedidosUnif.length) renderPedidosUnif();
+}
+
+function _populaSelectVendedorFiltro() {
+  const sel = document.getElementById('ped-filtro-vendedor');
+  if (!sel) return;
+  const ativos = pdvVendedores.filter(v => v.ativo !== false)
+    .slice().sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+  sel.innerHTML = '<option value="">Todos vendedores</option>' +
+    ativos.map(v => `<option value="${v.id}">${escHtml(v.nome)}</option>`).join('');
+}
+
+async function carregarPedidosUnif() {
   const btn   = document.getElementById('btn-ped-sync');
   const dot   = document.getElementById('ped-api-dot');
   const label = document.getElementById('ped-api-label');
   btn.textContent = '⏳ Buscando...';
   btn.disabled = true;
   dot.style.background = 'var(--gold)';
-  label.textContent = 'Buscando no Tiny...';
+  label.textContent = 'Buscando Tiny + PDV...';
 
   try {
-    const iniISO   = document.getElementById('ped-data-ini').value;
-    const fimISO   = document.getElementById('ped-data-fim').value;
-    const situacao = document.getElementById('ped-situacao').value;
+    const iniISO = document.getElementById('ped-data-ini').value;
+    const fimISO = document.getElementById('ped-data-fim').value;
     const dataInicial = toAPIDate(iniISO);
     const dataFinal   = toAPIDate(fimISO);
 
-    const url = `${API_URL}/pedidos-venda?situacao=${encodeURIComponent(situacao)}&dataInicial=${encodeURIComponent(dataInicial)}&dataFinal=${encodeURIComponent(dataFinal)}`;
-    const res  = await fetch(url);
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.erro);
-
-    pedidosTiny = data.pedidos || [];
-
-    // Busca páginas adicionais se houver
-    if (data.totalPaginas > 1) {
-      const extras = await Promise.all(
-        Array.from({length: data.totalPaginas - 1}, (_,i) =>
-          fetch(`${url}&pagina=${i+2}`).then(r=>r.json())
-        )
-      );
-      extras.forEach(e => { if(e.ok) pedidosTiny.push(...(e.pedidos||[])); });
+    // ── Tiny: busca tudo no range (sem filtro de situação — filtramos client-side por status group)
+    let tinyArr = [];
+    let tinyErr = null;
+    try {
+      const url = `${API_URL}/pedidos-venda?situacao=&dataInicial=${encodeURIComponent(dataInicial)}&dataFinal=${encodeURIComponent(dataFinal)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.erro || 'Tiny falhou');
+      tinyArr = data.pedidos || [];
+      if (data.totalPaginas > 1) {
+        const extras = await Promise.all(
+          Array.from({length: data.totalPaginas - 1}, (_, i) =>
+            fetch(`${url}&pagina=${i+2}`).then(r => r.json())
+          )
+        );
+        extras.forEach(e => { if (e.ok) tinyArr.push(...(e.pedidos || [])); });
+      }
+    } catch (e) {
+      tinyErr = e.message;
+      console.warn('[pedidos-unif] tiny:', e.message);
     }
 
-    dot.style.background  = 'var(--green)';
-    label.textContent = `${pedidosTiny.length} pedidos encontrados`;
-    renderPedKpis();
-    renderPedidosTiny();
-  } catch(err) {
+    // ── PDV: filtra por range no criado_em
+    let pdvArr = [];
+    let pdvErr = null;
+    try {
+      const { data, error } = await sb.from('pdv_pedidos').select('*')
+        .gte('criado_em', iniISO + 'T00:00:00')
+        .lte('criado_em', fimISO + 'T23:59:59.999')
+        .order('criado_em', { ascending: false });
+      if (error) throw new Error(error.message);
+      pdvArr = (data || []).map(toCamel);
+    } catch (e) {
+      pdvErr = e.message;
+      console.warn('[pedidos-unif] pdv:', e.message);
+    }
+
+    // ── Normaliza
+    const unifTinyArr = tinyArr.map(_unifTiny);
+    let unifPdvArr    = pdvArr.map(_unifPdv);
+
+    // HOOK DEDUP (ativar na Etapa 4 do PDV): quando pdv_pedidos.tiny_pedido_id
+    // estiver populado, filtrar do array Tiny os pedidos já representados em PDV.
+    // Hoje todos os pedidos PDV têm sincronizado_tiny=false e o campo vazio —
+    // não há match a fazer. Manter este bloco como gancho:
+    //
+    //   const tinyIdsNoPdv = new Set(unifPdvArr.map(p => p.raw.tinyPedidoId).filter(Boolean));
+    //   unifTinyFiltrado = unifTinyArr.filter(t => !tinyIdsNoPdv.has(String(t.raw.id)));
+
+    pedidosUnif = [...unifTinyArr, ...unifPdvArr]
+      .sort((a, b) => (b.dataISO || '').localeCompare(a.dataISO || ''));
+
+    // Mantém _pdvPedidosLista atualizado pro _pdvAbrirDetalhe achar o pedido pelo id
+    _pdvPedidosLista = pdvArr;
+
+    if (tinyErr && pdvErr) {
+      dot.style.background = 'var(--red)';
+      label.textContent = 'Erro nas 2 origens';
+    } else if (tinyErr) {
+      dot.style.background = 'var(--orange)';
+      label.textContent = `${pdvArr.length} PDV (Tiny falhou)`;
+    } else if (pdvErr) {
+      dot.style.background = 'var(--orange)';
+      label.textContent = `${tinyArr.length} Tiny (PDV falhou)`;
+    } else {
+      dot.style.background = 'var(--green)';
+      label.textContent = `${tinyArr.length} Tiny · ${pdvArr.length} PDV`;
+    }
+    renderPedidosUnif();
+  } catch (err) {
     dot.style.background = 'var(--red)';
     label.textContent = 'Erro: ' + err.message;
   } finally {
@@ -6028,90 +6142,81 @@ async function carregarPedidosTiny() {
   }
 }
 
-function renderPedKpis() {
-  const total     = pedidosTiny.length;
-  const receita   = pedidosTiny.reduce((s,p) => s+p.valor, 0);
-  const produtos  = pedidosTiny.reduce((s,p) => s+p.totalProdutos, 0);
-  const frete     = pedidosTiny.reduce((s,p) => s+p.valorFrete, 0);
-  const ticket    = total > 0 ? receita / total : 0;
-  const maior     = pedidosTiny.length ? Math.max(...pedidosTiny.map(p=>p.valor)) : 0;
+function filtrarPedidos() { renderPedidosUnif(); }
 
-  document.getElementById('ped-kpis').innerHTML = `
-    <div class="kpi"><div class="kpi-label">Total pedidos</div><div class="kpi-value gold">${total}</div><div class="kpi-change">no período</div></div>
-    <div class="kpi"><div class="kpi-label">Receita total</div><div class="kpi-value green">${fmt(receita)}</div><div class="kpi-change">faturamento bruto</div></div>
-    <div class="kpi"><div class="kpi-label">Ticket médio</div><div class="kpi-value gold">${fmt(ticket)}</div><div class="kpi-change">por pedido</div></div>
-    <div class="kpi"><div class="kpi-label">Total produtos</div><div class="kpi-value">${fmt(produtos)}</div><div class="kpi-change">sem frete</div></div>
-    <div class="kpi"><div class="kpi-label">Total frete</div><div class="kpi-value">${fmt(frete)}</div><div class="kpi-change">cobrado dos clientes</div></div>
-    <div class="kpi"><div class="kpi-label">Maior pedido</div><div class="kpi-value gold">${fmt(maior)}</div><div class="kpi-change">valor individual</div></div>
-  `;
-}
+function renderPedidosUnif() {
+  const tbody = document.getElementById('ped-table-body');
+  const count = document.getElementById('ped-count');
+  if (!tbody) return;
 
-function filtrarPedidos() { renderPedidosTiny(); }
+  const fOrigem   = document.getElementById('ped-filtro-origem')?.value || '';
+  const fStatus   = document.getElementById('ped-filtro-status')?.value || '';
+  const fVendedor = document.getElementById('ped-filtro-vendedor')?.value || '';
+  const q         = (document.getElementById('ped-search')?.value || '').trim().toLowerCase();
 
-function sortPedidos(col) {
-  pedSortDir = pedSortCol === col ? pedSortDir * -1 : 1;
-  pedSortCol = col;
-  ['numero','data','totalProdutos','valorFrete','valor'].forEach(c => {
-    const el = document.getElementById('psort-' + c);
-    if (!el) return;
-    el.textContent = c === pedSortCol ? (pedSortDir === 1 ? '↑' : '↓') : '↕';
-    el.style.color  = c === pedSortCol ? 'var(--gold)' : 'var(--text3)';
-  });
-  renderPedidosTiny();
-}
+  // Aviso quando filtro de vendedor está ativo (esconde Tiny implicitamente)
+  const aviso = document.getElementById('ped-aviso-vendedor');
+  if (aviso) aviso.style.display = fVendedor ? '' : 'none';
 
-function situacaoBadge(sit) {
-  const map = {
-    'faturado':   '<span class="badge badge-green">Faturado</span>',
-    'em aberto':  '<span class="badge badge-orange">Em aberto</span>',
-    'aprovado':   '<span class="badge badge-gold">Aprovado</span>',
-    'cancelado':  '<span class="badge badge-red">Cancelado</span>',
-  };
-  return map[(sit||'').toLowerCase()] || `<span class="badge" style="background:var(--surface2);color:var(--text3);">${sit||'—'}</span>`;
-}
+  let filtered = pedidosUnif.slice();
+  if (fOrigem)   filtered = filtered.filter(p => p.origem === fOrigem);
+  if (fStatus)   filtered = filtered.filter(p => p.statusGroup === fStatus);
+  if (fVendedor) filtered = filtered.filter(p => p.origem === 'pdv' && p.raw.vendedorId === fVendedor);
+  if (q)         filtered = filtered.filter(p =>
+    String(p.numero).toLowerCase().includes(q) ||
+    (p.cliente  || '').toLowerCase().includes(q) ||
+    (p.vendedor || '').toLowerCase().includes(q)
+  );
 
-function renderPedidosTiny() {
-  const q = (document.getElementById('ped-search')?.value||'').toLowerCase();
+  renderPedKpisUnif(filtered);
 
-  let filtered = pedidosTiny.filter(p => {
-    if (!q) return true;
-    return (p.cliente||'').toLowerCase().includes(q) || String(p.numero||'').includes(q);
-  });
-
-  // Sort
-  filtered.sort((a,b) => {
-    let va = a[pedSortCol], vb = b[pedSortCol];
-    if (pedSortCol === 'data') {
-      const parseDate = s => { if(!s)return 0; const[d,m,y]=s.split('/'); return new Date(`${y}-${m}-${d}`).getTime(); };
-      va = parseDate(a.data); vb = parseDate(b.data);
-    }
-    if (typeof va === 'string') return pedSortDir * va.localeCompare(vb);
-    return pedSortDir * ((va||0) - (vb||0));
-  });
-
-  document.getElementById('ped-count').textContent =
-    `${filtered.length} pedido${filtered.length!==1?'s':''} encontrado${filtered.length!==1?'s':''}`;
+  if (count) count.textContent =
+    `${filtered.length} pedido${filtered.length===1?'':'s'} encontrado${filtered.length===1?'':'s'}`;
 
   if (!filtered.length) {
-    document.getElementById('ped-table-body').innerHTML =
-      '<tr><td colspan="7" class="empty">Nenhum pedido encontrado</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">Nenhum pedido encontrado</td></tr>';
     return;
   }
 
-  document.getElementById('ped-table-body').innerHTML = filtered.map(p => `
-    <tr>
-      <td class="td-mono" style="color:var(--gold);font-weight:700;">#${p.numero||p.id}</td>
-      <td class="td-mono">${p.data||'—'}</td>
-      <td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(p.cliente)}">${escHtml(p.cliente) || '—'}</td>
-      <td class="td-mono">${fmt(p.totalProdutos)}</td>
-      <td class="td-mono" style="color:var(--text3);">${fmt(p.valorFrete)}</td>
-      <td class="td-mono" style="font-weight:700;color:var(--green);">${fmt(p.valor)}</td>
-      <td>${situacaoBadge(p.situacao)}</td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = filtered.map(p => {
+    const stMeta = PEDIDO_STATUS_GROUPS[p.statusGroup] || PEDIDO_STATUS_GROUPS.aguardando;
+    const seloHTML = p.origem === 'tiny'
+      ? '<span style="background:rgba(58,134,255,0.18);color:#3a86ff;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:800;letter-spacing:0.5px;">TINY</span>'
+      : '<span style="background:rgba(245,197,24,0.18);color:var(--gold);padding:2px 8px;border-radius:10px;font-size:9px;font-weight:800;letter-spacing:0.5px;">PDV</span>';
+    const statusHTML = `<span style="background:${stMeta.bg};color:${stMeta.cor};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap;">${stMeta.label}</span>`;
+    const vendedorCell = p.vendedor
+      ? `<span style="color:var(--text2);">${escHtml(p.vendedor)}</span>`
+      : '<span style="color:var(--text3);">—</span>';
+    const acaoHTML = p.origem === 'pdv'
+      ? `<button class="btn" style="font-size:10px;padding:4px 10px;" onclick="_pdvAbrirDetalhe('${p.raw.id}')">Ver detalhe</button>`
+      : '';
+    return `<tr>
+      <td class="td-mono" style="white-space:nowrap;">${p.dataDisplay}</td>
+      <td>${seloHTML}</td>
+      <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(p.cliente)}">${escHtml(p.cliente)}</td>
+      <td style="font-size:12px;">${vendedorCell}</td>
+      <td class="td-mono" style="font-weight:700;color:var(--green);white-space:nowrap;">${_fmtBRMoney(p.valor)}</td>
+      <td>${statusHTML}</td>
+      <td>${acaoHTML}</td>
+    </tr>`;
+  }).join('');
 }
 
-// ── Mantém funções legadas para não quebrar nada ──
+function renderPedKpisUnif(filtered) {
+  // Receita e ticket EXCLUEM cancelados; contagem total inclui tudo.
+  const naoCancelado = filtered.filter(p => p.statusGroup !== 'cancelado');
+  const total   = filtered.length;
+  const receita = naoCancelado.reduce((s, p) => s + (p.valor || 0), 0);
+  const ticket  = naoCancelado.length ? receita / naoCancelado.length : 0;
+  const kpis = document.getElementById('ped-kpis');
+  if (!kpis) return;
+  kpis.innerHTML =
+      `<div class="kpi"><div class="kpi-label">Total pedidos</div><div class="kpi-value gold">${total}</div><div class="kpi-change">incluindo cancelados</div></div>`
+    + `<div class="kpi"><div class="kpi-label">Receita</div><div class="kpi-value green">${_fmtBRMoney(receita)}</div><div class="kpi-change">exclui cancelados</div></div>`
+    + `<div class="kpi"><div class="kpi-label">Ticket médio</div><div class="kpi-value gold">${_fmtBRMoney(ticket)}</div><div class="kpi-change">${naoCancelado.length} pedido${naoCancelado.length===1?'':'s'}</div></div>`;
+}
+
+// ── Mantém funções legadas pra não quebrar refs antigas ──
 function renderPedidos(){}
 function chgQtd(){}
 function delPedido(){}
@@ -6814,12 +6919,11 @@ const TODOS_MODULOS = [
   { id: 'custos',       nome: 'Custos Operacionais' },
   { id: 'custos-produtos', nome: 'Custos de Produtos' },
   { id: 'pdv',             nome: 'PDV — Operação' },
-  { id: 'pdv-pedidos',     nome: 'PDV — Lista de Pedidos' },
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
-  vendedor:    ['dashboard', 'vendas', 'estoque', 'pedidos', 'oficina', 'sac', 'montagens', 'clientes', 'contratos', 'pdv', 'pdv-pedidos'],
-  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'vendas', 'pedidos', 'oficina', 'sac', 'montagens', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv', 'pdv-pedidos'],
+  vendedor:    ['dashboard', 'vendas', 'estoque', 'pedidos', 'oficina', 'sac', 'montagens', 'clientes', 'contratos', 'pdv'],
+  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'vendas', 'pedidos', 'oficina', 'sac', 'montagens', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv'],
   customizado: null, // usa user.modulosPermitidos
 };
 function modulosPermitidos(user) {
@@ -13912,7 +14016,8 @@ async function _excluirLocal(localId) {
 
 // ═══════════════════════════════════════════════════════════
 // PDV — MVP (Etapa 2)
-// Wizard de 4 steps em page-pdv + lista em page-pdv-pedidos.
+// Wizard de 4 steps em page-pdv. A listagem foi unificada com Tiny
+// e vive em page-pedidos — _pdvAbrirDetalhe é chamado de lá.
 // sincronizado_tiny = false em TODOS os pedidos (sync vem Etapa 4).
 // ═══════════════════════════════════════════════════════════
 let _pdvStep                = 0;     // 0=painel | 1=montar | 2=finalizar | 3=sucesso
@@ -14521,67 +14626,18 @@ function _pdvRenderSucesso(root) {
     +   `<div style="font-size:13px;color:var(--text2);margin-top:14px;">${escHtml(cli.nome || '—')} · ${_fmtBRMoney(p.total || 0)}</div>`
     +   `<div style="margin-top:36px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">`
     +     `<button class="btn btn-gold" onclick="_pdvIniciarVenda()" style="padding:12px 24px;">🛒 Nova venda</button>`
-    +     `<button class="btn" onclick="showPage('pdv-pedidos')" style="padding:12px 24px;">📋 Ver lista</button>`
+    +     `<button class="btn" onclick="showPage('pedidos')" style="padding:12px 24px;">📋 Ver lista</button>`
     +     `<button class="btn" onclick="_pdvStep=0;_pdvUltimoPedidoCriado=null;renderPdv();" style="padding:12px 24px;">← Voltar ao painel</button>`
     +   `</div>`
     + `</div>`;
 }
 
 // ═══════════════════════════════════════════════════════════
-// page-pdv-pedidos — Lista + detalhe (read-only)
+// _pdvAbrirDetalhe — modal read-only de um pedido PDV.
+// Lista unificada (page-pedidos) usa essa função no botão "Ver detalhe"
+// dos rows com origem='pdv'. _pdvPedidosLista é populado em
+// carregarPedidosUnif para o lookup funcionar.
 // ═══════════════════════════════════════════════════════════
-
-async function initPdvPedidos() {
-  if (!pdvVendedores.length) try { await initPdvVendedores(); } catch(e) {}
-  if (!pdvLocais.length)     try { await initPdvLocais();     } catch(e) {}
-  const { data, error } = await sb.from('pdv_pedidos').select('*').order('criado_em', { ascending: false }).limit(500);
-  if (error) { console.warn('[pdv-pedidos] load:', error.message); _pdvPedidosLista = []; }
-  else _pdvPedidosLista = (data || []).map(toCamel);
-  renderPdvPedidos();
-}
-
-function renderPdvPedidos() {
-  const el  = document.getElementById('pdvp-lista');
-  const sub = document.getElementById('pdvp-sub');
-  if (!el) return;
-  const status = document.getElementById('pdvp-filtro-status')?.value || '';
-  const q      = (document.getElementById('pdvp-busca')?.value || '').trim().toLowerCase();
-  const vNome  = id => (pdvVendedores.find(v => v.id===id)||{}).nome || '—';
-  const lNome  = id => (pdvLocais.find(l => l.id===id)||{}).nome || '—';
-
-  let base = _pdvPedidosLista.slice();
-  if (status) base = base.filter(p => p.status === status);
-  if (q)      base = base.filter(p =>
-    String(p.numeroSmart||'').includes(q) ||
-    (p.clienteDados?.nome || '').toLowerCase().includes(q) ||
-    vNome(p.vendedorId).toLowerCase().includes(q));
-
-  if (sub) sub.textContent = `${base.length} pedido${base.length===1?'':'s'}${status?' · filtro: '+status:''}`;
-  if (!base.length) { el.innerHTML = '<div class="empty" style="padding:32px;">Nenhum pedido encontrado.</div>'; return; }
-  const fmtDT = iso => iso ? new Date(iso).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
-
-  el.innerHTML = base.map(p => {
-    const cli = p.clienteDados || {};
-    const stMeta = PDV_STATUS_LABEL[p.status] || PDV_STATUS_LABEL.aguardando_entrega;
-    const metodos = (p.formaPagamento?.metodos || []).map(m => PDV_PAGTO_TIPOS.find(t => t.code===m.tipo)?.label || m.tipo).join(' + ');
-    return `<div style="display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);">
-      <div>
-        <div style="font-size:14px;font-weight:800;color:var(--gold);font-family:var(--mono,monospace);">#${p.numeroSmart}</div>
-        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;">${fmtDT(p.criadoEm)}</div>
-      </div>
-      <div>
-        <div style="font-size:13px;font-weight:700;">${escHtml(cli.nome || '—')}</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(vNome(p.vendedorId))} · ${escHtml(lNome(p.localVendaId))} · ${escHtml(metodos || '—')}</div>
-        <div style="font-size:10px;margin-top:4px;"><span style="background:${stMeta.bg};color:${stMeta.cor};padding:2px 8px;border-radius:10px;font-weight:700;font-size:10px;">${stMeta.label}</span>${p.sincronizadoTiny===false?' <span style="color:var(--text3);margin-left:4px;">·</span> <span style="color:var(--orange);font-size:9px;">não sincronizado com Tiny</span>':''}</div>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
-        <div style="font-size:14px;font-weight:800;color:var(--gold);">${_fmtBRMoney(p.total)}</div>
-        <button class="btn" style="font-size:10px;padding:4px 10px;" onclick="_pdvAbrirDetalhe('${p.id}')">Ver detalhe</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
 async function _pdvAbrirDetalhe(pedidoId) {
   const p = _pdvPedidosLista.find(x => x.id === pedidoId);
   if (!p) return;
