@@ -1117,14 +1117,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
       <span class="nav-icon">📋</span> Pedidos PDV
       <span class="nav-dot"></span>
     </button>
-    <button class="nav-item" onclick="showPage('pdv-vendedores')" id="nav-pdv-vendedores">
-      <span class="nav-icon">🧑‍💼</span> Vendedores PDV
-      <span class="nav-dot"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('pdv-locais')" id="nav-pdv-locais">
-      <span class="nav-icon">📍</span> Locais de Venda
-      <span class="nav-dot"></span>
-    </button>
 
     <div class="nav-label">Produtos</div>
     <button class="nav-item" onclick="showPage('estoque')">
@@ -1717,6 +1709,38 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
           <button class="btn btn-gold" onclick="abrirCategoriaModal()" style="font-size:11px;padding:6px 12px;">+ Nova categoria</button>
         </div>
         <div id="categorias-lanc-list">
+          <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vendedores PDV -->
+    <div class="section-gap">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🧑‍💼 Vendedores PDV</div>
+            <div class="card-sub" id="pdvv-sub">—</div>
+          </div>
+          <button class="btn btn-gold" onclick="abrirVendedorModal()" style="font-size:11px;padding:6px 12px;">+ Novo vendedor</button>
+        </div>
+        <div id="pdvv-lista">
+          <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Locais de Venda -->
+    <div class="section-gap">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">📍 Locais de Venda</div>
+            <div class="card-sub" id="pdvl-sub">—</div>
+          </div>
+          <button class="btn btn-gold" onclick="abrirLocalModal()" style="font-size:11px;padding:6px 12px;">+ Novo local</button>
+        </div>
+        <div id="pdvl-lista">
           <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
         </div>
       </div>
@@ -2531,37 +2555,6 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
     </div>
   </div>
 
-  <!-- ══════════════ PDV — VENDEDORES ══════════════ -->
-  <div class="page content" id="page-pdv-vendedores">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
-      <div>
-        <div style="font-size:13px;font-weight:700;">Vendedores do PDV</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="pdvv-sub">—</div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <button class="btn btn-gold" onclick="abrirVendedorModal()">+ Novo vendedor</button>
-      </div>
-    </div>
-    <div class="card">
-      <div id="pdvv-lista"></div>
-    </div>
-  </div>
-
-  <!-- ══════════════ PDV — LOCAIS DE VENDA ══════════════ -->
-  <div class="page content" id="page-pdv-locais">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
-      <div>
-        <div style="font-size:13px;font-weight:700;">Locais de venda</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="pdvl-sub">—</div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <button class="btn btn-gold" onclick="abrirLocalModal()">+ Novo local</button>
-      </div>
-    </div>
-    <div class="card">
-      <div id="pdvl-lista"></div>
-    </div>
-  </div>
 </div><!-- /main -->
 </div><!-- /layout -->
 
@@ -3187,8 +3180,6 @@ const pageMeta={
   'contas-receber':['Contas a Receber','Gerencie recebimentos do mês'],
   custos:['Custos Operacionais','Análise inteligente baseada em lançamentos reais'],
   'custos-produtos':['Custos de Produtos','Gerencie os componentes de custo de cada produto'],
-  'pdv-vendedores':['Vendedores PDV','Cadastro de vendedores que operam o PDV interno'],
-  'pdv-locais':    ['Locais de Venda','Cadastro de pontos de venda (matriz, quiosque, tráfego pago)'],
   pdv:             ['PDV','Painel de operação — criar novas vendas'],
   'pdv-pedidos':   ['Pedidos PDV','Histórico de pedidos criados pelo PDV interno'],
 };
@@ -3210,8 +3201,6 @@ const BREADCRUMB_MAP = {
   'contas-receber':['Financeiro', 'Contas a Receber'],
   custos:          ['Financeiro', 'Custos Operacionais'],
   'custos-produtos':['Produtos', 'Custos de Produtos'],
-  'pdv-vendedores':['Vendas', 'Vendedores PDV'],
-  'pdv-locais':    ['Vendas', 'Locais de Venda'],
   pdv:             ['Vendas', 'PDV'],
   'pdv-pedidos':   ['Vendas', 'Pedidos PDV'],
 };
@@ -3305,8 +3294,6 @@ function showPage(id, opts){
   if(id==='montagens')initMontagens();
   if(id==='clientes')initClientes();
   if(id==='contratos')initContratos();
-  if(id==='pdv-vendedores')initPdvVendedores();
-  if(id==='pdv-locais')initPdvLocais();
   if(id==='pdv')initPdv();
   if(id==='pdv-pedidos')initPdvPedidos();
 }
@@ -6826,8 +6813,6 @@ const TODOS_MODULOS = [
   { id: 'contas-receber', nome: 'Contas a Receber' },
   { id: 'custos',       nome: 'Custos Operacionais' },
   { id: 'custos-produtos', nome: 'Custos de Produtos' },
-  { id: 'pdv-vendedores',  nome: 'PDV — Vendedores' },
-  { id: 'pdv-locais',      nome: 'PDV — Locais de Venda' },
   { id: 'pdv',             nome: 'PDV — Operação' },
   { id: 'pdv-pedidos',     nome: 'PDV — Lista de Pedidos' },
 ];
@@ -10918,6 +10903,12 @@ async function renderAdmin() {
     await recarregarCategorias();
     renderCategoriasLancamento();
   } catch(e) { console.warn('[renderAdmin] categorias falhou:', e.message); }
+  // Vendedores PDV (cadastro — vive dentro do Admin)
+  try { await initPdvVendedores(); }
+  catch(e) { console.warn('[renderAdmin] pdv-vendedores falhou:', e.message); }
+  // Locais de Venda (cadastro — vive dentro do Admin)
+  try { await initPdvLocais(); }
+  catch(e) { console.warn('[renderAdmin] pdv-locais falhou:', e.message); }
   const users    = await getUsers();
   const pendente = users.filter(u=>u.status==='pendente');
   const ativo    = users.filter(u=>u.status==='aprovado');
@@ -14021,7 +14012,7 @@ function _pdvRenderNovaVenda(root) {
     +   `<div style="font-size:13px;color:var(--text3);">Nova venda — passo 1 de 2 (itens + cliente)</div>`
     + `</div>`
     + ((semVendedor || semLocal)
-        ? `<div style="background:rgba(255,0,0,0.10);border:1px solid var(--red);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:18px;font-size:12px;color:var(--text2);">⚠️ ${semVendedor?'Nenhum vendedor ativo cadastrado. ':''}${semLocal?'Nenhum local ativo cadastrado. ':''}Cadastre em <a onclick="showPage('pdv-vendedores')" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Vendedores PDV</a> / <a onclick="showPage('pdv-locais')" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Locais</a> antes de criar uma venda.</div>`
+        ? `<div style="background:rgba(255,0,0,0.10);border:1px solid var(--red);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:18px;font-size:12px;color:var(--text2);">⚠️ ${semVendedor?'Nenhum vendedor ativo cadastrado. ':''}${semLocal?'Nenhum local ativo cadastrado. ':''}Cadastre em <a onclick="showPage('admin')" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Administração → Vendedores PDV / Locais</a> antes de criar uma venda.</div>`
         : '')
     + `<div class="card" style="margin-bottom:18px;"><div style="padding:18px 20px;">`
     +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:10px;">Vendedor + Local</div>`
