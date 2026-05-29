@@ -1284,6 +1284,18 @@ select:not(.input-pro):not(.search-input){
 
 /* Td-mono fica só pra SKU/código — reduz tamanho/peso pra parecer técnico, não premium */
 .td-mono{font-size:var(--fs-sm);color:var(--text2);}
+
+/* Valores financeiros em sans + tabular-nums (mono fica só pra SKU/IDs) */
+.computed-value,
+.order-total-val,
+.custo-val,
+.conta-saldo,
+.kpi-value{
+  font-family:var(--font-primary) !important;
+  font-variant-numeric:tabular-nums;
+  font-feature-settings:"tnum";
+  letter-spacing:-0.3px;
+}
 </style>
 </head>
 <body>
