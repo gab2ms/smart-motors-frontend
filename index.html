@@ -1296,6 +1296,150 @@ select:not(.input-pro):not(.search-input){
   font-feature-settings:"tnum";
   letter-spacing:-0.3px;
 }
+
+/* ════════════════════════════════════════════════════════════════
+   CALENDÁRIO · Etapa 1 (mês + eventos manuais)
+   ════════════════════════════════════════════════════════════════ */
+.cal-toolbar{
+  display:flex;align-items:center;gap:var(--sp-3);
+  flex-wrap:wrap;margin-bottom:var(--sp-4);
+}
+.cal-nav{display:flex;align-items:center;gap:var(--sp-2);}
+.cal-titulo{
+  font-size:var(--fs-lg);font-weight:var(--fw-sb);
+  text-transform:capitalize;letter-spacing:-0.3px;
+  min-width:170px;text-align:center;
+}
+.cal-filtros{display:flex;gap:6px;flex-wrap:wrap;}
+.cal-filtro-pill{
+  border:1px solid transparent;cursor:pointer;
+  font-family:var(--font-primary);
+  transition:filter .12s, border-color .12s;
+}
+.cal-filtro-pill:hover{filter:brightness(1.15);}
+.cal-filtro-pill.active{border-color:currentColor;}
+
+.cal-wrap{padding:0;overflow:hidden;}
+.cal-weekdays{
+  display:grid;grid-template-columns:repeat(7,1fr);
+  background:var(--surface2);
+  border-bottom:1px solid var(--border);
+}
+.cal-weekdays > div{
+  padding:10px 12px;
+  font-size:var(--fs-xs);
+  color:var(--text3);
+  text-transform:uppercase;letter-spacing:1px;
+  font-weight:var(--fw-sb);
+  text-align:center;
+}
+.cal-grid{
+  display:grid;grid-template-columns:repeat(7,1fr);
+  grid-auto-rows:minmax(110px,1fr);
+}
+.cal-cell{
+  border-right:1px solid var(--border);
+  border-bottom:1px solid var(--border);
+  padding:8px 10px;
+  display:flex;flex-direction:column;gap:4px;
+  cursor:pointer;
+  transition:background .12s;
+  position:relative;
+  min-height:110px;
+}
+.cal-cell:hover{background:var(--surface2);}
+.cal-cell:nth-child(7n){border-right:none;}
+.cal-cell.outro-mes{background:var(--bg);}
+.cal-cell.outro-mes .cal-cell-num{color:var(--text3);opacity:0.55;}
+.cal-cell.hoje{
+  background:var(--gold-dim2);
+}
+.cal-cell.hoje .cal-cell-num{
+  color:var(--gold);font-weight:var(--fw-bd);
+}
+.cal-cell-num{
+  font-size:var(--fs-sm);
+  font-weight:var(--fw-sb);
+  color:var(--text2);
+  font-variant-numeric:tabular-nums;
+}
+.cal-cell-eventos{display:flex;flex-direction:column;gap:3px;margin-top:2px;}
+.cal-evento{
+  display:flex;align-items:center;gap:5px;
+  padding:3px 7px;
+  border-radius:var(--r-sm);
+  font-size:10px;font-weight:var(--fw-md);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  cursor:pointer;
+  line-height:1.4;
+  transition:filter .12s;
+}
+.cal-evento:hover{filter:brightness(1.15);}
+.cal-evento-hora{font-variant-numeric:tabular-nums;opacity:0.7;flex-shrink:0;}
+.cal-evento-titulo{overflow:hidden;text-overflow:ellipsis;}
+.cal-evento--visita    {background:var(--gold-dim);   color:var(--gold);}
+.cal-evento--entrega   {background:var(--blue-soft);  color:var(--blue);}
+.cal-evento--financeiro{background:var(--green-dim);  color:var(--green);}
+.cal-evento--oficina   {background:var(--orange-dim); color:var(--orange);}
+.cal-evento--outro     {background:var(--surface3);   color:var(--text2);}
+.cal-mais{
+  font-size:10px;color:var(--text3);font-weight:var(--fw-sb);
+  padding:2px 7px;cursor:pointer;
+}
+.cal-mais:hover{color:var(--text);}
+
+/* Versão mobile (≤700px) — vira lista por dia */
+.cal-mobile{display:none;}
+@media (max-width:700px){
+  .cal-wrap{display:none;}
+  .cal-mobile{display:block;}
+  .cal-mob-dia{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--r-lg);
+    padding:14px 16px;margin-bottom:10px;
+  }
+  .cal-mob-dia-header{
+    display:flex;align-items:baseline;justify-content:space-between;
+    font-size:var(--fs-md);font-weight:var(--fw-sb);
+    margin-bottom:8px;
+  }
+  .cal-mob-dia-header .cal-mob-dia-sub{
+    font-size:var(--fs-xs);color:var(--text3);font-weight:var(--fw-md);
+  }
+  .cal-mob-dia.hoje{border-color:var(--gold);}
+  .cal-mob-evento{
+    display:flex;align-items:center;gap:8px;
+    padding:8px 10px;border-radius:var(--r-sm);
+    cursor:pointer;
+    margin-bottom:5px;font-size:var(--fs-sm);
+  }
+  .cal-mob-evento .cal-evento-hora{font-weight:var(--fw-sb);}
+  .cal-toolbar{flex-direction:column;align-items:stretch;}
+  .cal-nav{justify-content:center;}
+  .cal-filtros{justify-content:center;}
+}
+
+/* Modal evento — pequeno extra pra layout do form */
+.cal-form-row{display:flex;gap:var(--sp-3);align-items:flex-end;}
+.cal-form-row > *{flex:1;}
+.cal-autocomplete{position:relative;}
+.cal-autocomplete-lista{
+  position:absolute;left:0;right:0;top:100%;
+  background:var(--surface2);
+  border:1px solid var(--border2);
+  border-radius:var(--r-sm);
+  max-height:220px;overflow-y:auto;
+  z-index:10;margin-top:2px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.4);
+}
+.cal-autocomplete-item{
+  padding:9px 12px;cursor:pointer;font-size:var(--fs-sm);
+  border-bottom:1px solid var(--border);
+}
+.cal-autocomplete-item:hover{background:var(--surface3);}
+.cal-autocomplete-item:last-child{border-bottom:none;}
+.cal-autocomplete-item .text-mute{font-size:var(--fs-xs);margin-top:2px;}
 </style>
 </head>
 <body>
@@ -1441,6 +1585,10 @@ select:not(.input-pro):not(.search-input){
     <button class="nav-item" onclick="showPage('sac')">
       <span class="nav-icon"><svg class="ic"><use href="#ic-phone"/></svg></span> SAC
       <span class="nav-dot" id="dot-sac"></span>
+    </button>
+    <button class="nav-item" onclick="showPage('calendario')">
+      <span class="nav-icon"><svg class="ic"><use href="#ic-calendar"/></svg></span> Calendário
+      <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('clientes')">
       <span class="nav-icon"><svg class="ic"><use href="#ic-users"/></svg></span> Clientes
@@ -2289,6 +2437,40 @@ select:not(.input-pro):not(.search-input){
       <div class="card-header"><div><div class="card-sub" id="sac-count">—</div></div></div>
       <div id="sac-lista"></div>
     </div>
+  </div>
+
+  <!-- ══════════════ CALENDÁRIO ══════════════ -->
+  <div class="page content" id="page-calendario">
+    <!-- Toolbar: navegação de mês + filtros + ação principal -->
+    <div class="cal-toolbar">
+      <div class="cal-nav">
+        <button class="btn-pro btn-pro--ghost" onclick="_calNavega(-1)" title="Mês anterior" aria-label="Mês anterior"><svg class="ic ic-sm" style="transform:rotate(180deg);"><use href="#ic-chevron-right"/></svg></button>
+        <div class="cal-titulo" id="cal-titulo">—</div>
+        <button class="btn-pro btn-pro--ghost" onclick="_calNavega(1)" title="Próximo mês" aria-label="Próximo mês"><svg class="ic ic-sm"><use href="#ic-chevron-right"/></svg></button>
+        <button class="btn-pro" onclick="_calIrHoje()" id="cal-btn-hoje">Hoje</button>
+      </div>
+      <div style="flex:1;"></div>
+      <div class="cal-filtros" id="cal-filtros">
+        <button class="pill pill--neutral cal-filtro-pill active" data-cat="" onclick="_calFiltro('')">Tudo</button>
+        <button class="pill pill--gold    cal-filtro-pill" data-cat="visita"     onclick="_calFiltro('visita')">Visita</button>
+        <button class="pill pill--blue    cal-filtro-pill" data-cat="entrega"    onclick="_calFiltro('entrega')">Entrega</button>
+        <button class="pill pill--green   cal-filtro-pill" data-cat="financeiro" onclick="_calFiltro('financeiro')">Financeiro</button>
+        <button class="pill pill--orange  cal-filtro-pill" data-cat="oficina"    onclick="_calFiltro('oficina')">Oficina</button>
+        <button class="pill pill--neutral cal-filtro-pill" data-cat="outro"      onclick="_calFiltro('outro')">Outro</button>
+      </div>
+      <button class="btn-pro btn-pro--primary" onclick="_calNovoEvento()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Novo evento</button>
+    </div>
+
+    <!-- Grid mensal -->
+    <div class="cal-wrap card">
+      <div class="cal-weekdays">
+        <div>Dom</div><div>Seg</div><div>Ter</div><div>Qua</div><div>Qui</div><div>Sex</div><div>Sáb</div>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+    </div>
+
+    <!-- Versão mobile: lista vertical agrupada por dia -->
+    <div class="cal-mobile" id="cal-mobile"></div>
   </div>
 
   <!-- ══════════════ MONTAGENS ══════════════ -->
@@ -3237,6 +3419,7 @@ const TABLE_MAP = {
   },
   custos_fixos:    { toDb: toSnake, fromDb: toCamel },
   produtos_precos: { toDb: toSnake, fromDb: toCamel },
+  calendario_eventos:{ toDb: toSnake, fromDb: toCamel },
 };
 
 // ══════════════════════════════════════════
@@ -3466,6 +3649,7 @@ const pageMeta={
   pedidos:['Pedidos','Lista unificada de pedidos — Tiny e PDV no mesmo lugar'],
   oficina:['Oficina','Ordens de serviço e cadastro de clientes'],
   sac:['SAC','Atendimento pós-venda, garantias e contatos com fornecedores'],
+  calendario:['Calendário','Agenda — visitas, compromissos e eventos manuais'],
   montagens:['Montagens','Controle de lotes enviados pra montadores externos'],
   clientes:['Clientes','Cadastro central — manuais e sincronizados com Tiny'],
   contratos:['Contrato','Geração e histórico de contratos de garantia'],
@@ -3487,6 +3671,7 @@ const BREADCRUMB_MAP = {
   precos:          ['Produtos', 'Preços & Margens'],
   oficina:         ['Operação', 'Oficina'],
   sac:             ['Operação', 'SAC'],
+  calendario:      ['Operação', 'Calendário'],
   montagens:       ['Produtos', 'Montagens'],
   clientes:        ['Operação', 'Clientes'],
   contratos:       ['Operação', 'Contrato'],
@@ -3584,6 +3769,7 @@ function showPage(id, opts){
   if(id==='custos-produtos')renderCustosProdutos();
   if(id==='oficina')initOficina();
   if(id==='sac')initSac();
+  if(id==='calendario')initCalendario();
   if(id==='montagens')initMontagens();
   if(id==='clientes')initClientes();
   if(id==='contratos')initContratos();
@@ -7287,6 +7473,7 @@ const TODOS_MODULOS = [
   { id: 'pedidos',      nome: 'Pedidos' },
   { id: 'oficina',      nome: 'Oficina' },
   { id: 'sac',          nome: 'SAC' },
+  { id: 'calendario',   nome: 'Calendário' },
   { id: 'montagens',    nome: 'Montagens' },
   { id: 'clientes',     nome: 'Clientes' },
   { id: 'contratos',    nome: 'Contrato' },
@@ -7300,8 +7487,8 @@ const TODOS_MODULOS = [
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
-  vendedor:    ['dashboard', 'vendas', 'estoque', 'pedidos', 'oficina', 'sac', 'montagens', 'clientes', 'contratos', 'pdv'],
-  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'vendas', 'pedidos', 'oficina', 'sac', 'montagens', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv'],
+  vendedor:    ['dashboard', 'vendas', 'estoque', 'pedidos', 'oficina', 'sac', 'calendario', 'montagens', 'clientes', 'contratos', 'pdv'],
+  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'vendas', 'pedidos', 'oficina', 'sac', 'calendario', 'montagens', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv'],
   customizado: null, // usa user.modulosPermitidos
 };
 function modulosPermitidos(user) {
@@ -17363,6 +17550,314 @@ async function _excluirCategoria(catId) {
   await recarregarCategorias();
   renderCategoriasLancamento();
   smToast('Categoria excluída.');
+}
+
+// ══════════════════════════════════════════
+//  CALENDÁRIO · Etapa 1 (mês + eventos manuais)
+//  CRUD em calendario_eventos. Lazy-load no initCalendario.
+//  Não puxa entregas/contas/oficina ainda (Etapa 2).
+// ══════════════════════════════════════════
+const _CAL_CATS = ['visita','entrega','financeiro','oficina','outro'];
+const _CAL_CAT_LABEL = { visita:'Visita', entrega:'Entrega', financeiro:'Financeiro', oficina:'Oficina', outro:'Outro' };
+const _CAL_MES_NOMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+let _calEventos = [];          // todos os eventos carregados (camelCase)
+let _calRef     = new Date();  // mês "âncora" — sempre dia 1
+_calRef.setDate(1); _calRef.setHours(0,0,0,0);
+let _calFiltroCat = '';        // categoria ativa ('' = tudo)
+
+function _calISOLocal(d) {
+  // YYYY-MM-DD do Date (no fuso local), sem UTC drift
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
+}
+
+async function initCalendario() {
+  // Lazy-load: eventos + clientes (este último compartilhado com outras telas)
+  const tarefas = [];
+  if (!_calEventos.length)            tarefas.push(_calCarregarEventos());
+  if (!(clientesAll && clientesAll.length)) {
+    tarefas.push((async () => {
+      const { data } = await sb.from('clientes').select('*').order('nome');
+      clientesAll = data || [];
+    })());
+  }
+  if (tarefas.length) await Promise.all(tarefas);
+  _calRender();
+}
+
+async function _calCarregarEventos() {
+  const { data, error } = await sb.from('calendario_eventos').select('*').order('data');
+  if (error) { console.warn('[cal] load:', error.message); _calEventos = []; return; }
+  _calEventos = toCamelArr(data || []);
+}
+
+function _calNavega(delta) {
+  _calRef.setMonth(_calRef.getMonth() + delta);
+  _calRender();
+}
+function _calIrHoje() {
+  _calRef = new Date(); _calRef.setDate(1); _calRef.setHours(0,0,0,0);
+  _calRender();
+}
+function _calFiltro(cat) {
+  _calFiltroCat = cat || '';
+  document.querySelectorAll('.cal-filtro-pill').forEach(el => {
+    el.classList.toggle('active', (el.dataset.cat || '') === _calFiltroCat);
+  });
+  _calRender();
+}
+
+function _calEventosDoDia(isoDate) {
+  return _calEventos
+    .filter(e => e.data === isoDate)
+    .filter(e => !_calFiltroCat || e.categoria === _calFiltroCat)
+    .sort((a,b) => {
+      // Eventos com hora vêm primeiro (ordenados por hora), depois dia todo
+      const ha = a.hora || '99:99', hb = b.hora || '99:99';
+      return ha.localeCompare(hb);
+    });
+}
+
+function _calRender() {
+  // Título "Mês YYYY"
+  const tit = document.getElementById('cal-titulo');
+  if (tit) tit.textContent = `${_CAL_MES_NOMES[_calRef.getMonth()]} ${_calRef.getFullYear()}`;
+
+  _calRenderGrid();
+  _calRenderMobile();
+}
+
+function _calRenderGrid() {
+  const grid = document.getElementById('cal-grid');
+  if (!grid) return;
+  const ano = _calRef.getFullYear(), mes = _calRef.getMonth();
+  const primeiroDia  = new Date(ano, mes, 1);
+  const ultimoDia    = new Date(ano, mes + 1, 0);
+  const inicio = new Date(primeiroDia);
+  inicio.setDate(1 - primeiroDia.getDay()); // volta até domingo
+  // Sempre rende 6 linhas (42 células) — visual constante
+  const hojeISO = _calISOLocal(new Date());
+
+  let html = '';
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(inicio); d.setDate(inicio.getDate() + i);
+    const iso = _calISOLocal(d);
+    const outroMes = d.getMonth() !== mes;
+    const ehHoje = iso === hojeISO;
+    const eventos = _calEventosDoDia(iso);
+    const visiveis = eventos.slice(0, 3);
+    const sobra = eventos.length - visiveis.length;
+
+    const eventosHTML = visiveis.map(e => {
+      const horaHTML = e.hora ? `<span class="cal-evento-hora">${e.hora.slice(0,5)}</span>` : '';
+      return `<div class="cal-evento cal-evento--${e.categoria}" onclick="event.stopPropagation();_calEditarEvento('${e.id}')" title="${escHtml(e.titulo)}">${horaHTML}<span class="cal-evento-titulo">${escHtml(e.titulo)}</span></div>`;
+    }).join('');
+    const maisHTML = sobra > 0
+      ? `<div class="cal-mais" onclick="event.stopPropagation();_calVerDia('${iso}')">+${sobra} mais</div>`
+      : '';
+
+    html += `<div class="cal-cell${outroMes?' outro-mes':''}${ehHoje?' hoje':''}" onclick="_calNovoEvento('${iso}')">`
+          +   `<div class="cal-cell-num">${d.getDate()}</div>`
+          +   `<div class="cal-cell-eventos">${eventosHTML}${maisHTML}</div>`
+          + `</div>`;
+  }
+  grid.innerHTML = html;
+}
+
+function _calRenderMobile() {
+  const box = document.getElementById('cal-mobile');
+  if (!box) return;
+  const ano = _calRef.getFullYear(), mes = _calRef.getMonth();
+  const ultimoDia = new Date(ano, mes + 1, 0).getDate();
+  const hojeISO = _calISOLocal(new Date());
+  const semana = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+  let html = '';
+  // Só dias que TÊM eventos + dia de hoje (se for do mês visualizado)
+  for (let dia = 1; dia <= ultimoDia; dia++) {
+    const d = new Date(ano, mes, dia);
+    const iso = _calISOLocal(d);
+    const eventos = _calEventosDoDia(iso);
+    if (!eventos.length && iso !== hojeISO) continue;
+    const ehHoje = iso === hojeISO;
+    const evHTML = eventos.length
+      ? eventos.map(e => {
+          const hora = e.hora ? `<span class="cal-evento-hora">${e.hora.slice(0,5)}</span>` : `<span class="text-mute" style="font-size:10px;">dia todo</span>`;
+          return `<div class="cal-mob-evento cal-evento--${e.categoria}" onclick="_calEditarEvento('${e.id}')">${hora}<span class="cal-evento-titulo">${escHtml(e.titulo)}</span></div>`;
+        }).join('')
+      : '<div class="text-mute" style="font-size:11px;padding:6px 0;">Sem eventos · toque em "Novo evento" pra agendar.</div>';
+    html += `<div class="cal-mob-dia${ehHoje?' hoje':''}">`
+          +   `<div class="cal-mob-dia-header"><span>${dia}/${String(mes+1).padStart(2,'0')} · ${semana[d.getDay()]}${ehHoje?' · Hoje':''}</span><span class="cal-mob-dia-sub">${eventos.length} evento${eventos.length===1?'':'s'}</span></div>`
+          +   evHTML
+          + `</div>`;
+  }
+  if (!html) html = '<div class="text-mute" style="text-align:center;padding:30px 0;">Nenhum evento neste mês. Toque em "Novo evento" pra agendar.</div>';
+  box.innerHTML = html;
+}
+
+// Abre lista de um dia específico — reutiliza o modal de novo evento como atalho.
+// Por simplicidade na Etapa 1: rola a célula até o topo e abre o modal novo.
+function _calVerDia(iso) {
+  _calNovoEvento(iso);
+}
+
+// ── Modal CRUD ──────────────────────────────────────────────────
+function _calNovoEvento(isoDate) {
+  _calAbrirModal(null, isoDate || _calISOLocal(new Date()));
+}
+function _calEditarEvento(id) {
+  const ev = _calEventos.find(e => e.id === id);
+  if (!ev) return;
+  _calAbrirModal(ev);
+}
+
+function _calAbrirModal(ev, isoDefault) {
+  const old = document.getElementById('cal-modal');
+  if (old) old.remove();
+  const isEdit = !!ev;
+  const data    = ev?.data || isoDefault || _calISOLocal(new Date());
+  const hora    = ev?.hora || '';
+  const diaTodo = !ev || !ev.hora;
+  const dur     = ev?.duracaoMin ?? 60;
+  const cat     = ev?.categoria || 'visita';
+  const titulo  = ev?.titulo || '';
+  const obs     = ev?.observacao || '';
+  const cliId   = ev?.clienteId || '';
+  const cliNome = cliId ? (clientesAll.find(c => c.id === cliId)?.nome || '') : '';
+
+  const catOpts = _CAL_CATS.map(c =>
+    `<option value="${c}"${c===cat?' selected':''}>${_CAL_CAT_LABEL[c]}</option>`
+  ).join('');
+
+  const shell = document.createElement('div');
+  shell.id = 'cal-modal';
+  shell.className = 'modal-overlay open';
+  shell.dataset.eventoId = isEdit ? ev.id : '';
+  shell.innerHTML =
+      `<div class="modal" style="width:520px;max-width:95vw;">`
+    +   `<div class="modal-title">${isEdit?'Editar':'Novo'} <span>evento</span></div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group full"><label>Título *</label><input class="form-input" id="cal-titulo-inp" type="text" value="${escHtml(titulo).replace(/"/g,'&quot;')}" placeholder="Ex: Visita - João test-ride"></div>`
+    +     `<div class="form-group"><label>Data *</label><input class="form-input" id="cal-data" type="date" value="${data}"></div>`
+    +     `<div class="form-group"><label>Categoria</label><select class="form-input" id="cal-cat">${catOpts}</select></div>`
+    +     `<div class="form-group full"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:var(--fw-md);"><input type="checkbox" id="cal-dia-todo"${diaTodo?' checked':''} onchange="_calToggleHora()"> Evento de dia todo</label></div>`
+    +     `<div class="form-group" id="cal-hora-wrap" style="${diaTodo?'display:none;':''}"><label>Hora</label><input class="form-input" id="cal-hora" type="time" value="${hora?hora.slice(0,5):'09:00'}"></div>`
+    +     `<div class="form-group" id="cal-dur-wrap" style="${diaTodo?'display:none;':''}"><label>Duração (min)</label><input class="form-input" id="cal-dur" type="number" min="0" step="15" value="${dur}"></div>`
+    +     `<div class="form-group full cal-autocomplete"><label>Cliente <span class="text-mute" style="font-weight:400;">(opcional)</span></label>`
+    +       `<input class="form-input" id="cal-cli" type="text" value="${escHtml(cliNome).replace(/"/g,'&quot;')}" placeholder="Comece a digitar pra buscar…" oninput="_calCliAutocomplete()" autocomplete="off" data-cliente-id="${cliId}">`
+    +       `<div class="cal-autocomplete-lista" id="cal-cli-lista" style="display:none;"></div>`
+    +     `</div>`
+    +     `<div class="form-group full"><label>Observação</label><textarea class="form-input" id="cal-obs" rows="3" placeholder="Notas extras…">${escHtml(obs)}</textarea></div>`
+    +   `</div>`
+    +   `<div class="modal-actions" style="justify-content:${isEdit?'space-between':'flex-end'};">`
+    +     (isEdit ? `<button class="btn-pro btn-pro--ghost" style="color:var(--red);" onclick="_calExcluirEvento()"><svg class="ic ic-sm"><use href="#ic-trash"/></svg> Excluir</button>` : '')
+    +     `<div style="display:flex;gap:8px;">`
+    +       `<button class="btn-pro" onclick="document.getElementById('cal-modal').remove();">Cancelar</button>`
+    +       `<button class="btn-pro btn-pro--primary" onclick="_calSalvarEvento()">${isEdit?'Salvar':'Criar evento'}</button>`
+    +     `</div>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+  setTimeout(() => document.getElementById('cal-titulo-inp')?.focus(), 50);
+}
+
+function _calToggleHora() {
+  const ck = document.getElementById('cal-dia-todo')?.checked;
+  document.getElementById('cal-hora-wrap').style.display = ck ? 'none' : '';
+  document.getElementById('cal-dur-wrap').style.display  = ck ? 'none' : '';
+}
+
+function _calCliAutocomplete() {
+  const inp = document.getElementById('cal-cli');
+  const box = document.getElementById('cal-cli-lista');
+  if (!inp || !box) return;
+  const q = (inp.value || '').trim().toLowerCase();
+  if (q.length < 2) { box.style.display = 'none'; inp.dataset.clienteId = ''; return; }
+  const matches = (clientesAll || [])
+    .filter(c => (c.nome || '').toLowerCase().includes(q))
+    .slice(0, 10);
+  if (!matches.length) {
+    box.innerHTML = '<div class="cal-autocomplete-item text-mute">Nenhum cliente encontrado.</div>';
+    box.style.display = '';
+    inp.dataset.clienteId = '';
+    return;
+  }
+  box.innerHTML = matches.map(c => {
+    const sub = [c.telefone, c.cpf || c.cpfCnpj].filter(Boolean).join(' · ');
+    return `<div class="cal-autocomplete-item" onclick="_calCliSelecionar('${c.id}','${escHtml(c.nome).replace(/'/g,'&#39;')}')">${escHtml(c.nome)}${sub?`<div class="text-mute">${escHtml(sub)}</div>`:''}</div>`;
+  }).join('');
+  box.style.display = '';
+}
+function _calCliSelecionar(id, nome) {
+  const inp = document.getElementById('cal-cli');
+  if (!inp) return;
+  inp.value = nome;
+  inp.dataset.clienteId = id;
+  document.getElementById('cal-cli-lista').style.display = 'none';
+}
+
+async function _calSalvarEvento() {
+  const shell = document.getElementById('cal-modal');
+  if (!shell) return;
+  const eventoId = shell.dataset.eventoId || '';
+  const isEdit   = !!eventoId;
+
+  const titulo  = (document.getElementById('cal-titulo-inp')?.value || '').trim();
+  const data    = document.getElementById('cal-data')?.value || '';
+  const diaTodo = !!document.getElementById('cal-dia-todo')?.checked;
+  const hora    = diaTodo ? null : (document.getElementById('cal-hora')?.value || null);
+  const durRaw  = document.getElementById('cal-dur')?.value;
+  const dur     = diaTodo || !durRaw ? null : Number(durRaw);
+  const cat     = document.getElementById('cal-cat')?.value || 'visita';
+  const obs     = (document.getElementById('cal-obs')?.value || '').trim() || null;
+  const cliInp  = document.getElementById('cal-cli');
+  const cliId   = (cliInp?.dataset.clienteId || '') || null;
+
+  if (!titulo) { smAlert('Informe o título do evento.'); return; }
+  if (!data)   { smAlert('Informe a data do evento.'); return; }
+  if (dur != null && (!Number.isFinite(dur) || dur < 0)) { smAlert('Duração inválida.'); return; }
+
+  const payload = {
+    titulo, data, hora,
+    duracao_min: dur,
+    categoria: cat,
+    observacao: obs,
+    cliente_id: cliId,
+    atualizado_em: new Date().toISOString(),
+  };
+
+  try {
+    if (isEdit) {
+      const { data: row, error } = await sb.from('calendario_eventos').update(payload).eq('id', eventoId).select().single();
+      if (error) throw new Error(error.message);
+      const i = _calEventos.findIndex(e => e.id === eventoId);
+      if (i >= 0) _calEventos[i] = toCamel(row);
+    } else {
+      const { data: row, error } = await sb.from('calendario_eventos').insert(payload).select().single();
+      if (error) throw new Error(error.message);
+      _calEventos.push(toCamel(row));
+    }
+    shell.remove();
+    _calRender();
+  } catch (e) {
+    smAlert('Erro ao salvar: ' + e.message);
+  }
+}
+
+async function _calExcluirEvento() {
+  const shell = document.getElementById('cal-modal');
+  const id = shell?.dataset.eventoId;
+  if (!id) return;
+  const ev = _calEventos.find(e => e.id === id);
+  if (!ev) return;
+  if (!(await smConfirm(`Excluir o evento "${ev.titulo}"?`))) return;
+  const { error } = await sb.from('calendario_eventos').delete().eq('id', id);
+  if (error) { smAlert('Erro ao excluir: ' + error.message); return; }
+  _calEventos = _calEventos.filter(e => e.id !== id);
+  shell.remove();
+  _calRender();
 }
 
 // ══════════════════════════════════════════
