@@ -1565,8 +1565,8 @@ select:not(.input-pro):not(.search-input){
         <input type="date" id="dash-fat-fim" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;" onchange="onDashDateChange()">
         <button class="btn" onclick="abrirBuilder()" style="font-size:11px;padding:6px 12px;">⚙ Personalizar</button>
         <span id="dash-ultima-atualizacao" style="font-size:10px;color:var(--text3);font-weight:500;letter-spacing:0.2px;">—</span>
-        <button class="btn btn-gold" onclick="carregarFaturamentoDash(true)" style="font-size:11px;padding:6px 14px;" title="Ignora cache (30min) e busca direto no Tiny"<svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
-        <button class="btn" onclick="gerarFechamentoMes()" style="font-size:11px;padding:6px 12px;" title="Exporta DRE + planilhas detalhadas em xlsx"<svg class="ic ic-sm"><use href="#ic-bar-chart"/></svg> Fechar Mês</button>
+        <button class="btn btn-gold" onclick="carregarFaturamentoDash(true)" style="font-size:11px;padding:6px 14px;" title="Ignora cache (30min) e busca direto no Tiny"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
+        <button class="btn" onclick="gerarFechamentoMes()" style="font-size:11px;padding:6px 12px;" title="Exporta DRE + planilhas detalhadas em xlsx"><svg class="ic ic-sm"><use href="#ic-bar-chart"/></svg> Fechar Mês</button>
       </div>
     </div>
 
@@ -1715,7 +1715,7 @@ select:not(.input-pro):not(.search-input){
           <option value="I">Inativos</option>
           <option value="T">Todos</option>
         </select>
-        <button class="btn btn-gold" onclick="carregarProdutosTiny()" id="btn-sync"<svg class="ic ic-sm"><use href="#ic-zap"/></svg> Sincronizar</button>
+        <button class="btn btn-gold" onclick="carregarProdutosTiny()" id="btn-sync"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Sincronizar</button>
       </div>
     </div>
 
@@ -1776,7 +1776,7 @@ select:not(.input-pro):not(.search-input){
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <select class="search-input" id="vendas-mes" style="max-width:130px;"></select>
         <select class="search-input" id="vendas-ano" style="max-width:90px;"></select>
-        <button class="btn btn-gold" onclick="carregarVendasDoMes()"<svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
+        <button class="btn btn-gold" onclick="carregarVendasDoMes()"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
       </div>
     </div>
 
@@ -1909,7 +1909,7 @@ select:not(.input-pro):not(.search-input){
         <div style="font-size:11px;color:var(--text3);margin-top:2px;">Aprove ou rejeite solicitações de acesso</div>
       </div>
       <div style="display:flex;gap:8px;">
-        <button class="btn" onclick="renderAdmin()"<svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Atualizar</button>
+        <button class="btn" onclick="renderAdmin()"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Atualizar</button>
         <button class="btn btn-gold" onclick="alterarCodigo()">🔑 Alterar código</button>
       </div>
     </div>
@@ -1923,8 +1923,8 @@ select:not(.input-pro):not(.search-input){
           <div style="font-size:11px;color:var(--text3);margin-top:3px;">Compartilhe este código com quem pode criar uma conta</div>
         </div>
         <div style="display:flex;gap:8px;">
-          <button class="btn" onclick="copiarCodigo()" style="font-size:11px;"<svg class="ic ic-sm"><use href="#ic-clipboard"/></svg> Copiar</button>
-          <button class="btn btn-gold" onclick="alterarCodigo()" style="font-size:11px;"<svg class="ic ic-sm"><use href="#ic-edit"/></svg> Alterar</button>
+          <button class="btn" onclick="copiarCodigo()" style="font-size:11px;"><svg class="ic ic-sm"><use href="#ic-clipboard"/></svg> Copiar</button>
+          <button class="btn btn-gold" onclick="alterarCodigo()" style="font-size:11px;"><svg class="ic ic-sm"><use href="#ic-edit"/></svg> Alterar</button>
         </div>
       </div>
     </div>
@@ -2357,7 +2357,7 @@ select:not(.input-pro):not(.search-input){
           <option value="tiny">Tiny</option>
         </select>
         <input type="text" class="search-input" id="cli-busca" placeholder="🔍 Nome, CPF/CNPJ, telefone..." oninput="renderClientes()" style="min-width:240px;">
-        <button class="btn" onclick="sincronizarClientesTiny()" id="btn-cli-sync"<svg class="ic ic-sm"><use href="#ic-zap"/></svg> Sincronizar com Tiny</button>
+        <button class="btn" onclick="sincronizarClientesTiny()" id="btn-cli-sync"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Sincronizar com Tiny</button>
         <button class="btn btn-gold" onclick="abrirCliModal()">+ Novo cliente</button>
       </div>
     </div>
@@ -2391,7 +2391,7 @@ select:not(.input-pro):not(.search-input){
       <div id="contrato-busca-state">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
           <input type="text" class="search-input" id="contrato-busca" placeholder="🔍 Buscar pedido por nome do cliente..." oninput="_contratoFiltrarPedidos()" style="flex:1;min-width:240px;">
-          <button class="btn" id="btn-contrato-atualizar" onclick="_contratoCarregarPedidos(true)" title="Ignora cache (30min) e busca direto no Tiny"<svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
+          <button class="btn" id="btn-contrato-atualizar" onclick="_contratoCarregarPedidos(true)" title="Ignora cache (30min) e busca direto no Tiny"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
         </div>
         <div class="card">
           <div class="card-header"><div><div class="card-sub" id="contrato-busca-sub">Carregando pedidos...</div></div></div>
@@ -2499,8 +2499,8 @@ select:not(.input-pro):not(.search-input){
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <select class="search-input" id="cp-mes-filtro" onchange="onCpMesChange(this.value)" style="max-width:170px;"></select>
-        <button class="btn" id="cp-limpar-filtro" onclick="onCpMesChange('')" style="display:none;"<svg class="ic ic-sm"><use href="#ic-x"/></svg> Limpar</button>
-        <button class="btn" onclick="importarContasTiny()" id="btn-import-cp"<svg class="ic ic-sm"><use href="#ic-zap"/></svg> Importar do Tiny</button>
+        <button class="btn" id="cp-limpar-filtro" onclick="onCpMesChange('')" style="display:none;"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Limpar</button>
+        <button class="btn" onclick="importarContasTiny()" id="btn-import-cp"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Importar do Tiny</button>
         <button class="btn btn-gold" onclick="openCPModal()">+ Nova conta</button>
       </div>
     </div>
@@ -2562,7 +2562,7 @@ select:not(.input-pro):not(.search-input){
       <div id="cp-import-list" style="max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;"></div>
       <div class="modal-actions" style="margin-top:20px;">
         <button class="btn" onclick="closeCPImportModal()">Cancelar</button>
-        <button class="btn btn-gold" onclick="confirmarImportTiny()" id="btn-confirmar-import"<svg class="ic ic-sm"><use href="#ic-check"/></svg> Importar selecionadas</button>
+        <button class="btn btn-gold" onclick="confirmarImportTiny()" id="btn-confirmar-import"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Importar selecionadas</button>
       </div>
     </div>
   </div>
@@ -2746,7 +2746,7 @@ select:not(.input-pro):not(.search-input){
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         <span id="cr-filtro-wrap" style="display:flex;gap:8px;">
           <select class="search-input" id="cr-mes-filtro" onchange="onCrMesChange(this.value)" style="max-width:170px;"></select>
-          <button class="btn" id="cr-limpar-filtro" onclick="onCrMesChange('')" style="display:none;"<svg class="ic ic-sm"><use href="#ic-x"/></svg> Limpar</button>
+          <button class="btn" id="cr-limpar-filtro" onclick="onCrMesChange('')" style="display:none;"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Limpar</button>
         </span>
         <button class="btn btn-gold" onclick="openCRModal()">+ Nova conta</button>
       </div>
@@ -8013,9 +8013,9 @@ function renderEmprestimoDetalhe(e) {
   +   '<div style="font-size:14px;font-weight:800;">' + (e.nome||'(sem nome)') + '</div>'
   + '</div>'
   + '<div style="display:flex;gap:6px;flex-wrap:wrap;">'
-  +   (podeMexer ? '<button class="btn" onclick="abrirEmpModal(\'' + e.id + '\')" style="font-size:11px;padding:6px 12px;"<svg class="ic ic-sm"><use href="#ic-edit"/></svg> Editar</button>' : '')
+  +   (podeMexer ? '<button class="btn" onclick="abrirEmpModal(\'' + e.id + '\')" style="font-size:11px;padding:6px 12px;"><svg class="ic ic-sm"><use href="#ic-edit"/></svg> Editar</button>' : '')
   +   (podeMexer && !quitado ? '<button class="btn" onclick="quitarEmprestimo(\'' + e.id + '\')" style="font-size:11px;padding:6px 12px;border-color:var(--green);color:var(--green);">✓ Quitar</button>' : '')
-  +   (podeMexer ? '<button class="btn" onclick="excluirEmprestimo(\'' + e.id + '\')" style="font-size:11px;padding:6px 12px;border-color:var(--red);color:var(--red);"<svg class="ic ic-sm"><use href="#ic-trash"/></svg> Excluir</button>' : '')
+  +   (podeMexer ? '<button class="btn" onclick="excluirEmprestimo(\'' + e.id + '\')" style="font-size:11px;padding:6px 12px;border-color:var(--red);color:var(--red);"><svg class="ic ic-sm"><use href="#ic-trash"/></svg> Excluir</button>' : '')
   + '</div>'
   + '</div>';
 
@@ -8053,7 +8053,7 @@ function renderEmprestimoDetalhe(e) {
         : '<span class="badge" style="background:var(--surface3);color:var(--text3);">Pendente</span>';
     let actions = '';
     if (!isPaga && podeMarcar) actions += '<button class="btn btn-gold" style="font-size:10px;padding:5px 12px;" onclick="marcarParcelaPaga(\'' + p.id + '\')">Marcar paga</button>';
-    if (podeMexer) actions += '<button class="action-btn edit-btn" onclick="abrirParcelaEditModal(\'' + p.id + '\')" title="Editar parcela" style="font-size:10px;"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>';
+    if (podeMexer) actions += '<button class="action-btn edit-btn" onclick="abrirParcelaEditModal(\'' + p.id + '\')" title="Editar parcela" style="font-size:10px;"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>';
     const pgtoLabel = p.dataPgtoFmt
       ? '<span class="emp-parc-pgto" style="font-size:10px;color:var(--green);font-weight:600;font-family:var(--mono,monospace);white-space:nowrap;">pago: ' + p.dataPgtoFmt + '</span>'
       : '';
@@ -8702,7 +8702,7 @@ function renderContas() {
       <div class="conta-saldo" style="color:${c.saldo>=0?'var(--green)':'var(--red)'};">${fmt(c.saldo)}</div>
       <div class="conta-tipo">${escHtml(c.tipo)}</div>
       <div style="display:flex;gap:5px;margin-top:10px;">
-        <button class="action-btn edit-btn" onclick="event.stopPropagation();editarSaldoConta(${i})" style="font-size:10px;flex:1;"<svg class="ic ic-sm"><use href="#ic-edit"/></svg> Editar saldo</button>
+        <button class="action-btn edit-btn" onclick="event.stopPropagation();editarSaldoConta(${i})" style="font-size:10px;flex:1;"><svg class="ic ic-sm"><use href="#ic-edit"/></svg> Editar saldo</button>
         <button class="action-btn" onclick="event.stopPropagation();editarNomeConta(${i})" style="font-size:10px;flex:1;">⚙ Config</button>
       </div>
     </div>`;
@@ -9088,7 +9088,7 @@ function renderLancamentos() {
         ${l.tipo==='entrada'?'↑':'↓'} ${fmt(l.valor)}
       </span>
       <span style="display:flex;gap:4px;">
-        <button class="action-btn edit-btn" onclick="editarLancamento('${l.id}')"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
+        <button class="action-btn edit-btn" onclick="editarLancamento('${l.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
         <button class="action-btn del-btn" onclick="deletarLancamento('${l.id}')">✕</button>
       </span>
     </div>
@@ -9938,7 +9938,7 @@ ${isVencida?'❗ Esta conta está VENCIDA!':'Faltam '+dias+' dia(s) para o venci
           </div>
         </div>
         <div style="display:flex;gap:6px;">
-          <button class="btn btn-gold" onclick="pagarContaModal('${c.id}')" style="font-size:11px;padding:6px 12px;"<svg class="ic ic-sm"><use href="#ic-check"/></svg> Marcar paga</button>
+          <button class="btn btn-gold" onclick="pagarContaModal('${c.id}')" style="font-size:11px;padding:6px 12px;"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Marcar paga</button>
           <a href="${waLink}" target="_blank" class="btn" style="font-size:11px;padding:6px 12px;text-decoration:none;background:#25D366;border-color:#25D366;color:#fff;font-weight:700;">📲 WhatsApp</a>
         </div>
       </div>`;
@@ -10034,7 +10034,7 @@ function renderContasPagar() {
               ? '<button class="btn btn-gold" onclick="pagarContaModal(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;">✅</button>'
               : '<button class="action-btn" onclick="despagarConta(\'' + c.id + '\')" style="font-size:10px;">↩</button>'}
             <a href="${waLink}" target="_blank" class="action-btn" style="background:#25D366;border-color:#25D366;color:#fff;text-decoration:none;padding:5px 8px;font-size:10px;font-weight:700;">📲</a>
-            <button class="action-btn edit-btn" onclick="editarContaPagar('${c.id}')"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
+            <button class="action-btn edit-btn" onclick="editarContaPagar('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
             <button class="action-btn del-btn" onclick="deletarContaPagar('${c.id}')">✕</button>
           </div>
         </div>
@@ -10909,7 +10909,7 @@ function renderContasReceber() {
             ${!c.recebido
               ? '<button class="btn btn-gold" onclick="marcarRecebido(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;" title="Marcar recebido">✅</button>'
               : '<button class="action-btn" onclick="desmarcarRecebido(\'' + c.id + '\')" style="font-size:10px;" title="Desmarcar recebido">↩</button>'}
-            <button class="action-btn edit-btn" onclick="editarContaReceber('${c.id}')"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
+            <button class="action-btn edit-btn" onclick="editarContaReceber('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
             <button class="action-btn del-btn" onclick="deletarContaReceber('${c.id}')">✕</button>
           </div>
         </div>
@@ -11372,12 +11372,12 @@ async function renderAdmin() {
     </div>
   `;
 
-  const editBtn = (email) => `<button class="btn" onclick="abrirEditarAcesso('${email}')" style="font-size:11px;padding:6px 12px;"<svg class="ic ic-sm"><use href="#ic-edit"/></svg> Editar perfil</button>`;
+  const editBtn = (email) => `<button class="btn" onclick="abrirEditarAcesso('${email}')" style="font-size:11px;padding:6px 12px;"><svg class="ic ic-sm"><use href="#ic-edit"/></svg> Editar perfil</button>`;
 
   // Pendentes
   document.getElementById('admin-pending-list').innerHTML = pendente.length
     ? pendente.map(u => userRow(u,`
-        <button class="btn btn-gold" onclick="aprovarUser('${u.email}')" style="font-size:11px;padding:6px 14px;"<svg class="ic ic-sm"><use href="#ic-check"/></svg> Aprovar</button>
+        <button class="btn btn-gold" onclick="aprovarUser('${u.email}')" style="font-size:11px;padding:6px 14px;"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Aprovar</button>
         <button class="btn" onclick="rejeitarUser('${u.email}')" style="font-size:11px;padding:6px 14px;border-color:var(--red);color:var(--red);">❌ Rejeitar</button>
       `)).join('')
     : '<div class="empty" style="padding:24px;">Nenhuma solicitação pendente 🎉</div>';
@@ -11397,7 +11397,7 @@ async function renderAdmin() {
   document.getElementById('admin-rejected-list').innerHTML = rejeit.length
     ? rejeit.map(u => userRow(u,`
         <button class="btn btn-gold" onclick="aprovarUser('${u.email}')" style="font-size:11px;padding:6px 14px;">↩ Reativar</button>
-        <button class="btn" onclick="deletarUser('${u.email}')" style="font-size:11px;padding:6px 12px;border-color:var(--red);color:var(--red);"<svg class="ic ic-sm"><use href="#ic-trash"/></svg> Remover</button>
+        <button class="btn" onclick="deletarUser('${u.email}')" style="font-size:11px;padding:6px 12px;border-color:var(--red);color:var(--red);"><svg class="ic ic-sm"><use href="#ic-trash"/></svg> Remover</button>
       `)).join('')
     : '<div class="empty" style="padding:24px;">Nenhum usuário bloqueado</div>';
 }
@@ -11804,10 +11804,10 @@ function _smTimelineRender(container, eventos) {
     } else {
       actions = '<button type="button" class="timeline-edit-btn" data-evento-id="' + escHtml(ev.id)
         + '" data-caso-id="' + escHtml(ev.casoId)
-        + '" data-modulo="' + escHtml(ev.modulo) + '"<svg class="ic ic-sm"><use href="#ic-edit"/></svg> Editar</button>'
+        + '" data-modulo="' + escHtml(ev.modulo) + '"><svg class="ic ic-sm"><use href="#ic-edit"/></svg> Editar</button>'
         + '<button type="button" class="timeline-delete-btn" data-evento-id="' + escHtml(ev.id)
         + '" data-caso-id="' + escHtml(ev.casoId)
-        + '" data-modulo="' + escHtml(ev.modulo) + '"<svg class="ic ic-sm"><use href="#ic-trash"/></svg> Excluir</button>';
+        + '" data-modulo="' + escHtml(ev.modulo) + '"><svg class="ic ic-sm"><use href="#ic-trash"/></svg> Excluir</button>';
     }
     return ''
       + '<div class="' + itemCls + '">'
@@ -12084,7 +12084,7 @@ function renderOficina() {
       + `<div style="display:flex;gap:5px;">`
         + (next ? `<button class="btn btn-gold" onclick="ofAvancarStatus('${o.id}')" style="font-size:10px;padding:5px 10px;" title="Avançar para ${nextLabel}">→ ${nextLabel}</button>` : '')
         + `<button class="action-btn" onclick="ofImprimir('${o.id}')" title="Imprimir OS (A5)">🖨️</button>`
-        + `<button class="action-btn edit-btn" onclick="abrirOfModal('${o.id}')"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
+        + `<button class="action-btn edit-btn" onclick="abrirOfModal('${o.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
         + `<button class="action-btn del-btn" onclick="ofExcluir('${o.id}')">✕</button>`
       + `</div>`
       + '</div>';
@@ -12785,10 +12785,10 @@ function renderMontagens() {
               <div style="font-size:14px;font-weight:800;color:var(--gold);">${fmtBR(s.totalEnviado)}</div>
             </div>
             <div style="display:flex;gap:5px;">
-              <button class="action-btn edit-btn" onclick="abrirMontadorModal('${m.id}')" title="Editar"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
+              <button class="action-btn edit-btn" onclick="abrirMontadorModal('${m.id}')" title="Editar"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
               ${inativo
-                ? `<button class="action-btn" onclick="_alternarStatusMontador('${m.id}', true)" title="Reativar" style="color:var(--green);"<svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
-                : `<button class="action-btn del-btn" onclick="_alternarStatusMontador('${m.id}', false)" title="Desativar"<svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`}
+                ? `<button class="action-btn" onclick="_alternarStatusMontador('${m.id}', true)" title="Reativar" style="color:var(--green);"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
+                : `<button class="action-btn del-btn" onclick="_alternarStatusMontador('${m.id}', false)" title="Desativar"><svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`}
             </div>
           </div>`;
         }).join('')
@@ -12857,7 +12857,7 @@ function renderMontagens() {
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn" type="button" onclick="_cancelarSelMontagens()">Cancelar seleção</button>
-        <button class="btn btn-gold" type="button" onclick="_montPagarSelecionados()"<svg class="ic ic-sm"><use href="#ic-wallet"/></svg> Pagar selecionados</button>
+        <button class="btn btn-gold" type="button" onclick="_montPagarSelecionados()"><svg class="ic ic-sm"><use href="#ic-wallet"/></svg> Pagar selecionados</button>
       </div>
     </div>`;
   }
@@ -12906,10 +12906,10 @@ function renderMontagens() {
     const temMotosARRecber = its.some(i => i.statusMontagem !== 'recebida');
     const acoesHTML =
         `<button class="action-btn" onclick="${stopClick}imprimirMontagemOS('${lote.id}')" title="Imprimir OS (2 vias)">🖨️</button>`
-      + (podeEditar ? `<button class="action-btn edit-btn" onclick="${stopClick}abrirMontagemModal('${lote.id}')" title="Editar lote"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>` : '')
+      + (podeEditar ? `<button class="action-btn edit-btn" onclick="${stopClick}abrirMontagemModal('${lote.id}')" title="Editar lote"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>` : '')
       + (temMotosARRecber ? `<button class="action-btn" style="color:var(--green);" onclick="${stopClick}_montagensReceberLoteCompleto('${lote.id}')" title="Marcar todas as motos como recebidas">📦</button>` : '')
-      + (podePagar  ? `<button class="btn btn-gold" style="font-size:10px;padding:4px 10px;line-height:1.2;" onclick="${stopClick}abrirMontagemPagarModal('${lote.id}')" title="Pagar este lote"<svg class="ic ic-sm"><use href="#ic-wallet"/></svg> Pagar</button>` : '')
-      + `<button class="action-btn del-btn" onclick="${stopClick}_montagensExcluirLote('${lote.id}')" title="Excluir lote"<svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>`;
+      + (podePagar  ? `<button class="btn btn-gold" style="font-size:10px;padding:4px 10px;line-height:1.2;" onclick="${stopClick}abrirMontagemPagarModal('${lote.id}')" title="Pagar este lote"><svg class="ic ic-sm"><use href="#ic-wallet"/></svg> Pagar</button>` : '')
+      + `<button class="action-btn del-btn" onclick="${stopClick}_montagensExcluirLote('${lote.id}')" title="Excluir lote"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>`;
 
     // Cores de fundo por status (visual diferenciado na coluna Status).
     const corPorStatus = {
@@ -14078,12 +14078,12 @@ function renderPdvVendedores() {
             <div style="font-size:14px;font-weight:800;color:var(--gold);">${fmtBR(v.comissaoMoto)}</div>
           </div>
           <div style="display:flex;gap:5px;">
-            <button class="action-btn edit-btn" onclick="abrirVendedorModal('${v.id}')" title="Editar"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
+            <button class="action-btn edit-btn" onclick="abrirVendedorModal('${v.id}')" title="Editar"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
             ${inativo
-              ? `<button class="action-btn" onclick="_alternarStatusVendedor('${v.id}', true)" title="Reativar" style="color:var(--green);"<svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
-              : `<button class="action-btn del-btn" onclick="_alternarStatusVendedor('${v.id}', false)" title="Desativar"<svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`}
+              ? `<button class="action-btn" onclick="_alternarStatusVendedor('${v.id}', true)" title="Reativar" style="color:var(--green);"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
+              : `<button class="action-btn del-btn" onclick="_alternarStatusVendedor('${v.id}', false)" title="Desativar"><svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`}
             ${_pdvVendedoresComPedido.has(v.id) ? '' :
-              `<button class="action-btn" onclick="_excluirVendedor('${v.id}')" title="Excluir permanentemente" style="color:var(--red);"<svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>`}
+              `<button class="action-btn" onclick="_excluirVendedor('${v.id}')" title="Excluir permanentemente" style="color:var(--red);"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>`}
           </div>
         </div>`;
       }).join('')
@@ -14215,12 +14215,12 @@ function renderPdvLocais() {
             <div style="font-size:14px;font-weight:800;">${Number(l.ordem ?? 0)}</div>
           </div>
           <div style="display:flex;gap:5px;">
-            <button class="action-btn edit-btn" onclick="abrirLocalModal('${l.id}')" title="Editar"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
+            <button class="action-btn edit-btn" onclick="abrirLocalModal('${l.id}')" title="Editar"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
             ${inativo
-              ? `<button class="action-btn" onclick="_alternarStatusLocal('${l.id}', true)" title="Reativar" style="color:var(--green);"<svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
-              : `<button class="action-btn del-btn" onclick="_alternarStatusLocal('${l.id}', false)" title="Desativar"<svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`}
+              ? `<button class="action-btn" onclick="_alternarStatusLocal('${l.id}', true)" title="Reativar" style="color:var(--green);"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
+              : `<button class="action-btn del-btn" onclick="_alternarStatusLocal('${l.id}', false)" title="Desativar"><svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`}
             ${_pdvLocaisComPedido.has(l.id) ? '' :
-              `<button class="action-btn" onclick="_excluirLocal('${l.id}')" title="Excluir permanentemente" style="color:var(--red);"<svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>`}
+              `<button class="action-btn" onclick="_excluirLocal('${l.id}')" title="Excluir permanentemente" style="color:var(--red);"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>`}
           </div>
         </div>`;
       }).join('')
@@ -14436,7 +14436,7 @@ async function _pdvRenderPainel(root) {
     <div class="kpi"><div class="kpi-label">Qtd vendas hoje</div><div class="kpi-value">…</div></div>
     <div class="kpi"><div class="kpi-label">Ticket médio hoje</div><div class="kpi-value">…</div></div>
   </div>
-  <div style="text-align:center;margin:32px 0 36px;"><button class="btn btn-gold" onclick="_pdvIniciarVenda()" style="font-size:18px;padding:24px 56px;letter-spacing:1px;font-weight:800;"<svg class="ic ic-lg"><use href="#ic-cart"/></svg> NOVA VENDA</button></div>
+  <div style="text-align:center;margin:32px 0 36px;"><button class="btn btn-gold" onclick="_pdvIniciarVenda()" style="font-size:18px;padding:24px 56px;letter-spacing:1px;font-weight:800;"><svg class="ic ic-lg"><use href="#ic-cart"/></svg> NOVA VENDA</button></div>
   <div class="card"><div class="card-header"><div><div class="card-title">Top 5 pendentes de entrega</div><div class="card-sub">carregando…</div></div></div><div class="empty" style="padding:32px;">…</div></div>`;
 
   const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -14464,7 +14464,7 @@ async function _pdvRenderPainel(root) {
     +   `<div class="kpi"><div class="kpi-label">Ticket médio hoje</div><div class="kpi-value">${fmtBR0(ticketMedio)}</div><div class="kpi-change">${qtdDia?'total ÷ qtd':'sem vendas ainda'}</div></div>`
     + `</div>`
     + `<div style="text-align:center;margin:32px 0 36px;">`
-    +   `<button class="btn btn-gold" onclick="_pdvIniciarVenda()" style="font-size:18px;padding:24px 56px;letter-spacing:1px;font-weight:800;"<svg class="ic ic-lg"><use href="#ic-cart"/></svg> NOVA VENDA</button>`
+    +   `<button class="btn btn-gold" onclick="_pdvIniciarVenda()" style="font-size:18px;padding:24px 56px;letter-spacing:1px;font-weight:800;"><svg class="ic ic-lg"><use href="#ic-cart"/></svg> NOVA VENDA</button>`
     + `</div>`
     + `<div class="card">`
     +   `<div class="card-header"><div><div class="card-title">Top 5 pendentes de entrega</div><div class="card-sub">${pendentes.length} pedidos aguardando</div></div></div>`
@@ -14595,7 +14595,7 @@ function _pdvRenderItensTabela() {
           <td style="padding:6px;text-align:center;"><input class="form-input" type="number" min="1" step="1" value="${it.qtd}" style="width:64px;text-align:center;" oninput="_pdvSetItem(${idx},'qtd',this.value)"></td>
           <td style="padding:6px;text-align:right;"><input class="form-input" type="number" min="0" step="0.01" value="${Number(it.precoUnit).toFixed(2)}" style="width:130px;text-align:right;" oninput="_pdvSetItem(${idx},'precoUnit',this.value)"></td>
           <td style="padding:8px;text-align:right;font-weight:800;color:var(--gold);font-family:var(--mono,monospace);" id="pdv-row-${idx}-sub">${_fmtBRMoney(Number(it.qtd) * Number(it.precoUnit))}</td>
-          <td style="padding:6px;text-align:center;"><button class="action-btn del-btn" onclick="_pdvRemoveItem(${idx})" title="Remover"<svg class="ic ic-sm"><use href="#ic-trash"/></svg></button></td>
+          <td style="padding:6px;text-align:center;"><button class="action-btn del-btn" onclick="_pdvRemoveItem(${idx})" title="Remover"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button></td>
         </tr>`).join('')}
     </tbody>
   </table>`;
@@ -14822,7 +14822,7 @@ function _pdvRenderPagamentos() {
       <div class="form-group" style="margin:0;"><label style="font-size:9px;">Tipo</label><select class="form-input" onchange="_pdvSetPagto(${idx},'tipo',this.value)">${tiposOpts(p.tipo)}</select></div>
       <div class="form-group" style="margin:0;">${isCred?`<label style="font-size:9px;">Parcelas</label><select class="form-input" onchange="_pdvSetPagto(${idx},'parcelas',this.value)">${parcelasOpts}</select>`:`<label style="font-size:9px;">&nbsp;</label><input class="form-input" type="text" value="—" disabled style="text-align:center;color:var(--text3);">`}</div>
       <div class="form-group" style="margin:0;"><label style="font-size:9px;">Valor (R$)</label><input class="form-input" type="number" min="0" step="0.01" value="${Number(p.valor||0).toFixed(2)}" style="text-align:right;" oninput="_pdvSetPagto(${idx},'valor',this.value)"></div>
-      <button class="action-btn del-btn" onclick="_pdvRemovePagto(${idx})" title="Remover" style="margin-bottom:0;"<svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>
+      <button class="action-btn del-btn" onclick="_pdvRemovePagto(${idx})" title="Remover" style="margin-bottom:0;"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>
     </div>`;
   }).join('');
 }
@@ -15040,7 +15040,7 @@ function _pdvRenderSucesso(root) {
     syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--green);font-weight:700;">✅ Sincronizado com Tiny — Pedido #${escHtml(sync.tinyNumero || '?')}</div>`;
   } else if (sync?.state === 'error') {
     syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--orange);">⚠️ Falha ao sincronizar com Tiny: <span style="color:var(--text3);">${escHtml(sync.erro || 'erro desconhecido')}</span></div>`
-              + `<div style="margin-top:8px;"><button class="btn" onclick="_pdvSincronizarComTiny('${p.id}')" style="font-size:11px;padding:6px 12px;"<svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Tentar sincronizar de novo</button></div>`;
+              + `<div style="margin-top:8px;"><button class="btn" onclick="_pdvSincronizarComTiny('${p.id}')" style="font-size:11px;padding:6px 12px;"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Tentar sincronizar de novo</button></div>`;
   }
 
   root.innerHTML =
@@ -15051,8 +15051,8 @@ function _pdvRenderSucesso(root) {
     +   `<div style="font-size:13px;color:var(--text2);margin-top:14px;">${escHtml(cli.nome || '—')} · ${_fmtBRMoney(p.total || 0)}</div>`
     +   syncBlock
     +   `<div style="margin-top:36px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">`
-    +     `<button class="btn btn-gold" onclick="_pdvIniciarVenda()" style="padding:12px 24px;"<svg class="ic ic-sm"><use href="#ic-cart"/></svg> Nova venda</button>`
-    +     `<button class="btn" onclick="showPage('pedidos')" style="padding:12px 24px;"<svg class="ic ic-sm"><use href="#ic-file-text"/></svg> Ver lista</button>`
+    +     `<button class="btn btn-gold" onclick="_pdvIniciarVenda()" style="padding:12px 24px;"><svg class="ic ic-sm"><use href="#ic-cart"/></svg> Nova venda</button>`
+    +     `<button class="btn" onclick="showPage('pedidos')" style="padding:12px 24px;"><svg class="ic ic-sm"><use href="#ic-file-text"/></svg> Ver lista</button>`
     +     `<button class="btn" onclick="_pdvStep=0;_pdvUltimoPedidoCriado=null;renderPdv();" style="padding:12px 24px;">← Voltar ao painel</button>`
     +   `</div>`
     + `</div>`;
@@ -15098,7 +15098,7 @@ async function _pdvAbrirDetalhe(pedidoId) {
     // Não sincronizado: warning + erro detalhado + botão retry
     const erroTxt = (syncLive?.state === 'error' && syncLive.erro) || p.tinyErro || '';
     syncBlock = `<span style="color:var(--orange);font-size:10px;margin-left:8px;">⚠️ Não sincronizado com Tiny</span>`
-              + `<button class="btn" onclick="_pdvSincronizarComTiny('${p.id}')" style="font-size:10px;padding:3px 10px;margin-left:8px;"<svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Sincronizar</button>`
+              + `<button class="btn" onclick="_pdvSincronizarComTiny('${p.id}')" style="font-size:10px;padding:3px 10px;margin-left:8px;"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Sincronizar</button>`
               + (erroTxt ? `<div style="font-size:10px;color:var(--text3);margin-top:6px;background:var(--surface2);padding:8px 10px;border-radius:var(--r-sm);">Último erro: ${escHtml(erroTxt)}</div>` : '');
   }
 
@@ -15309,7 +15309,7 @@ function renderSac() {
       + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
       + `<div style="font-size:10px;color:var(--text3);">${vencHTML}</div>`
       + `<div style="display:flex;gap:5px;">`
-        + `<button class="action-btn edit-btn" onclick="abrirSacModal('${c.id}')"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
+        + `<button class="action-btn edit-btn" onclick="abrirSacModal('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
         + `<button class="action-btn del-btn" onclick="sacExcluir('${c.id}')">✕</button>`
       + `</div>`
       + '</div>';
@@ -15439,7 +15439,7 @@ function abrirSacModal(id) {
     + `<div class="modal-actions">`
     +   `<button class="btn" onclick="document.getElementById('sac-modal').remove();">Cancelar</button>`
     +   (podeReverter ? `<button class="btn" style="border-color:var(--orange);color:var(--orange);" onclick="sacVoltarParaOficina('${c.id}')" title="Reverter pra OS de origem (apenas admin)">↩ Voltar pra Oficina</button>` : '')
-    +   (podeMoverOf  ? `<button class="btn" style="border-color:var(--gold);color:var(--gold);" onclick="sacMoverParaOficina('${c.id}')" title="Mover pra Oficina — cria OS nova"<svg class="ic ic-sm"><use href="#ic-wrench"/></svg> Mover pra Oficina</button>` : '')
+    +   (podeMoverOf  ? `<button class="btn" style="border-color:var(--gold);color:var(--gold);" onclick="sacMoverParaOficina('${c.id}')" title="Mover pra Oficina — cria OS nova"><svg class="ic ic-sm"><use href="#ic-wrench"/></svg> Mover pra Oficina</button>` : '')
     +   `<button class="btn btn-gold" onclick="sacSalvar('${isEdit?c.id:''}')">${isEdit?'Salvar':'Cadastrar caso'}</button>`
     + `</div>`
     + `</div>`;
@@ -15837,7 +15837,7 @@ function renderClientes() {
       + `<div style="font-size:10px;color:var(--text3);">${escHtml(c.cidade)}${c.uf?(' / '+escHtml(c.uf)):''}</div>`
       + `<div>${badge}</div>`
       + `<div style="display:flex;gap:5px;">`
-        + `<button class="action-btn edit-btn" onclick="abrirCliModal('${c.id}')"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
+        + `<button class="action-btn edit-btn" onclick="abrirCliModal('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
         + (podeDeletar ? `<button class="action-btn del-btn" onclick="cliExcluir('${c.id}')">✕</button>` : '')
       + `</div>`
       + '</div>';
@@ -16669,10 +16669,10 @@ function renderWhatsappDest() {
         </div>
       </div>
       <div style="display:flex;gap:5px;">
-        <button class="action-btn edit-btn" onclick="abrirWhatsappDestModal('${d.id}')" title="Editar"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
+        <button class="action-btn edit-btn" onclick="abrirWhatsappDestModal('${d.id}')" title="Editar"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
         ${inativo
-          ? `<button class="action-btn" onclick="_alternarStatusWhatsappDest('${d.id}', true)" title="Reativar" style="color:var(--green);"<svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
-          : `<button class="action-btn del-btn" onclick="_alternarStatusWhatsappDest('${d.id}', false)" title="Desativar"<svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`}
+          ? `<button class="action-btn" onclick="_alternarStatusWhatsappDest('${d.id}', true)" title="Reativar" style="color:var(--green);"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
+          : `<button class="action-btn del-btn" onclick="_alternarStatusWhatsappDest('${d.id}', false)" title="Desativar"><svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`}
       </div>
     </div>`;
   }).join('');
@@ -17108,11 +17108,11 @@ function renderCategoriasLancamento() {
         <div style="display:flex;align-items:center;gap:9px;">${dot}<span style="font-size:13px;font-weight:600;">${escHtml(c.nome)}${badge}</span></div>
         <div style="display:flex;align-items:center;gap:5px;">
           <span style="font-size:10px;color:var(--text3);margin-right:4px;white-space:nowrap;">${n} lanç.</span>
-          <button class="action-btn edit-btn" onclick="abrirCategoriaModal('${c.id}')" title="Editar"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
+          <button class="action-btn edit-btn" onclick="abrirCategoriaModal('${c.id}')" title="Editar"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
           ${inativa
-            ? `<button class="action-btn" onclick="_toggleAtivaCategoria('${c.id}', true)" title="Reativar" style="color:var(--green);"<svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
-            : `<button class="action-btn del-btn" onclick="_toggleAtivaCategoria('${c.id}', false)" title="Desativar"<svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`}
-          <button class="action-btn del-btn" onclick="_excluirCategoria('${c.id}')" title="Excluir"<svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>
+            ? `<button class="action-btn" onclick="_toggleAtivaCategoria('${c.id}', true)" title="Reativar" style="color:var(--green);"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
+            : `<button class="action-btn del-btn" onclick="_toggleAtivaCategoria('${c.id}', false)" title="Desativar"><svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`}
+          <button class="action-btn del-btn" onclick="_excluirCategoria('${c.id}')" title="Excluir"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>
         </div>
       </div>`;
     }).join('');
@@ -17288,7 +17288,7 @@ function renderMapeamentoVendedores() {
       + `<div style="font-weight:700;color:var(--gold);">${escHtml(m.nomeReal)}</div>`
       + `<div>${chips || '<span style="color:var(--text3);font-size:11px;">— sem nomes do Tiny associados</span>'}</div>`
       + `<div style="display:flex;gap:5px;">`
-        + `<button class="action-btn edit-btn" onclick="abrirVendMapModal('${m.id}')"<svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
+        + `<button class="action-btn edit-btn" onclick="abrirVendMapModal('${m.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
         + `<button class="action-btn del-btn" onclick="excluirVendMap('${m.id}')">✕</button>`
       + `</div>`
       + '</div>';
