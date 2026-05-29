@@ -13758,7 +13758,7 @@ function renderPdvVendedores() {
           <div style="font-size:22px;">🧑‍💼</div>
           <div>
             <div style="font-size:13px;font-weight:700;">${escHtml(v.nome)}${inativoBadge}</div>
-            <div style="font-size:10px;color:var(--text3);margin-top:2px;">${userLabel} · comissão ${fmtBR(v.comissaoMoto)}/moto</div>
+            <div style="font-size:10px;color:var(--text3);margin-top:2px;">${userLabel} · comissão ${fmtBR(v.comissaoMoto)}/moto${v.nomeTiny ? ` · Tiny: <span style="color:var(--text2);">${escHtml(v.nomeTiny)}</span>` : ''}</div>
           </div>
           <div style="text-align:right;">
             <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;">Comissão</div>
@@ -13801,6 +13801,7 @@ function abrirVendedorModal(vendedorId) {
     +   `<div class="modal-title">${titulo}</div>`
     +   `<div class="form-grid">`
     +     `<div class="form-group full"><label>Nome</label><input class="form-input" id="pdvv-nome" type="text" value="${escHtml(v?.nome || '').replace(/"/g,'&quot;')}" placeholder="Nome do vendedor"></div>`
+    +     `<div class="form-group full"><label>Nome no Tiny <span style="color:var(--text3);font-weight:400;">(opcional, só se diferente do nome acima)</span></label><input class="form-input" id="pdvv-nome-tiny" type="text" value="${escHtml(v?.nomeTiny || '').replace(/"/g,'&quot;')}" placeholder="ex: Venda Direta Smart Motors"></div>`
     +     `<div class="form-group full"><label>Login (usuário do sistema, opcional)</label><select class="form-input" id="pdvv-login">${userOpts}</select></div>`
     +     `<div class="form-group"><label>Comissão por moto (R$)</label><input class="form-input" id="pdvv-comissao" type="number" step="0.01" min="0" value="${Number(v?.comissaoMoto ?? 100).toFixed(2)}"></div>`
     +     `<div class="form-group" style="display:flex;align-items:flex-end;font-size:12px;">`
@@ -13823,6 +13824,7 @@ async function _salvarVendedor() {
   const isEdit = !!vendedorId;
 
   const nome     = (document.getElementById('pdvv-nome')?.value || '').trim();
+  const nomeTiny = (document.getElementById('pdvv-nome-tiny')?.value || '').trim() || null;
   const login    = (document.getElementById('pdvv-login')?.value || '').trim() || null;
   const comissao = Number(document.getElementById('pdvv-comissao')?.value || 0);
   const ativo    = !!document.getElementById('pdvv-ativo')?.checked;
@@ -13832,7 +13834,7 @@ async function _salvarVendedor() {
 
   if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
   try {
-    const payload = { nome, login_usuario: login, comissao_moto: comissao, ativo };
+    const payload = { nome, nome_tiny: nomeTiny, login_usuario: login, comissao_moto: comissao, ativo };
     if (isEdit) {
       const { error } = await sb.from('pdv_vendedores').update(payload).eq('id', vendedorId);
       if (error) throw new Error('Erro ao atualizar: ' + error.message);
