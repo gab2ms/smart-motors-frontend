@@ -4383,6 +4383,62 @@ function buscarPedidosCompletos(dataInicial, dataFinal, forcar, comMeta) {
     });
 }
 
+// Janela BR → UTC pro filtro de criado_em do PDV (Brasília = UTC-3).
+// Espelha a conversão do backend (resumoWhatsapp.js) pra Dashboard/Vendas
+// baterem EXATAMENTE com o resumo do WhatsApp nas viradas de mês.
+function _janelaPdvUTC(iniISO, fimISO) {
+  var fimNext = new Date(fimISO + 'T00:00:00Z');
+  fimNext.setUTCDate(fimNext.getUTCDate() + 1);
+  return {
+    iniUTC: iniISO + 'T03:00:00.000Z',
+    fimUTC: fimNext.toISOString().slice(0, 10) + 'T03:00:00.000Z',
+  };
+}
+
+// Normaliza um pedido do PDV pro shape mínimo que faturamento/contagem usam.
+// SEM itens de propósito: o escopo atual é só faturamento + nº de pedidos —
+// unidades/motos continuam vindo só do Tiny.
+function _pdvParaVenda(p) {
+  return {
+    valor:    Number(p.total) || 0,
+    numero:   p.numero_smart,
+    data:     (p.criado_em || '').slice(0, 10).split('-').reverse().join('/'),
+    situacao: p.status,
+    _origem:  'pdv',
+  };
+}
+
+// Busca vendas do período mesclando Tiny (faturado) + PDV (Supabase), com a
+// MESMA regra do resumo do WhatsApp: PDV é prioritário e o Tiny só entra
+// quando o pedido NÃO veio do PDV (dedup pelo id do Tiny — tiny_pedido_id).
+// Pedido PDV cancelado fica de fora. Retorna { tiny, merged }:
+//   tiny   = array cru do Tiny (alimenta gráfico/lista/rankings/unidades);
+//   merged = Tiny deduplicado + PDV (alimenta SÓ faturamento + nº de pedidos).
+// Se o PDV falhar, merged cai pra só-Tiny (nunca pior que hoje).
+async function buscarVendasMescladas(iniISO, fimISO, forcar) {
+  var fmtDate = function(iso){ var p=(iso||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:''; };
+  var tiny = await buscarPedidosCompletos(fmtDate(iniISO), fmtDate(fimISO), forcar);
+  var pdvVendas = [];
+  var idsPdv = new Set();
+  try {
+    var j = _janelaPdvUTC(iniISO, fimISO);
+    var resp = await sb.from('pdv_pedidos')
+      .select('id,numero_smart,total,status,tiny_pedido_id,criado_em')
+      .neq('status', 'cancelado')
+      .gte('criado_em', j.iniUTC)
+      .lt('criado_em', j.fimUTC);
+    if (resp.error) throw new Error(resp.error.message);
+    (resp.data || []).forEach(function(p){
+      pdvVendas.push(_pdvParaVenda(p));
+      if (p.tiny_pedido_id) idsPdv.add(String(p.tiny_pedido_id));
+    });
+  } catch (e) {
+    console.warn('[vendas-mescladas] PDV falhou, mantém só Tiny:', e.message);
+  }
+  var tinyKept = idsPdv.size ? tiny.filter(function(t){ return !idsPdv.has(String(t.id)); }) : tiny;
+  return { tiny: tiny, merged: tinyKept.concat(pdvVendas) };
+}
+
 function calcularRankingScooters(pedidos) {
   var contagem = {};
   pedidos.forEach(function(pedido) {
@@ -5184,21 +5240,16 @@ async function carregarFaturamentoDash(forcar) {
     var iniISO = document.getElementById('dash-fat-ini') ? document.getElementById('dash-fat-ini').value : '';
     var fimISO = document.getElementById('dash-fat-fim') ? document.getElementById('dash-fat-fim').value : '';
 
-    var fmtDate = function(iso) {
-      if (!iso) return '';
-      var p = iso.split('-');
-      return p[2]+'/'+p[1]+'/'+p[0];
-    };
-
     // Período atual + anterior + preços Tiny (avgMCpct usa preço Tiny) em paralelo
     var anterior = calcPeriodoAnterior(iniISO, fimISO);
     var resultados = await Promise.all([
-      buscarPedidosCompletos(fmtDate(iniISO), fmtDate(fimISO), forcar),
-      buscarPedidosCompletos(fmtDate(anterior.ini), fmtDate(anterior.fim), forcar),
+      buscarVendasMescladas(iniISO, fimISO, forcar),
+      buscarVendasMescladas(anterior.ini, anterior.fim, forcar),
       carregarTinyPrecos(),
     ]);
-    var pedidos    = resultados[0];
-    var pedidosAnt = resultados[1];
+    // .tiny → gráfico, lista, rankings e unidades (INALTERADO, só Tiny).
+    // .merged → Tiny+PDV com dedup; alimenta SÓ faturamento + nº de pedidos.
+    var pedidos = resultados[0].tiny;
 
     function calcKpis(peds) {
       var receita = peds.reduce(function(s,p){return s+(p.valor||0);}, 0);
@@ -5206,8 +5257,8 @@ async function carregarFaturamentoDash(forcar) {
       var ticket  = qtd > 0 ? receita / qtd : 0;
       return { receita: receita, qtd: qtd, ticket: ticket };
     }
-    var kc = calcKpis(pedidos);
-    var ka = calcKpis(pedidosAnt);
+    var kc = calcKpis(resultados[0].merged);  // faturamento + nº pedidos incluem PDV
+    var ka = calcKpis(resultados[1].merged);  // período anterior idem (deltas consistentes)
 
     var receitaTotal = kc.receita;
     var totalPedidos = kc.qtd;
@@ -7068,9 +7119,12 @@ async function carregarVendasDoMes() {
   document.getElementById('vendas-pedidos-body').innerHTML     = '<tr><td colspan="5" class="empty">Carregando...</td></tr>';
 
   try {
-    var pedidos = await buscarPedidosCompletos(dataInicial, dataFinal);
+    var iniISO = ano + '-' + mes + '-01';
+    var fimISO = ano + '-' + mes + '-' + String(ultimoDia).padStart(2, '0');
+    var vm = await buscarVendasMescladas(iniISO, fimISO);
+    var pedidos = vm.tiny;   // rankings/lista/unidades — só Tiny (inalterado)
 
-    if (!pedidos || !pedidos.length) {
+    if (!vm.merged.length) {
       if (statusEl) statusEl.textContent = 'Nenhum pedido faturado no período.';
       document.getElementById('vendas-kpis').innerHTML = '<div class="kpi"><div class="kpi-label">Pedidos</div><div class="kpi-value red">0</div><div class="kpi-change">nenhum pedido faturado</div></div>';
       document.getElementById('vendas-ranking-produtos').innerHTML   = '<tr><td colspan="3" class="empty">Sem dados</td></tr>';
@@ -7079,9 +7133,9 @@ async function carregarVendasDoMes() {
       return;
     }
 
-    if (statusEl) statusEl.textContent = pedidos.length + ' pedidos carregados';
+    if (statusEl) statusEl.textContent = vm.merged.length + ' pedidos carregados';
 
-    renderizarDREVendas(pedidos);
+    renderizarDREVendas(pedidos, vm.merged);
     renderizarRankingProdutosVendas(pedidos);
     renderizarRankingVendedoresVendas(pedidos);
     renderizarPedidosVendas(pedidos);
@@ -7092,10 +7146,13 @@ async function carregarVendasDoMes() {
   }
 }
 
-async function renderizarDREVendas(pedidos) {
+async function renderizarDREVendas(pedidos, mescladas) {
   await carregarTinyPrecos();
-  var receitaTotal = pedidos.reduce(function(s,p){return s+(p.valor||0);}, 0);
-  var qtdPedidos   = pedidos.length;
+  // Faturamento + nº de pedidos vêm do conjunto mesclado (Tiny+PDV, dedup);
+  // margem/lucro seguem a mesma receita. Unidades não entram aqui.
+  var base = mescladas || pedidos;
+  var receitaTotal = base.reduce(function(s,p){return s+(p.valor||0);}, 0);
+  var qtdPedidos   = base.length;
   var ticketMedio  = qtdPedidos > 0 ? receitaTotal / qtdPedidos : 0;
   var custoFixo    = _despPlanejadoHistorico().media;
   var avgMC        = products.length ? products.reduce(function(s,p){return s+mcpReal(p);},0)/products.length/100 : 0;
