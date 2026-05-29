@@ -17629,8 +17629,8 @@ function _calISOLocal(d) {
 }
 
 async function initCalendario() {
-  // Lazy-load: eventos + clientes (este último compartilhado com outras telas)
-  const tarefas = [];
+  // Lazy-load: eventos + clientes + entregas PDV (em paralelo).
+  const tarefas = [_calCarregarEntregasPdv()];
   if (!_calEventos.length)            tarefas.push(_calCarregarEventos());
   if (!(clientesAll && clientesAll.length)) {
     tarefas.push((async () => {
@@ -17638,7 +17638,7 @@ async function initCalendario() {
       clientesAll = data || [];
     })());
   }
-  if (tarefas.length) await Promise.all(tarefas);
+  await Promise.all(tarefas);
   _calRender();
 }
 
@@ -17665,9 +17665,32 @@ function _calFiltro(cat) {
 }
 
 // Cache de itens automáticos recomputado a cada _calRender. Derivado
-// in-memory das fontes (contasPagar, contasReceber). Não vai pro banco
-// — itens automáticos vivem só na sessão.
+// in-memory das fontes (contasPagar, contasReceber, pdv entregas). Não
+// vai pro banco — itens automáticos vivem só na sessão.
 let _calItensAutoCache = [];
+
+// Cache de entregas PDV (única fonte que faz fetch sob demanda).
+// TTL curto pra refletir vendas novas criadas em outras telas.
+let _calEntregasPdvCache    = null;
+let _calEntregasPdvFetchTs  = 0;
+const _CAL_ENTREGAS_TTL_MS  = 60 * 1000;
+
+async function _calCarregarEntregasPdv() {
+  if (_calEntregasPdvCache && (Date.now() - _calEntregasPdvFetchTs) < _CAL_ENTREGAS_TTL_MS) return;
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const ini  = new Date(hoje.getTime() - 90  * 86400000);
+  const fim  = new Date(hoje.getTime() + 180 * 86400000);
+  const { data, error } = await sb
+    .from('pdv_pedidos')
+    .select('id, numero_smart, cliente_dados, data_prevista_entrega, data_entrega_real, status, total')
+    .not('data_prevista_entrega', 'is', null)
+    .neq('status', 'cancelado')
+    .gte('data_prevista_entrega', ini.toISOString())
+    .lte('data_prevista_entrega', fim.toISOString());
+  if (error) { console.warn('[cal] entregas pdv:', error.message); _calEntregasPdvCache = _calEntregasPdvCache || []; return; }
+  _calEntregasPdvCache   = toCamelArr(data || []);
+  _calEntregasPdvFetchTs = Date.now();
+}
 
 // Onda 2.1 — financeiro: contas a pagar + a receber viram itens automáticos.
 // Pagas/recebidas continuam aparecendo (riscadas) por decisão de UX.
@@ -17705,6 +17728,34 @@ function _calItensAutomaticos() {
       __origemLabel: 'Contas a Receber',
       __valor:       c.valor,
       __prefixo:     recebido ? 'Recebida' : 'A receber',
+    });
+  }
+  // Onda 2.2 — entregas PDV. data_prevista_entrega é timestamptz; extrai
+  // dia+hora no fuso local. Pedido com data_entrega_real preenchida é
+  // considerado "concluído" (riscado + check, mesmo padrão visual).
+  for (const p of (_calEntregasPdvCache || [])) {
+    if (!p.dataPrevistaEntrega) continue;
+    const d = new Date(p.dataPrevistaEntrega);
+    if (isNaN(d.getTime())) continue;
+    const data = _calISOLocal(d);
+    const hh = String(d.getHours()).padStart(2,'0');
+    const mm = String(d.getMinutes()).padStart(2,'0');
+    // Trata 00:00 como "dia todo" (cliente cadastrou sem hora específica)
+    const hora = (hh === '00' && mm === '00') ? null : (hh + ':' + mm);
+    const cli  = (p.clienteDados && p.clienteDados.nome) ? p.clienteDados.nome : 'Sem cliente';
+    const entregue = !!p.dataEntregaReal;
+    out.push({
+      id:            'auto:pdv:' + p.id,
+      titulo:        '#' + (p.numeroSmart || '?') + ' · ' + cli,
+      data,
+      hora,
+      categoria:     'entrega',
+      __auto:        true,
+      __pago:        entregue,
+      __origem:      'pedidos',
+      __origemLabel: 'Pedidos',
+      __valor:       p.total,
+      __prefixo:     entregue ? 'Entregue' : 'Entrega pendente',
     });
   }
   return out;
