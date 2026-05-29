@@ -1178,6 +1178,111 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 
 /* Divisor sutil utilitário */
 .divider{border-bottom:1px solid var(--border);}
+
+/* ─── OVERRIDES GLOBAIS · classes antigas adotam o visual pro ─── */
+
+/* KPIs antigos: sem barra dourada, valor em sans tabular, hierarquia clara */
+.kpi{padding:var(--sp-5);border-radius:var(--r-lg);}
+.kpi::before{display:none;}
+.kpi:hover::before{display:none;}
+.kpi-label{font-size:var(--fs-xs);letter-spacing:0.9px;margin-bottom:var(--sp-2);font-weight:var(--fw-sb);}
+.kpi-value{
+  font-family:var(--font-primary);
+  font-size:28px;font-weight:var(--fw-bd);
+  letter-spacing:-0.5px;line-height:var(--lh-tight);
+  color:var(--text);
+  font-variant-numeric:tabular-nums;
+  font-feature-settings:"tnum";
+}
+/* Cores antigas .kpi-value.gold/green/red — mantém só pra accent explícito */
+.kpi-value.gold{color:var(--gold);}
+.kpi-value.green{color:var(--green);}
+.kpi-value.red{color:var(--red);}
+.kpi-change{font-size:var(--fs-xs);margin-top:var(--sp-1);}
+.kpi[onclick]:hover{border-color:var(--border2);background:var(--surface2);}
+.kpi.active{border-color:var(--gold) !important;box-shadow:none !important;}
+
+/* Card raio levemente maior */
+.card{border-radius:var(--r-lg);}
+.card-header{padding:var(--sp-4) var(--sp-5);}
+.card-title{font-size:var(--fs-md);font-weight:var(--fw-sb);}
+
+/* Tabela global ganha respiro */
+thead th{padding:14px 16px;letter-spacing:1px;}
+tbody td{padding:14px 16px;}
+
+/* Botões — btn-gold deixa de ser gradiente, fica dourado plano */
+.btn{
+  padding:8px 14px;
+  font-size:var(--fs-sm);font-weight:var(--fw-md);
+  border-radius:var(--r-sm);
+  letter-spacing:0;
+  display:inline-flex;align-items:center;gap:6px;
+}
+.btn-gold{
+  background:var(--gold);color:#1a1300;
+  border:1px solid var(--gold);
+  font-weight:var(--fw-sb);
+}
+.btn-gold:hover{background:var(--gold2);border-color:var(--gold2);filter:none;}
+
+/* Search input sem glow / consistente */
+.search-input{
+  font-size:var(--fs-sm);
+  border-radius:var(--r-sm);
+  transition:border-color .15s, background .15s;
+  box-shadow:none;
+}
+.search-input:focus{border-color:var(--gold);box-shadow:none;}
+
+/* Action-btn (lápis/lixeira) sem caixa marcada — vira pill ghost */
+.action-btn{
+  padding:6px 10px;
+  border-radius:var(--r-sm);
+  font-size:var(--fs-xs);
+  letter-spacing:0;
+  text-transform:none;
+  font-weight:var(--fw-md);
+}
+
+/* Badge — suaviza letter-spacing e radius pra ficar pill-like */
+.badge{
+  padding:3px 10px;
+  border-radius:var(--r-pill);
+  letter-spacing:0.5px;
+  font-weight:var(--fw-bd);
+}
+
+/* Nav-item ativo: dourado contido, sem glow */
+.nav-item.active{
+  background:var(--gold-dim);
+  color:var(--gold);
+  border-left:2px solid var(--gold);
+  padding-left:8px;
+}
+.nav-item{
+  font-size:var(--fs-sm);
+  border-radius:var(--r-sm);
+  transition:background .15s, color .15s;
+}
+
+/* Inputs em geral — outros campos do sistema (date, number, etc.) */
+input[type="text"]:not(.input-pro):not(.search-input),
+input[type="date"]:not(.input-pro):not(.search-input),
+input[type="number"]:not(.input-pro):not(.search-input),
+input[type="email"]:not(.input-pro):not(.search-input),
+input[type="tel"]:not(.input-pro):not(.search-input),
+textarea:not(.input-pro),
+select:not(.input-pro):not(.search-input){
+  font-family:var(--font-primary);
+}
+
+/* Modal: card mais limpo */
+.modal{border-radius:var(--r-lg);}
+.modal-title{font-weight:var(--fw-sb);}
+
+/* Td-mono fica só pra SKU/código — reduz tamanho/peso pra parecer técnico, não premium */
+.td-mono{font-size:var(--fs-sm);color:var(--text2);}
 </style>
 </head>
 <body>
