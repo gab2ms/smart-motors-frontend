@@ -1381,6 +1381,7 @@ select:not(.input-pro):not(.search-input){
 .cal-evento--entrega   {background:var(--blue-soft);  color:var(--blue);}
 .cal-evento--financeiro{background:var(--green-dim);  color:var(--green);}
 .cal-evento--oficina   {background:var(--orange-dim); color:var(--orange);}
+.cal-evento--sac       {background:var(--red-dim);    color:var(--red);}
 .cal-evento--outro     {background:var(--surface3);   color:var(--text2);}
 
 /* Item automático — clicável, leva pra tela de origem. Seta indicadora à direita. */
@@ -2472,6 +2473,7 @@ select:not(.input-pro):not(.search-input){
         <button class="pill pill--blue    cal-filtro-pill" data-cat="entrega"    onclick="_calFiltro('entrega')">Entrega</button>
         <button class="pill pill--green   cal-filtro-pill" data-cat="financeiro" onclick="_calFiltro('financeiro')">Financeiro</button>
         <button class="pill pill--orange  cal-filtro-pill" data-cat="oficina"    onclick="_calFiltro('oficina')">Oficina</button>
+        <button class="pill pill--red     cal-filtro-pill" data-cat="sac"        onclick="_calFiltro('sac')">SAC</button>
         <button class="pill pill--neutral cal-filtro-pill" data-cat="outro"      onclick="_calFiltro('outro')">Outro</button>
       </div>
       <button class="btn-pro btn-pro--primary" onclick="_calNovoEvento()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Novo evento</button>
@@ -17613,8 +17615,8 @@ async function _excluirCategoria(catId) {
 //  CRUD em calendario_eventos. Lazy-load no initCalendario.
 //  Não puxa entregas/contas/oficina ainda (Etapa 2).
 // ══════════════════════════════════════════
-const _CAL_CATS = ['visita','entrega','financeiro','oficina','outro'];
-const _CAL_CAT_LABEL = { visita:'Visita', entrega:'Entrega', financeiro:'Financeiro', oficina:'Oficina', outro:'Outro' };
+const _CAL_CATS = ['visita','entrega','financeiro','oficina','sac','outro'];
+const _CAL_CAT_LABEL = { visita:'Visita', entrega:'Entrega', financeiro:'Financeiro', oficina:'Oficina', sac:'SAC', outro:'Outro' };
 const _CAL_MES_NOMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 let _calEventos = [];          // todos os eventos carregados (camelCase)
@@ -17756,6 +17758,46 @@ function _calItensAutomaticos() {
       __origemLabel: 'Pedidos',
       __valor:       p.total,
       __prefixo:     entregue ? 'Entregue' : 'Entrega pendente',
+    });
+  }
+  // Onda 2.3 — Oficina (OS). Regra de data: data_proximo_contato pendente;
+  // se vazia, usa data_conclusao como "concluído". Sem ambas, não aparece.
+  for (const o of (typeof oficinaOrdens !== 'undefined' && oficinaOrdens) || []) {
+    const concluido = !o.dataProximoContato && !!o.dataConclusao;
+    const data = o.dataProximoContato || o.dataConclusao;
+    if (!data) continue;
+    const cli = o.clienteNome || 'Sem cliente';
+    out.push({
+      id:            'auto:of:' + o.id,
+      titulo:        'OS #' + (o.numero || '?') + ' · ' + cli,
+      data,
+      hora:          null,
+      categoria:     'oficina',
+      __auto:        true,
+      __pago:        concluido,
+      __origem:      'oficina',
+      __origemLabel: 'Oficina',
+      __valor:       o.valorServico,
+      __prefixo:     concluido ? 'OS concluída' : 'Próximo contato OS',
+    });
+  }
+  // Onda 2.3 — SAC. Mesma regra de data; categoria nova `sac` (vermelha).
+  for (const s of (typeof sacCasos !== 'undefined' && sacCasos) || []) {
+    const concluido = !s.dataProximoContato && !!s.dataResolucao;
+    const data = s.dataProximoContato || s.dataResolucao;
+    if (!data) continue;
+    const cli = s.clienteNome || 'Sem cliente';
+    out.push({
+      id:            'auto:sac:' + s.id,
+      titulo:        'SAC #' + (s.numero || '?') + ' · ' + cli,
+      data,
+      hora:          null,
+      categoria:     'sac',
+      __auto:        true,
+      __pago:        concluido,
+      __origem:      'sac',
+      __origemLabel: 'SAC',
+      __prefixo:     concluido ? 'SAC resolvido' : 'Próximo contato SAC',
     });
   }
   return out;
