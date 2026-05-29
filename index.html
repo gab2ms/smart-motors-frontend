@@ -1688,42 +1688,45 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
   <div class="page content" id="page-pedidos">
 
     <!-- Filtros — linha 1: período + buscar -->
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
-      <input type="date" id="ped-data-ini" class="search-input" style="max-width:150px;padding:7px 10px;font-size:12px;">
-      <span style="color:var(--text3);font-size:12px;">até</span>
-      <input type="date" id="ped-data-fim" class="search-input" style="max-width:150px;padding:7px 10px;font-size:12px;">
-      <button class="btn btn-gold" onclick="carregarPedidosUnif()" id="btn-ped-sync">⚡ Buscar</button>
+    <div style="display:flex;align-items:center;gap:var(--sp-3);margin-bottom:var(--sp-3);flex-wrap:wrap;">
+      <input type="date" id="ped-data-ini" class="input-pro" style="max-width:150px;">
+      <span class="text-mute" style="font-size:var(--fs-sm);">até</span>
+      <input type="date" id="ped-data-fim" class="input-pro" style="max-width:150px;">
+      <button class="btn-pro btn-pro--primary" onclick="carregarPedidosUnif()" id="btn-ped-sync"><svg class="ic ic-sm"><use href="#ic-zap"/></svg>Buscar</button>
       <div style="display:flex;align-items:center;gap:6px;">
         <div style="width:7px;height:7px;border-radius:50%;background:var(--text3);" id="ped-api-dot"></div>
-        <span style="font-size:10px;color:var(--text3);font-weight:600;" id="ped-api-label">Não carregado</span>
+        <span class="text-mute" style="font-size:var(--fs-xs);font-weight:var(--fw-md);" id="ped-api-label">Não carregado</span>
       </div>
       <div style="flex:1;"></div>
-      <input type="text" class="search-input" id="ped-search" placeholder="🔍 Buscar cliente, vendedor ou nº..." oninput="filtrarPedidos()" style="max-width:260px;">
+      <div style="position:relative;max-width:280px;flex:1;">
+        <svg class="ic ic-sm text-mute" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);pointer-events:none;"><use href="#ic-search"/></svg>
+        <input type="text" class="input-pro" id="ped-search" placeholder="Buscar cliente, vendedor ou nº…" oninput="filtrarPedidos()" style="width:100%;padding-left:34px;">
+      </div>
     </div>
 
     <!-- Filtros — linha 2: origem + status + vendedor -->
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
-      <select id="ped-filtro-origem" class="search-input" onchange="filtrarPedidos()" style="max-width:140px;">
+    <div style="display:flex;align-items:center;gap:var(--sp-3);margin-bottom:var(--sp-2);flex-wrap:wrap;">
+      <select id="ped-filtro-origem" class="input-pro" onchange="filtrarPedidos()" style="max-width:140px;">
         <option value="">Todas origens</option>
         <option value="tiny">Tiny</option>
         <option value="pdv">PDV</option>
       </select>
-      <select id="ped-filtro-status" class="search-input" onchange="filtrarPedidos()" style="max-width:170px;">
+      <select id="ped-filtro-status" class="input-pro" onchange="filtrarPedidos()" style="max-width:170px;">
         <option value="">Todos status</option>
-        <option value="aguardando">⏳ Aguardando</option>
-        <option value="concluido">✅ Concluído</option>
-        <option value="cancelado">⊘ Cancelado</option>
+        <option value="aguardando">Aguardando</option>
+        <option value="concluido">Concluído</option>
+        <option value="cancelado">Cancelado</option>
       </select>
-      <select id="ped-filtro-vendedor" class="search-input" onchange="filtrarPedidos()" style="max-width:200px;">
+      <select id="ped-filtro-vendedor" class="input-pro" onchange="filtrarPedidos()" style="max-width:200px;">
         <option value="">Todos vendedores</option>
       </select>
     </div>
-    <div id="ped-aviso-vendedor" style="display:none;font-size:10px;color:var(--text3);font-style:italic;margin-bottom:14px;">
+    <div id="ped-aviso-vendedor" class="text-mute" style="display:none;font-size:var(--fs-xs);font-style:italic;margin-bottom:var(--sp-4);">
       Filtro por vendedor restringe a pedidos PDV (Tiny não armazena vendedor).
     </div>
 
     <!-- KPIs do período -->
-    <div class="kpi-grid" id="ped-kpis" style="margin-bottom:20px;"></div>
+    <div class="kpi-grid" id="ped-kpis" style="margin-bottom:var(--sp-6);"></div>
 
     <!-- Tabela de pedidos -->
     <div class="card">
@@ -1734,7 +1737,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
         </div>
       </div>
       <div class="table-wrap">
-        <table>
+        <table class="table-pro">
           <thead>
             <tr>
               <th>Data</th>
@@ -1747,7 +1750,7 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
             </tr>
           </thead>
           <tbody id="ped-table-body">
-            <tr><td colspan="7" class="empty">Selecione o período e clique em ⚡ Buscar</td></tr>
+            <tr><td colspan="7" class="empty text-mute" style="padding:var(--sp-6);text-align:center;">Selecione o período e clique em Buscar</td></tr>
           </tbody>
         </table>
       </div>
@@ -6341,30 +6344,34 @@ function renderPedidosUnif() {
     `${filtered.length} pedido${filtered.length===1?'':'s'} encontrado${filtered.length===1?'':'s'}`;
 
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty">Nenhum pedido encontrado</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty text-mute" style="padding:var(--sp-6);text-align:center;">Nenhum pedido encontrado</td></tr>';
     return;
   }
+
+  // mapa statusGroup → modificador da .pill
+  const STATUS_PILL = { aguardando:'pill--orange', concluido:'pill--green', cancelado:'pill--red' };
 
   tbody.innerHTML = filtered.map(p => {
     const stMeta = PEDIDO_STATUS_GROUPS[p.statusGroup] || PEDIDO_STATUS_GROUPS.aguardando;
     const pdvNaoSync = p.origem === 'pdv' && p.raw?.sincronizadoTiny === false;
     const seloHTML = p.origem === 'tiny'
-      ? '<span style="background:rgba(58,134,255,0.18);color:#3a86ff;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:800;letter-spacing:0.5px;">TINY</span>'
-      : '<span style="background:rgba(245,197,24,0.18);color:var(--gold);padding:2px 8px;border-radius:10px;font-size:9px;font-weight:800;letter-spacing:0.5px;">PDV</span>'
-        + (pdvNaoSync ? ' <span title="Não sincronizado com Tiny — abrir detalhe pra tentar de novo" style="color:var(--orange);font-size:11px;">⚠️</span>' : '');
-    const statusHTML = `<span style="background:${stMeta.bg};color:${stMeta.cor};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap;">${stMeta.label}</span>`;
+      ? '<span class="pill pill--blue">TINY</span>'
+      : '<span class="pill pill--gold">PDV</span>'
+        + (pdvNaoSync ? ' <svg class="ic ic-sm" style="color:var(--orange);margin-left:4px;" title="Não sincronizado com Tiny — abrir detalhe pra tentar de novo"><use href="#ic-alert"/></svg>' : '');
+    const stClass = STATUS_PILL[p.statusGroup] || 'pill--neutral';
+    const statusHTML = `<span class="pill ${stClass}">${stMeta.label}</span>`;
     const vendedorCell = p.vendedor
-      ? `<span style="color:var(--text2);">${escHtml(p.vendedor)}</span>`
-      : '<span style="color:var(--text3);">—</span>';
+      ? `<span class="text-soft">${escHtml(p.vendedor)}</span>`
+      : '<span class="text-mute">—</span>';
     const acaoHTML = p.origem === 'pdv'
-      ? `<button class="btn" style="font-size:10px;padding:4px 10px;" onclick="_pdvAbrirDetalhe('${p.raw.id}')">Ver detalhe</button>`
+      ? `<button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:6px 10px;" onclick="_pdvAbrirDetalhe('${p.raw.id}')">Ver detalhe</button>`
       : '';
     return `<tr>
-      <td class="td-mono" style="white-space:nowrap;">${p.dataDisplay}</td>
+      <td class="num-tab" style="white-space:nowrap;color:var(--text2);">${p.dataDisplay}</td>
       <td>${seloHTML}</td>
-      <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(p.cliente)}">${escHtml(p.cliente)}</td>
-      <td style="font-size:12px;">${vendedorCell}</td>
-      <td class="td-mono" style="font-weight:700;color:var(--green);white-space:nowrap;">${_fmtBRMoney(p.valor)}</td>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(p.cliente)}">${escHtml(p.cliente)}</td>
+      <td>${vendedorCell}</td>
+      <td class="num-tab" style="font-weight:var(--fw-bd);white-space:nowrap;">${_fmtBRMoney(p.valor)}</td>
       <td>${statusHTML}</td>
       <td>${acaoHTML}</td>
     </tr>`;
@@ -6379,10 +6386,11 @@ function renderPedKpisUnif(filtered) {
   const ticket  = naoCancelado.length ? receita / naoCancelado.length : 0;
   const kpis = document.getElementById('ped-kpis');
   if (!kpis) return;
+  // 1 KPI dourado por tela (Receita). Os outros ficam neutros.
   kpis.innerHTML =
-      `<div class="kpi"><div class="kpi-label">Total pedidos</div><div class="kpi-value gold">${total}</div><div class="kpi-change">incluindo cancelados</div></div>`
-    + `<div class="kpi"><div class="kpi-label">Receita</div><div class="kpi-value green">${_fmtBRMoney(receita)}</div><div class="kpi-change">exclui cancelados</div></div>`
-    + `<div class="kpi"><div class="kpi-label">Ticket médio</div><div class="kpi-value gold">${_fmtBRMoney(ticket)}</div><div class="kpi-change">${naoCancelado.length} pedido${naoCancelado.length===1?'':'s'}</div></div>`;
+      `<div class="kpi-pro"><div class="kpi-pro__label">Total pedidos</div><div class="kpi-pro__value">${total}</div><div class="kpi-pro__hint">incluindo cancelados</div></div>`
+    + `<div class="kpi-pro kpi-pro--accent"><div class="kpi-pro__label">Receita</div><div class="kpi-pro__value">${_fmtBRMoney(receita)}</div><div class="kpi-pro__hint">exclui cancelados</div></div>`
+    + `<div class="kpi-pro"><div class="kpi-pro__label">Ticket médio</div><div class="kpi-pro__value">${_fmtBRMoney(ticket)}</div><div class="kpi-pro__hint">${naoCancelado.length} pedido${naoCancelado.length===1?'':'s'}</div></div>`;
 }
 
 // ── Mantém funções legadas pra não quebrar refs antigas ──
