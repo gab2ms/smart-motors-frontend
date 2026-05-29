@@ -1544,6 +1544,10 @@ select:not(.input-pro):not(.search-input){
       <span class="nav-icon"><svg class="ic"><use href="#ic-zap"/></svg></span> Dashboard
       <span class="nav-dot"></span>
     </button>
+    <button class="nav-item" onclick="showPage('calendario')">
+      <span class="nav-icon"><svg class="ic"><use href="#ic-calendar"/></svg></span> Calendário
+      <span class="nav-dot"></span>
+    </button>
     <button class="nav-item" onclick="showPage('admin')" id="nav-admin" style="display:none;">
       <span class="nav-icon"><svg class="ic"><use href="#ic-shield"/></svg></span> Admin
       <span class="nav-dot" id="admin-pending-dot" style="background:var(--red);display:none;"></span>
@@ -1585,10 +1589,6 @@ select:not(.input-pro):not(.search-input){
     <button class="nav-item" onclick="showPage('sac')">
       <span class="nav-icon"><svg class="ic"><use href="#ic-phone"/></svg></span> SAC
       <span class="nav-dot" id="dot-sac"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('calendario')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-calendar"/></svg></span> Calendário
-      <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('clientes')">
       <span class="nav-icon"><svg class="ic"><use href="#ic-users"/></svg></span> Clientes
@@ -3671,7 +3671,7 @@ const BREADCRUMB_MAP = {
   precos:          ['Produtos', 'Preços & Margens'],
   oficina:         ['Operação', 'Oficina'],
   sac:             ['Operação', 'SAC'],
-  calendario:      ['Operação', 'Calendário'],
+  calendario:      ['Visão Geral', 'Calendário'],
   montagens:       ['Produtos', 'Montagens'],
   clientes:        ['Operação', 'Clientes'],
   contratos:       ['Operação', 'Contrato'],
