@@ -1711,7 +1711,7 @@ select:not(.input-pro):not(.search-input){
         <input type="date" id="dash-fat-ini" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;" onchange="onDashDateChange()">
         <span style="color:var(--text3);font-size:11px;">até</span>
         <input type="date" id="dash-fat-fim" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;" onchange="onDashDateChange()">
-        <button class="btn" onclick="abrirBuilder()" style="font-size:11px;padding:6px 12px;">⚙ Personalizar</button>
+        <button class="btn" id="btn-dash-personalizar" onclick="abrirBuilder()" style="font-size:11px;padding:6px 12px;">⚙ Personalizar</button>
         <span id="dash-ultima-atualizacao" style="font-size:10px;color:var(--text3);font-weight:500;letter-spacing:0.2px;">—</span>
         <button class="btn btn-gold" onclick="carregarFaturamentoDash(true)" style="font-size:11px;padding:6px 14px;" title="Ignora cache (30min) e busca direto no Tiny"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
         <button class="btn" onclick="gerarFechamentoMes()" style="font-size:11px;padding:6px 12px;" title="Exporta DRE + planilhas detalhadas em xlsx"><svg class="ic ic-sm"><use href="#ic-bar-chart"/></svg> Fechar Mês</button>
@@ -4015,6 +4015,8 @@ function resetarLayout() {
 }
 
 function abrirBuilder() {
+  // Personalizar é só admin — gate explícito caso o botão seja invocado fora do fluxo.
+  if (!_isAdminUser()) { smAlert('Apenas admin pode personalizar o Dashboard.'); return; }
   getLayout();
   renderBuilderList();
   document.getElementById('db-overlay').classList.add('open');
@@ -4098,10 +4100,20 @@ function toggleWidget(idx) {
 }
 
 // ══ Renderização dinâmica do dashboard ══
+// Widgets que só admin vê (financeiros). Não-admin vê só "kpis-fat" (filtrado
+// pra mostrar SÓ a contagem de Pedidos faturados) + rankings sem R$.
+var DASH_WIDGETS_SO_ADMIN = ['kpis-int','saldo-caixa','caixa-real-mes','dre-mes','resumo-cp','grafico-dia','pedidos'];
+
 function renderDashboardDynamic() {
   var layout   = getLayout();
   var container = document.getElementById('dash-dynamic-container');
   if (!container) return;
+
+  // Gate pra não-admin: tira da lista os widgets financeiros antes de renderizar.
+  // Mesmo se o builder "Personalizar" tivesse ativo, esses não aparecem.
+  if (!_isAdminUser()) {
+    layout = layout.filter(function(item){ return DASH_WIDGETS_SO_ADMIN.indexOf(item.id) === -1; });
+  }
 
   // Agrupa widgets em linhas baseado no tamanho
   var rows = [];
@@ -4501,26 +4513,33 @@ function renderizarRankingVendedores(ranking) {
     return;
   }
 
-  var maxValor = ranking[0].totalVendas || 1;
+  var isAdmin = _isAdminUser();
+  // Pra não-admin a barra é proporcional à quantidade de pedidos (não ao R$);
+  // assim o "tamanho" reflete o que ele vê (unidades).
+  var maxRef = isAdmin
+    ? (ranking[0].totalVendas || 1)
+    : (ranking.reduce(function(m,v){ return Math.max(m, v.qtdPedidos||0); }, 0) || 1);
   if (sub) sub.textContent = ranking.length + ' vendedor' + (ranking.length!==1?'es':'') + ' no período';
 
-  // Layout horizontal em grid para aproveitar largura total
   var totalGeral = ranking.reduce(function(s,v){return s+v.totalVendas;},0) || 1;
   var rows = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px 24px;">';
   ranking.forEach(function(v, i) {
-    var pct      = Math.round(v.totalVendas / maxValor * 100);
+    var pct      = isAdmin
+      ? Math.round(v.totalVendas / maxRef * 100)
+      : Math.round((v.qtdPedidos || 0) / maxRef * 100);
     var share    = (v.totalVendas / totalGeral * 100).toFixed(0);
     var isSem    = v.nome === 'Sem vendedor';
     var cor      = isSem ? 'var(--text3)' : 'var(--green)';
     var medal    = i===0&&!isSem?'🥇 ':i===1&&!isSem?'🥈 ':i===2&&!isSem?'🥉 ':'';
+    var direitaHTML = isAdmin
+      ? '<span style="font-size:10px;color:var(--text3);">' + v.qtdPedidos + ' ped.</span>'
+        + '<span style="font-size:12px;font-weight:800;color:'+cor+';">' + fmt(v.totalVendas) + '</span>'
+        + '<span style="font-size:9px;background:var(--surface2);color:var(--text3);padding:1px 5px;border-radius:3px;font-weight:600;">' + share + '%</span>'
+      : '<span style="font-size:12px;font-weight:800;color:'+cor+';">' + v.qtdPedidos + ' ped.</span>';
     rows += '<div style="opacity:'+(isSem?'0.5':'1')+'">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">'
       + '<span style="font-size:12px;font-weight:700;">' + medal + (i+1) + '. ' + v.nome.trim() + '</span>'
-      + '<div style="display:flex;align-items:center;gap:6px;">'
-      + '<span style="font-size:10px;color:var(--text3);">' + v.qtdPedidos + ' ped.</span>'
-      + '<span style="font-size:12px;font-weight:800;color:'+cor+';">' + fmt(v.totalVendas) + '</span>'
-      + '<span style="font-size:9px;background:var(--surface2);color:var(--text3);padding:1px 5px;border-radius:3px;font-weight:600;">' + share + '%</span>'
-      + '</div></div>'
+      + '<div style="display:flex;align-items:center;gap:6px;">' + direitaHTML + '</div></div>'
       + '<div style="height:5px;background:var(--surface3);border-radius:3px;overflow:hidden;">'
       + '<div style="height:100%;width:'+pct+'%;background:'+cor+';border-radius:3px;transition:width .4s;"></div>'
       + '</div></div>';
@@ -4802,6 +4821,17 @@ async function renderizarRankingScooters(ranking, receitaTotal) {
       }
     }
 
+    // Linha de rodapé do item: admin vê receita + MC% + % da receita.
+    // Não-admin vê só o subtítulo "X% do top" pra dar contexto sem expor R$.
+    var rodapeHTML = isAdmin
+      ? '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+        + '<span style="font-size:10px;color:var(--text3);">' + fmt(item.receita) + '</span>'
+        + mcHTML
+        + '<span style="font-size:10px;color:var(--text3);">' + recPct + '% da receita</span>'
+        + '</div>'
+      : '<div style="display:flex;justify-content:flex-end;">'
+        + '<span style="font-size:10px;color:var(--text3);">' + pct + '% do top</span>'
+        + '</div>';
     rows += '<div style="padding:10px 16px;border-bottom:1px solid var(--border);">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">'
       + '<span style="font-size:11px;font-weight:700;max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+item.nome+'">'
@@ -4811,11 +4841,7 @@ async function renderizarRankingScooters(ranking, receitaTotal) {
       + '<div style="height:5px;background:var(--surface3);border-radius:3px;overflow:hidden;margin-bottom:4px;">'
       + '<div style="height:100%;width:'+pct+'%;background:'+barColor+';border-radius:3px;transition:width .4s;"></div>'
       + '</div>'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
-      + '<span style="font-size:10px;color:var(--text3);">' + fmt(item.receita) + '</span>'
-      + (isAdmin ? mcHTML : '')
-      + '<span style="font-size:10px;color:var(--text3);">' + recPct + '% da receita</span>'
-      + '</div>'
+      + rodapeHTML
       + '</div>';
   });
   el.innerHTML = rows;
@@ -5469,31 +5495,39 @@ async function carregarFaturamentoDash(forcar) {
     var kpiClickPed = ' style="border-top:2px solid var(--gold);cursor:pointer;" onclick="showPage(&quot;pedidos&quot;)"';
     var kpiClickCus = ' style="border-top:2px solid var(--gold);cursor:pointer;" onclick="showPage(&quot;custos&quot;)"';
     var kpiNormal   = ' style="border-top:2px solid var(--gold);"';
-    kpis.innerHTML =
-      '<div class="kpi"' + kpiClickPed + '>'
-      + '<div class="kpi-label">Faturamento do período</div>'
-      + '<div class="kpi-value green">' + fmt(receitaTotal) + '</div>'
-      + deltaHTML(receitaTotal, ka.receita)
-      + '<div class="kpi-change">clique para ver pedidos ↗</div></div>'
-      + '<div class="kpi"' + kpiClickPed + '>'
+    var _kpisIsAdmin = _isAdminUser();
+    var pedidosKpiHTML =
+        '<div class="kpi"' + kpiClickPed + '>'
       + '<div class="kpi-label">Pedidos faturados</div>'
       + '<div class="kpi-value gold">' + totalPedidos + '</div>'
       + deltaHTML(totalPedidos, ka.qtd)
-      + '<div class="kpi-change">no período</div></div>'
-      + '<div class="kpi"' + kpiNormal + '>'
-      + '<div class="kpi-label">Ticket médio</div>'
-      + '<div class="kpi-value gold">' + fmt(ticketMedio) + '</div>'
-      + deltaHTML(ticketMedio, ka.ticket)
-      + '<div class="kpi-change">por pedido</div></div>'
-      + '<div class="kpi"' + kpiNormal + '>'
-      + '<div class="kpi-label">Lucro bruto est.</div>'
-      + '<div class="kpi-value ' + (lucroBruto>=0?'green':'red') + '">' + fmt(lucroBruto) + '</div>'
-      + deltaHTML(lucroBruto, lucroBrutoAnt)
-      + '<div class="kpi-change">MC média ' + (avgMCpct*100).toFixed(1) + '% × receita</div></div>'
-      + '<div class="kpi"' + kpiClickCus + '>'
-      + '<div class="kpi-label">Custo Fixo Planejado</div>'
-      + '<div class="kpi-value red">' + fmt(custoFixoMensal) + '</div>'
-      + '<div class="kpi-change">média histórica · real no widget DRE ↗</div></div>';
+      + '<div class="kpi-change">no período</div></div>';
+    if (_kpisIsAdmin) {
+      kpis.innerHTML =
+        '<div class="kpi"' + kpiClickPed + '>'
+        + '<div class="kpi-label">Faturamento do período</div>'
+        + '<div class="kpi-value green">' + fmt(receitaTotal) + '</div>'
+        + deltaHTML(receitaTotal, ka.receita)
+        + '<div class="kpi-change">clique para ver pedidos ↗</div></div>'
+        + pedidosKpiHTML
+        + '<div class="kpi"' + kpiNormal + '>'
+        + '<div class="kpi-label">Ticket médio</div>'
+        + '<div class="kpi-value gold">' + fmt(ticketMedio) + '</div>'
+        + deltaHTML(ticketMedio, ka.ticket)
+        + '<div class="kpi-change">por pedido</div></div>'
+        + '<div class="kpi"' + kpiNormal + '>'
+        + '<div class="kpi-label">Lucro bruto est.</div>'
+        + '<div class="kpi-value ' + (lucroBruto>=0?'green':'red') + '">' + fmt(lucroBruto) + '</div>'
+        + deltaHTML(lucroBruto, lucroBrutoAnt)
+        + '<div class="kpi-change">MC média ' + (avgMCpct*100).toFixed(1) + '% × receita</div></div>'
+        + '<div class="kpi"' + kpiClickCus + '>'
+        + '<div class="kpi-label">Custo Fixo Planejado</div>'
+        + '<div class="kpi-value red">' + fmt(custoFixoMensal) + '</div>'
+        + '<div class="kpi-change">média histórica · real no widget DRE ↗</div></div>';
+    } else {
+      // Não-admin: só o KPI "Pedidos faturados" (sem nenhum R$).
+      kpis.innerHTML = pedidosKpiHTML;
+    }
 
     // Esconde o container kpis-int duplicado (legacy do builder).
     // As 2 KPIs internas agora ficam na mesma grid acima.
@@ -5506,17 +5540,17 @@ async function carregarFaturamentoDash(forcar) {
       if (row && row.children.length === 1) row.style.display = 'none';
     }
 
-    // Gráfico por dia
-    renderDashGrafico(pedidos);
+    // Gráfico por dia + lista de pedidos — só admin (não-admin não vê widget)
+    if (_kpisIsAdmin) {
+      renderDashGrafico(pedidos);
+      renderDashPedidos(pedidos);
+    }
 
-    // Últimos pedidos
-    renderDashPedidos(pedidos);
-
-    // Ranking de scooters
+    // Ranking de scooters (não-admin recebe — render esconde R$ internamente)
     var rankingScooters = calcularRankingScooters(pedidos);
     renderizarRankingScooters(rankingScooters, receitaTotal);
 
-    // Ranking de vendedores no card principal
+    // Ranking de vendedores (idem)
     var rankingVendedores = calcularRankingVendedores(pedidos);
     renderizarRankingVendedores(rankingVendedores);
 
@@ -5565,6 +5599,12 @@ setInterval(() => {
 function renderDashboard(){
   renderDashboardDynamic(); // renderiza layout configurado pelo usuário
   initFaturamentoDash();
+  // Esconde o botão "Personalizar" pra não-admin (só admin reorganiza o dashboard).
+  var btnPers = document.getElementById('btn-dash-personalizar');
+  if (btnPers) btnPers.style.display = _isAdminUser() ? '' : 'none';
+  // Loaders financeiros + empréstimos só rodam pra admin. Não-admin nem
+  // recebe os dados — gate em dado, não só em CSS.
+  if (!_isAdminUser()) return;
   setTimeout(function() {
     renderDashInternal();
     renderDashSaldoCaixa();
