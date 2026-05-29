@@ -42,6 +42,14 @@
   --orange-dim:rgba(245,158,11,0.10);
   --r: 10px;
   --r-sm: 6px;
+
+  /* ─── REDESIGN-PRO · tokens aditivos (não removem nada) ─── */
+  --fs-xs:11px; --fs-sm:12px; --fs:13px; --fs-md:14px; --fs-lg:18px; --fs-xl:24px; --fs-2xl:32px;
+  --fw-rg:500; --fw-md:600; --fw-sb:700; --fw-bd:800;
+  --lh-tight:1.15; --lh:1.45;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-7:32px;
+  --r-pill:999px; --r-lg:14px;
+  --blue:#3a86ff; --blue-soft:rgba(58,134,255,0.10);
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:var(--font-primary);background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;-webkit-font-smoothing:antialiased;}
@@ -1041,9 +1049,162 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 @media (max-width: 480px) {
   .emp-parc-pgto { font-size: 9px; }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   REDESIGN-PRO · classes aditivas (escopo: piloto na tela Pedidos)
+   Não remove nada do CSS antigo. Pode coexistir com .kpi, .badge, etc.
+   ════════════════════════════════════════════════════════════════ */
+
+/* Atalhos tipográficos */
+.text-mute{color:var(--text3);}
+.text-soft{color:var(--text2);}
+.num-tab{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
+
+/* Ícones inline (Lucide via <use href="#ic-…">) */
+.ic{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px;flex-shrink:0;}
+.ic-sm{width:14px;height:14px;}
+.ic-lg{width:20px;height:20px;}
+
+/* KPI premium — sem barra dourada top, valor sans, hierarquia clara */
+.kpi-pro{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r-lg);
+  padding:var(--sp-5) var(--sp-5);
+  display:flex;flex-direction:column;gap:var(--sp-2);
+  transition:border-color .15s, background .15s;
+}
+.kpi-pro__label{
+  font-size:var(--fs-xs);
+  color:var(--text3);
+  text-transform:uppercase;
+  letter-spacing:0.9px;
+  font-weight:var(--fw-sb);
+}
+.kpi-pro__value{
+  font-family:var(--font-primary);
+  font-size:28px;
+  font-weight:var(--fw-bd);
+  letter-spacing:-0.5px;
+  line-height:var(--lh-tight);
+  color:var(--text);
+  font-variant-numeric:tabular-nums;
+  font-feature-settings:"tnum";
+}
+.kpi-pro--accent .kpi-pro__value{color:var(--gold);}
+.kpi-pro__hint{font-size:var(--fs-xs);color:var(--text3);font-weight:var(--fw-rg);}
+.kpi-pro__delta{font-size:var(--fs-xs);font-weight:var(--fw-sb);font-variant-numeric:tabular-nums;}
+.kpi-pro__delta--up{color:var(--green);}
+.kpi-pro__delta--down{color:var(--red);}
+
+/* Pills suaves — fundo alpha + texto colorido */
+.pill{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:3px 10px;
+  border-radius:var(--r-pill);
+  font-size:10px;font-weight:var(--fw-bd);
+  letter-spacing:0.5px;
+  white-space:nowrap;
+  line-height:1.4;
+}
+.pill--blue   {background:var(--blue-soft);  color:var(--blue);}
+.pill--gold   {background:var(--gold-dim);   color:var(--gold);}
+.pill--green  {background:var(--green-dim);  color:var(--green);}
+.pill--red    {background:var(--red-dim);    color:var(--red);}
+.pill--orange {background:var(--orange-dim); color:var(--orange);}
+.pill--neutral{background:var(--surface3);   color:var(--text2);}
+
+/* Botões refinados */
+.btn-pro{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:8px 14px;
+  border-radius:var(--r-sm);
+  font-family:var(--font-primary);
+  font-size:var(--fs-sm);font-weight:var(--fw-md);
+  cursor:pointer;
+  border:1px solid var(--border2);
+  background:var(--surface2);color:var(--text);
+  transition:background .15s, border-color .15s, color .15s;
+}
+.btn-pro:hover{background:var(--surface3);}
+.btn-pro--primary{
+  background:var(--gold);color:#1a1300;
+  border-color:var(--gold);font-weight:var(--fw-sb);
+}
+.btn-pro--primary:hover{background:var(--gold2);border-color:var(--gold2);}
+.btn-pro--ghost{
+  background:transparent;color:var(--text2);
+  border-color:transparent;
+}
+.btn-pro--ghost:hover{background:var(--surface2);color:var(--text);}
+
+/* Input refinado — foco com border-color gold, SEM glow box-shadow */
+.input-pro{
+  background:var(--surface);
+  border:1px solid var(--border2);
+  border-radius:var(--r-sm);
+  padding:9px 13px;
+  color:var(--text);
+  font-family:var(--font-primary);font-size:var(--fs-sm);
+  outline:none;
+  transition:border-color .15s, background .15s;
+}
+.input-pro:focus{border-color:var(--gold);}
+.input-pro::placeholder{color:var(--text3);}
+
+/* Tabela premium — mais respiro, cabeçalho refinado, hover sutil */
+.table-pro{width:100%;border-collapse:collapse;}
+.table-pro thead th{
+  text-align:left;
+  font-size:10px;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  color:var(--text3);
+  padding:14px 16px;
+  border-bottom:1px solid var(--border);
+  font-weight:var(--fw-sb);
+  background:var(--surface);
+}
+.table-pro tbody td{
+  padding:14px 16px;
+  border-bottom:1px solid var(--border);
+  font-size:var(--fs);
+  color:var(--text);
+  vertical-align:middle;
+}
+.table-pro tbody tr{transition:background .12s;}
+.table-pro tbody tr:hover{background:var(--surface2);}
+.table-pro tbody tr:last-child td{border-bottom:none;}
+
+/* Divisor sutil utilitário */
+.divider{border-bottom:1px solid var(--border);}
 </style>
 </head>
 <body>
+<!-- ═══════════════════════════════════════════════════════════════
+     REDESIGN-PRO · Sprite de ícones (Lucide / MIT). Use via:
+       <svg class="ic"><use href="#ic-search"/></svg>
+     stroke="currentColor" → adapta automático à cor do contexto.
+     ═══════════════════════════════════════════════════════════════ -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none;position:absolute;width:0;height:0;" aria-hidden="true">
+  <defs>
+    <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="ic-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+    <symbol id="ic-package" viewBox="0 0 24 24"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 7.7 4.5 7.7-4.5"/><path d="m7.5 4.27 9 5.15"/></symbol>
+    <symbol id="ic-edit" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></symbol>
+    <symbol id="ic-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+    <symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></symbol>
+    <symbol id="ic-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="ic-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="ic-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+    <symbol id="ic-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="ic-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+    <symbol id="ic-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="ic-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+    <symbol id="ic-file-text" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></symbol>
+  </defs>
+</svg>
+
 <!-- Boot loader: visivel imediatamente para esconder o flash do dashboard
      enquanto o JS roda login + carregarDados + restaura rota. JS remove
      no final do DOMContentLoaded. -->
