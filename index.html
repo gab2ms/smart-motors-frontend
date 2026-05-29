@@ -1382,6 +1382,22 @@ select:not(.input-pro):not(.search-input){
 .cal-evento--financeiro{background:var(--green-dim);  color:var(--green);}
 .cal-evento--oficina   {background:var(--orange-dim); color:var(--orange);}
 .cal-evento--outro     {background:var(--surface3);   color:var(--text2);}
+
+/* Item automático — clicável, leva pra tela de origem. Seta indicadora à direita. */
+.cal-evento--auto{padding-right:18px;position:relative;}
+.cal-evento--auto .cal-auto-arrow{
+  position:absolute;right:5px;top:50%;transform:translateY(-50%);
+  width:10px;height:10px;opacity:0.5;
+}
+.cal-evento--auto:hover .cal-auto-arrow{opacity:1;}
+.cal-auto-check{width:10px;height:10px;margin-left:4px;flex-shrink:0;}
+/* Item pago/recebido — riscado + esmaecido pra deixar claro que já fechou */
+.cal-evento--pago{opacity:0.55;}
+.cal-evento--pago .cal-evento-titulo{text-decoration:line-through;}
+/* No mobile o item é maior, ajusta o respiro do ícone seta */
+.cal-mob-evento.cal-evento--auto{padding-right:24px;}
+.cal-mob-evento.cal-evento--auto .cal-auto-arrow{width:13px;height:13px;right:8px;}
+.cal-mob-evento .cal-auto-check{width:13px;height:13px;}
 .cal-mais{
   font-size:10px;color:var(--text3);font-weight:var(--fw-sb);
   padding:2px 7px;cursor:pointer;
@@ -17648,8 +17664,55 @@ function _calFiltro(cat) {
   _calRender();
 }
 
+// Cache de itens automáticos recomputado a cada _calRender. Derivado
+// in-memory das fontes (contasPagar, contasReceber). Não vai pro banco
+// — itens automáticos vivem só na sessão.
+let _calItensAutoCache = [];
+
+// Onda 2.1 — financeiro: contas a pagar + a receber viram itens automáticos.
+// Pagas/recebidas continuam aparecendo (riscadas) por decisão de UX.
+function _calItensAutomaticos() {
+  const out = [];
+  for (const c of (typeof contasPagar !== 'undefined' && contasPagar) || []) {
+    if (!c.vencimento) continue;
+    const pago = c.status === 'pago' || !!c.pagaEm;
+    out.push({
+      id:            'auto:cp:' + c.id,
+      titulo:        c.descricao || 'Conta a pagar',
+      data:          c.vencimento,
+      hora:          null,
+      categoria:     'financeiro',
+      __auto:        true,
+      __pago:        pago,
+      __origem:      'contas-pagar',
+      __origemLabel: 'Contas a Pagar',
+      __valor:       c.valor,
+      __prefixo:     pago ? 'Paga' : 'A pagar',
+    });
+  }
+  for (const c of (typeof contasReceber !== 'undefined' && contasReceber) || []) {
+    if (!c.vencimento) continue;
+    const recebido = !!c.recebidoEm;
+    out.push({
+      id:            'auto:cr:' + c.id,
+      titulo:        c.descricao || 'Conta a receber',
+      data:          c.vencimento,
+      hora:          null,
+      categoria:     'financeiro',
+      __auto:        true,
+      __pago:        recebido,
+      __origem:      'contas-receber',
+      __origemLabel: 'Contas a Receber',
+      __valor:       c.valor,
+      __prefixo:     recebido ? 'Recebida' : 'A receber',
+    });
+  }
+  return out;
+}
+
 function _calEventosDoDia(isoDate) {
-  return _calEventos
+  const todos = _calEventos.concat(_calItensAutoCache);
+  return todos
     .filter(e => e.data === isoDate)
     .filter(e => !_calFiltroCat || e.categoria === _calFiltroCat)
     .sort((a,b) => {
@@ -17659,10 +17722,45 @@ function _calEventosDoDia(isoDate) {
     });
 }
 
+// Clique em item automático → vai pra tela de origem (MVP, sem destacar item).
+function _calAbrirOrigem(origem) {
+  if (!origem) return;
+  try { showPage(origem); } catch(e) { console.warn('[cal] showPage falhou:', e.message); }
+}
+
+// HTML de um item de evento (manual ou automático). mobile=true muda a
+// classe raiz (.cal-mob-evento) e o jeito de mostrar "dia todo".
+function _calEventoHTML(e, mobile) {
+  const isAuto = !!e.__auto;
+  const isPago = !!e.__pago;
+  const classes = [
+    mobile ? 'cal-mob-evento' : 'cal-evento',
+    `cal-evento--${e.categoria}`,
+  ];
+  if (isAuto) classes.push('cal-evento--auto');
+  if (isPago) classes.push('cal-evento--pago');
+  const horaHTML = e.hora
+    ? `<span class="cal-evento-hora">${e.hora.slice(0,5)}</span>`
+    : (mobile ? `<span class="text-mute" style="font-size:10px;">dia todo</span>` : '');
+  const onclick = isAuto
+    ? `event.stopPropagation();_calAbrirOrigem('${e.__origem}')`
+    : `event.stopPropagation();_calEditarEvento('${e.id}')`;
+  const tooltip = isAuto
+    ? `${e.__prefixo}${e.__valor!=null ? ' · '+_fmtBRMoney(e.__valor) : ''} · clique pra abrir ${e.__origemLabel}`
+    : e.titulo;
+  const checkHTML = isPago ? '<svg class="ic cal-auto-check"><use href="#ic-check"/></svg>' : '';
+  const setaHTML  = isAuto ? '<svg class="ic cal-auto-arrow"><use href="#ic-arrow-right"/></svg>' : '';
+  return `<div class="${classes.join(' ')}" onclick="${onclick}" title="${escHtml(tooltip)}">${horaHTML}<span class="cal-evento-titulo">${escHtml(e.titulo)}</span>${checkHTML}${setaHTML}</div>`;
+}
+
 function _calRender() {
   // Título "Mês YYYY"
   const tit = document.getElementById('cal-titulo');
   if (tit) tit.textContent = `${_CAL_MES_NOMES[_calRef.getMonth()]} ${_calRef.getFullYear()}`;
+
+  // Recomputa cache de automáticos uma vez por render (refletindo qualquer
+  // mudança vinda das telas de origem desde o último render).
+  _calItensAutoCache = _calItensAutomaticos();
 
   _calRenderGrid();
   _calRenderMobile();
@@ -17689,10 +17787,7 @@ function _calRenderGrid() {
     const visiveis = eventos.slice(0, 3);
     const sobra = eventos.length - visiveis.length;
 
-    const eventosHTML = visiveis.map(e => {
-      const horaHTML = e.hora ? `<span class="cal-evento-hora">${e.hora.slice(0,5)}</span>` : '';
-      return `<div class="cal-evento cal-evento--${e.categoria}" onclick="event.stopPropagation();_calEditarEvento('${e.id}')" title="${escHtml(e.titulo)}">${horaHTML}<span class="cal-evento-titulo">${escHtml(e.titulo)}</span></div>`;
-    }).join('');
+    const eventosHTML = visiveis.map(e => _calEventoHTML(e, false)).join('');
     const maisHTML = sobra > 0
       ? `<div class="cal-mais" onclick="event.stopPropagation();_calVerDia('${iso}')">+${sobra} mais</div>`
       : '';
@@ -17722,10 +17817,7 @@ function _calRenderMobile() {
     if (!eventos.length && iso !== hojeISO) continue;
     const ehHoje = iso === hojeISO;
     const evHTML = eventos.length
-      ? eventos.map(e => {
-          const hora = e.hora ? `<span class="cal-evento-hora">${e.hora.slice(0,5)}</span>` : `<span class="text-mute" style="font-size:10px;">dia todo</span>`;
-          return `<div class="cal-mob-evento cal-evento--${e.categoria}" onclick="_calEditarEvento('${e.id}')">${hora}<span class="cal-evento-titulo">${escHtml(e.titulo)}</span></div>`;
-        }).join('')
+      ? eventos.map(e => _calEventoHTML(e, true)).join('')
       : '<div class="text-mute" style="font-size:11px;padding:6px 0;">Sem eventos · toque em "Novo evento" pra agendar.</div>';
     html += `<div class="cal-mob-dia${ehHoje?' hoje':''}">`
           +   `<div class="cal-mob-dia-header"><span>${dia}/${String(mes+1).padStart(2,'0')} · ${semana[d.getDay()]}${ehHoje?' · Hoje':''}</span><span class="cal-mob-dia-sub">${eventos.length} evento${eventos.length===1?'':'s'}</span></div>`
@@ -17747,6 +17839,13 @@ function _calNovoEvento(isoDate) {
   _calAbrirModal(null, isoDate || _calISOLocal(new Date()));
 }
 function _calEditarEvento(id) {
+  // Itens automáticos (id começa com "auto:") não abrem o modal CRUD —
+  // são read-only no calendário; redirecionam pra tela de origem.
+  if (typeof id === 'string' && id.startsWith('auto:')) {
+    const item = _calItensAutoCache.find(e => e.id === id);
+    if (item) _calAbrirOrigem(item.__origem);
+    return;
+  }
   const ev = _calEventos.find(e => e.id === id);
   if (!ev) return;
   _calAbrirModal(ev);
