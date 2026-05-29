@@ -15102,6 +15102,16 @@ async function _pdvAbrirDetalhe(pedidoId) {
               + (erroTxt ? `<div style="font-size:10px;color:var(--text3);margin-top:6px;background:var(--surface2);padding:8px 10px;border-radius:var(--r-sm);">Último erro: ${escHtml(erroTxt)}</div>` : '');
   }
 
+  // Ações: marcar entregue (qualquer vendedor) · cancelar/excluir (só admin).
+  const isAdmin = _isAdminUser();
+  let acoesHTML = '';
+  if (p.status === 'aguardando_entrega')
+    acoesHTML += `<button class="btn" type="button" onclick="_pdvAlterarStatus('${p.id}','entregue')">✅ Marcar entregue</button>`;
+  if (isAdmin && p.status !== 'cancelado')
+    acoesHTML += `<button class="btn" type="button" onclick="_pdvAlterarStatus('${p.id}','cancelado')">⊘ Cancelar pedido</button>`;
+  if (isAdmin)
+    acoesHTML += `<button class="btn" type="button" style="color:var(--red);" onclick="_pdvExcluirPedido('${p.id}')">🗑 Excluir</button>`;
+
   shell.innerHTML =
       `<div class="modal" style="width:680px;max-width:96vw;max-height:90vh;overflow-y:auto;">`
     +   `<div class="modal-title">Pedido <span style="font-family:var(--mono,monospace);">#${p.numeroSmart}</span></div>`
@@ -15134,10 +15144,69 @@ async function _pdvAbrirDetalhe(pedidoId) {
     +   `${p.observacao?`<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Observação</div><div style="font-size:12px;background:var(--surface2);padding:10px 12px;border-radius:var(--r-sm);margin-bottom:18px;">${escHtml(p.observacao)}</div>`:''}`
     +   `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Histórico</div>`
     +   `<div style="font-size:11px;color:var(--text2);margin-bottom:18px;">${auditCam.length?auditCam.map(a => `<div style="padding:4px 0;border-bottom:1px solid var(--border);">${fmtDT(a.quando)} — <b>${escHtml(a.acao)}</b>${a.motivo?` · ${escHtml(a.motivo)}`:''}</div>`).join(''):'<div style="color:var(--text3);">sem registros</div>'}</div>`
-    +   `<div class="modal-actions"><button class="btn" type="button" onclick="document.getElementById('pdvp-det-modal').remove();">Fechar</button></div>`
+    +   `<div class="modal-actions">${acoesHTML}<button class="btn" type="button" onclick="document.getElementById('pdvp-det-modal').remove();">Fechar</button></div>`
     + `</div>`;
   document.body.appendChild(shell);
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+// id do usuário logado (pra coluna `quem` da auditoria) — mesma fonte do _isAdminUser
+function _pdvQuem() {
+  try { return (JSON.parse(localStorage.getItem('sm_user') || 'null') || {}).id || null; }
+  catch (e) { return null; }
+}
+
+// ═══════════════════════════════════════════════════════════
+// _pdvAlterarStatus — muda o status de um pedido PDV.
+//   'entregue'  → qualquer vendedor (confirmação de entrega).
+//   'cancelado' → SÓ admin (tira a venda do faturamento; Tiny é manual).
+// Grava trilha em pdv_auditoria_log, fecha o modal e recarrega a lista.
+// ═══════════════════════════════════════════════════════════
+async function _pdvAlterarStatus(pedidoId, novoStatus) {
+  if (novoStatus === 'cancelado' && !_isAdminUser()) { smAlert('Apenas admin pode cancelar um pedido.'); return; }
+  const p = _pdvPedidosLista.find(x => x.id === pedidoId);
+  if (!p) return;
+  const labelNovo = (PDV_STATUS_LABEL[novoStatus] || {}).label || novoStatus;
+  const aviso = novoStatus === 'cancelado'
+    ? ' O pedido sai do faturamento. O cancelamento no Tiny continua sendo manual.' : '';
+  const ok = await smConfirm(`Mudar o pedido #${p.numeroSmart} para "${labelNovo}"?` + aviso);
+  if (!ok) return;
+  const statusAntes = p.status;
+  const patch = { status: novoStatus };
+  if (novoStatus === 'entregue' && !p.dataEntregaReal) patch.data_entrega_real = new Date().toISOString();
+  const { error } = await sb.from('pdv_pedidos').update(patch).eq('id', pedidoId);
+  if (error) { smAlert('Erro ao alterar status: ' + error.message); return; }
+  try {
+    await sb.from('pdv_auditoria_log').insert({
+      pedido_id: pedidoId, acao: 'editou', campo_alterado: 'status',
+      valor_antes: statusAntes, valor_depois: novoStatus, quem: _pdvQuem(),
+    });
+  } catch (e) { console.warn('[pdv] audit status falhou (alteração continua ok):', e.message); }
+  const m = document.getElementById('pdvp-det-modal'); if (m) m.remove();
+  await carregarPedidosUnif();
+  smAlert(`Pedido #${p.numeroSmart} agora está "${labelNovo}".`);
+}
+
+// ═══════════════════════════════════════════════════════════
+// _pdvExcluirPedido — exclusão DEFINITIVA (só admin). Apaga filhos
+// (itens + log) antes do pai — seguro com ou sem ON DELETE CASCADE.
+// NÃO toca no Tiny. Sem desfazer.
+// ═══════════════════════════════════════════════════════════
+async function _pdvExcluirPedido(pedidoId) {
+  if (!_isAdminUser()) { smAlert('Apenas admin pode excluir um pedido.'); return; }
+  const p = _pdvPedidosLista.find(x => x.id === pedidoId);
+  if (!p) return;
+  const ok = await smConfirm(`EXCLUIR DEFINITIVAMENTE o pedido #${p.numeroSmart} (${_fmtBRMoney(p.total)})? `
+    + `Apaga o pedido, os itens e o histórico. Não afeta o Tiny e não dá pra desfazer.`);
+  if (!ok) return;
+  const delItens = await sb.from('pdv_itens_pedido').delete().eq('pedido_id', pedidoId);
+  if (delItens.error) { smAlert('Erro ao excluir itens: ' + delItens.error.message); return; }
+  await sb.from('pdv_auditoria_log').delete().eq('pedido_id', pedidoId); // log é descartável junto
+  const delPed = await sb.from('pdv_pedidos').delete().eq('id', pedidoId);
+  if (delPed.error) { smAlert('Erro ao excluir pedido: ' + delPed.error.message); return; }
+  const m = document.getElementById('pdvp-det-modal'); if (m) m.remove();
+  await carregarPedidosUnif();
+  smAlert(`Pedido #${p.numeroSmart} excluído.`);
 }
 
 let sacCasos = [];
