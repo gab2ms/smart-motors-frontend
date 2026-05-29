@@ -112,7 +112,8 @@ nav{padding:14px 10px;flex:1;}
   background:var(--border2);flex-shrink:0;margin-left:auto;
   transition:background .15s;
 }
-.nav-icon{width:16px;text-align:center;font-size:14px;flex-shrink:0;}
+.nav-icon{width:18px;height:18px;text-align:center;font-size:14px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;}
+.nav-icon svg.ic{width:17px;height:17px;}
 
 /* ── TOPBAR ── */
 .main{flex:1;overflow-x:hidden;}
@@ -1307,6 +1308,29 @@ select:not(.input-pro):not(.search-input){
     <symbol id="ic-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
     <symbol id="ic-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
     <symbol id="ic-file-text" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></symbol>
+    <symbol id="ic-trending-up" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></symbol>
+    <symbol id="ic-trending-down" viewBox="0 0 24 24"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></symbol>
+    <symbol id="ic-cart" viewBox="0 0 24 24"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2 3h2l2.7 13.4a2 2 0 0 0 2 1.6h9.8a2 2 0 0 0 2-1.6L21 8H5"/></symbol>
+    <symbol id="ic-store" viewBox="0 0 24 24"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/></symbol>
+    <symbol id="ic-tag" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1"/></symbol>
+    <symbol id="ic-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
+    <symbol id="ic-tool" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/><circle cx="5" cy="19" r="1"/></symbol>
+    <symbol id="ic-phone" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
+    <symbol id="ic-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="ic-wallet" viewBox="0 0 24 24"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></symbol>
+    <symbol id="ic-calendar" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></symbol>
+    <symbol id="ic-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+    <symbol id="ic-receipt" viewBox="0 0 24 24"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/></symbol>
+    <symbol id="ic-bar-chart" viewBox="0 0 24 24"><line x1="12" x2="12" y1="20" y2="10"/><line x1="18" x2="18" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="16"/></symbol>
+    <symbol id="ic-dollar" viewBox="0 0 24 24"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></symbol>
+    <symbol id="ic-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+    <symbol id="ic-power-off" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></symbol>
+    <symbol id="ic-printer" viewBox="0 0 24 24"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/><path d="M6 9V2h12v7"/></symbol>
+    <symbol id="ic-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
+    <symbol id="ic-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></symbol>
+    <symbol id="ic-filter" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></symbol>
+    <symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="ic-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
   </defs>
 </svg>
 
@@ -1358,75 +1382,75 @@ select:not(.input-pro):not(.search-input){
   <nav>
     <div class="nav-label">Visão Geral</div>
     <button class="nav-item active" onclick="showPage('dashboard')">
-      <span class="nav-icon">⚡</span> Dashboard
+      <span class="nav-icon"><svg class="ic"><use href="#ic-zap"/></svg></span> Dashboard
       <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('admin')" id="nav-admin" style="display:none;">
-      <span class="nav-icon">🛡️</span> Admin
+      <span class="nav-icon"><svg class="ic"><use href="#ic-shield"/></svg></span> Admin
       <span class="nav-dot" id="admin-pending-dot" style="background:var(--red);display:none;"></span>
     </button>
 
     <div class="nav-label">Vendas</div>
     <button class="nav-item" onclick="showPage('pedidos')">
-      <span class="nav-icon">📦</span> Pedidos
+      <span class="nav-icon"><svg class="ic"><use href="#ic-package"/></svg></span> Pedidos
       <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('vendas')">
-      <span class="nav-icon">📈</span> Vendas do Mês
+      <span class="nav-icon"><svg class="ic"><use href="#ic-trending-up"/></svg></span> Vendas do Mês
       <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('pdv')" id="nav-pdv">
-      <span class="nav-icon">🛒</span> PDV
+      <span class="nav-icon"><svg class="ic"><use href="#ic-cart"/></svg></span> PDV
       <span class="nav-dot"></span>
     </button>
 
     <div class="nav-label">Produtos</div>
     <button class="nav-item" onclick="showPage('estoque')">
-      <span class="nav-icon">🏪</span> Produtos & Estoque
+      <span class="nav-icon"><svg class="ic"><use href="#ic-store"/></svg></span> Produtos & Estoque
       <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('custos-produtos')">
-      <span class="nav-icon">🏷️</span> Custos de Produtos
+      <span class="nav-icon"><svg class="ic"><use href="#ic-tag"/></svg></span> Custos de Produtos
       <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('montagens')">
-      <span class="nav-icon">🛠️</span> Montagens
+      <span class="nav-icon"><svg class="ic"><use href="#ic-tool"/></svg></span> Montagens
       <span class="nav-dot"></span>
     </button>
 
     <div class="nav-label">Operação</div>
     <button class="nav-item" onclick="showPage('oficina')">
-      <span class="nav-icon">🔧</span> Oficina
+      <span class="nav-icon"><svg class="ic"><use href="#ic-wrench"/></svg></span> Oficina
       <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('sac')">
-      <span class="nav-icon">📞</span> SAC
+      <span class="nav-icon"><svg class="ic"><use href="#ic-phone"/></svg></span> SAC
       <span class="nav-dot" id="dot-sac"></span>
     </button>
     <button class="nav-item" onclick="showPage('clientes')">
-      <span class="nav-icon">👥</span> Clientes
+      <span class="nav-icon"><svg class="ic"><use href="#ic-users"/></svg></span> Clientes
       <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('contratos')">
-      <span class="nav-icon">📄</span> Contrato
+      <span class="nav-icon"><svg class="ic"><use href="#ic-file-text"/></svg></span> Contrato
       <span class="nav-dot"></span>
     </button>
 
     <div class="nav-label">Financeiro</div>
     <button class="nav-item" onclick="showPage('financeiro')">
-      <span class="nav-icon">💰</span> Financeiro
+      <span class="nav-icon"><svg class="ic"><use href="#ic-wallet"/></svg></span> Financeiro
       <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('contas-pagar')">
-      <span class="nav-icon">📅</span> Contas a Pagar
+      <span class="nav-icon"><svg class="ic"><use href="#ic-calendar"/></svg></span> Contas a Pagar
       <span class="nav-dot" id="dot-contas-pagar"></span>
     </button>
     <button class="nav-item" onclick="showPage('contas-receber')">
-      <span class="nav-icon">📥</span> Contas a Receber
+      <span class="nav-icon"><svg class="ic"><use href="#ic-inbox"/></svg></span> Contas a Receber
       <span class="nav-dot"></span>
     </button>
     <button class="nav-item" onclick="showPage('custos')">
-      <span class="nav-icon">💸</span> Custos Operacionais
+      <span class="nav-icon"><svg class="ic"><use href="#ic-receipt"/></svg></span> Custos Operacionais
       <span class="nav-dot"></span>
     </button>
   </nav>
