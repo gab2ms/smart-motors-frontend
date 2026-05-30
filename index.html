@@ -102,15 +102,18 @@ body{font-family:var(--font-primary);background:var(--bg);color:var(--text);min-
 }
 .nav-group-arrow{
   margin-left:auto;
-  width:12px;height:12px;
+  width:14px;height:14px;
   transition:transform .15s ease;
-  opacity:.6;
+  color:var(--text3);
+  flex-shrink:0;
+}
+.nav-group:not(.collapsed-group) .nav-group-arrow{
+  transform:rotate(90deg);
+  color:var(--gold);
 }
 .nav-group.collapsed-group .nav-group-children{display:none;}
-.nav-group.collapsed-group .nav-group-arrow{transform:rotate(-90deg);}
 .nav-group.has-active > .nav-group-header{
-  border-left:2px solid var(--gold);
-  padding-left:8px;
+  box-shadow:inset 2px 0 0 var(--gold);
 }
 
 /* ── HOVER PANEL — só no estado colapsado, só com hover real (desktop) ── */
@@ -143,9 +146,8 @@ body{font-family:var(--font-primary);background:var(--bg);color:var(--text);min-
   .nav-hover-panel{display:none !important;}
 }
 
-/* ── PDV destaque visual (item solo com borda dourada) ── */
-.nav-item.nav-destaque{border-left:2px solid var(--gold);padding-left:8px;}
-.sidebar.collapsed .nav-item.nav-destaque{padding-left:0;border-left-width:3px;}
+/* ── PDV destaque visual (inset shadow não afeta alinhamento) ── */
+.nav-item.nav-destaque{box-shadow:inset 2px 0 0 var(--gold);}
 
 /* ── SEPARADOR ── */
 .nav-sep{
@@ -178,6 +180,30 @@ body{font-family:var(--font-primary);background:var(--bg);color:var(--text);min-
 .sidebar.collapsed .sidebar-toggle{justify-content:center;padding:8px 0;}
 .sidebar.collapsed .sidebar-toggle .sidebar-toggle-label{display:none;}
 .sidebar.collapsed .sidebar-toggle .nav-toggle-arrow{margin-left:0;transform:rotate(180deg);}
+
+/* ── SIDEBAR-USER (avatar + sair) — injetado pelo login no fim do .sidebar ── */
+#sidebar-user{
+  padding:12px 14px;
+  border-top:1px solid var(--border);
+  margin-top:0;
+}
+#sidebar-user button{
+  white-space:nowrap;       /* não quebra "Sair da conta" em 3 linhas */
+  overflow:hidden;text-overflow:ellipsis;
+}
+/* Colapsado: avatar centralizado + botão sair vira ícone only */
+.sidebar.collapsed #sidebar-user{padding:10px 6px;}
+.sidebar.collapsed #sidebar-user > div:first-child{justify-content:center;gap:0;}
+.sidebar.collapsed #sidebar-user > div:first-child > div:last-child{display:none;}
+.sidebar.collapsed #sidebar-user button{
+  font-size:0;              /* esconde o texto "↩ Sair da conta" */
+  padding:7px 0;
+}
+.sidebar.collapsed #sidebar-user button::before{
+  content:'↩';              /* mostra só a seta */
+  font-size:14px;
+  display:inline-block;
+}
 
 /* ── MOBILE: sempre expandido quando aberto, sem hover panel ── */
 @media (max-width:768px){
@@ -7644,7 +7670,8 @@ function _navItemHTML(child, opts) {
   const dotHTML = child.dotId
     ? `<span class="nav-dot" id="${child.dotId}"${child.id==='admin'?' style="background:var(--red);display:none;"':''}></span>`
     : (opts.semDot ? '' : '<span class="nav-dot"></span>');
-  return `<button class="${cls.join(' ')}" data-page-id="${child.id}" onclick="showPage('${child.id}')">`
+  // title= dá tooltip nativo do browser quando o menu está recolhido
+  return `<button class="${cls.join(' ')}" data-page-id="${child.id}" title="${child.label}" onclick="showPage('${child.id}')">`
     + `<span class="nav-icon"><svg class="ic"><use href="#${child.icon}"/></svg></span>`
     + `<span class="nav-item-label">${child.label}</span>`
     + dotHTML
@@ -7674,7 +7701,7 @@ function renderSidebar() {
       if (!childrenVis.length) continue;
       const colapsado = _navGruposColapsados.has(node.label);
       html += `<div class="nav-group${colapsado?' collapsed-group':''}" data-group="${node.label}">`
-        +     `<div class="nav-group-header nav-item" onclick="_navToggleGrupo('${node.label.replace(/'/g,"\\'")}')">`
+        +     `<div class="nav-group-header nav-item" title="${node.label}" onclick="_navToggleGrupo('${node.label.replace(/'/g,"\\'")}')">`
         +       `<span class="nav-icon"><svg class="ic"><use href="#${node.icon}"/></svg></span>`
         +       `<span class="nav-item-label">${node.label}</span>`
         +       `<svg class="ic ic-sm nav-group-arrow"><use href="#ic-chevron-right"/></svg>`
@@ -7805,9 +7832,11 @@ function _navInicial() {
       nav.innerHTML = flat.map(c => _navItemHTML(c)).join('');
     }
   }
-  // Aplica estado persistido (default = colapsado)
+  // Aplica estado persistido. DEFAULT = EXPANDIDO (só recolhe se o usuário
+  // tiver salvado essa preferência explicitamente). null/ausente = expandido.
   try {
-    const expanded = localStorage.getItem('sm_sidebar_expanded') === '1';
+    const raw = localStorage.getItem('sm_sidebar_expanded');
+    const expanded = raw === null ? true : (raw === '1');
     const sb = document.getElementById('sidebar');
     if (sb) sb.classList.toggle('collapsed', !expanded);
     const lbl = document.querySelector('#sidebar-toggle-btn .sidebar-toggle-label');
