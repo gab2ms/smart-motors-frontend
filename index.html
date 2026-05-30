@@ -5145,7 +5145,7 @@ function setPeriodoPreset(preset) {
   let ini, fim;
   if (preset === 'mes-atual') {
     ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-    fim = hoje;
+    fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0); // último dia do mês atual (dinâmico)
   } else if (preset === 'mes-anterior') {
     ini = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
     fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0); // último dia do mês anterior
@@ -7106,15 +7106,16 @@ function toAPIDate(iso) {
 }
 
 async function initPedidosUnif() {
-  // Default dates: últimos 30 dias (não os do mês corrente — diferente do dashboard).
+  // Default: 1º ao último dia real do mês atual — mesma regra do Dashboard
+  // e do DRE (cálculo dinâmico: fev=28/29, abril=30, etc.).
   const hoje = new Date();
-  const ini  = new Date();
-  ini.setDate(ini.getDate() - 30);
+  const ini  = new Date(hoje.getFullYear(), hoje.getMonth(),     1);
+  const fim  = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
   const toISO = d => d.toISOString().split('T')[0];
   const elIni = document.getElementById('ped-data-ini');
   const elFim = document.getElementById('ped-data-fim');
   if (elIni && !elIni.value) elIni.value = toISO(ini);
-  if (elFim && !elFim.value) elFim.value = toISO(hoje);
+  if (elFim && !elFim.value) elFim.value = toISO(fim);
   // Carrega vendedores PDV pro filtro
   if (!pdvVendedores.length) try { await initPdvVendedores(); } catch(e) {}
   if (!pdvLocais.length)     try { await initPdvLocais();     } catch(e) {}
@@ -13870,7 +13871,7 @@ function setMontPeriodoPreset(preset) {
   if (!elIni || !elFim) return;
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   let ini, fim;
-  if (preset === 'mes-atual')         { ini = new Date(hoje.getFullYear(), hoje.getMonth(),     1); fim = hoje; }
+  if (preset === 'mes-atual')         { ini = new Date(hoje.getFullYear(), hoje.getMonth(),     1); fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0); /* último dia do mês atual */ }
   else if (preset === 'mes-anterior') { ini = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1); fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0); }
   else if (preset === '7d')           { fim = hoje; ini = new Date(hoje.getTime() -  6 * 86400000); }
   else if (preset === '30d')          { fim = hoje; ini = new Date(hoje.getTime() - 29 * 86400000); }
