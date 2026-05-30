@@ -10259,7 +10259,7 @@ function renderBadgeFiltroData() {
   el.innerHTML =
       '<span style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;background:var(--gold-dim2);border:1px solid rgba(245,197,24,0.3);border-radius:999px;font-size:11px;color:var(--text2);">'
     + 'Filtrando: <strong style="color:var(--text);">' + txt + '</strong>'
-    + '<button class="action-btn" style="padding:2px 8px;font-size:10px;border-radius:999px;" onclick="limparFiltroData()" title="Limpar filtro de data"<svg class="ic ic-sm"><use href="#ic-x"/></svg> limpar</button>'
+    + '<button class="action-btn" style="padding:2px 8px;font-size:10px;border-radius:999px;" onclick="limparFiltroData()" title="Limpar filtro de data"><svg class="ic ic-sm"><use href="#ic-x"/></svg> limpar</button>'
     + '</span>';
 }
 
@@ -10329,7 +10329,7 @@ function renderLancamentos() {
       </span>
       <span style="display:flex;gap:4px;">
         <button class="action-btn edit-btn" onclick="editarLancamento('${l.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
-        <button class="action-btn del-btn" onclick="deletarLancamento('${l.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
+        <button class="action-btn del-btn" onclick="deletarLancamento('${l.id}')"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
       </span>
     </div>
   `;
@@ -11275,7 +11275,7 @@ function renderContasPagar() {
               : '<button class="action-btn" onclick="despagarConta(\'' + c.id + '\')" style="font-size:10px;">↩</button>'}
             <a href="${waLink}" target="_blank" class="action-btn" style="background:#25D366;border-color:#25D366;color:#fff;text-decoration:none;padding:5px 8px;font-size:10px;font-weight:700;">📲</a>
             <button class="action-btn edit-btn" onclick="editarContaPagar('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
-            <button class="action-btn del-btn" onclick="deletarContaPagar('${c.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
+            <button class="action-btn del-btn" onclick="deletarContaPagar('${c.id}')"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
           </div>
         </div>
         ${c.obs ? `<div id="cp-obs-${c.id}" style="display:none;margin:0 20px 12px 36px;padding:10px 14px;background:var(--surface2);border-left:2px solid var(--gold);border-radius:0 6px 6px 0;font-size:11px;color:var(--text2);line-height:1.5;">${escHtml(c.obs)}</div>` : ''}
@@ -12150,7 +12150,7 @@ function renderContasReceber() {
               ? '<button class="btn btn-gold" onclick="marcarRecebido(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;" title="Marcar recebido"><svg class="ic ic-sm"><use href="#ic-check"/></svg></button>'
               : '<button class="action-btn" onclick="desmarcarRecebido(\'' + c.id + '\')" style="font-size:10px;" title="Desmarcar recebido">↩</button>'}
             <button class="action-btn edit-btn" onclick="editarContaReceber('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
-            <button class="action-btn del-btn" onclick="deletarContaReceber('${c.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
+            <button class="action-btn del-btn" onclick="deletarContaReceber('${c.id}')"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
           </div>
         </div>
         ${c.obs ? `<div id="cr-obs-${c.id}" style="display:none;margin:0 20px 12px 36px;padding:10px 14px;background:var(--surface2);border-left:2px solid var(--gold);border-radius:0 6px 6px 0;font-size:11px;color:var(--text2);line-height:1.5;">${escHtml(c.obs)}</div>` : ''}
@@ -12347,7 +12347,7 @@ function initClienteSearch(containerId, opts){
   cont.innerHTML =
     `<input type="text" class="form-input cli-search-input" placeholder="${escHtml(opts.placeholder || 'Buscar por nome, telefone ou CPF')}">` +
     `<span class="cli-search-tag" style="display:none;">AVULSO</span>` +
-    `<button type="button" class="cli-search-clear" style="display:none;" title="Limpar seleção"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>` +
+    `<button type="button" class="cli-search-clear" style="display:none;" title="Limpar seleção"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>` +
     `<div class="cli-search-dropdown" style="display:none;"></div>`;
   const els = {
     input:    cont.querySelector('.cli-search-input'),
@@ -13325,7 +13325,7 @@ function renderOficina() {
         + (next ? `<button class="btn btn-gold" onclick="ofAvancarStatus('${o.id}')" style="font-size:10px;padding:5px 10px;" title="Avançar para ${nextLabel}">→ ${nextLabel}</button>` : '')
         + `<button class="action-btn" onclick="ofImprimir('${o.id}')" title="Imprimir OS (A5)">🖨️</button>`
         + `<button class="action-btn edit-btn" onclick="abrirOfModal('${o.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
-        + `<button class="action-btn del-btn" onclick="ofExcluir('${o.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
+        + `<button class="action-btn del-btn" onclick="ofExcluir('${o.id}')"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
       + `</div>`
       + '</div>';
   }).join('');
@@ -14215,7 +14215,7 @@ function renderMontagens() {
                 <td style="padding:6px 10px;font-size:11px;">${escHtml(p.observacoes || '—')}</td>
                 <td style="padding:6px 10px;font-size:10px;color:${p.lancamentoId ? 'var(--gold)' : 'var(--text3)'};">${p.lancamentoId ? '🔗 lançamento' : 'só registro'}</td>
                 <td style="padding:6px 10px;text-align:center;">
-                  <button class="action-btn del-btn" onclick="_montagensCancelarPagamento('${p.id}')" title="Cancelar este pagamento"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
+                  <button class="action-btn del-btn" onclick="_montagensCancelarPagamento('${p.id}')" title="Cancelar este pagamento"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
                 </td>
               </tr>`).join('')}
             </tbody>
@@ -14468,7 +14468,7 @@ function _montagensAddRow(item) {
     + `<td style="padding:4px;"><input class="form-input mont-modal-cor" type="text" placeholder="Cor" value="${escHtml(cor).replace(/"/g,'&quot;')}"></td>`
     + `<td style="padding:4px;"><input class="form-input mont-modal-chassi" type="text" placeholder="(opcional)" value="${escHtml(chassi).replace(/"/g,'&quot;')}" style="font-family:var(--mono,monospace);text-transform:uppercase;"></td>`
     + `<td style="padding:4px;"><input class="form-input mont-modal-preco" type="number" step="0.01" value="${preco.toFixed(2)}" data-touched="${touched}" oninput="this.dataset.touched='1';_montagensRecalcTotal()" style="text-align:right;"></td>`
-    + `<td style="padding:4px;text-align:center;"><button class="action-btn del-btn" type="button" onclick="_montagensRemoveRow(this)" title="Remover"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button></td>`;
+    + `<td style="padding:4px;text-align:center;"><button class="action-btn del-btn" type="button" onclick="_montagensRemoveRow(this)" title="Remover"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button></td>`;
   tbody.appendChild(tr);
   _montagensRecalcTotal();
 }
@@ -16346,11 +16346,11 @@ async function _pdvAbrirDetalhe(pedidoId) {
   const isAdmin = _isAdminUser();
   let acoesHTML = '';
   if (p.status === 'aguardando_entrega')
-    acoesHTML += `<button class="btn" type="button" onclick="_pdvAlterarStatus('${p.id}','entregue')"<svg class="ic ic-sm"><use href="#ic-check"/></svg> Marcar entregue</button>`;
+    acoesHTML += `<button class="btn" type="button" onclick="_pdvAlterarStatus('${p.id}','entregue')"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Marcar entregue</button>`;
   if (isAdmin && p.status !== 'cancelado')
     acoesHTML += `<button class="btn" type="button" onclick="_pdvAlterarStatus('${p.id}','cancelado')"><svg class="ic ic-sm"><use href="#ic-ban"/></svg> Cancelar pedido</button>`;
   if (isAdmin)
-    acoesHTML += `<button class="btn" type="button" style="color:var(--red);" onclick="_pdvExcluirPedido('${p.id}')"<svg class="ic ic-sm"><use href="#ic-trash"/></svg> Excluir</button>`;
+    acoesHTML += `<button class="btn" type="button" style="color:var(--red);" onclick="_pdvExcluirPedido('${p.id}')"><svg class="ic ic-sm"><use href="#ic-trash"/></svg> Excluir</button>`;
 
   shell.innerHTML =
       `<div class="modal" style="width:680px;max-width:96vw;max-height:90vh;overflow-y:auto;">`
@@ -16619,7 +16619,7 @@ function renderSac() {
       + `<div style="font-size:10px;color:var(--text3);">${vencHTML}</div>`
       + `<div style="display:flex;gap:5px;">`
         + `<button class="action-btn edit-btn" onclick="abrirSacModal('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
-        + `<button class="action-btn del-btn" onclick="sacExcluir('${c.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
+        + `<button class="action-btn del-btn" onclick="sacExcluir('${c.id}')"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
       + `</div>`
       + '</div>';
   }).join('');
@@ -17147,7 +17147,7 @@ function renderClientes() {
       + `<div>${badge}</div>`
       + `<div style="display:flex;gap:5px;">`
         + `<button class="action-btn edit-btn" onclick="abrirCliModal('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
-        + (podeDeletar ? `<button class="action-btn del-btn" onclick="cliExcluir('${c.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>` : '')
+        + (podeDeletar ? `<button class="action-btn del-btn" onclick="cliExcluir('${c.id}')"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>` : '')
       + `</div>`
       + '</div>';
   }).join('');
@@ -19161,7 +19161,7 @@ function renderMapeamentoVendedores() {
       + `<div>${chips || '<span style="color:var(--text3);font-size:11px;">— sem nomes do Tiny associados</span>'}</div>`
       + `<div style="display:flex;gap:5px;">`
         + `<button class="action-btn edit-btn" onclick="abrirVendMapModal('${m.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
-        + `<button class="action-btn del-btn" onclick="excluirVendMap('${m.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
+        + `<button class="action-btn del-btn" onclick="excluirVendMap('${m.id}')"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
       + `</div>`
       + '</div>';
   }).join('');
@@ -19217,7 +19217,7 @@ function vmRenderChips() {
   box.innerHTML = arr.map((n, i) =>
     `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface3);color:var(--text);padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;">`
     + `<span>${n}</span>`
-    + `<button onclick="vmRemoverChip(${i})" style="background:none;border:none;color:var(--text3);font-size:13px;cursor:pointer;padding:0;line-height:1;" title="Remover"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
+    + `<button onclick="vmRemoverChip(${i})" style="background:none;border:none;color:var(--text3);font-size:13px;cursor:pointer;padding:0;line-height:1;" title="Remover"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
     + `</span>`
   ).join('');
 }
@@ -19483,12 +19483,12 @@ renderDashboard();
         <div class="db-title">Personalizar Dashboard</div>
         <div style="font-size:10px;color:var(--text3);margin-top:2px;">Arraste para reordenar · escolha o tamanho · ative ou desative</div>
       </div>
-      <button class="btn" onclick="fecharBuilder()" style="font-size:11px;padding:5px 10px;"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
+      <button class="btn" onclick="fecharBuilder()" style="font-size:11px;padding:5px 10px;"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
     </div>
     <div class="db-body" id="db-widget-list"></div>
     <div class="db-footer">
       <button class="btn" onclick="resetarLayout()" style="font-size:11px;">↺ Padrão</button>
-      <button class="btn btn-gold" onclick="salvarLayout()" style="font-size:11px;flex:1;"<svg class="ic ic-sm"><use href="#ic-check"/></svg> Salvar layout</button>
+      <button class="btn btn-gold" onclick="salvarLayout()" style="font-size:11px;flex:1;"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Salvar layout</button>
     </div>
   </div>
 </div>
