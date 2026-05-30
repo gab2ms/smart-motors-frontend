@@ -90,38 +90,29 @@ body{font-family:var(--font-primary);background:var(--bg);color:var(--text);min-
 /* ── GRUPOS — categoria-mãe + filhos ── */
 .nav-group{position:relative;}
 .nav-group-header{cursor:pointer;}
-.nav-group-children{
-  margin-left:8px;
-  padding-left:10px;
-  border-left:1px solid var(--border);
-  display:flex;flex-direction:column;gap:2px;
-  margin-top:2px;margin-bottom:6px;
-}
-.nav-group-children .nav-item{
-  font-size:12px;padding:7px 10px;
-}
+/* Subitens NUNCA aparecem inline na coluna — sempre via painel flutuante.
+   Mantém a coluna FIXA (sem empurrar conteúdo quando hover muda de grupo). */
+.nav-group-children{display:none !important;}
 .nav-group-arrow{
   margin-left:auto;
   width:14px;height:14px;
-  transition:transform .15s ease;
   color:var(--text3);
+  opacity:0.6;
   flex-shrink:0;
 }
-.nav-group:not(.collapsed-group) .nav-group-arrow{
-  transform:rotate(90deg);
-  color:var(--gold);
-}
-.nav-group.collapsed-group .nav-group-children{display:none;}
+.nav-group:hover .nav-group-arrow{color:var(--gold);opacity:1;}
 .nav-group.has-active > .nav-group-header{
   box-shadow:inset 2px 0 0 var(--gold);
 }
+.nav-group.has-active .nav-group-arrow{color:var(--gold);opacity:1;}
 
-/* ── HOVER PANEL — só no estado colapsado, só com hover real (desktop) ── */
+/* ── HOVER PANEL — abre à direita da sidebar (estados colapsado E expandido) ── */
 .nav-hover-panel{
   position:absolute;
-  left:60px;             /* 4px de overlap com a sidebar = ponte natural pro mouse */
+  /* Default = expandido: cola à direita da sidebar com 4px de overlap */
+  left:calc(100% - 4px);
   top:0;
-  min-width:210px;
+  min-width:220px;
   background:var(--surface);
   border:1px solid var(--border);
   border-left:2px solid var(--gold);
@@ -133,9 +124,10 @@ body{font-family:var(--font-primary);background:var(--bg);color:var(--text);min-
   opacity:0;
   transition:opacity .12s ease;
 }
+.sidebar.collapsed .nav-hover-panel{ left:60px; }  /* colapsado: overlap com a coluna estreita */
 .nav-hover-panel.open{display:block;opacity:1;}
-/* Faixa invisível à esquerda — captura o mouse atravessando do ícone pro
-   painel mesmo se sair levemente da linha vertical. */
+/* Faixa invisível à esquerda — "ponte" pro mouse atravessar do grupo até o
+   painel sem cair em área vazia (e fechar antes do tempo). */
 .nav-hover-panel::before{
   content:'';
   position:absolute;
@@ -7779,21 +7771,12 @@ function renderSidebar() {
   }
   nav.innerHTML = html;
 
-  // Wire-up hover (só desktop com hover real)
+  // Wire-up hover (só desktop com hover real). Painel flutuante em qualquer
+  // estado da sidebar — nunca expande inline (coluna fica imóvel).
   if (window.matchMedia && window.matchMedia('(hover: hover)').matches) {
     nav.querySelectorAll('.nav-group').forEach(g => {
-      g.addEventListener('mouseenter', () => {
-        const sb = document.getElementById('sidebar');
-        // Estado colapsado → hover-panel flutuante (legado)
-        if (sb && sb.classList.contains('collapsed')) { _navAbrirHoverPanel(g); return; }
-        // Estado expandido → abre grupo inline
-        _navHoverEnter(g);
-      });
-      g.addEventListener('mouseleave', () => {
-        const sb = document.getElementById('sidebar');
-        if (sb && sb.classList.contains('collapsed')) { _navFecharHoverPanel(); return; }
-        _navHoverLeave(g);
-      });
+      g.addEventListener('mouseenter', () => _navAbrirHoverPanel(g));
+      g.addEventListener('mouseleave', () => _navFecharHoverPanel());
     });
   }
 
@@ -7805,23 +7788,16 @@ function renderSidebar() {
 }
 
 function _navToggleGrupo(label) {
-  const sb = document.getElementById('sidebar');
-  if (sb && sb.classList.contains('collapsed')) {
-    // Colapsado: ignora click no header (hover panel é quem mostra os filhos)
-    return;
-  }
-  // Tela atual: o grupo permanece aberto (não dá pra fechar manualmente).
-  if (label === _navGrupoDaTelaAtual) return;
-  if (_navGruposAbertosManualmente.has(label)) _navGruposAbertosManualmente.delete(label);
-  else _navGruposAbertosManualmente.add(label);
-  // Atualiza visual do grupo sem re-render
+  // Subitens NÃO abrem inline mais — sempre via painel flutuante (no hover).
+  // Em dispositivos sem hover (touch), o click no header abre o painel
+  // manualmente; o painel fecha sozinho com o leave.
   const el = document.querySelector('#sidebar-nav .nav-group[data-group="' + label.replace(/"/g, '\\"') + '"]');
-  if (el) _navAtualizarVisualGrupo(el);
+  if (el) _navAbrirHoverPanel(el);
 }
 
 function _navAbrirHoverPanel(groupEl) {
   const sb = document.getElementById('sidebar');
-  if (!sb || !sb.classList.contains('collapsed')) return;
+  if (!sb) return;
   if (_navHoverTimer) { clearTimeout(_navHoverTimer); _navHoverTimer = null; }
   _navFecharHoverPanel(true);  // sem delay
 
