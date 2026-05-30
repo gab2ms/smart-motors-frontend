@@ -5949,8 +5949,18 @@ async function carregarFaturamentoDash(forcar) {
       var ticket  = qtd > 0 ? receita / qtd : 0;
       return { receita: receita, qtd: qtd, ticket: ticket };
     }
-    var kc = calcKpis(resultados[0].merged);  // faturamento + nº pedidos incluem PDV
-    var ka = calcKpis(resultados[1].merged);  // período anterior idem (deltas consistentes)
+    // Cancelados ficam fora de TODA contagem do Dashboard (faturamento, nº de
+    // pedidos, ticket). PDV já vem filtrado em buscarVendasMescladas; aqui
+    // capamos os do Tiny ('cancelado', 'nao entregue') também. _pedStatusGroup
+    // (linha ~7048) normaliza tanto Tiny quanto PDV.
+    function _dashEhCancelado(p) {
+      var origem = p._origem === 'pdv' ? 'pdv' : 'tiny';
+      return _pedStatusGroup(origem, p.situacao) === 'cancelado';
+    }
+    var mergedAtual = resultados[0].merged.filter(function(p) { return !_dashEhCancelado(p); });
+    var mergedAnt   = resultados[1].merged.filter(function(p) { return !_dashEhCancelado(p); });
+    var kc = calcKpis(mergedAtual);  // faturamento + nº pedidos incluem PDV
+    var ka = calcKpis(mergedAnt);    // período anterior idem (deltas consistentes)
 
     var receitaTotal = kc.receita;
     var totalPedidos = kc.qtd;
@@ -7238,7 +7248,10 @@ function renderPedidosUnif() {
 
   let filtered = pedidosUnif.slice();
   if (fOrigem)   filtered = filtered.filter(p => p.origem === fOrigem);
+  // Status: filtro explícito mostra exatamente esse grupo. Sem filtro (default)
+  // esconde cancelados — só aparecem quando o usuário escolher "Cancelado".
   if (fStatus)   filtered = filtered.filter(p => p.statusGroup === fStatus);
+  else           filtered = filtered.filter(p => p.statusGroup !== 'cancelado');
   if (fVendedor) filtered = filtered.filter(p => p.origem === 'pdv' && p.raw.vendedorId === fVendedor);
   if (q)         filtered = filtered.filter(p =>
     String(p.numero).toLowerCase().includes(q) ||
@@ -7287,16 +7300,26 @@ function renderPedidosUnif() {
 }
 
 function renderPedKpisUnif(filtered) {
-  // Receita e ticket EXCLUEM cancelados; contagem total inclui tudo.
+  // Receita e ticket sempre excluem cancelados; "Total pedidos" reflete o
+  // que está na lista (que já segue o filtro de status).
   const naoCancelado = filtered.filter(p => p.statusGroup !== 'cancelado');
   const total   = filtered.length;
   const receita = naoCancelado.reduce((s, p) => s + (p.valor || 0), 0);
   const ticket  = naoCancelado.length ? receita / naoCancelado.length : 0;
   const kpis = document.getElementById('ped-kpis');
   if (!kpis) return;
+  // Hint do "Total pedidos" reflete o filtro de status ativo.
+  const fStatus = document.getElementById('ped-filtro-status')?.value || '';
+  const HINT_TOTAL = {
+    '':           'cancelados ocultos',
+    'aguardando': 'só aguardando',
+    'concluido':  'só concluídos',
+    'cancelado':  'só cancelados',
+  };
+  const hintTotal = HINT_TOTAL[fStatus] || '';
   // 1 KPI dourado por tela (Receita). Os outros ficam neutros.
   kpis.innerHTML =
-      `<div class="kpi-pro"><div class="kpi-pro__label">Total pedidos</div><div class="kpi-pro__value">${total}</div><div class="kpi-pro__hint">incluindo cancelados</div></div>`
+      `<div class="kpi-pro"><div class="kpi-pro__label">Total pedidos</div><div class="kpi-pro__value">${total}</div><div class="kpi-pro__hint">${hintTotal}</div></div>`
     + `<div class="kpi-pro kpi-pro--accent"><div class="kpi-pro__label">Receita</div><div class="kpi-pro__value">${_fmtBRMoney(receita)}</div><div class="kpi-pro__hint">exclui cancelados</div></div>`
     + `<div class="kpi-pro"><div class="kpi-pro__label">Ticket médio</div><div class="kpi-pro__value">${_fmtBRMoney(ticket)}</div><div class="kpi-pro__hint">${naoCancelado.length} pedido${naoCancelado.length===1?'':'s'}</div></div>`;
 }
