@@ -2293,6 +2293,7 @@ select:not(.input-pro):not(.search-input){
     <!-- ABAS -->
     <div class="fin-tabs">
       <button class="fin-tab-btn active" data-fintab="caixa"       onclick="switchFinTab('caixa')">💳 Caixa Atual</button>
+      <button class="fin-tab-btn"        data-fintab="dre"         onclick="switchFinTab('dre')" id="fin-tab-btn-dre" style="display:none;"><svg class="ic ic-sm"><use href="#ic-bar-chart"/></svg> DRE</button>
       <button class="fin-tab-btn"        data-fintab="emprestimos" onclick="switchFinTab('emprestimos')">💰 Empréstimos</button>
       <button class="fin-tab-btn"        data-fintab="ia"          onclick="switchFinTab('ia')">🤖 Análise IA</button>
     </div>
@@ -2391,6 +2392,28 @@ select:not(.input-pro):not(.search-input){
     </div>
 
     </div><!-- /fin-tab-caixa -->
+
+    <!-- ════════ ABA: DRE (fechamento on-screen) — só admin ════════ -->
+    <div class="fin-tab-content" id="fin-tab-dre" style="display:none;">
+      <div style="display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-4);">
+        <input type="date" id="fin-dre-ini" class="input-pro" style="max-width:150px;">
+        <span class="text-mute" style="font-size:var(--fs-sm);">até</span>
+        <input type="date" id="fin-dre-fim" class="input-pro" style="max-width:150px;">
+        <button class="btn-pro" onclick="_finDrePreset('mes-atual')">Mês atual</button>
+        <button class="btn-pro" onclick="_finDrePreset('mes-anterior')">Mês anterior</button>
+        <button class="btn-pro" onclick="_finDrePreset('30d')">Últimos 30d</button>
+        <button class="btn-pro btn-pro--primary" onclick="_finDreCarregar(false)"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Aplicar</button>
+        <button class="btn-pro" onclick="_finDreCarregar(true)" title="Ignora cache e busca no Tiny novamente"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>
+        <div style="flex:1;"></div>
+        <button class="btn-pro btn-pro--primary" onclick="_finDreBaixarExcel()"><svg class="ic ic-sm"><use href="#ic-download"/></svg> Baixar Excel</button>
+      </div>
+      <div id="fin-dre-status" class="text-mute" style="font-size:var(--fs-xs);margin-bottom:var(--sp-4);">—</div>
+      <div id="fin-dre-resumo"></div>
+      <div id="fin-dre-produtos"    style="margin-top:var(--sp-6);"></div>
+      <div id="fin-dre-vendedores"  style="margin-top:var(--sp-6);"></div>
+      <div id="fin-dre-custos"      style="margin-top:var(--sp-6);"></div>
+      <div id="fin-dre-lancamentos" style="margin-top:var(--sp-6);"></div>
+    </div>
 
     <!-- ════════ ABA: EMPRÉSTIMOS ════════ -->
     <div class="fin-tab-content" id="fin-tab-emprestimos" style="display:none;">
@@ -3751,6 +3774,7 @@ const BREADCRUMB_MAP = {
 // título, subtítulo e breadcrumb (não rerenderiza pelo showPage).
 const FIN_SUBTAB_META = {
   caixa:       { title: 'Caixa Atual', sub: 'Controle de caixa, contas e lançamentos', crumb: ['Financeiro', 'Caixa'] },
+  dre:         { title: 'DRE',         sub: 'Fechamento do período — mesma fonte do Excel', crumb: ['Financeiro', 'DRE'] },
   emprestimos: { title: 'Empréstimos', sub: 'Controle de financiamentos e parcelas',   crumb: ['Financeiro', 'Empréstimos'] },
   ia:          { title: 'Análise IA',  sub: 'Insights automáticos sobre seu caixa',    crumb: ['Financeiro', 'Análise IA'] },
 };
@@ -5156,15 +5180,90 @@ function deltaHTML(curr, prev, invertido) {
 // ══════════════════════════════════════════
 //  FECHAMENTO DE MÊS — gera xlsx com 5 abas
 // ══════════════════════════════════════════
-async function gerarFechamentoMes() {
+// Fonte ÚNICA de dados do Fechamento — alimentada por:
+//   - calcularDRE (Tiny + lançamentos)
+//   - vendas agregadas por produto (com match de custo via Tiny ERP)
+//   - vendas agregadas por vendedor (nomes normalizados via mapeamento)
+//   - custos operacionais (lançamentos do período)
+//   - lançamentos brutos (entradas/saídas + subtotais)
+//
+// Consumido por: gerarFechamentoMes (Excel) E a sub-aba "DRE" do Financeiro.
+// Tela e Excel batem sempre porque vêm daqui.
+async function coletarFechamento(iniISO, fimISO) {
+  const fmtDateBR = iso => { const p = iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
+  const pedidos = await buscarPedidosCompletos(fmtDateBR(iniISO), fmtDateBR(fimISO));
+  const lancFiltrados = (lancamentos || []).filter(l => l.data >= iniISO && l.data <= fimISO);
+  const dre = await calcularDRE(iniISO, fimISO);
+
+  // ── Vendas por produto ──
+  // Custo individual onde tem match, null onde não. NÃO é usado pra calcular
+  // CPV total no DRE — esse vem do calcularDRE via avgMCpct.
+  const porProd = {};
+  pedidos.forEach(ped => {
+    (ped.itens || []).forEach(it => {
+      const nome = (it.produto || '').trim();
+      if (!nome) return;
+      const qtd = it.quantidade || 1;
+      const rec = (it.valorUnitario || 0) * qtd;
+      if (!porProd[nome]) porProd[nome] = { nome, qtd: 0, receita: 0 };
+      porProd[nome].qtd     += qtd;
+      porProd[nome].receita += rec;
+    });
+  });
+  const vendasPorProduto = Object.values(porProd).sort((a, b) => b.receita - a.receita);
+  vendasPorProduto.forEach(v => {
+    const prod = _matchProdutoPorNome(v.nome);
+    if (prod && _precoTinyDe(prod) > 0) {
+      v.custoUnit = ct(prod);
+      v.mcRS  = v.receita - v.custoUnit * v.qtd;
+      v.mcPct = v.receita > 0 ? (v.mcRS / v.receita) * 100 : 0;
+    } else {
+      v.custoUnit = null; v.mcRS = null; v.mcPct = null;
+    }
+  });
+
+  // ── Vendas por vendedor ──
+  const porVend = {};
+  pedidos.forEach(ped => {
+    const raw  = (ped.vendedor && ped.vendedor.nome) || 'Sem vendedor';
+    const nome = normalizarNomeVendedor(raw);
+    if (!porVend[nome]) porVend[nome] = { nome, qtd: 0, receita: 0 };
+    porVend[nome].qtd     += 1;
+    porVend[nome].receita += ped.valor || 0;
+  });
+  const vendasPorVendedor = Object.values(porVend).sort((a, b) => b.receita - a.receita);
+
+  // ── Lançamentos (entradas/saídas no período) ──
+  const _lanCmp = (a, b) => (a.data||'').localeCompare(b.data||'') || (a.id||'').localeCompare(b.id||'');
+  const entradas = lancFiltrados.filter(l => l.tipo === 'entrada').sort(_lanCmp);
+  const saidas   = lancFiltrados.filter(l => l.tipo === 'saida').sort(_lanCmp);
+  const totEntradas = entradas.reduce((s, l) => s + (l.valor || 0), 0);
+  const totSaidas   = saidas.reduce((s, l) => s + (l.valor || 0), 0);
+
+  // ── Custos operacionais no range ──
+  const custos = calcularCustosOperacionais({ iniISO, fimISO });
+
+  return {
+    periodo: { iniISO, fimISO },
+    pedidos,
+    dre,
+    vendasPorProduto,
+    vendasPorVendedor,
+    custos,
+    lancamentos: { entradas, saidas, totEntradas, totSaidas, all: lancFiltrados },
+  };
+}
+
+async function gerarFechamentoMes(iniArg, fimArg) {
   if (typeof XLSX === 'undefined') {
     smAlert('Biblioteca XLSX não carregada. Recarregue a página e tente de novo.');
     return;
   }
-  const iniISO = document.getElementById('dash-fat-ini')?.value;
-  const fimISO = document.getElementById('dash-fat-fim')?.value;
+  // Aceita (ini,fim) explícitos (chamada da tela DRE) ou cai pros inputs do dashboard.
+  const iniISO = iniArg || document.getElementById('dash-fat-ini')?.value;
+  const fimISO = fimArg || document.getElementById('dash-fat-fim')?.value;
   if (!iniISO || !fimISO) {
-    smAlert('Selecione um período no dashboard antes de fechar o mês.');
+    smAlert('Selecione um período antes de fechar o mês.');
     return;
   }
 
@@ -5175,57 +5274,12 @@ async function gerarFechamentoMes() {
 
   try {
     const fmtDateBR = iso => { const p = iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
-    const pedidos = await buscarPedidosCompletos(fmtDateBR(iniISO), fmtDateBR(fimISO));
-    const lancFiltrados = (lancamentos || []).filter(l => l.data >= iniISO && l.data <= fimISO);
-
-    // DRE do período — mesma fonte de verdade do widget DRE do Dashboard.
-    // Reutiliza pedidos via cache de buscarPedidosCompletos (forcar=false).
-    const dre = await calcularDRE(iniISO, fimISO);
-
-    // ── Vendas por produto ──
-    // Loop matched/unmatched alimenta a aba "Vendas por Produto" (custo
-    // individual onde tem match, "—" onde não). NÃO é usado pra calcular
-    // CPV total no DRE — esse vem do calcularDRE via avgMCpct.
-    const porProd = {};
-    pedidos.forEach(ped => {
-      (ped.itens || []).forEach(it => {
-        const nome = (it.produto || '').trim();
-        if (!nome) return;
-        const qtd = it.quantidade || 1;
-        const rec = (it.valorUnitario || 0) * qtd;
-        if (!porProd[nome]) porProd[nome] = { nome, qtd: 0, receita: 0 };
-        porProd[nome].qtd     += qtd;
-        porProd[nome].receita += rec;
-      });
-    });
-    const vendasArr = Object.values(porProd).sort((a, b) => b.receita - a.receita);
-
-    vendasArr.forEach(v => {
-      const prod = _matchProdutoPorNome(v.nome);
-      if (prod && _precoTinyDe(prod) > 0) {
-        v.custoUnit = ct(prod);
-        v.mcRS  = v.receita - v.custoUnit * v.qtd;
-        v.mcPct = v.receita > 0 ? (v.mcRS / v.receita) * 100 : 0;
-      } else {
-        v.custoUnit = null; v.mcRS = null; v.mcPct = null;
-      }
-    });
-
-    // Totais usados pela aba 5 (Lançamentos). A aba 4 (Custos Operacionais)
-    // calcula o próprio total via calcularCustosOperacionais().
-    const saidasFinanceiras = lancFiltrados.filter(l => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0);
-    const entradasExtras    = lancFiltrados.filter(l => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0);
-
-    // ── Vendas por vendedor ──
-    const porVend = {};
-    pedidos.forEach(ped => {
-      const raw  = (ped.vendedor && ped.vendedor.nome) || 'Sem vendedor';
-      const nome = normalizarNomeVendedor(raw);
-      if (!porVend[nome]) porVend[nome] = { nome, qtd: 0, receita: 0 };
-      porVend[nome].qtd     += 1;
-      porVend[nome].receita += ped.valor || 0;
-    });
-    const vendArr = Object.values(porVend).sort((a, b) => b.receita - a.receita);
+    const dadosFech = await coletarFechamento(iniISO, fimISO);
+    const dre               = dadosFech.dre;
+    const vendasArr         = dadosFech.vendasPorProduto;
+    const vendArr           = dadosFech.vendasPorVendedor;
+    const entradasExtras    = dadosFech.lancamentos.totEntradas;
+    const saidasFinanceiras = dadosFech.lancamentos.totSaidas;
 
     // ── Paleta + estilos · identidade Smart Motors (escuro + dourado) ──
     const C = {
@@ -5448,9 +5502,8 @@ async function gerarFechamentoMes() {
 
     // ════════ ABA 4: CUSTOS OPERACIONAIS ════════
     // Substitui a antiga aba "Custos Fixos" (cadastro estático removido).
-    // Dívida técnica leve: a aba é sempre "mês atual", independente do range
-    // escolhido no selector de fechamento — aceitar parâmetro de range é TODO.
-    const co        = calcularCustosOperacionais('mes-atual');
+    // Custos do MESMO range escolhido (resolvido via coletarFechamento).
+    const co        = dadosFech.custos;
     const coHist    = _despPlanejadoHistorico();
     const coPerLbl  = fmtDateBR(co.periodo.iniISO) + ' a ' + fmtDateBR(co.periodo.fimISO);
     const SELO      = { fixo: '🟦', variavel: '🟧', indefinido: '⬜' };
@@ -5512,9 +5565,8 @@ async function gerarFechamentoMes() {
     XLSX.utils.book_append_sheet(wb, ws4, 'Custos Operacionais');
 
     // ════════ ABA 5: LANÇAMENTOS FINANCEIROS ════════
-    const _lanCmp = (a, b) => (a.data||'').localeCompare(b.data||'') || (a.id||'').localeCompare(b.id||'');
-    const entradas = lancFiltrados.filter(l => l.tipo === 'entrada').sort(_lanCmp);
-    const saidas   = lancFiltrados.filter(l => l.tipo === 'saida').sort(_lanCmp);
+    const entradas = dadosFech.lancamentos.entradas;
+    const saidas   = dadosFech.lancamentos.saidas;
     const lancRows = [
       ['Data', 'Descrição', 'Categoria', 'Tipo', 'Valor', 'Conta'].map(h => ({ v: h, s: HEADER })),
       [{ v: 'ENTRADAS', s: SECTION }],
@@ -5572,6 +5624,272 @@ async function gerarFechamentoMes() {
     smAlert('Erro ao gerar fechamento: ' + err.message);
     if (labelEl) labelEl.textContent = labelOriginal;
   }
+}
+
+// ══════════════════════════════════════════
+//  DRE on-screen (sub-aba do Financeiro · só admin)
+//  Consome coletarFechamento — mesma fonte do Excel.
+// ══════════════════════════════════════════
+let _finDreCarregouUmaVez = false;
+
+function _finDreISOLocal(d) {
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
+}
+
+function initFinDre() {
+  if (!_isAdminUser()) return;
+  // Default = mês corrente (1º ao último dia). Só seta se ainda vazio.
+  const iniEl = document.getElementById('fin-dre-ini');
+  const fimEl = document.getElementById('fin-dre-fim');
+  if (!iniEl || !fimEl) return;
+  if (!iniEl.value || !fimEl.value) {
+    const h = new Date();
+    iniEl.value = _finDreISOLocal(new Date(h.getFullYear(), h.getMonth(), 1));
+    fimEl.value = _finDreISOLocal(new Date(h.getFullYear(), h.getMonth() + 1, 0));
+  }
+  if (!_finDreCarregouUmaVez) {
+    _finDreCarregouUmaVez = true;
+    _finDreCarregar(false);
+  }
+}
+
+function _finDrePreset(p) {
+  const h = new Date();
+  let ini, fim;
+  if (p === 'mes-atual')    { ini = new Date(h.getFullYear(), h.getMonth(), 1); fim = new Date(h.getFullYear(), h.getMonth()+1, 0); }
+  else if (p === 'mes-anterior') { ini = new Date(h.getFullYear(), h.getMonth()-1, 1); fim = new Date(h.getFullYear(), h.getMonth(), 0); }
+  else if (p === '30d')     { fim = new Date(h); ini = new Date(h.getTime() - 29 * 86400000); }
+  else return;
+  document.getElementById('fin-dre-ini').value = _finDreISOLocal(ini);
+  document.getElementById('fin-dre-fim').value = _finDreISOLocal(fim);
+  _finDreCarregar(false);
+}
+
+async function _finDreCarregar(forcar) {
+  if (!_isAdminUser()) return;
+  const iniISO = document.getElementById('fin-dre-ini')?.value;
+  const fimISO = document.getElementById('fin-dre-fim')?.value;
+  const status = document.getElementById('fin-dre-status');
+  if (!iniISO || !fimISO) { if (status) status.textContent = 'Selecione um período.'; return; }
+
+  if (status) status.textContent = 'Carregando…';
+  const placeholder = '<div class="card" style="padding:24px;text-align:center;" class="text-mute">Carregando…</div>';
+  ['resumo','produtos','vendedores','custos','lancamentos'].forEach(s => {
+    const el = document.getElementById('fin-dre-' + s);
+    if (el) el.innerHTML = placeholder;
+  });
+
+  try {
+    // forcar invalida o cache de buscarPedidosCompletos (30min) — segue
+    // mesma mecânica do Dashboard.
+    if (forcar) {
+      const fmtBR = iso => { const p = iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
+      try { await buscarPedidosCompletos(fmtBR(iniISO), fmtBR(fimISO), true); } catch(e) {}
+    }
+    const dados = await coletarFechamento(iniISO, fimISO);
+    _finDreRenderResumo(dados.dre);
+    _finDreRenderProdutos(dados.vendasPorProduto);
+    _finDreRenderVendedores(dados.vendasPorVendedor);
+    _finDreRenderCustos(dados.custos);
+    _finDreRenderLancamentos(dados.lancamentos);
+    if (status) {
+      const ts = new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+      const aviso = (dados.dre.tinyEstabilidade && !dados.dre.tinyEstabilidade.estavel)
+        ? ` · ⚠️ resultado parcial (${dados.dre.tinyEstabilidade.contagens?.[0]||0} de ${dados.dre.tinyEstabilidade.contagens?.[1]||0} pedidos)`
+        : '';
+      status.textContent = `Atualizado às ${ts}${aviso}`;
+    }
+  } catch (e) {
+    console.error('[fin-dre]', e);
+    if (status) status.textContent = 'Erro: ' + (e.message || 'desconhecido');
+  }
+}
+
+function _finDreBaixarExcel() {
+  const iniISO = document.getElementById('fin-dre-ini')?.value;
+  const fimISO = document.getElementById('fin-dre-fim')?.value;
+  if (!iniISO || !fimISO) { smAlert('Selecione um período antes de baixar.'); return; }
+  gerarFechamentoMes(iniISO, fimISO);
+}
+
+// ── Render: Resumo (DRE) ───────────────────────────────────────
+function _finDreRenderResumo(dre) {
+  const el = document.getElementById('fin-dre-resumo'); if (!el) return;
+  const fmtPct = p => (p == null || isNaN(p)) ? '—' : (p).toFixed(1) + '%';
+  const safePct = (n, d) => (d && d > 0) ? (n / d * 100) : 0;
+  const linha = (label, valor, pct, opts) => {
+    opts = opts || {};
+    const cor = opts.neg ? 'var(--red)' : (opts.pos ? 'var(--green)' : 'var(--text)');
+    const peso = opts.bold ? '800' : '600';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;">`
+      + `<span>${escHtml(label)}</span>`
+      + `<span class="num-tab" style="color:${cor};font-weight:${peso};">${_fmtBRMoney(valor)}<span class="text-mute" style="margin-left:10px;font-weight:500;">${fmtPct(pct)}</span></span>`
+      + `</div>`;
+  };
+  const subnota = txt => `<div class="text-mute" style="font-size:11px;padding:4px 14px 8px;">${escHtml(txt)}</div>`;
+
+  const margemHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--surface2);border-radius:var(--r-sm);margin:8px 0;font-size:14px;font-weight:700;color:var(--gold);">`
+    + `<span>= Margem bruta</span>`
+    + `<span class="num-tab">${_fmtBRMoney(dre.lucroBruto)}<span style="margin-left:10px;font-weight:500;opacity:.85;">${fmtPct(dre.pctLB)}</span></span>`
+    + `</div>`;
+
+  const isPos = dre.resultado >= 0;
+  const resultadoHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:18px 18px;margin-top:14px;border-radius:var(--r-lg);background:${isPos?'var(--green)':'var(--red)'};color:#fff;font-weight:800;font-size:16px;">`
+    + `<span>= RESULTADO DO MÊS</span>`
+    + `<span class="num-tab">${_fmtBRMoney(dre.resultado)}<span style="margin-left:12px;opacity:.85;font-weight:600;">${fmtPct(dre.pctRes)}</span></span>`
+    + `</div>`;
+
+  const planejadoFmt = (dre.despPlanejado || 0).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 });
+
+  el.innerHTML =
+      `<div class="card">`
+    +   `<div class="card-header"><div><div class="card-title">DRE — Demonstrativo de Resultado</div><div class="card-sub">Receita Tiny − CPV real − Despesas operacionais − Empréstimos pagos = Resultado</div></div></div>`
+    +   `<div style="padding:14px 18px;">`
+    +     linha('Receita (faturamento Tiny)', dre.receita, dre.receita > 0 ? 100 : 0, { pos: true })
+    +     linha('(−) CPV — custo real dos produtos vendidos', -dre.cpv, -safePct(dre.cpv, dre.receita), { neg: true })
+    +     margemHTML
+    +     linha('(−) Despesas operacionais (real)', -dre.despReal, -safePct(dre.despReal, dre.receita), { neg: true })
+    +     subnota(`${dre.despCount} lançamento${dre.despCount !== 1 ? 's' : ''} no período · R$ ${planejadoFmt} planejados em custos fixos (referência)`)
+    +     linha('(−) Empréstimos pagos', -dre.empValor, -safePct(dre.empValor, dre.receita), { neg: true })
+    +     subnota(`${dre.empCount} parcela${dre.empCount !== 1 ? 's' : ''} paga${dre.empCount !== 1 ? 's' : ''} no período`)
+    +     resultadoHTML
+    +   `</div>`
+    + `</div>`;
+}
+
+// ── Render: Vendas por Produto ──────────────────────────────────
+function _finDreRenderProdutos(arr) {
+  const el = document.getElementById('fin-dre-produtos'); if (!el) return;
+  const fmtPct = p => (p == null || isNaN(p)) ? '—' : (p).toFixed(1) + '%';
+  let totQtd = 0, totRec = 0, totMC = 0;
+  arr.forEach(v => { totQtd += v.qtd; totRec += v.receita; if (v.mcRS != null) totMC += v.mcRS; });
+  const rows = arr.map(v => {
+    const mcCor = v.mcRS != null && v.mcRS >= 0 ? 'var(--green)' : 'var(--red)';
+    const mcPctCor = v.mcPct != null && v.mcPct >= 0 ? 'var(--green)' : 'var(--red)';
+    return `<tr>
+      <td>${escHtml(v.nome)}</td>
+      <td class="num-tab" style="text-align:right;">${v.qtd}</td>
+      <td class="num-tab" style="text-align:right;">${_fmtBRMoney(v.receita)}</td>
+      <td class="num-tab" style="text-align:right;">${v.custoUnit != null ? _fmtBRMoney(v.custoUnit) : '<span class="text-mute">—</span>'}</td>
+      <td class="num-tab" style="text-align:right;color:${v.mcRS != null ? mcCor : 'var(--text3)'};font-weight:600;">${v.mcRS != null ? _fmtBRMoney(v.mcRS) : '—'}</td>
+      <td class="num-tab" style="text-align:right;color:${v.mcPct != null ? mcPctCor : 'var(--text3)'};font-weight:600;">${v.mcPct != null ? fmtPct(v.mcPct) : '—'}</td>
+    </tr>`;
+  }).join('');
+  const totMCpct = totRec > 0 ? (totMC / totRec * 100) : 0;
+  el.innerHTML = `<div class="card"><div class="card-header"><div><div class="card-title">Vendas por Produto</div><div class="card-sub">${arr.length} produto${arr.length===1?'':'s'} no período</div></div></div>`
+    + `<div class="table-wrap"><table class="table-pro"><thead><tr>`
+    + `<th>Produto</th><th style="text-align:right;">Qtd</th><th style="text-align:right;">Receita</th><th style="text-align:right;">Custo unit</th><th style="text-align:right;">MC R$</th><th style="text-align:right;">MC%</th>`
+    + `</tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty text-mute" style="text-align:center;padding:18px;">Nenhuma venda no período.</td></tr>'}`
+    + (arr.length ? `<tr style="background:var(--surface2);font-weight:700;color:var(--gold);">`
+        + `<td>TOTAL</td>`
+        + `<td class="num-tab" style="text-align:right;">${totQtd}</td>`
+        + `<td class="num-tab" style="text-align:right;">${_fmtBRMoney(totRec)}</td>`
+        + `<td></td>`
+        + `<td class="num-tab" style="text-align:right;color:${totMC>=0?'var(--green)':'var(--red)'};">${_fmtBRMoney(totMC)}</td>`
+        + `<td class="num-tab" style="text-align:right;">${fmtPct(totMCpct)}</td>`
+        + `</tr>` : '')
+    + `</tbody></table></div></div>`;
+}
+
+// ── Render: Vendas por Vendedor ─────────────────────────────────
+function _finDreRenderVendedores(arr) {
+  const el = document.getElementById('fin-dre-vendedores'); if (!el) return;
+  const fmtPct = p => (p == null || isNaN(p)) ? '—' : (p).toFixed(1) + '%';
+  const totRec = arr.reduce((s, v) => s + v.receita, 0);
+  const totQtd = arr.reduce((s, v) => s + v.qtd, 0);
+  const rows = arr.map(v => `<tr>
+    <td>${escHtml(v.nome)}</td>
+    <td class="num-tab" style="text-align:right;">${v.qtd}</td>
+    <td class="num-tab" style="text-align:right;">${_fmtBRMoney(v.receita)}</td>
+    <td class="num-tab" style="text-align:right;">${totRec > 0 ? fmtPct(v.receita/totRec*100) : '—'}</td>
+  </tr>`).join('');
+  el.innerHTML = `<div class="card"><div class="card-header"><div><div class="card-title">Vendas por Vendedor</div><div class="card-sub">${arr.length} vendedor${arr.length===1?'':'es'} no período</div></div></div>`
+    + `<div class="table-wrap"><table class="table-pro"><thead><tr>`
+    + `<th>Vendedor</th><th style="text-align:right;">Qtd pedidos</th><th style="text-align:right;">Receita</th><th style="text-align:right;">% do total</th>`
+    + `</tr></thead><tbody>${rows || '<tr><td colspan="4" class="empty text-mute" style="text-align:center;padding:18px;">Nenhum vendedor com pedidos.</td></tr>'}`
+    + (arr.length ? `<tr style="background:var(--surface2);font-weight:700;color:var(--gold);">`
+        + `<td>TOTAL</td>`
+        + `<td class="num-tab" style="text-align:right;">${totQtd}</td>`
+        + `<td class="num-tab" style="text-align:right;">${_fmtBRMoney(totRec)}</td>`
+        + `<td class="num-tab" style="text-align:right;">100%</td>`
+        + `</tr>` : '')
+    + `</tbody></table></div></div>`;
+}
+
+// ── Render: Custos Operacionais ─────────────────────────────────
+function _finDreRenderCustos(co) {
+  const el = document.getElementById('fin-dre-custos'); if (!el) return;
+  const coVariavel = co.totalVariavel + co.totalIndefinido;
+  const coVendas = (typeof CONFIG_CUSTOS !== 'undefined' && CONFIG_CUSTOS.vendas_mes) || 0;
+  const custoVenda = coVendas > 0 ? co.total / coVendas : 0;
+
+  const kpis = `<div class="kpi-grid" style="margin-bottom:14px;">`
+    + `<div class="kpi-pro"><div class="kpi-pro__label">Custos Fixos</div><div class="kpi-pro__value">${_fmtBRMoney(co.totalFixo)}</div></div>`
+    + `<div class="kpi-pro"><div class="kpi-pro__label">Custos Variáveis</div><div class="kpi-pro__value">${_fmtBRMoney(coVariavel)}</div></div>`
+    + `<div class="kpi-pro kpi-pro--accent"><div class="kpi-pro__label">Total Operacional</div><div class="kpi-pro__value">${_fmtBRMoney(co.total)}</div></div>`
+    + `<div class="kpi-pro"><div class="kpi-pro__label">Custo por Venda</div><div class="kpi-pro__value">${_fmtBRMoney(custoVenda)}</div><div class="kpi-pro__hint">${coVendas} venda${coVendas===1?'':'s'} ref.</div></div>`
+    + `</div>`;
+
+  const SELO = { fixo: '🟦', variavel: '🟧', indefinido: '⬜' };
+  const linhaCat = (c, label) => `<tr>
+    <td>${escHtml(label || c.categoria)}</td>
+    <td class="num-tab" style="text-align:right;">${_fmtBRMoney(c.total)}</td>
+  </tr>` + (c.subitens || []).map(s => `<tr>
+    <td class="text-mute" style="padding-left:30px;">${escHtml(s.descricao)} (${s.n}×)</td>
+    <td class="num-tab text-mute" style="text-align:right;">${_fmtBRMoney(s.total)}</td>
+  </tr>`).join('');
+
+  const fixosHTML = co.fixos.length
+    ? co.fixos.map(c => linhaCat(c)).join('')
+    : '<tr><td colspan="2" class="text-mute" style="text-align:center;padding:14px;">(nenhuma categoria fixa)</td></tr>';
+  const coVar = [...co.variaveis, ...co.indefinidos].sort((a,b) => b.total - a.total);
+  const varHTML = coVar.length
+    ? coVar.map(c => linhaCat(c, SELO[c.classificacao] + ' ' + c.categoria)).join('')
+    : '<tr><td colspan="2" class="text-mute" style="text-align:center;padding:14px;">(nenhuma categoria variável)</td></tr>';
+
+  const inativosHTML = co.inativos.length
+    ? `<div class="card" style="margin-top:14px;"><div class="card-header"><div><div class="card-title">⚠️ Categorias Inativas</div><div class="card-sub">Sem lançamento há +2 meses</div></div></div>`
+      + `<div class="table-wrap"><table class="table-pro"><thead><tr><th>Categoria</th><th style="text-align:right;">Último lançamento</th></tr></thead><tbody>`
+      + co.inativos.map(c => `<tr><td>${escHtml(c.categoria)}</td><td class="text-mute" style="text-align:right;">${c.ultimoLancamento || '—'}</td></tr>`).join('')
+      + `</tbody></table></div></div>`
+    : '';
+
+  el.innerHTML = kpis
+    + `<div class="card"><div class="card-header"><div><div class="card-title">🟦 Custos Fixos</div></div></div>`
+    +   `<div class="table-wrap"><table class="table-pro"><thead><tr><th>Categoria</th><th style="text-align:right;">Valor</th></tr></thead><tbody>${fixosHTML}</tbody></table></div></div>`
+    + `<div class="card" style="margin-top:14px;"><div class="card-header"><div><div class="card-title">🟧 Custos Variáveis</div></div></div>`
+    +   `<div class="table-wrap"><table class="table-pro"><thead><tr><th>Categoria</th><th style="text-align:right;">Valor</th></tr></thead><tbody>${varHTML}</tbody></table></div></div>`
+    + inativosHTML;
+}
+
+// ── Render: Lançamentos Financeiros ─────────────────────────────
+function _finDreRenderLancamentos(lancs) {
+  const el = document.getElementById('fin-dre-lancamentos'); if (!el) return;
+  const fmtBR = iso => { if (!iso) return ''; const p = iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
+  const tabela = (titulo, sub, lista, total, cor) => {
+    const rows = lista.length
+      ? lista.map(l => `<tr>
+          <td class="num-tab text-mute">${fmtBR(l.data)}</td>
+          <td>${escHtml(l.descricao || '')}</td>
+          <td class="text-mute">${escHtml(l.categoria || '')}</td>
+          <td class="num-tab" style="text-align:right;color:${cor};font-weight:600;">${_fmtBRMoney(l.valor || 0)}</td>
+          <td class="text-mute">${escHtml(l.conta || '')}</td>
+        </tr>`).join('')
+      : `<tr><td colspan="5" class="text-mute" style="text-align:center;padding:14px;">Sem lançamentos.</td></tr>`;
+    return `<div class="card" style="margin-bottom:14px;">`
+      + `<div class="card-header"><div><div class="card-title">${escHtml(titulo)}</div><div class="card-sub">${escHtml(sub)}</div></div></div>`
+      + `<div class="table-wrap"><table class="table-pro"><thead><tr>`
+      + `<th style="width:90px;">Data</th><th>Descrição</th><th>Categoria</th><th style="text-align:right;width:130px;">Valor</th><th style="width:140px;">Conta</th>`
+      + `</tr></thead><tbody>${rows}`
+      + (lista.length ? `<tr style="background:var(--surface2);font-weight:700;color:var(--gold);">`
+          + `<td></td><td>Subtotal</td><td></td>`
+          + `<td class="num-tab" style="text-align:right;color:${cor};">${_fmtBRMoney(total)}</td>`
+          + `<td></td></tr>` : '')
+      + `</tbody></table></div></div>`;
+  };
+  el.innerHTML = tabela('Entradas', `${lancs.entradas.length} lançamento${lancs.entradas.length===1?'':'s'}`, lancs.entradas, lancs.totEntradas, 'var(--green)')
+    + tabela('Saídas',   `${lancs.saidas.length} lançamento${lancs.saidas.length===1?'':'s'}`,   lancs.saidas,   lancs.totSaidas,   'var(--red)');
 }
 
 async function carregarFaturamentoDash(forcar) {
@@ -6126,7 +6444,14 @@ function _periodoRange(p) {
 // DESPESA), agrupa por categoria, classifica fixo/variável/indefinido e
 // separa as inativas (sem lançamento nos últimos 2 meses).
 function calcularCustosOperacionais(periodo) {
-  const [ini, fim] = _periodoRange(periodo || 'mes-atual');
+  // Aceita preset string ('mes-atual'/'mes-anterior'/...) OU range {iniISO, fimISO}.
+  // Compat: chamadas existentes continuam funcionando.
+  let ini, fim;
+  if (periodo && typeof periodo === 'object' && periodo.iniISO && periodo.fimISO) {
+    ini = periodo.iniISO; fim = periodo.fimISO;
+  } else {
+    [ini, fim] = _periodoRange(periodo || 'mes-atual');
+  }
   const ehOp = l => l.tipo === 'saida' && !l.transferenciaId
     && !_DRE_CATEGORIAS_FORA_DESPESA.includes(l.categoria);
   const lim = new Date(); lim.setMonth(lim.getMonth() - 2);
@@ -8162,15 +8487,24 @@ async function initFinanceiro() {
   renderEmprestimoFin();
   // Tenta usar cache de IA se ainda válido (não dispara chamada)
   hidratarAnaliseFinanceiraCacheada();
-  // Restaura aba salva (default: caixa)
-  const savedTab = localStorage.getItem('sm_fin_tab') || 'caixa';
+  // Mostra a sub-aba DRE só pra admin
+  const btnDre = document.getElementById('fin-tab-btn-dre');
+  if (btnDre) btnDre.style.display = _isAdminUser() ? '' : 'none';
+  // Restaura aba salva (default: caixa). Se non-admin tinha 'dre' salva, cai pra caixa.
+  let savedTab = localStorage.getItem('sm_fin_tab') || 'caixa';
+  if (savedTab === 'dre' && !_isAdminUser()) savedTab = 'caixa';
   switchFinTab(savedTab);
 }
 
 // Troca a aba ativa do módulo Financeiro
 function switchFinTab(tabId) {
-  const tabs   = ['caixa', 'emprestimos', 'ia'];
+  const tabs   = ['caixa', 'dre', 'emprestimos', 'ia'];
   if (!tabs.includes(tabId)) tabId = 'caixa';
+  // DRE é só admin — protege contra acesso direto (console/localStorage stale).
+  if (tabId === 'dre' && !_isAdminUser()) {
+    smAlert('A aba DRE é restrita ao admin.');
+    tabId = 'caixa';
+  }
   tabs.forEach(t => {
     const content = document.getElementById('fin-tab-' + t);
     if (content) content.style.display = (t === tabId) ? '' : 'none';
@@ -8199,6 +8533,10 @@ function switchFinTab(tabId) {
     if (tEl) tEl.textContent = meta.title;
     if (sEl) sEl.textContent = meta.sub;
     renderBreadcrumbItems(meta.crumb.map(label => ({ label })));
+  }
+  // Lazy-init da aba DRE quando o usuário entra nela pela primeira vez.
+  if (tabId === 'dre') {
+    try { initFinDre(); } catch(e) { console.warn('[fin-dre] init falhou:', e.message); }
   }
 }
 
