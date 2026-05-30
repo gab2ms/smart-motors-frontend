@@ -1349,8 +1349,10 @@ select:not(.input-pro):not(.search-input){
 }
 .cal-cell:hover{background:var(--surface2);}
 .cal-cell:nth-child(7n){border-right:none;}
-.cal-cell.outro-mes{background:var(--bg);}
-.cal-cell.outro-mes .cal-cell-num{color:var(--text3);opacity:0.55;}
+/* Outro mês — bem apagado pra o olho focar só no mês corrente */
+.cal-cell.outro-mes{background:var(--bg);opacity:0.35;}
+.cal-cell.outro-mes:hover{opacity:0.55;}
+.cal-cell.outro-mes .cal-cell-num{color:var(--text3);}
 .cal-cell.hoje{
   background:var(--gold-dim2);
 }
