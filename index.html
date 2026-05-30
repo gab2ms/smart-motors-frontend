@@ -3401,6 +3401,29 @@ try {
   sb = { from: () => stubChain };
 }
 
+// UUID v4 cross-context — crypto.randomUUID só existe em contexto seguro
+// (https/localhost). Em http (acesso por IP, ngrok sem TLS) ele é undefined
+// e quebra silenciosamente. Cai pra getRandomValues (cripto, funciona em
+// http) e em último caso pra Math.random.
+function _uuid() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const b = new Uint8Array(16);
+    crypto.getRandomValues(b);
+    b[6] = (b[6] & 0x0f) | 0x40; // v4
+    b[8] = (b[8] & 0x3f) | 0x80; // variante
+    const h = Array.from(b, x => x.toString(16).padStart(2, '0'));
+    return `${h.slice(0,4).join('')}-${h.slice(4,6).join('')}-${h.slice(6,8).join('')}-${h.slice(8,10).join('')}-${h.slice(10,16).join('')}`;
+  }
+  // Último fallback: pseudo-aleatório (não cripto, mas suficiente pra IDs locais)
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
 // camelCase <-> snake_case mappers (JS usa camelCase, Postgres convention é snake_case)
 const _toSnakeKey = s => s.replace(/[A-Z]/g, l => '_' + l.toLowerCase());
 const _toCamelKey = s => s.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
@@ -10104,7 +10127,7 @@ function _salvarTransferencia() {
     Object.assign(editando.saida,   { descricao: desc, valor, data, conta: origem,  contaId: ctO.id, obs });
     Object.assign(editando.entrada, { descricao: desc, valor, data, conta: destino, contaId: ctD.id, obs });
   } else {
-    const transfId = crypto.randomUUID();
+    const transfId = _uuid();
     const ts = Date.now();
     lancamentos.push(
       { id: String(ts),     tipo:'saida',   descricao:desc, valor, data, categoria:'Transferência', conta:origem,  contaId:ctO.id, obs, transferenciaId:transfId },
@@ -10969,7 +10992,7 @@ function salvarContaPagar() {
     Object.assign(c, {nome,valor,vencimento,periodicidade,categoria,avisar,whatsapp,obs,diaSemanaFixo});
   } else if (periodicidade !== 'unico') {
     // Criação de série recorrente: gera N ocorrências compartilhando recorrenciaId.
-    const recId = crypto.randomUUID();
+    const recId = _uuid();
     const baseTs = Date.now();
     contasPagar.push({id: String(baseTs), nome, valor, vencimento, periodicidade, categoria, avisar, whatsapp, obs, paga: false, recorrenciaId: recId, diaSemanaFixo});
     const futuros = _cpGerarVencimentosFuturos(vencimento, periodicidade, diaSemanaFixo);
