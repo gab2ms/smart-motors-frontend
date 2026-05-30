@@ -1349,10 +1349,9 @@ select:not(.input-pro):not(.search-input){
 }
 .cal-cell:hover{background:var(--surface2);}
 .cal-cell:nth-child(7n){border-right:none;}
-/* Outro mês — bem apagado pra o olho focar só no mês corrente */
-.cal-cell.outro-mes{background:var(--bg);opacity:0.35;}
-.cal-cell.outro-mes:hover{opacity:0.55;}
-.cal-cell.outro-mes .cal-cell-num{color:var(--text3);}
+/* Célula vazia (dia de outro mês): só ocupa espaço pro alinhamento semanal */
+.cal-cell.vazia{background:var(--bg);cursor:default;}
+.cal-cell.vazia:hover{background:var(--bg);}
 .cal-cell.hoje{
   background:var(--gold-dim2);
 }
@@ -17919,8 +17918,12 @@ function _calRenderGrid() {
   let html = '';
   for (let i = 0; i < 42; i++) {
     const d = new Date(inicio); d.setDate(inicio.getDate() + i);
-    const iso = _calISOLocal(d);
     const outroMes = d.getMonth() !== mes;
+    // Dias de outro mês: célula em branco, sem número/eventos/clique — só
+    // ocupa espaço pra manter a coluna do dia da semana alinhada.
+    if (outroMes) { html += `<div class="cal-cell vazia"></div>`; continue; }
+
+    const iso = _calISOLocal(d);
     const ehHoje = iso === hojeISO;
     const eventos = _calEventosDoDia(iso);
     const visiveis = eventos.slice(0, 3);
@@ -17931,7 +17934,7 @@ function _calRenderGrid() {
       ? `<div class="cal-mais" onclick="event.stopPropagation();_calVerDia('${iso}')">+${sobra} mais</div>`
       : '';
 
-    html += `<div class="cal-cell${outroMes?' outro-mes':''}${ehHoje?' hoje':''}" onclick="_calAbrirResumoDia('${iso}')">`
+    html += `<div class="cal-cell${ehHoje?' hoje':''}" onclick="_calAbrirResumoDia('${iso}')">`
           +   `<div class="cal-cell-num">${d.getDate()}</div>`
           +   `<div class="cal-cell-eventos">${eventosHTML}${maisHTML}</div>`
           + `</div>`;
