@@ -4917,6 +4917,22 @@ function calcularRankingScooters(pedidos) {
     .slice(0, 10);
 }
 
+// Total de UNIDADES de scooter num conjunto de pedidos — mesma regra do
+// ranking/resumo WhatsApp (SCOOTER_RE, soma quantidade), mas SEM slice top-10,
+// pra nunca subcontar. Alimenta o subtexto do card "Pedidos faturados".
+function _contarScootersUnidades(pedidos) {
+  var total = 0;
+  (pedidos || []).forEach(function(pedido) {
+    var itens = Array.isArray(pedido.itens) ? pedido.itens : [];
+    itens.forEach(function(item) {
+      var nome = (item.produto || '').trim();
+      if (!nome || !SCOOTER_RE.test(nome)) return;
+      total += item.quantidade || 1;
+    });
+  });
+  return total;
+}
+
 function renderDashRanking() {
   // Chamada sem argumentos — usa dados já carregados pelo carregarFaturamentoDash
   // Se não tem dados ainda, mostra orientação
@@ -6136,12 +6152,16 @@ async function carregarFaturamentoDash(forcar) {
     var kpiClickCus = ' style="border-top:2px solid var(--gold);cursor:pointer;" onclick="showPage(&quot;custos&quot;)"';
     var kpiNormal   = ' style="border-top:2px solid var(--gold);"';
     var _kpisIsAdmin = _isAdminUser();
+    // Unidades de scooter no período (mesma regra do resumo WhatsApp) — exibido
+    // como 2ª medida no subtexto, deixando claro que difere de nº de pedidos.
+    var scootersUnid = _contarScootersUnidades(pedidos);
+    var scootersTxt  = scootersUnid + ' ' + (scootersUnid === 1 ? 'scooter' : 'scooters');
     var pedidosKpiHTML =
         '<div class="kpi"' + kpiClickPed + '>'
       + '<div class="kpi-label">Pedidos faturados</div>'
       + '<div class="kpi-value gold">' + totalPedidos + '</div>'
       + deltaHTML(totalPedidos, ka.qtd)
-      + '<div class="kpi-change">no período</div></div>';
+      + '<div class="kpi-change">' + scootersTxt + ' · no período</div></div>';
     if (_kpisIsAdmin) {
       kpis.innerHTML =
         '<div class="kpi"' + kpiClickPed + '>'
