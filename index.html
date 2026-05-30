@@ -4714,39 +4714,83 @@ function _janelaPdvUTC(iniISO, fimISO) {
 
 // Normaliza um pedido do PDV pro shape mínimo que faturamento/contagem usam.
 // SEM itens de propósito: o escopo atual é só faturamento + nº de pedidos —
-// unidades/motos continuam vindo só do Tiny.
-function _pdvParaVenda(p) {
-  return {
+// Allowlist de veículos vendidos — espelha SCOOTER_RE do resumoWhatsapp.js
+// (backend). Centralizada aqui pra que rankings e contagem de unidades no
+// frontend usem EXATAMENTE a mesma regra do resumo no WhatsApp.
+const SCOOTER_RE = /MOTONETA|TRICICLO|SCOOTER/i;
+
+// Converte row de pdv_pedidos pra venda no formato unificado (mesmo shape
+// dos pedidos do Tiny). Quando `itens` e `vendedor` são passados, vão
+// preenchidos no objeto — alimenta rankings de scooters/vendedores. Sem
+// eles, o objeto fica minimalista (apenas valor + dedup, modo legado).
+function _pdvParaVenda(p, itens, vendedor) {
+  const out = {
     valor:    Number(p.total) || 0,
     numero:   p.numero_smart,
     data:     (p.criado_em || '').slice(0, 10).split('-').reverse().join('/'),
     situacao: p.status,
     _origem:  'pdv',
   };
+  // cliente_dados é jsonb no banco; quando vier no select, expõe o nome
+  // pra renderDashPedidos casar com o shape do Tiny.
+  if (p.cliente_dados && p.cliente_dados.nome) out.cliente = p.cliente_dados.nome;
+  if (Array.isArray(itens)) out.itens = itens;
+  if (vendedor)             out.vendedor = vendedor;
+  return out;
 }
 
 // Busca vendas do período mesclando Tiny (faturado) + PDV (Supabase), com a
 // MESMA regra do resumo do WhatsApp: PDV é prioritário e o Tiny só entra
 // quando o pedido NÃO veio do PDV (dedup pelo id do Tiny — tiny_pedido_id).
 // Pedido PDV cancelado fica de fora. Retorna { tiny, merged }:
-//   tiny   = array cru do Tiny (alimenta gráfico/lista/rankings/unidades);
-//   merged = Tiny deduplicado + PDV (alimenta SÓ faturamento + nº de pedidos).
+//   tiny   = array cru do Tiny (preservado pra callers legados);
+//   merged = Tiny deduplicado + PDV (com itens + vendedor pra rankings).
 // Se o PDV falhar, merged cai pra só-Tiny (nunca pior que hoje).
 async function buscarVendasMescladas(iniISO, fimISO, forcar) {
   var fmtDate = function(iso){ var p=(iso||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:''; };
   var tiny = await buscarPedidosCompletos(fmtDate(iniISO), fmtDate(fimISO), forcar);
   var pdvVendas = [];
   var idsPdv = new Set();
+  // Garante pdvVendedores carregado (lookup de nome no ranking depende disso).
+  // Boot do dashboard pode rodar antes de o usuário visitar a tela PDV.
+  if (!pdvVendedores || !pdvVendedores.length) {
+    try {
+      const r = await sb.from('pdv_vendedores').select('id,nome,nome_tiny,ativo');
+      if (!r.error && r.data) pdvVendedores = toCamelArr(r.data);
+    } catch (e) { /* ranking sem vendedor é aceitável */ }
+  }
   try {
     var j = _janelaPdvUTC(iniISO, fimISO);
+    // pdv_itens_pedido é trazido via join (FK pedido_id). Vendedor resolvido
+    // em memória contra pdvVendedores (já carregado). Nome passa por
+    // normalizarNomeVendedor pra agrupar com Tiny ("Henrique Quiosque" e
+    // "Henrique" do PDV viram "Henrique" no ranking).
     var resp = await sb.from('pdv_pedidos')
-      .select('id,numero_smart,total,status,tiny_pedido_id,criado_em')
+      .select('id,numero_smart,total,status,tiny_pedido_id,criado_em,vendedor_id,cliente_dados,pdv_itens_pedido(produto_nome_tiny,quantidade,valor_unitario,ordem)')
       .neq('status', 'cancelado')
       .gte('criado_em', j.iniUTC)
       .lt('criado_em', j.fimUTC);
     if (resp.error) throw new Error(resp.error.message);
     (resp.data || []).forEach(function(p){
-      pdvVendas.push(_pdvParaVenda(p));
+      var itens = (p.pdv_itens_pedido || [])
+        .slice()
+        .sort(function(a,b){ return (a.ordem||0) - (b.ordem||0); })
+        .map(function(it){
+          return {
+            produto:       it.produto_nome_tiny || '',
+            quantidade:    Number(it.quantidade) || 0,
+            valorUnitario: Number(it.valor_unitario) || 0,
+          };
+        });
+      var vendObj = null;
+      if (p.vendedor_id) {
+        var vRec = (pdvVendedores || []).find(function(v){ return v.id === p.vendedor_id; });
+        if (vRec) {
+          var nomeRaw = vRec.nome || '';
+          vendObj = { nome: (typeof normalizarNomeVendedor === 'function' ? normalizarNomeVendedor(nomeRaw) : nomeRaw) };
+        }
+      }
+      pdvVendas.push(_pdvParaVenda(p, itens, vendObj));
       if (p.tiny_pedido_id) idsPdv.add(String(p.tiny_pedido_id));
     });
   } catch (e) {
@@ -4763,11 +4807,8 @@ function calcularRankingScooters(pedidos) {
     itens.forEach(function(item) {
       var nome = (item.produto || '').trim();
       if (!nome) return;
-      // Filtra itens que não são motonetas
-      var nomeLow = nome.toLowerCase();
-      if (nomeLow.includes('capacete') || nomeLow.includes('frete') ||
-          nomeLow.includes('suporte') || nomeLow.includes('manutencao') ||
-          nomeLow.includes('manutenção') || nomeLow.includes('brinde')) return;
+      // Allowlist — só conta veículos (mesmo critério do resumo WhatsApp).
+      if (!SCOOTER_RE.test(nome)) return;
       var qtd     = item.quantidade    || 1;
       var receita = (item.valorUnitario || 0) * qtd;
       if (!contagem[nome]) contagem[nome] = { nome: nome, qtd: 0, receita: 0 };
@@ -5953,10 +5994,8 @@ async function carregarFaturamentoDash(forcar) {
       buscarVendasMescladas(anterior.ini, anterior.fim, forcar),
       carregarTinyPrecos(),
     ]);
-    // .tiny → gráfico, lista, rankings e unidades (INALTERADO, só Tiny).
-    // .merged → Tiny+PDV com dedup; alimenta SÓ faturamento + nº de pedidos.
-    var pedidos = resultados[0].tiny;
-
+    // mergedAtual (calculado abaixo) alimenta tudo: faturamento, contagem,
+    // ticket, gráfico/lista e rankings. PDV com dedup + cancelados fora.
     function calcKpis(peds) {
       var receita = peds.reduce(function(s,p){return s+(p.valor||0);}, 0);
       var qtd     = peds.length;
@@ -5973,6 +6012,7 @@ async function carregarFaturamentoDash(forcar) {
     }
     var mergedAtual = resultados[0].merged.filter(function(p) { return !_dashEhCancelado(p); });
     var mergedAnt   = resultados[1].merged.filter(function(p) { return !_dashEhCancelado(p); });
+    var pedidos = mergedAtual;       // gráfico, lista, rankings — todos consomem isto
     var kc = calcKpis(mergedAtual);  // faturamento + nº pedidos incluem PDV
     var ka = calcKpis(mergedAnt);    // período anterior idem (deltas consistentes)
 
