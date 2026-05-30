@@ -5227,32 +5227,89 @@ async function gerarFechamentoMes() {
     });
     const vendArr = Object.values(porVend).sort((a, b) => b.receita - a.receita);
 
-    // ── Estilos ──
-    const HEADER = {
-      fill: { fgColor: { rgb: '1A1A1A' } },
-      font: { bold: true, color: { rgb: 'F5C518' }, sz: 11 },
-      alignment: { horizontal: 'center', vertical: 'center' },
-      border: { bottom: { style: 'thin', color: { rgb: '363636' } } }
+    // ── Paleta + estilos · identidade Smart Motors (escuro + dourado) ──
+    const C = {
+      INK: '0F1115',  PANEL: '1A1D23',  GOLD: 'D4A02A',  GOLD_DARK: '3A3320',
+      GREEN: '2EA043', RED: 'E5484D',   TEXT: 'E8E8EA',  TEXT_DIM: '9BA0A8',
+      BORDER: '2A2E36', WHITE: 'FFFFFF',
+    };
+    const FONT = { name: 'Arial' };
+    const BASE = {
+      fill: { fgColor: { rgb: C.INK } },
+      font: { ...FONT, color: { rgb: C.TEXT }, sz: 10 }
     };
     const TITLE_BIG = {
-      font: { bold: true, sz: 22, color: { rgb: 'F5C518' } },
-      alignment: { horizontal: 'left' }
+      fill: { fgColor: { rgb: C.INK } },
+      font: { ...FONT, bold: true, sz: 22, color: { rgb: C.GOLD } },
+      alignment: { horizontal: 'left', vertical: 'center' }
     };
     const SUBTITLE = {
-      font: { italic: true, sz: 11, color: { rgb: '9A9A9A' } }
+      fill: { fgColor: { rgb: C.INK } },
+      font: { ...FONT, italic: true, sz: 11, color: { rgb: C.TEXT_DIM } }
     };
     const SECTION = {
-      font: { bold: true, sz: 13, color: { rgb: 'F5C518' } }
+      fill: { fgColor: { rgb: C.INK } },
+      font: { ...FONT, bold: true, sz: 13, color: { rgb: C.GOLD } }
+    };
+    const HEADER = {
+      fill: { fgColor: { rgb: C.GOLD_DARK } },
+      font: { ...FONT, bold: true, sz: 11, color: { rgb: C.GOLD } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: { bottom: { style: 'medium', color: { rgb: C.GOLD } } }
     };
     const TOTAL_ROW = {
-      fill: { fgColor: { rgb: '232323' } },
-      font: { bold: true, color: { rgb: 'F5F5F5' }, sz: 11 },
-      border: { top: { style: 'thin', color: { rgb: '363636' } } }
+      fill: { fgColor: { rgb: C.PANEL } },
+      font: { ...FONT, bold: true, sz: 11, color: { rgb: C.GOLD } },
+      border: { top: { style: 'thin', color: { rgb: C.BORDER } } }
     };
-    const POS = { font: { bold: true, color: { rgb: '00B47A' } } };
-    const NEG = { font: { bold: true, color: { rgb: 'D32F2F' } } };
-    const BRL = '"R$ "#,##0.00';
+    const ROW_DETAIL = {
+      fill: { fgColor: { rgb: C.INK } },
+      font: { ...FONT, color: { rgb: C.TEXT }, sz: 10 },
+      border: { bottom: { style: 'thin', color: { rgb: C.BORDER } } }
+    };
+    const POS = { font: { ...FONT, bold: true, color: { rgb: C.GREEN } } };
+    const NEG = { font: { ...FONT, bold: true, color: { rgb: C.RED } } };
+    const BLOCK_GREEN = {
+      fill: { fgColor: { rgb: C.GREEN } },
+      font: { ...FONT, bold: true, sz: 13, color: { rgb: C.WHITE } },
+      border: { top: { style: 'medium', color: { rgb: C.GREEN } }, bottom: { style: 'medium', color: { rgb: C.GREEN } } }
+    };
+    const BLOCK_RED = {
+      fill: { fgColor: { rgb: C.RED } },
+      font: { ...FONT, bold: true, sz: 13, color: { rgb: C.WHITE } },
+      border: { top: { style: 'medium', color: { rgb: C.RED } }, bottom: { style: 'medium', color: { rgb: C.RED } } }
+    };
+    const BRL = '"R$ "#,##0.00;[Red]"R$ "-#,##0.00';
+    const PCT = '0.0%;[Red]-0.0%';
     const colorVal = (v, base) => Object.assign({}, base || {}, v >= 0 ? POS : NEG);
+
+    // Aplica fundo INK em todo range 16×N pra cobrir gridlines + esconde grid
+    // explícito + cor dourada da tab. Chamado uma vez por aba.
+    function _fechAcabar(ws, lastDataRow) {
+      const COLS = 16, ROWS = Math.max(60, (lastDataRow || 0) + 8);
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const addr = XLSX.utils.encode_cell({ r, c });
+          if (!ws[addr]) ws[addr] = { t: 's', v: '', s: BASE };
+          else if (!ws[addr].s) ws[addr].s = BASE;
+        }
+      }
+      ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: ROWS - 1, c: COLS - 1 } });
+      ws['!sheetView'] = [{ workbookViewId: 0, showGridLines: false }];
+      ws['!tabColor']  = { rgb: C.GOLD };
+    }
+
+    // Aplica baseStyle (ex: ROW_DETAIL) nas células da linha que ainda
+    // não têm `s` próprio — preserva POS/NEG/TOTAL_ROW já aplicados.
+    function _fechApplyBase(cells, baseStyle) {
+      return cells.map(c => {
+        if (c == null) return { v: '', s: baseStyle };
+        if (typeof c === 'string') return { v: c, t: 's', s: baseStyle };
+        if (typeof c === 'number') return { v: c, t: 'n', s: baseStyle };
+        if (typeof c === 'object') return c.s ? c : { ...c, s: baseStyle };
+        return c;
+      });
+    }
 
     const wb = XLSX.utils.book_new();
     const periodoLabel = fmtDateBR(iniISO) + ' a ' + fmtDateBR(fimISO);
@@ -5274,37 +5331,40 @@ async function gerarFechamentoMes() {
       [
         'Receita (faturamento Tiny)',
         { v: dre.receita, t: 'n', z: BRL, s: POS },
-        { v: dre.receita > 0 ? 1 : 0, t: 'n', z: '0.0%' }
+        { v: dre.receita > 0 ? 1 : 0, t: 'n', z: PCT }
       ],
       [
         '(−) CPV — custo real dos produtos vendidos',
         { v: -dre.cpv, t: 'n', z: BRL, s: NEG },
-        { v: dre.receita > 0 ? -dre.cpv/dre.receita : 0, t: 'n', z: '0.0%' }
+        { v: dre.receita > 0 ? -dre.cpv/dre.receita : 0, t: 'n', z: PCT }
       ],
       [
-        { v: '= Margem bruta', s: TOTAL_ROW },
+        { v: ' = Margem bruta', t: 's', s: TOTAL_ROW },
         { v: dre.lucroBruto, t: 'n', z: BRL, s: colorVal(dre.lucroBruto, TOTAL_ROW) },
-        { v: dre.pctLB/100, t: 'n', z: '0.0%', s: TOTAL_ROW }
+        { v: dre.pctLB/100, t: 'n', z: PCT, s: TOTAL_ROW }
       ],
       [],
       [
         '(−) Despesas operacionais (real)',
         { v: -dre.despReal, t: 'n', z: BRL, s: NEG },
-        { v: dre.receita > 0 ? -dre.despReal/dre.receita : 0, t: 'n', z: '0.0%' }
+        { v: dre.receita > 0 ? -dre.despReal/dre.receita : 0, t: 'n', z: PCT }
       ],
       [{ v: `    ${dre.despCount} lançamento${dre.despCount !== 1 ? 's' : ''} no período`, s: SUBTITLE }],
       [{ v: `    R$ ${planejadoFmt} planejados em custos fixos (referência)`, s: SUBTITLE }],
       [
         '(−) Empréstimos pagos',
         { v: -dre.empValor, t: 'n', z: BRL, s: NEG },
-        { v: dre.receita > 0 ? -dre.empValor/dre.receita : 0, t: 'n', z: '0.0%' }
+        { v: dre.receita > 0 ? -dre.empValor/dre.receita : 0, t: 'n', z: PCT }
       ],
       [{ v: `    ${dre.empCount} parcela${dre.empCount !== 1 ? 's' : ''} paga${dre.empCount !== 1 ? 's' : ''} no período`, s: SUBTITLE }],
-      [
-        { v: '= RESULTADO DO MÊS', s: TOTAL_ROW },
-        { v: dre.resultado, t: 'n', z: BRL, s: colorVal(dre.resultado, TOTAL_ROW) },
-        { v: dre.pctRes/100, t: 'n', z: '0.0%', s: TOTAL_ROW }
-      ],
+      (() => {
+        const block = dre.resultado >= 0 ? BLOCK_GREEN : BLOCK_RED;
+        return [
+          { v: ' = RESULTADO DO MÊS', t: 's', s: block },
+          { v: dre.resultado, t: 'n', z: BRL, s: block },
+          { v: dre.pctRes/100, t: 'n', z: PCT, s: block }
+        ];
+      })(),
     ];
     // Aviso de resultado parcial do Tiny — mesma sinalização do widget DRE.
     if (dre.tinyEstabilidade && !dre.tinyEstabilidade.estavel) {
@@ -5322,6 +5382,7 @@ async function gerarFechamentoMes() {
       { s: { r: 1, c: 0 }, e: { r: 1, c: 2 } },
       { s: { r: 3, c: 0 }, e: { r: 3, c: 2 } },
     ];
+    _fechAcabar(ws1, resumoRows.length - 1);
     XLSX.utils.book_append_sheet(wb, ws1, 'Resumo');
 
     // ════════ ABA 2: VENDAS POR PRODUTO ════════
@@ -5333,14 +5394,14 @@ async function gerarFechamentoMes() {
       totQtd += v.qtd;
       totRec += v.receita;
       if (v.mcRS != null) totMC += v.mcRS;
-      prodRows.push([
+      prodRows.push(_fechApplyBase([
         v.nome,
         { v: v.qtd, t: 'n' },
         { v: v.receita, t: 'n', z: BRL },
         v.custoUnit != null ? { v: v.custoUnit, t: 'n', z: BRL } : '—',
         v.mcRS != null   ? { v: v.mcRS,  t: 'n', z: BRL, s: colorVal(v.mcRS) } : '—',
-        v.mcPct != null  ? { v: v.mcPct/100, t: 'n', z: '0.0%', s: colorVal(v.mcPct) } : '—',
-      ]);
+        v.mcPct != null  ? { v: v.mcPct/100, t: 'n', z: PCT, s: colorVal(v.mcPct) } : '—',
+      ], ROW_DETAIL));
     });
     prodRows.push([
       { v: 'TOTAL', s: TOTAL_ROW },
@@ -5348,10 +5409,11 @@ async function gerarFechamentoMes() {
       { v: totRec, t: 'n', z: BRL, s: TOTAL_ROW },
       { v: '', s: TOTAL_ROW },
       { v: totMC, t: 'n', z: BRL, s: colorVal(totMC, TOTAL_ROW) },
-      { v: totRec > 0 ? totMC/totRec : 0, t: 'n', z: '0.0%', s: TOTAL_ROW },
+      { v: totRec > 0 ? totMC/totRec : 0, t: 'n', z: PCT, s: TOTAL_ROW },
     ]);
     const ws2 = XLSX.utils.aoa_to_sheet(prodRows);
     ws2['!cols'] = [{ wch: 30 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 10 }];
+    _fechAcabar(ws2, prodRows.length - 1);
     XLSX.utils.book_append_sheet(wb, ws2, 'Vendas por Produto');
 
     // ════════ ABA 3: VENDAS POR VENDEDOR ════════
@@ -5359,21 +5421,22 @@ async function gerarFechamentoMes() {
     const totQtdVend = vendArr.reduce((s, v) => s + v.qtd, 0);
     const vendRows = [
       ['Vendedor', 'Qtd pedidos', 'Receita total', '% do total'].map(h => ({ v: h, s: HEADER })),
-      ...vendArr.map(v => [
+      ...vendArr.map(v => _fechApplyBase([
         v.nome,
         { v: v.qtd, t: 'n' },
         { v: v.receita, t: 'n', z: BRL },
-        { v: totRecVend > 0 ? v.receita/totRecVend : 0, t: 'n', z: '0.0%' },
-      ]),
+        { v: totRecVend > 0 ? v.receita/totRecVend : 0, t: 'n', z: PCT },
+      ], ROW_DETAIL)),
       [
         { v: 'TOTAL', s: TOTAL_ROW },
         { v: totQtdVend, t: 'n', s: TOTAL_ROW },
         { v: totRecVend, t: 'n', z: BRL, s: TOTAL_ROW },
-        { v: 1, t: 'n', z: '0.0%', s: TOTAL_ROW },
+        { v: 1, t: 'n', z: PCT, s: TOTAL_ROW },
       ],
     ];
     const ws3 = XLSX.utils.aoa_to_sheet(vendRows);
     ws3['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 16 }, { wch: 12 }];
+    _fechAcabar(ws3, vendRows.length - 1);
     XLSX.utils.book_append_sheet(wb, ws3, 'Vendas por Vendedor');
 
     // ════════ ABA 4: CUSTOS OPERACIONAIS ════════
@@ -5400,21 +5463,21 @@ async function gerarFechamentoMes() {
     const coVariavel = co.totalVariavel + co.totalIndefinido;
     const coVendas   = CONFIG_CUSTOS.vendas_mes || 0;
     coRows.push([{ v: 'Indicadores', s: SECTION }]);
-    coRows.push(['Custos Fixos',     { v: co.totalFixo, t: 'n', z: BRL }]);
-    coRows.push(['Custos Variáveis', { v: coVariavel,   t: 'n', z: BRL }]);
+    coRows.push(_fechApplyBase(['Custos Fixos',     { v: co.totalFixo, t: 'n', z: BRL }], ROW_DETAIL));
+    coRows.push(_fechApplyBase(['Custos Variáveis', { v: coVariavel,   t: 'n', z: BRL }], ROW_DETAIL));
     coRows.push([{ v: 'Total Operacional', s: TOTAL_ROW },
       { v: co.total, t: 'n', z: BRL, s: { ...TOTAL_ROW, ...NEG } }]);
-    coRows.push(['Custo por Venda (' + coVendas + ' vendas)',
-      { v: coVendas > 0 ? co.total / coVendas : 0, t: 'n', z: BRL }]);
+    coRows.push(_fechApplyBase(['Custo por Venda (' + coVendas + ' vendas)',
+      { v: coVendas > 0 ? co.total / coVendas : 0, t: 'n', z: BRL }], ROW_DETAIL));
     coRows.push([]);
     // ── 🟦 Custos Fixos (drill-down por descrição) ──
     coRows.push([{ v: '🟦 Custos Fixos', s: SECTION }]);
     coRows.push(['Categoria', 'Classif.', 'Valor'].map(h => ({ v: h, s: HEADER })));
     if (!co.fixos.length) coRows.push([{ v: '(nenhuma categoria fixa)', s: SUBTITLE }]);
     co.fixos.forEach(c => {
-      coRows.push([c.categoria, CLASSIF.fixo, { v: c.total, t: 'n', z: BRL }]);
-      c.subitens.forEach(s => coRows.push([
-        '    ' + s.descricao + ' (' + s.n + '×)', '', { v: s.total, t: 'n', z: BRL }]));
+      coRows.push(_fechApplyBase([c.categoria, CLASSIF.fixo, { v: c.total, t: 'n', z: BRL }], ROW_DETAIL));
+      c.subitens.forEach(s => coRows.push(_fechApplyBase([
+        '    ' + s.descricao + ' (' + s.n + '×)', '', { v: s.total, t: 'n', z: BRL }], ROW_DETAIL)));
     });
     coRows.push([]);
     // ── 🟧 Custos Variáveis (variáveis + indefinidos, selo por classe) ──
@@ -5423,21 +5486,22 @@ async function gerarFechamentoMes() {
     coRows.push(['Categoria', 'Classif.', 'Valor'].map(h => ({ v: h, s: HEADER })));
     if (!coVar.length) coRows.push([{ v: '(nenhuma categoria variável)', s: SUBTITLE }]);
     coVar.forEach(c => {
-      coRows.push([SELO[c.classificacao] + ' ' + c.categoria,
-        CLASSIF[c.classificacao], { v: c.total, t: 'n', z: BRL }]);
-      c.subitens.forEach(s => coRows.push([
-        '    ' + s.descricao + ' (' + s.n + '×)', '', { v: s.total, t: 'n', z: BRL }]));
+      coRows.push(_fechApplyBase([SELO[c.classificacao] + ' ' + c.categoria,
+        CLASSIF[c.classificacao], { v: c.total, t: 'n', z: BRL }], ROW_DETAIL));
+      c.subitens.forEach(s => coRows.push(_fechApplyBase([
+        '    ' + s.descricao + ' (' + s.n + '×)', '', { v: s.total, t: 'n', z: BRL }], ROW_DETAIL)));
     });
     // ── ⚠️ Inativos (só se houver) ──
     if (co.inativos.length) {
       coRows.push([]);
       coRows.push([{ v: '⚠️ Categorias Inativas (sem lançamento há +2 meses)', s: SECTION }]);
       coRows.push(['Categoria', 'Último lançamento', ''].map(h => ({ v: h, s: HEADER })));
-      co.inativos.forEach(c => coRows.push([
-        c.categoria, c.ultimoLancamento ? fmtDateBR(c.ultimoLancamento) : '—', '']));
+      co.inativos.forEach(c => coRows.push(_fechApplyBase([
+        c.categoria, c.ultimoLancamento ? fmtDateBR(c.ultimoLancamento) : '—', ''], ROW_DETAIL)));
     }
     const ws4 = XLSX.utils.aoa_to_sheet(coRows);
     ws4['!cols'] = [{ wch: 40 }, { wch: 10 }, { wch: 16 }];
+    _fechAcabar(ws4, coRows.length - 1);
     XLSX.utils.book_append_sheet(wb, ws4, 'Custos Operacionais');
 
     // ════════ ABA 5: LANÇAMENTOS FINANCEIROS ════════
@@ -5447,14 +5511,14 @@ async function gerarFechamentoMes() {
     const lancRows = [
       ['Data', 'Descrição', 'Categoria', 'Tipo', 'Valor', 'Conta'].map(h => ({ v: h, s: HEADER })),
       [{ v: 'ENTRADAS', s: SECTION }],
-      ...entradas.map(l => [
+      ...entradas.map(l => _fechApplyBase([
         { v: fmtDateBR(l.data) },
         l.descricao || '',
         l.categoria || '',
         { v: 'Entrada', s: POS },
         { v: l.valor, t: 'n', z: BRL, s: POS },
         l.conta || '',
-      ]),
+      ], ROW_DETAIL)),
       [
         { v: 'Subtotal entradas', s: TOTAL_ROW },
         { v: '', s: TOTAL_ROW }, { v: '', s: TOTAL_ROW }, { v: '', s: TOTAL_ROW },
@@ -5463,14 +5527,14 @@ async function gerarFechamentoMes() {
       ],
       [],
       [{ v: 'SAÍDAS', s: SECTION }],
-      ...saidas.map(l => [
+      ...saidas.map(l => _fechApplyBase([
         { v: fmtDateBR(l.data) },
         l.descricao || '',
         l.categoria || '',
         { v: 'Saída', s: NEG },
         { v: l.valor, t: 'n', z: BRL, s: NEG },
         l.conta || '',
-      ]),
+      ], ROW_DETAIL)),
       [
         { v: 'Subtotal saídas', s: TOTAL_ROW },
         { v: '', s: TOTAL_ROW }, { v: '', s: TOTAL_ROW }, { v: '', s: TOTAL_ROW },
@@ -5480,6 +5544,7 @@ async function gerarFechamentoMes() {
     ];
     const ws5 = XLSX.utils.aoa_to_sheet(lancRows);
     ws5['!cols'] = [{ wch: 12 }, { wch: 36 }, { wch: 22 }, { wch: 10 }, { wch: 14 }, { wch: 18 }];
+    _fechAcabar(ws5, lancRows.length - 1);
     XLSX.utils.book_append_sheet(wb, ws5, 'Lançamentos');
 
     // ── Nome do arquivo ──
@@ -5489,6 +5554,8 @@ async function gerarFechamentoMes() {
     const year = iniDate.getFullYear();
     const filename = 'smart-motors-fechamento-' + monthName + '-' + year + '.xlsx';
 
+    // Hide gridlines pra todo o workbook (defesa cross-player além do !sheetView por aba)
+    wb.Workbook = Object.assign({}, wb.Workbook, { Views: [{ RTL: false }] });
     XLSX.writeFile(wb, filename);
     console.log('[fechamento] gerado:', filename);
     if (labelEl) labelEl.textContent = 'Fechamento gerado: ' + filename;
