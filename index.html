@@ -7666,9 +7666,10 @@ const NAV_TREE = [
   { kind:'solo', id:'admin', label:'Admin', icon:'ic-shield', adminOnly:true, dotId:'admin-pending-dot' },
 ];
 
-// Estado em memória — grupos colapsados manualmente (click na setinha).
+// Estado em memória — grupos abertos manualmente (click na setinha).
+// Default = todos fechados. Tela atual e hover também forçam aberto.
 // Não persiste entre F5.
-const _navGruposColapsados = new Set();
+const _navGruposAbertosManualmente = new Set();
 // Grupos abertos temporariamente por hover (estado expandido).
 const _navGruposHoverOpen = new Set();
 // Timers de fechamento por hover, por label de grupo.
@@ -7688,12 +7689,13 @@ function _navGrupoDoId(id) {
 }
 
 // Aplica visual "aberto/fechado" num grupo conforme as 3 fontes de verdade:
-// (1) tela atual, (2) hover aberto, (3) toggle manual do usuário.
+// (1) tela atual sempre aberto, (2) hover aberto, (3) toggle manual do usuário.
+// Default = fechado (precisa de pelo menos uma das 3 pra abrir).
 function _navAtualizarVisualGrupo(groupEl) {
   const label = groupEl.dataset.group;
   const aberto = (label === _navGrupoDaTelaAtual)
               || _navGruposHoverOpen.has(label)
-              || !_navGruposColapsados.has(label);
+              || _navGruposAbertosManualmente.has(label);
   groupEl.classList.toggle('collapsed-group', !aberto);
 }
 
@@ -7759,9 +7761,10 @@ function renderSidebar() {
     if (node.kind === 'group') {
       const childrenVis = node.children.filter(c => podeVer(c.id));
       if (!childrenVis.length) continue;
-      // Aberto se: tela atual está nele, OU não foi fechado pelo usuário
+      // Aberto se: tela atual está nele OU usuário abriu manualmente.
+      // Default = fechado. Hover só adiciona à class depois do mouse entrar.
       const aberto = (node.label === _navGrupoDaTelaAtual)
-                  || !_navGruposColapsados.has(node.label);
+                  || _navGruposAbertosManualmente.has(node.label);
       html += `<div class="nav-group${aberto?'':' collapsed-group'}" data-group="${node.label}">`
         +     `<div class="nav-group-header nav-item" title="${node.label}" onclick="_navToggleGrupo('${node.label.replace(/'/g,"\\'")}')">`
         +       `<span class="nav-icon"><svg class="ic"><use href="#${node.icon}"/></svg></span>`
@@ -7809,8 +7812,8 @@ function _navToggleGrupo(label) {
   }
   // Tela atual: o grupo permanece aberto (não dá pra fechar manualmente).
   if (label === _navGrupoDaTelaAtual) return;
-  if (_navGruposColapsados.has(label)) _navGruposColapsados.delete(label);
-  else _navGruposColapsados.add(label);
+  if (_navGruposAbertosManualmente.has(label)) _navGruposAbertosManualmente.delete(label);
+  else _navGruposAbertosManualmente.add(label);
   // Atualiza visual do grupo sem re-render
   const el = document.querySelector('#sidebar-nav .nav-group[data-group="' + label.replace(/"/g, '\\"') + '"]');
   if (el) _navAtualizarVisualGrupo(el);
@@ -7910,11 +7913,11 @@ function _navInicial() {
       nav.innerHTML = flat.map(c => _navItemHTML(c)).join('');
     }
   }
-  // DEFAULT = MINIMIZADO (estilo Olist). Só expande se o usuário tiver
-  // salvado essa preferência explicitamente ('1').
+  // DEFAULT = EXPANDIDO (ícone+nome sempre visível). Só recolhe pra coluna
+  // estreita se o usuário tiver explicitamente clicado em "Recolher menu" ('0').
   try {
     const raw = localStorage.getItem('sm_sidebar_expanded');
-    const expanded = raw === '1';
+    const expanded = raw === null ? true : (raw === '1');
     const sb = document.getElementById('sidebar');
     if (sb) sb.classList.toggle('collapsed', !expanded);
     const lbl = document.querySelector('#sidebar-toggle-btn .sidebar-toggle-label');
