@@ -7658,10 +7658,56 @@ const NAV_TREE = [
   { kind:'solo', id:'admin', label:'Admin', icon:'ic-shield', adminOnly:true, dotId:'admin-pending-dot' },
 ];
 
-// Estado em memória — grupos colapsados (não persiste, reset no F5).
+// Estado em memória — grupos colapsados manualmente (click na setinha).
+// Não persiste entre F5.
 const _navGruposColapsados = new Set();
+// Grupos abertos temporariamente por hover (estado expandido).
+const _navGruposHoverOpen = new Set();
+// Timers de fechamento por hover, por label de grupo.
+const _navHoverTimers = Object.create(null);
+const _NAV_HOVER_CLOSE_MS = 180;
+// Grupo que contém a página atualmente aberta — fica SEMPRE expandido.
+let _navGrupoDaTelaAtual = null;
+// Hover-panel (modo colapsado da sidebar)
 let _navHoverTimer = null;
 let _navHoverPanelEl = null;
+
+function _navGrupoDoId(id) {
+  for (const node of NAV_TREE) {
+    if (node.kind === 'group' && node.children.some(c => c.id === id)) return node.label;
+  }
+  return null;
+}
+
+// Aplica visual "aberto/fechado" num grupo conforme as 3 fontes de verdade:
+// (1) tela atual, (2) hover aberto, (3) toggle manual do usuário.
+function _navAtualizarVisualGrupo(groupEl) {
+  const label = groupEl.dataset.group;
+  const aberto = (label === _navGrupoDaTelaAtual)
+              || _navGruposHoverOpen.has(label)
+              || !_navGruposColapsados.has(label);
+  groupEl.classList.toggle('collapsed-group', !aberto);
+}
+
+function _navHoverEnter(groupEl) {
+  const sb = document.getElementById('sidebar');
+  if (!sb || sb.classList.contains('collapsed')) return;  // colapsado tem hover-panel próprio
+  const label = groupEl.dataset.group;
+  if (_navHoverTimers[label]) { clearTimeout(_navHoverTimers[label]); delete _navHoverTimers[label]; }
+  _navGruposHoverOpen.add(label);
+  _navAtualizarVisualGrupo(groupEl);
+}
+function _navHoverLeave(groupEl) {
+  const sb = document.getElementById('sidebar');
+  if (!sb || sb.classList.contains('collapsed')) return;
+  const label = groupEl.dataset.group;
+  if (_navHoverTimers[label]) clearTimeout(_navHoverTimers[label]);
+  _navHoverTimers[label] = setTimeout(() => {
+    _navGruposHoverOpen.delete(label);
+    _navAtualizarVisualGrupo(groupEl);
+    delete _navHoverTimers[label];
+  }, _NAV_HOVER_CLOSE_MS);
+}
 
 function _navItemHTML(child, opts) {
   opts = opts || {};
@@ -7688,6 +7734,12 @@ function renderSidebar() {
   } catch(e) {}
   const podeVer = id => !permitidos || permitidos.includes(id);
 
+  // Garante _navGrupoDaTelaAtual coerente antes da render
+  try {
+    const cur = localStorage.getItem('sm_pagina_atual') || 'dashboard';
+    _navGrupoDaTelaAtual = _navGrupoDoId(cur);
+  } catch(e) {}
+
   let html = '';
   for (const node of NAV_TREE) {
     if (node.kind === 'sep') { html += '<div class="nav-sep"></div>'; continue; }
@@ -7699,8 +7751,10 @@ function renderSidebar() {
     if (node.kind === 'group') {
       const childrenVis = node.children.filter(c => podeVer(c.id));
       if (!childrenVis.length) continue;
-      const colapsado = _navGruposColapsados.has(node.label);
-      html += `<div class="nav-group${colapsado?' collapsed-group':''}" data-group="${node.label}">`
+      // Aberto se: tela atual está nele, OU não foi fechado pelo usuário
+      const aberto = (node.label === _navGrupoDaTelaAtual)
+                  || !_navGruposColapsados.has(node.label);
+      html += `<div class="nav-group${aberto?'':' collapsed-group'}" data-group="${node.label}">`
         +     `<div class="nav-group-header nav-item" title="${node.label}" onclick="_navToggleGrupo('${node.label.replace(/'/g,"\\'")}')">`
         +       `<span class="nav-icon"><svg class="ic"><use href="#${node.icon}"/></svg></span>`
         +       `<span class="nav-item-label">${node.label}</span>`
@@ -7714,11 +7768,21 @@ function renderSidebar() {
   }
   nav.innerHTML = html;
 
-  // Wire-up hover panel (só desktop com hover real)
+  // Wire-up hover (só desktop com hover real)
   if (window.matchMedia && window.matchMedia('(hover: hover)').matches) {
     nav.querySelectorAll('.nav-group').forEach(g => {
-      g.addEventListener('mouseenter', e => _navAbrirHoverPanel(g));
-      g.addEventListener('mouseleave', e => _navFecharHoverPanel());
+      g.addEventListener('mouseenter', () => {
+        const sb = document.getElementById('sidebar');
+        // Estado colapsado → hover-panel flutuante (legado)
+        if (sb && sb.classList.contains('collapsed')) { _navAbrirHoverPanel(g); return; }
+        // Estado expandido → abre grupo inline
+        _navHoverEnter(g);
+      });
+      g.addEventListener('mouseleave', () => {
+        const sb = document.getElementById('sidebar');
+        if (sb && sb.classList.contains('collapsed')) { _navFecharHoverPanel(); return; }
+        _navHoverLeave(g);
+      });
     });
   }
 
@@ -7730,17 +7794,18 @@ function renderSidebar() {
 }
 
 function _navToggleGrupo(label) {
-  // No estado colapsado, click no header navega pro primeiro filho? Não:
-  // o usuário disse "hover abre painel". Aqui o click só faz sentido no
-  // expandido fixo — então retrai/expande o grupo.
   const sb = document.getElementById('sidebar');
   if (sb && sb.classList.contains('collapsed')) {
-    // Colapsado: ignora click no header do grupo (hover é quem mostra os filhos)
+    // Colapsado: ignora click no header (hover panel é quem mostra os filhos)
     return;
   }
+  // Tela atual: o grupo permanece aberto (não dá pra fechar manualmente).
+  if (label === _navGrupoDaTelaAtual) return;
   if (_navGruposColapsados.has(label)) _navGruposColapsados.delete(label);
   else _navGruposColapsados.add(label);
-  renderSidebar();
+  // Atualiza visual do grupo sem re-render
+  const el = document.querySelector('#sidebar-nav .nav-group[data-group="' + label.replace(/"/g, '\\"') + '"]');
+  if (el) _navAtualizarVisualGrupo(el);
 }
 
 function _navAbrirHoverPanel(groupEl) {
@@ -7798,12 +7863,17 @@ function _navFecharHoverPanel(imediato) {
 }
 
 function _navMarcarAtivo(id) {
+  // Atualiza grupoAtual (pode mudar visual de auto-abrir)
+  _navGrupoDaTelaAtual = _navGrupoDoId(id);
+  // Marca item ativo (filho) e categoria-mãe com .has-active
   document.querySelectorAll('#sidebar-nav .nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.pageId === id);
   });
   document.querySelectorAll('#sidebar-nav .nav-group').forEach(g => {
     const has = g.querySelector(`[data-page-id="${id}"]`);
     g.classList.toggle('has-active', !!has);
+    // Reaplica visual aberto/fechado refletindo o novo grupoAtual
+    _navAtualizarVisualGrupo(g);
   });
 }
 
