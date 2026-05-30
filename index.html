@@ -63,7 +63,143 @@ body{font-family:var(--font-primary);background:var(--bg);color:var(--text);min-
   background:var(--surface);
   border-right:1px solid var(--border);
   display:flex;flex-direction:column;
-  position:sticky;top:0;height:100vh;overflow-y:auto;
+  position:sticky;top:0;height:100vh;overflow-y:visible;  /* visible pra hover-panel sair da coluna */
+  transition:width .2s ease;
+  z-index:50;
+}
+
+/* ── MENU RETRÁTIL — colapsado por default; expand fixo via toggle ── */
+.sidebar.collapsed{ width:64px; }
+.sidebar.collapsed nav{padding:14px 6px;}
+.sidebar.collapsed .logo-text-wrap{display:none;}
+.sidebar.collapsed .logo-wrap{padding:18px 12px;}
+.sidebar.collapsed .nav-label{display:none;}
+.sidebar.collapsed .nav-item{
+  justify-content:center;
+  padding:11px 0;
+  gap:0;
+}
+.sidebar.collapsed .nav-item-label{display:none;}
+.sidebar.collapsed .nav-group-children{display:none;}
+.sidebar.collapsed .nav-group-arrow{display:none;}
+.sidebar.collapsed .nav-dot{
+  position:absolute;top:8px;right:10px;
+}
+.sidebar.collapsed .sidebar-footer-info{display:none;}
+
+/* ── GRUPOS — categoria-mãe + filhos ── */
+.nav-group{position:relative;}
+.nav-group-header{cursor:pointer;}
+.nav-group-children{
+  margin-left:8px;
+  padding-left:10px;
+  border-left:1px solid var(--border);
+  display:flex;flex-direction:column;gap:2px;
+  margin-top:2px;margin-bottom:6px;
+}
+.nav-group-children .nav-item{
+  font-size:12px;padding:7px 10px;
+}
+.nav-group-arrow{
+  margin-left:auto;
+  width:12px;height:12px;
+  transition:transform .15s ease;
+  opacity:.6;
+}
+.nav-group.collapsed-group .nav-group-children{display:none;}
+.nav-group.collapsed-group .nav-group-arrow{transform:rotate(-90deg);}
+.nav-group.has-active > .nav-group-header{
+  border-left:2px solid var(--gold);
+  padding-left:8px;
+}
+
+/* ── HOVER PANEL — só no estado colapsado, só com hover real (desktop) ── */
+.nav-hover-panel{
+  position:absolute;
+  left:64px;
+  top:0;
+  min-width:200px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-left:2px solid var(--gold);
+  border-radius:var(--r-sm);
+  padding:10px 8px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.4);
+  z-index:60;
+  display:none;
+  opacity:0;
+  transition:opacity .12s ease;
+}
+.nav-hover-panel.open{display:block;opacity:1;}
+.nav-hover-panel .nav-panel-title{
+  font-size:10px;text-transform:uppercase;letter-spacing:1px;
+  color:var(--gold);font-weight:700;
+  padding:4px 8px 8px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:6px;
+}
+.nav-hover-panel .nav-item{padding:7px 10px;font-size:12.5px;}
+@media (hover: none) {
+  .nav-hover-panel{display:none !important;}
+}
+
+/* ── PDV destaque visual (item solo com borda dourada) ── */
+.nav-item.nav-destaque{border-left:2px solid var(--gold);padding-left:8px;}
+.sidebar.collapsed .nav-item.nav-destaque{padding-left:0;border-left-width:3px;}
+
+/* ── SEPARADOR ── */
+.nav-sep{
+  height:1px;background:var(--border);
+  margin:10px 8px;
+}
+.sidebar.collapsed .nav-sep{margin:10px 12px;}
+
+/* ── RODAPÉ DO SIDEBAR (toggle + admin solo) ── */
+.sidebar-footer{
+  margin-top:auto;
+  padding:8px 10px 12px;
+  border-top:1px solid var(--border);
+  display:flex;flex-direction:column;gap:4px;
+}
+.sidebar.collapsed .sidebar-footer{padding:8px 6px 12px;}
+.sidebar-toggle{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 10px;border-radius:var(--r-sm);
+  border:none;background:none;color:var(--text3);cursor:pointer;
+  font-family:var(--font-primary);font-size:11px;font-weight:600;
+  width:100%;text-align:left;
+  transition:background .15s, color .15s;
+}
+.sidebar-toggle:hover{background:var(--surface2);color:var(--text);}
+.sidebar-toggle .nav-toggle-arrow{
+  transition:transform .2s ease;
+  margin-left:auto;
+}
+.sidebar.collapsed .sidebar-toggle{justify-content:center;padding:8px 0;}
+.sidebar.collapsed .sidebar-toggle .sidebar-toggle-label{display:none;}
+.sidebar.collapsed .sidebar-toggle .nav-toggle-arrow{margin-left:0;transform:rotate(180deg);}
+
+/* ── MOBILE: sempre expandido quando aberto, sem hover panel ── */
+@media (max-width:768px){
+  .sidebar{
+    position:fixed;left:0;top:0;
+    width:240px !important;  /* mobile sempre largo */
+    z-index:200;
+    display:none;
+  }
+  .sidebar.open{display:flex;}
+  .sidebar.collapsed{width:240px;}
+  .sidebar.collapsed .logo-text-wrap,
+  .sidebar.collapsed .nav-label,
+  .sidebar.collapsed .nav-item-label,
+  .sidebar.collapsed .nav-group-children,
+  .sidebar.collapsed .nav-group-arrow,
+  .sidebar.collapsed .sidebar-toggle .sidebar-toggle-label,
+  .sidebar.collapsed .sidebar-footer-info{display:initial;}
+  .sidebar.collapsed .nav-item{justify-content:flex-start;padding:9px 10px;gap:10px;}
+  .sidebar.collapsed nav{padding:14px 10px;}
+  .sidebar.collapsed .logo-wrap{padding:22px 18px 18px;}
+  .nav-hover-panel{display:none !important;}
 }
 
 /* LOGO */
@@ -1602,89 +1738,19 @@ select:not(.input-pro):not(.search-input){
     </div>
   </div>
 
-  <nav>
-    <div class="nav-label">Visão Geral</div>
-    <button class="nav-item active" onclick="showPage('dashboard')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-zap"/></svg></span> Dashboard
-      <span class="nav-dot"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('calendario')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-calendar"/></svg></span> Calendário
-      <span class="nav-dot"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('admin')" id="nav-admin" style="display:none;">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-shield"/></svg></span> Admin
-      <span class="nav-dot" id="admin-pending-dot" style="background:var(--red);display:none;"></span>
-    </button>
+  <!-- Nav renderizada por renderSidebar() a partir de NAV_TREE.
+       Fallback: se renderSidebar falhar, o boot reinjeta a árvore mínima. -->
+  <nav id="sidebar-nav"></nav>
 
-    <div class="nav-label">Vendas</div>
-    <button class="nav-item" onclick="showPage('pedidos')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-package"/></svg></span> Pedidos
-      <span class="nav-dot"></span>
+  <div class="sidebar-footer">
+    <button class="sidebar-toggle" id="sidebar-toggle-btn" onclick="toggleSidebarExpand()" title="Expandir / recolher menu">
+      <svg class="ic ic-sm nav-toggle-arrow"><use href="#ic-chevron-right"/></svg>
+      <span class="sidebar-toggle-label">Recolher menu</span>
     </button>
-    <button class="nav-item" onclick="showPage('vendas')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-trending-up"/></svg></span> Vendas do Mês
-      <span class="nav-dot"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('pdv')" id="nav-pdv">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-cart"/></svg></span> PDV
-      <span class="nav-dot"></span>
-    </button>
-
-    <div class="nav-label">Produtos</div>
-    <button class="nav-item" onclick="showPage('estoque')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-store"/></svg></span> Produtos & Estoque
-      <span class="nav-dot"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('custos-produtos')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-tag"/></svg></span> Custos de Produtos
-      <span class="nav-dot"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('montagens')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-tool"/></svg></span> Montagens
-      <span class="nav-dot"></span>
-    </button>
-
-    <div class="nav-label">Operação</div>
-    <button class="nav-item" onclick="showPage('oficina')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-wrench"/></svg></span> Oficina
-      <span class="nav-dot"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('sac')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-phone"/></svg></span> SAC
-      <span class="nav-dot" id="dot-sac"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('clientes')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-users"/></svg></span> Clientes
-      <span class="nav-dot"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('contratos')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-file-text"/></svg></span> Contrato
-      <span class="nav-dot"></span>
-    </button>
-
-    <div class="nav-label">Financeiro</div>
-    <button class="nav-item" onclick="showPage('financeiro')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-wallet"/></svg></span> Financeiro
-      <span class="nav-dot"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('contas-pagar')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-calendar"/></svg></span> Contas a Pagar
-      <span class="nav-dot" id="dot-contas-pagar"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('contas-receber')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-inbox"/></svg></span> Contas a Receber
-      <span class="nav-dot"></span>
-    </button>
-    <button class="nav-item" onclick="showPage('custos')">
-      <span class="nav-icon"><svg class="ic"><use href="#ic-receipt"/></svg></span> Custos Operacionais
-      <span class="nav-dot"></span>
-    </button>
-  </nav>
-
-  <div style="padding:14px 16px;border-top:1px solid var(--border);">
-    <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Smart Motors</div>
-    <div style="font-size:10px;color:var(--text3);margin-top:2px;">Sistema de Gestão v1.0</div>
+    <div class="sidebar-footer-info" style="padding:4px 10px;">
+      <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Smart Motors</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px;">Sistema de Gestão v1.0</div>
+    </div>
   </div>
 </div>
 
@@ -3845,6 +3911,9 @@ function showPage(id, opts){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
+  // Marca itens da sidebar nova (data-page-id) + grupo-pai
+  try { _navMarcarAtivo(id); } catch(e) {}
+  // Fallback pro markup antigo (caso a sidebar nova falhe e o fallback flat rode)
   document.querySelectorAll('.nav-item').forEach(n=>{
     if((n.getAttribute('onclick')||'').includes("'"+id+"'"))n.classList.add('active');
   });
@@ -7529,6 +7598,230 @@ async function salvarVendasMes() {
 
 
 // ══════════════════════════════════════════
+//  SIDEBAR — menu retrátil em 2 níveis (estilo Olist)
+//  Árvore declarativa única. Permissões filtram aqui;
+//  showPage continua chamando o mesmo onclick literal.
+// ══════════════════════════════════════════
+const NAV_TREE = [
+  { kind:'solo',  id:'dashboard',  label:'Dashboard',  icon:'ic-zap' },
+  { kind:'solo',  id:'calendario', label:'Calendário', icon:'ic-calendar' },
+  { kind:'solo',  id:'pdv',        label:'PDV',        icon:'ic-cart', destaque:true },
+  { kind:'sep' },
+  { kind:'group', label:'Vendas',     icon:'ic-package', children:[
+      { id:'pedidos',         label:'Pedidos',        icon:'ic-package'      },
+      { id:'vendas',          label:'Vendas do Mês',  icon:'ic-trending-up'  },
+      { id:'clientes',        label:'Clientes',       icon:'ic-users'        },
+      { id:'contratos',       label:'Contrato',       icon:'ic-file-text'    },
+  ]},
+  { kind:'group', label:'Produtos',   icon:'ic-store', children:[
+      { id:'estoque',         label:'Produtos & Estoque', icon:'ic-store' },
+      { id:'custos-produtos', label:'Custos de Produtos', icon:'ic-tag'   },
+      { id:'montagens',       label:'Montagens',          icon:'ic-tool'  },
+  ]},
+  { kind:'group', label:'Operação',   icon:'ic-wrench', children:[
+      { id:'oficina', label:'Oficina', icon:'ic-wrench' },
+      { id:'sac',     label:'SAC',     icon:'ic-phone',  dotId:'dot-sac' },
+  ]},
+  { kind:'group', label:'Financeiro', icon:'ic-wallet', children:[
+      { id:'financeiro',     label:'Financeiro',           icon:'ic-wallet'  },
+      { id:'contas-pagar',   label:'Contas a Pagar',       icon:'ic-calendar', dotId:'dot-contas-pagar' },
+      { id:'contas-receber', label:'Contas a Receber',     icon:'ic-inbox'   },
+      { id:'custos',         label:'Custos Operacionais',  icon:'ic-receipt' },
+  ]},
+  { kind:'sep' },
+  { kind:'solo', id:'admin', label:'Admin', icon:'ic-shield', adminOnly:true, dotId:'admin-pending-dot' },
+];
+
+// Estado em memória — grupos colapsados (não persiste, reset no F5).
+const _navGruposColapsados = new Set();
+let _navHoverTimer = null;
+let _navHoverPanelEl = null;
+
+function _navItemHTML(child, opts) {
+  opts = opts || {};
+  const cls = ['nav-item'];
+  if (opts.destaque) cls.push('nav-destaque');
+  const dotHTML = child.dotId
+    ? `<span class="nav-dot" id="${child.dotId}"${child.id==='admin'?' style="background:var(--red);display:none;"':''}></span>`
+    : (opts.semDot ? '' : '<span class="nav-dot"></span>');
+  return `<button class="${cls.join(' ')}" data-page-id="${child.id}" onclick="showPage('${child.id}')">`
+    + `<span class="nav-icon"><svg class="ic"><use href="#${child.icon}"/></svg></span>`
+    + `<span class="nav-item-label">${child.label}</span>`
+    + dotHTML
+    + `</button>`;
+}
+
+function renderSidebar() {
+  const nav = document.getElementById('sidebar-nav');
+  if (!nav) return;
+  let permitidos = null;
+  try {
+    const u = JSON.parse(localStorage.getItem('sm_user') || 'null');
+    if (u) permitidos = modulosPermitidos(u);
+  } catch(e) {}
+  const podeVer = id => !permitidos || permitidos.includes(id);
+
+  let html = '';
+  for (const node of NAV_TREE) {
+    if (node.kind === 'sep') { html += '<div class="nav-sep"></div>'; continue; }
+    if (node.kind === 'solo') {
+      if (!podeVer(node.id)) continue;
+      html += _navItemHTML(node, { destaque: !!node.destaque });
+      continue;
+    }
+    if (node.kind === 'group') {
+      const childrenVis = node.children.filter(c => podeVer(c.id));
+      if (!childrenVis.length) continue;
+      const colapsado = _navGruposColapsados.has(node.label);
+      html += `<div class="nav-group${colapsado?' collapsed-group':''}" data-group="${node.label}">`
+        +     `<div class="nav-group-header nav-item" onclick="_navToggleGrupo('${node.label.replace(/'/g,"\\'")}')">`
+        +       `<span class="nav-icon"><svg class="ic"><use href="#${node.icon}"/></svg></span>`
+        +       `<span class="nav-item-label">${node.label}</span>`
+        +       `<svg class="ic ic-sm nav-group-arrow"><use href="#ic-chevron-right"/></svg>`
+        +     `</div>`
+        +     `<div class="nav-group-children">`
+        +       childrenVis.map(c => _navItemHTML(c)).join('')
+        +     `</div>`
+        +   `</div>`;
+    }
+  }
+  nav.innerHTML = html;
+
+  // Wire-up hover panel (só desktop com hover real)
+  if (window.matchMedia && window.matchMedia('(hover: hover)').matches) {
+    nav.querySelectorAll('.nav-group').forEach(g => {
+      g.addEventListener('mouseenter', e => _navAbrirHoverPanel(g));
+      g.addEventListener('mouseleave', e => _navFecharHoverPanel());
+    });
+  }
+
+  // Re-aplica estado ativo se já houver página corrente
+  try {
+    const cur = localStorage.getItem('sm_pagina_atual') || 'dashboard';
+    _navMarcarAtivo(cur);
+  } catch(e) {}
+}
+
+function _navToggleGrupo(label) {
+  // No estado colapsado, click no header navega pro primeiro filho? Não:
+  // o usuário disse "hover abre painel". Aqui o click só faz sentido no
+  // expandido fixo — então retrai/expande o grupo.
+  const sb = document.getElementById('sidebar');
+  if (sb && sb.classList.contains('collapsed')) {
+    // Colapsado: ignora click no header do grupo (hover é quem mostra os filhos)
+    return;
+  }
+  if (_navGruposColapsados.has(label)) _navGruposColapsados.delete(label);
+  else _navGruposColapsados.add(label);
+  renderSidebar();
+}
+
+function _navAbrirHoverPanel(groupEl) {
+  const sb = document.getElementById('sidebar');
+  if (!sb || !sb.classList.contains('collapsed')) return;
+  if (_navHoverTimer) { clearTimeout(_navHoverTimer); _navHoverTimer = null; }
+  _navFecharHoverPanel(true);  // sem delay
+
+  const label = groupEl.dataset.group;
+  const node = NAV_TREE.find(n => n.kind === 'group' && n.label === label);
+  if (!node) return;
+  let permitidos = null;
+  try {
+    const u = JSON.parse(localStorage.getItem('sm_user') || 'null');
+    if (u) permitidos = modulosPermitidos(u);
+  } catch(e) {}
+  const childrenVis = node.children.filter(c => !permitidos || permitidos.includes(c.id));
+  if (!childrenVis.length) return;
+
+  const panel = document.createElement('div');
+  panel.className = 'nav-hover-panel';
+  panel.innerHTML = `<div class="nav-panel-title">${node.label}</div>`
+    + childrenVis.map(c => _navItemHTML(c, { semDot: false })).join('');
+  // Posiciona ao lado da linha da categoria
+  const rect = groupEl.getBoundingClientRect();
+  const sbRect = sb.getBoundingClientRect();
+  panel.style.top = (rect.top - sbRect.top) + 'px';
+  sb.appendChild(panel);
+  _navHoverPanelEl = panel;
+  // Fade-in
+  requestAnimationFrame(() => panel.classList.add('open'));
+  // Mouse entra no painel cancela o close pendente; sai do painel fecha
+  panel.addEventListener('mouseenter', () => { if (_navHoverTimer) { clearTimeout(_navHoverTimer); _navHoverTimer = null; } });
+  panel.addEventListener('mouseleave', () => _navFecharHoverPanel());
+
+  // Marca ativo no painel se a página atual estiver entre os filhos
+  try {
+    const cur = localStorage.getItem('sm_pagina_atual') || '';
+    panel.querySelectorAll('[data-page-id]').forEach(el => {
+      if (el.dataset.pageId === cur) el.classList.add('active');
+    });
+  } catch(e) {}
+}
+
+function _navFecharHoverPanel(imediato) {
+  if (imediato) {
+    if (_navHoverPanelEl) { _navHoverPanelEl.remove(); _navHoverPanelEl = null; }
+    return;
+  }
+  if (_navHoverTimer) clearTimeout(_navHoverTimer);
+  _navHoverTimer = setTimeout(() => {
+    if (_navHoverPanelEl) { _navHoverPanelEl.remove(); _navHoverPanelEl = null; }
+    _navHoverTimer = null;
+  }, 150);
+}
+
+function _navMarcarAtivo(id) {
+  document.querySelectorAll('#sidebar-nav .nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.pageId === id);
+  });
+  document.querySelectorAll('#sidebar-nav .nav-group').forEach(g => {
+    const has = g.querySelector(`[data-page-id="${id}"]`);
+    g.classList.toggle('has-active', !!has);
+  });
+}
+
+function toggleSidebarExpand() {
+  const sb = document.getElementById('sidebar');
+  if (!sb) return;
+  const collapsed = sb.classList.toggle('collapsed');
+  try { localStorage.setItem('sm_sidebar_expanded', collapsed ? '0' : '1'); } catch(e) {}
+  const lbl = document.querySelector('#sidebar-toggle-btn .sidebar-toggle-label');
+  if (lbl) lbl.textContent = collapsed ? 'Expandir menu' : 'Recolher menu';
+}
+
+function _navInicial() {
+  try {
+    renderSidebar();
+  } catch (e) {
+    console.error('[sidebar] renderSidebar falhou — fallback ativado:', e);
+    // Fallback: árvore plana flat estática (sem grupos), garante navegação
+    const nav = document.getElementById('sidebar-nav');
+    if (nav) {
+      const flat = [];
+      NAV_TREE.forEach(n => {
+        if (n.kind === 'solo') flat.push(n);
+        else if (n.kind === 'group') n.children.forEach(c => flat.push(c));
+      });
+      nav.innerHTML = flat.map(c => _navItemHTML(c)).join('');
+    }
+  }
+  // Aplica estado persistido (default = colapsado)
+  try {
+    const expanded = localStorage.getItem('sm_sidebar_expanded') === '1';
+    const sb = document.getElementById('sidebar');
+    if (sb) sb.classList.toggle('collapsed', !expanded);
+    const lbl = document.querySelector('#sidebar-toggle-btn .sidebar-toggle-label');
+    if (lbl) lbl.textContent = expanded ? 'Recolher menu' : 'Expandir menu';
+  } catch(e) {}
+}
+// Inicializa assim que o DOM carregar (não espera dados)
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _navInicial);
+} else {
+  _navInicial();
+}
+
+// ══════════════════════════════════════════
 //  MOBILE
 // ══════════════════════════════════════════
 function toggleSidebar(){
@@ -8109,12 +8402,10 @@ function modulosPermitidos(user) {
 function aplicarPermissoes(user) {
   const permitidos = modulosPermitidos(user);
   console.log('[aplicarPermissoes] user=' + (user && user.email) + ' perfil=' + (user && user.perfil) + ' modulos=', permitidos);
-  document.querySelectorAll('.nav-item[onclick*="showPage"]').forEach(btn => {
-    const m = (btn.getAttribute('onclick') || '').match(/showPage\('([^']+)'\)/);
-    if (!m) return;
-    const id = m[1];
-    btn.style.display = permitidos.includes(id) ? '' : 'none';
-  });
+  // Sidebar dinâmica: a render lê localStorage.sm_user (que já foi setado
+  // antes deste call) e filtra por modulosPermitidos. Re-renderiza pra
+  // refletir o user atual.
+  try { renderSidebar(); } catch (e) { console.warn('[aplicarPermissoes] renderSidebar falhou:', e.message); }
 }
 const ACESSO_CODE_DEFAULT = 'smartmotors2026';
 const SESSAO_REVALIDA_MS = 24 * 60 * 60 * 1000; // revalida no Supabase só depois de 24h
