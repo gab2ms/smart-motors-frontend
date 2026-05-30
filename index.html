@@ -5179,6 +5179,20 @@ function onDashDateChange() {
 function calcPeriodoAnterior(iniISO, fimISO) {
   const ini = new Date(iniISO + 'T00:00:00');
   const fim = new Date(fimISO + 'T00:00:00');
+  // "Mês cheio" = ini é dia 1 + fim é o último dia REAL do mesmo mês.
+  // Quando bate, compara contra o MÊS ANTERIOR INTEIRO (cada um com seu
+  // próprio número de dias). Pra ranges custom, mantém a regra antiga
+  // (janela do mesmo tamanho em dias antes do início).
+  const ultimoDiaMesAtual = new Date(fim.getFullYear(), fim.getMonth() + 1, 0).getDate();
+  const ehMesCheio = ini.getDate() === 1
+    && ini.getFullYear() === fim.getFullYear()
+    && ini.getMonth() === fim.getMonth()
+    && fim.getDate() === ultimoDiaMesAtual;
+  if (ehMesCheio) {
+    const iniAnt = new Date(ini.getFullYear(), ini.getMonth() - 1, 1);
+    const fimAnt = new Date(ini.getFullYear(), ini.getMonth(), 0); // último dia do mês anterior
+    return { ini: _toISO(iniAnt), fim: _toISO(fimAnt) };
+  }
   const dias = Math.round((fim - ini) / 86400000);
   const fimAnt = new Date(ini.getTime() - 86400000);
   const iniAnt = new Date(fimAnt.getTime() - dias * 86400000);
