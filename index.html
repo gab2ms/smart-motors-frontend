@@ -1340,17 +1340,17 @@ select:not(.input-pro):not(.search-input){
 .cal-cell{
   border-right:1px solid var(--border);
   border-bottom:1px solid var(--border);
-  padding:8px 10px;
+  padding:10px 12px;
   display:flex;flex-direction:column;gap:4px;
   cursor:pointer;
   transition:background .12s;
   position:relative;
   min-height:110px;
+  min-width:0;        /* impede grid item de "esmagar" o conteúdo */
 }
 .cal-cell:hover{background:var(--surface2);}
-/* Última coluna mantém o pixel reservado pra borda (transparente) — sem isso
-   o box-sizing:border-box deixa o conteúdo 1px mais à direita que as outras. */
-.cal-cell:nth-child(7n){border-right-color:transparent;}
+/* Sem regra especial pra :nth-child(7n) — border-right consistente em todas
+   as células; a borda da última coluna coincide com a borda do card. */
 /* Célula vazia (dia de outro mês): só ocupa espaço pro alinhamento semanal */
 .cal-cell.vazia{background:var(--bg);cursor:default;}
 .cal-cell.vazia:hover{background:var(--bg);}
@@ -1365,6 +1365,8 @@ select:not(.input-pro):not(.search-input){
   font-weight:var(--fw-sb);
   color:var(--text2);
   font-variant-numeric:tabular-nums;
+  line-height:1.2;
+  flex-shrink:0;
 }
 .cal-cell-eventos{display:flex;flex-direction:column;gap:3px;margin-top:2px;}
 .cal-evento{
