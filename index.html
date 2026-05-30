@@ -2209,12 +2209,12 @@ select:not(.input-pro):not(.search-input){
   <div class="page content" id="page-admin">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
       <div>
-        <div style="font-size:13px;font-weight:700;">🛡️ Administração de usuários</div>
+        <div style="font-size:13px;font-weight:700;">Administração de usuários</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px;">Aprove ou rejeite solicitações de acesso</div>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn" onclick="renderAdmin()"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Atualizar</button>
-        <button class="btn btn-gold" onclick="alterarCodigo()">🔑 Alterar código</button>
+        <button class="btn btn-gold" onclick="alterarCodigo()">Alterar código</button>
       </div>
     </div>
 
@@ -2310,11 +2310,11 @@ select:not(.input-pro):not(.search-input){
         <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <span style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.6px;">Disparo de resumo</span>
           <select id="wa-resumo-periodo" class="search-input" style="max-width:230px;">
-            <option value="manha">☀️ Manhã — planejamento do dia</option>
+            <option value="manha">Manhã — planejamento do dia</option>
             <option value="noite">Noite — fechamento do dia</option>
           </select>
           <button class="btn" type="button" onclick="abrirPreviewResumo()">Gerar prévia</button>
-          <button class="btn btn-gold" type="button" onclick="dispararResumoAgora()">🚀 Disparar agora</button>
+          <button class="btn btn-gold" type="button" onclick="dispararResumoAgora()">Disparar agora</button>
         </div>
       </div>
     </div>
@@ -2443,7 +2443,7 @@ select:not(.input-pro):not(.search-input){
     <!-- SEÇÃO 5: FILTROS + TABELA -->
     <div style="margin-bottom:10px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px;flex-wrap:wrap;">
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);">🧾 Lançamentos</div>
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);">Lançamentos</div>
         <button class="btn btn-gold" onclick="openLanModal()" style="font-size:11px;padding:6px 14px;">+ Lançamento</button>
       </div>
       <div class="search-bar" style="margin-bottom:12px;">
@@ -2542,7 +2542,7 @@ select:not(.input-pro):not(.search-input){
     <!-- ABAS -->
     <div class="fin-tabs">
       <button class="fin-tab-btn active" data-oftab="abertas"     onclick="switchOfTab('abertas')">Em aberto (<span id="of-cnt-abertas">0</span>)</button>
-      <button class="fin-tab-btn"        data-oftab="finalizadas" onclick="switchOfTab('finalizadas')">🏁 Finalizadas (<span id="of-cnt-finalizadas">0</span>)</button>
+      <button class="fin-tab-btn"        data-oftab="finalizadas" onclick="switchOfTab('finalizadas')">Finalizadas (<span id="of-cnt-finalizadas">0</span>)</button>
     </div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
@@ -2554,7 +2554,7 @@ select:not(.input-pro):not(.search-input){
         <select class="search-input" id="of-filtro-status" onchange="renderOficina()" style="max-width:200px;">
           <option value="">Todos status</option>
           <option value="acao_interna">Ação interna</option>
-          <option value="aguardando_terceiro">⏳ Aguardando terceiro</option>
+          <option value="aguardando_terceiro">Aguardando terceiro</option>
           <option value="pronto_entrega">Pronto pra entrega</option>
         </select>
         <input type="text" class="search-input" id="of-busca" placeholder="Cliente, modelo, chassi..." oninput="renderOficina()" style="min-width:220px;">
@@ -2575,7 +2575,7 @@ select:not(.input-pro):not(.search-input){
     <!-- ABAS -->
     <div class="fin-tabs">
       <button class="fin-tab-btn active" data-sactab="abertos"     onclick="switchSacTab('abertos')">Em aberto (<span id="sac-cnt-abertos">0</span>)</button>
-      <button class="fin-tab-btn"        data-sactab="finalizados" onclick="switchSacTab('finalizados')">🏁 Finalizados (<span id="sac-cnt-finalizados">0</span>)</button>
+      <button class="fin-tab-btn"        data-sactab="finalizados" onclick="switchSacTab('finalizados')">Finalizados (<span id="sac-cnt-finalizados">0</span>)</button>
     </div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
@@ -2587,7 +2587,7 @@ select:not(.input-pro):not(.search-input){
         <select class="search-input" id="sac-filtro-status" onchange="renderSac()" style="max-width:200px;">
           <option value="">Todos status</option>
           <option value="acao_interna">Ação interna</option>
-          <option value="aguardando_terceiro">⏳ Aguardando terceiro</option>
+          <option value="aguardando_terceiro">Aguardando terceiro</option>
           <option value="pronto_entrega">Pronto pra entrega</option>
         </select>
         <select class="search-input" id="sac-filtro-prio" onchange="renderSac()" style="max-width:140px;">
@@ -2659,7 +2659,7 @@ select:not(.input-pro):not(.search-input){
     <div class="fin-tabs">
       <button class="fin-tab-btn active" data-monttab="andamento"  onclick="switchMontagensTab('andamento')">Em andamento (<span id="mont-cnt-andamento">0</span>)</button>
       <button class="fin-tab-btn"        data-monttab="concluidos" onclick="switchMontagensTab('concluidos')">Concluídos (<span id="mont-cnt-concluidos">0</span>)</button>
-      <button class="fin-tab-btn"        data-monttab="montadores" onclick="switchMontagensTab('montadores')">👷 Montadores (<span id="mont-cnt-montadores">0</span>)</button>
+      <button class="fin-tab-btn"        data-monttab="montadores" onclick="switchMontagensTab('montadores')">Montadores (<span id="mont-cnt-montadores">0</span>)</button>
     </div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
@@ -2798,7 +2798,7 @@ select:not(.input-pro):not(.search-input){
 
           <!-- Bloco 3: NOTA FISCAL -->
           <div class="modal-bloco">
-            <div class="modal-bloco-titulo">🧾 Nota Fiscal</div>
+            <div class="modal-bloco-titulo">Nota Fiscal</div>
             <div class="form-grid">
               <div class="form-group full"><label>Empresa emissora</label><input class="form-input" id="ct-nf-empresa"></div>
               <div class="form-group"><label>CNPJ emissora</label><input class="form-input" id="ct-nf-cnpj"></div>
@@ -2817,7 +2817,7 @@ select:not(.input-pro):not(.search-input){
 
           <div class="modal-actions">
             <button class="btn" onclick="_contratoVoltarBusca()">Cancelar</button>
-            <button class="btn btn-gold" id="btn-contrato-gerar" onclick="_contratoGerarPdf()">📄 Gerar Contrato PDF</button>
+            <button class="btn btn-gold" id="btn-contrato-gerar" onclick="_contratoGerarPdf()">Gerar Contrato PDF</button>
           </div>
         </div>
       </div>
@@ -2897,9 +2897,9 @@ select:not(.input-pro):not(.search-input){
           <option value="valor|asc">Valor ↑</option>
           <option value="descricao|asc">Descrição A-Z</option>
           <option value="descricao|desc">Descrição Z-A</option>
-          <option value="categoria|asc">🏷 Categoria A-Z</option>
-          <option value="status|asc">🚦 Status — urgência (atrasadas primeiro)</option>
-          <option value="status|desc">🚦 Status — pagas primeiro</option>
+          <option value="categoria|asc">Categoria A-Z</option>
+          <option value="status|asc">Status — urgência (atrasadas primeiro)</option>
+          <option value="status|desc">Status — pagas primeiro</option>
         </select>
       </div>
       <div id="cp-table-header" style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1fr minmax(150px, auto);gap:12px;padding:10px 20px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);">
@@ -3304,7 +3304,7 @@ select:not(.input-pro):not(.search-input){
       <div class="form-group full"><label>Modelo</label><input class="form-input" id="edit-modelo" type="text"></div>
       <div class="form-group full"><label>Fornecedor</label><input class="form-input" id="edit-fornecedor" type="text"></div>
       <div class="form-group full" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--text3);">
-        <span>🔒 Custos editáveis em Custos de Produtos</span>
+        <span>Custos editáveis em Custos de Produtos</span>
         <button class="action-btn edit-btn" onclick="irParaCustosProduto()">Ir pra Custos de Produtos →</button>
       </div>
       <div class="form-group"><label>Custo produto (R$)</label><input class="form-input" id="edit-custo" type="number" readonly style="opacity:0.55;"></div>
@@ -4577,7 +4577,7 @@ async function renderDashInternal(){
     proxCard = `
       <div class="kpi" style="cursor:default;">
         <div class="kpi-label">Próxima parcela</div>
-        <div class="kpi-value green">✅ Em dia</div>
+        <div class="kpi-value green">Em dia</div>
         <div class="kpi-change">Nenhuma pendente</div>
       </div>`;
   } else {
@@ -4922,7 +4922,7 @@ function renderDashRanking() {
   var el  = document.getElementById('dash-ranking-body');
   var sub = document.getElementById('dash-ranking-sub');
   if (!el) return;
-  el.innerHTML = '<div class="empty" style="padding:20px;font-size:11px;">⏳ Atualize o dashboard para ver o ranking</div>';
+  el.innerHTML = '<div class="empty" style="padding:20px;font-size:11px;">Atualize o dashboard para ver o ranking</div>';
 }
 
 // Casa o nome do item do pedido (ex: "Lee Vermelha") com um produto da
@@ -6076,7 +6076,7 @@ async function carregarFaturamentoDash(forcar) {
 
   var rankEl  = document.getElementById('dash-ranking-body');
   var vendEl  = document.getElementById('ranking-vendedores');
-  if (rankEl) rankEl.innerHTML = '<div class="empty" style="padding:24px;font-size:11px;">⏳ Buscando produtos vendidos...</div>';
+  if (rankEl) rankEl.innerHTML = '<div class="empty" style="padding:24px;font-size:11px;">Buscando produtos vendidos...</div>';
 
   try {
     var iniISO = document.getElementById('dash-fat-ini') ? document.getElementById('dash-fat-ini').value : '';
@@ -7182,8 +7182,8 @@ async function delProduct(i){
 let pedidosUnif = [];
 
 const PEDIDO_STATUS_GROUPS = {
-  aguardando: { label: '⏳ Aguardando', cor: 'var(--orange)', bg: 'rgba(255,165,0,0.12)' },
-  concluido:  { label: '✅ Concluído',  cor: 'var(--green)',  bg: 'rgba(0,200,83,0.12)' },
+  aguardando: { label: 'Aguardando', cor: 'var(--orange)', bg: 'rgba(255,165,0,0.12)' },
+  concluido:  { label: 'Concluído',  cor: 'var(--green)',  bg: 'rgba(0,200,83,0.12)' },
   cancelado:  { label: '⊘ Cancelado',   cor: 'var(--text3)',  bg: 'var(--surface3)' },
 };
 
@@ -7537,7 +7537,7 @@ function renderCustos(){
   if (banner){
     if (nMeses < 3){
       banner.style.display = '';
-      banner.innerHTML = `⚠️ <b>Análise inteligente em construção</b> — base de ${nMeses} mês${nMeses===1?'':'es'} completo${nMeses===1?'':'s'}, precisão limitada. Mais histórico melhora a classificação fixo/variável (estimativa: ~agosto/2026 pra análise robusta).`;
+      banner.innerHTML = `<b>Análise inteligente em construção</b> — base de ${nMeses} mês${nMeses===1?'':'es'} completo${nMeses===1?'':'s'}, precisão limitada. Mais histórico melhora a classificação fixo/variável (estimativa: ~agosto/2026 pra análise robusta).`;
     } else banner.style.display = 'none';
   }
 
@@ -7590,7 +7590,7 @@ function renderCustos(){
     ? varRows.join('')
     : vazio('Nenhum custo variável neste período.'));
   if (co.inativos.length){
-    html += tituloSec('⚠️ Inativos (sem lançamento há 2+ meses)', 'var(--text3)');
+    html += tituloSec('Inativos (sem lançamento há 2+ meses)', 'var(--text3)');
     html += cardWrap(co.inativos.map(i =>
       `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);padding:6px 8px;">
          <span>${escHtml(i.categoria)}</span><span>último: ${i.ultimoLancamento || '—'}</span>
@@ -8217,7 +8217,7 @@ async function savePricingToTable() {
       closePricingModal();
       filtrarEstoque();
       renderEstoqueKpis();
-      smAlert('⚡ "' + nome + '" atualizado no Tiny ERP e na tabela de preços!');
+      smAlert('"' + nome + '" atualizado no Tiny ERP e na tabela de preços!');
     } else {
       smAlert('Erro ao salvar no Tiny: ' + data.erro);
     }
@@ -8280,7 +8280,7 @@ async function carregarVendasDoMes() {
   var dataInicial = '01/' + mes + '/' + ano;
   var dataFinal   = ultimoDia + '/' + mes + '/' + ano;
 
-  if (statusEl) statusEl.textContent = '⏳ Buscando dados do Tiny...';
+  if (statusEl) statusEl.textContent = 'Buscando dados do Tiny...';
 
   // Reset tables
   document.getElementById('vendas-kpis').innerHTML            = '<div class="kpi"><div class="kpi-label">Aguarde</div><div class="kpi-value gold" style="font-size:14px;">Carregando...</div></div>';
@@ -8311,7 +8311,7 @@ async function carregarVendasDoMes() {
     renderizarPedidosVendas(pedidos);
 
   } catch(err) {
-    if (statusEl) statusEl.textContent = '❌ Erro: ' + err.message;
+    if (statusEl) statusEl.textContent = 'Erro: ' + err.message;
     console.error(err);
   }
 }
@@ -8687,11 +8687,11 @@ async function fazerLogin() {
   if (!user) { showLoginErro(erroEl, porEmail ? 'E-mail ou senha incorretos.' : 'Usuário ou senha incorretos.'); return; }
 
   if (user.status === 'pendente') {
-    showLoginErro(erroEl,'⏳ Seu cadastro ainda aguarda aprovação do administrador.');
+    showLoginErro(erroEl,'Seu cadastro ainda aguarda aprovação do administrador.');
     return;
   }
   if (user.status === 'rejeitado') {
-    showLoginErro(erroEl,'❌ Seu acesso foi negado. Entre em contato com o administrador.');
+    showLoginErro(erroEl,'Seu acesso foi negado. Entre em contato com o administrador.');
     return;
   }
 
@@ -8753,7 +8753,7 @@ async function criarConta() {
 
   console.log('[criarConta] usuario criado OK, id=' + salvo.id);
   erroEl.classList.remove('show');
-  okEl.textContent = '✅ Solicitação enviada! Aguarde a aprovação do administrador para fazer login.';
+  okEl.textContent = 'Solicitação enviada! Aguarde a aprovação do administrador para fazer login.';
   okEl.classList.add('show');
   await atualizarPendingDot();
 }
@@ -8939,7 +8939,7 @@ function importarCSVTiny(input) {
     renderContas();
     renderFinKpis();
     renderLancamentos();
-    smAlert(`✅ ${importados} lançamentos importados!${duplicados > 0 ? ' (' + duplicados + ' duplicados ignorados)' : ''}`);
+    smAlert(`${importados} lançamentos importados!${duplicados > 0 ? ' (' + duplicados + ' duplicados ignorados)' : ''}`);
     input.value = '';
   };
   reader.readAsText(file, 'UTF-8');
@@ -9180,7 +9180,7 @@ function renderEmprestimosLista() {
   + '</div>';
 
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px;flex-wrap:wrap;">'
-        + '<div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;">📋 Empréstimos</div>'
+        + '<div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:1px;">Empréstimos</div>'
         + (podeMexer ? '<button class="btn btn-gold" onclick="abrirEmpModal()" style="font-size:11px;padding:6px 14px;">+ Novo Empréstimo</button>' : '')
         + '</div>';
 
@@ -9209,7 +9209,7 @@ function renderEmprestimosLista() {
   if (quitados.length) {
     html += '<div style="margin-top:18px;">'
           + '<button onclick="toggleEmpQuitados()" style="width:100%;background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 14px;color:var(--text2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
-          + '<span>✓ Quitados (' + quitados.length + ')</span><span id="emp-quitados-arrow">▼</span>'
+          + '<span>Quitados (' + quitados.length + ')</span><span id="emp-quitados-arrow">▼</span>'
           + '</button>'
           + '<div id="emp-quitados-list" style="display:none;flex-direction:column;gap:6px;margin-top:8px;">';
     for (const e of quitados) {
@@ -9286,9 +9286,9 @@ function renderEmprestimoDetalhe(e) {
     const bg = isPaga ? 'var(--green-dim)' : (isProx ? 'var(--gold-dim)' : 'var(--surface2)');
     const cor = isPaga ? 'var(--green)' : (isProx ? 'var(--gold-bright)' : 'var(--text2)');
     const badge = isPaga
-      ? '<span class="badge badge-green">✓ Paga</span>'
+      ? '<span class="badge badge-green">Paga</span>'
       : isProx
-        ? '<span class="badge badge-gold">🔔 Próxima</span>'
+        ? '<span class="badge badge-gold">Próxima</span>'
         : '<span class="badge" style="background:var(--surface3);color:var(--text3);">Pendente</span>';
     let actions = '';
     if (!isPaga && podeMarcar) actions += '<button class="btn btn-gold" style="font-size:10px;padding:5px 12px;" onclick="marcarParcelaPaga(\'' + p.id + '\')">Marcar paga</button>';
@@ -9686,7 +9686,7 @@ async function excluirEmprestimo(id) {
   if (!e) return;
   const pagas = e.pagamentos.filter(p => p.status === 'pago').length;
   const ok = await smConfirm(
-    '⚠️ Tem certeza que deseja EXCLUIR o empréstimo "' + (e.nome||'') + '"?\n\n'
+    'Tem certeza que deseja EXCLUIR o empréstimo "' + (e.nome||'') + '"?\n\n'
     + 'Esta ação remove o empréstimo e todas as ' + e.pagamentos.length + ' parcelas '
     + '(' + pagas + ' já paga' + (pagas!==1?'s':'') + ').\n\n'
     + 'Não pode ser desfeita.'
@@ -9822,7 +9822,7 @@ async function analisarSaudeFinanceira() {
   } catch (e) {}
 
   if (btn) { btn.disabled = true; btn.textContent = 'Analisando...'; }
-  if (out) out.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:18px;">⏳ Analisando saúde financeira...</div>';
+  if (out) out.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:18px;">Analisando saúde financeira...</div>';
 
   const dados = buildDadosSaudeFinanceira();
   const prompt = 'Você é um consultor financeiro especialista em pequenas empresas brasileiras. '
@@ -9858,10 +9858,10 @@ async function analisarSaudeFinanceira() {
 }
 
 const _ANALISE_SECOES = [
-  { key: 'SITUAÇÃO',          alt: ['SITUACAO'],         label: '📊 Situação',        cor: '#4a9eff', glow: 'rgba(74,158,255,0.30)' },
-  { key: 'RISCOS',            alt: [],                   label: '⚠️ Riscos',          cor: 'var(--red)',         glow: 'var(--red-glow)' },
-  { key: 'PONTOS POSITIVOS',  alt: [],                   label: '✅ Pontos positivos', cor: 'var(--green)',       glow: 'var(--green-glow)' },
-  { key: 'RECOMENDAÇÕES',     alt: ['RECOMENDACOES'],    label: '💡 Recomendações',   cor: 'var(--gold-bright)', glow: 'var(--gold-glow)' },
+  { key: 'SITUAÇÃO',          alt: ['SITUACAO'],         label: 'Situação',        cor: '#4a9eff', glow: 'rgba(74,158,255,0.30)' },
+  { key: 'RISCOS',            alt: [],                   label: 'Riscos',          cor: 'var(--red)',         glow: 'var(--red-glow)' },
+  { key: 'PONTOS POSITIVOS',  alt: [],                   label: 'Pontos positivos', cor: 'var(--green)',       glow: 'var(--green-glow)' },
+  { key: 'RECOMENDAÇÕES',     alt: ['RECOMENDACOES'],    label: 'Recomendações',   cor: 'var(--gold-bright)', glow: 'var(--gold-glow)' },
 ];
 function _parseAnalise(text) {
   const out = {};
@@ -10766,7 +10766,7 @@ async function sincFinanceiro() {
     renderContas();
     renderFinKpis();
     renderLancamentos();
-    smAlert(`✅ ${importados} lançamentos importados do Tiny!`);
+    smAlert(`${importados} lançamentos importados do Tiny!`);
   } catch(err) {
     smAlert('Erro ao sincronizar: '+err.message);
   } finally {
@@ -11153,9 +11153,9 @@ function renderContasPagarAlertas() {
     const isVencida = dias < 0;
     const color = isVencida ? 'var(--red)' : dias<=1 ? 'var(--red)' : 'var(--orange)';
     const msg = isVencida
-      ? `⚠️ VENCIDA há ${Math.abs(dias)} dia${Math.abs(dias)!==1?'s':''}`
-      : dias===0 ? '⚠️ Vence HOJE'
-      : `🔔 Vence em ${dias} dia${dias!==1?'s':''}`;
+      ? `VENCIDA há ${Math.abs(dias)} dia${Math.abs(dias)!==1?'s':''}`
+      : dias===0 ? 'Vence HOJE'
+      : `Vence em ${dias} dia${dias!==1?'s':''}`;
 
     const waNum = c.whatsapp || '';
     const waMsg = encodeURIComponent(`⚡ Smart Motors — Lembrete de pagamento
@@ -11170,7 +11170,7 @@ ${isVencida?'❗ Esta conta está VENCIDA!':'Faltam '+dias+' dia(s) para o venci
     return `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--surface);border:1px solid ${color};border-radius:var(--r-sm);margin-bottom:8px;flex-wrap:wrap;gap:8px;">
         <div style="display:flex;align-items:center;gap:10px;">
-          <span style="font-size:18px;">${isVencida?'🚨':'🔔'}</span>
+          <svg class="ic ic-lg" style="color:${color};"><use href="#ic-alert"/></svg>
           <div>
             <div style="font-size:13px;font-weight:700;">${escHtml(c.nome)}</div>
             <div style="font-size:11px;color:${color};font-weight:700;">${msg} · ${fmt(c.valor)}</div>
@@ -11270,7 +11270,7 @@ function renderContasPagar() {
           <div>${stBadges[st]}</div>
           <div style="display:flex;gap:5px;">
             ${!c.paga
-              ? '<button class="btn btn-gold" onclick="pagarContaModal(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;">✅</button>'
+              ? '<button class="btn btn-gold" onclick="pagarContaModal(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;"><svg class="ic ic-sm"><use href="#ic-check"/></svg></button>'
               : '<button class="action-btn" onclick="despagarConta(\'' + c.id + '\')" style="font-size:10px;">↩</button>'}
             <a href="${waLink}" target="_blank" class="action-btn" style="background:#25D366;border-color:#25D366;color:#fff;text-decoration:none;padding:5px 8px;font-size:10px;font-weight:700;">📲</a>
             <button class="action-btn edit-btn" onclick="editarContaPagar('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
@@ -11581,7 +11581,7 @@ async function despagarConta(id) {
 async function _cpReverterPagamentoModal(c, lanc) {
   const dataBR = (lanc.data || '').split('-').reverse().join('/');
   const ok = await smConfirm(
-    `⚠️ Reverter pagamento\n\n` +
+    `Reverter pagamento\n\n` +
     `"${c.nome}" foi marcada como paga com lançamento no caixa em ${dataBR} (${lanc.conta}, ${fmt(lanc.valor)}).\n\n` +
     `Reverter vai:\n` +
     ` - Remover o lançamento do caixa\n` +
@@ -11661,7 +11661,7 @@ function _cpRecCancelModal(c) {
   );
   const N = futurasPendentes.length;
   const dataBRdia = _vencComDia(c.vencimento);
-  document.getElementById('cp-rec-title').textContent = '⚠️ Esta é uma conta recorrente';
+  document.getElementById('cp-rec-title').textContent = 'Esta é uma conta recorrente';
   document.getElementById('cp-rec-body').innerHTML = `
     <p><b>"${escHtml(c.nome)}" · ${periodLabel[c.periodicidade] || c.periodicidade}</b></p>
     <p style="margin-top:8px;">Esta ocorrência (${dataBRdia}) e mais ${N-1} ocorrência${N-1!==1?'s':''} futura${N-1!==1?'s':''} pendente${N-1!==1?'s':''} podem ser apagadas.</p>
@@ -11672,7 +11672,7 @@ function _cpRecCancelModal(c) {
   btnA.textContent = 'Apagar só esta (1)';
   btnA.className = 'btn';
   btnA.onclick = () => { closeCpRecModal(); _deletarContaPagarReal(c); };
-  btnB.textContent = `🗑 Apagar esta + futuras (${N})`;
+  btnB.textContent = `Apagar esta + futuras (${N})`;
   btnB.className = 'btn';
   btnB.style.background = 'var(--red)';
   btnB.style.borderColor = 'var(--red)';
@@ -11715,7 +11715,7 @@ function _cpRecEditModal(c, novos) {
   if ((novos.obs||'') !== (c.obs||'')) diffs.push(`<li>Observação: alterada</li>`);
   const diffHtml = diffs.length ? `<ul style="margin-top:6px;padding-left:18px;">${diffs.join('')}</ul>` : '<p style="color:var(--text3);margin-top:6px;">Nenhuma mudança detectada.</p>';
 
-  document.getElementById('cp-rec-title').textContent = '⚠️ Esta é uma conta recorrente';
+  document.getElementById('cp-rec-title').textContent = 'Esta é uma conta recorrente';
   document.getElementById('cp-rec-body').innerHTML = `
     <p>Editando <b>"${escHtml(c.nome)}"</b> (vence em ${dataBRdia}).</p>
     <p style="margin-top:8px;"><b>O que mudou:</b></p>
@@ -11790,7 +11790,7 @@ function _cpEmpWarn(c, acao, onConfirm) {
       <div><b>Número:</b> ${parc.numero}/${total}</div>
       <div><b>Valor:</b> ${fmt(parc.valor)}</div>
       <div><b>Vencimento:</b> ${parc.vencComDia || parc.venc}</div>
-      <div><b>Status:</b> ${parc.status === 'pago' ? '✅ Pago' : '⏳ Pendente'}</div>
+      <div><b>Status:</b> ${parc.status === 'pago' ? 'Pago' : 'Pendente'}</div>
     </div>` : '';
   document.getElementById('cp-warn-title').textContent = titulo;
   document.getElementById('cp-warn-body').innerHTML = corpo + parcelaBox;
@@ -11802,7 +11802,7 @@ function _cpEmpWarn(c, acao, onConfirm) {
     btn.style.borderColor = '';
     btn.style.color = '';
   } else {
-    btn.textContent = '🗑 Deletar ambos';
+    btn.textContent = 'Deletar ambos';
     btn.className = 'btn';
     btn.style.background = 'var(--red)';
     btn.style.borderColor = 'var(--red)';
@@ -11973,7 +11973,7 @@ function renderCPImportList() {
               </select>
             </div>
           </div>
-          ${jaImportada?'<div style="font-size:11px;color:var(--green);margin-top:6px;font-weight:700;">✅ Já importada</div>':''}
+          ${jaImportada?'<div style="font-size:11px;color:var(--green);margin-top:6px;font-weight:700;">Já importada</div>':''}
           ${c.fornecedor?`<div style="font-size:10px;color:var(--text3);margin-top:4px;">Fornecedor: ${escHtml(c.fornecedor)}</div>`:''}
         </div>
       </div>
@@ -12019,7 +12019,7 @@ function confirmarImportTiny() {
   renderContasPagar();
   atualizarDotContasPagar();
   salvarDados();
-  smAlert(`✅ ${importadas} conta${importadas!==1?'s':''} importada${importadas!==1?'s':''} com sucesso!`);
+  smAlert(`${importadas} conta${importadas!==1?'s':''} importada${importadas!==1?'s':''} com sucesso!`);
 }
 
 // cp-import-modal listener added after DOM ready
@@ -12146,7 +12146,7 @@ function renderContasReceber() {
           <div>${stBadges[st]}</div>
           <div style="display:flex;gap:5px;">
             ${!c.recebido
-              ? '<button class="btn btn-gold" onclick="marcarRecebido(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;" title="Marcar recebido">✅</button>'
+              ? '<button class="btn btn-gold" onclick="marcarRecebido(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;" title="Marcar recebido"><svg class="ic ic-sm"><use href="#ic-check"/></svg></button>'
               : '<button class="action-btn" onclick="desmarcarRecebido(\'' + c.id + '\')" style="font-size:10px;" title="Desmarcar recebido">↩</button>'}
             <button class="action-btn edit-btn" onclick="editarContaReceber('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
             <button class="action-btn del-btn" onclick="deletarContaReceber('${c.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
@@ -12773,7 +12773,7 @@ async function salvarAcesso(mode, originalEmail) {
   if (!salvo) return smAlert('Erro ao salvar no servidor. Tente novamente.');
   document.getElementById('acesso-modal')?.remove();
   await renderAdmin();
-  smAlert('✅ Acesso ' + (mode === 'edit' ? 'atualizado' : 'criado') + '!');
+  smAlert('Acesso ' + (mode === 'edit' ? 'atualizado' : 'criado') + '!');
 }
 
 async function alterarCodigo() {
@@ -12782,14 +12782,14 @@ async function alterarCodigo() {
   if (!novo || novo.trim() === '') return;
   if (novo.trim().length < 6) { smAlert('O código deve ter pelo menos 6 caracteres.'); return; }
   _acessoCode = novo.trim();
-  smAlert(`✅ Código alterado para: ${novo.trim()}\n\n⚠️ Mudança válida só para esta sessão.`);
+  smAlert(`Código alterado para: ${novo.trim()}\n\nMudança válida só para esta sessão.`);
   renderAdmin();
 }
 
 function copiarCodigo() {
   const code = getAcessoCode();
   navigator.clipboard.writeText(code).then(() => {
-    smAlert(`✅ Código copiado: ${code}`);
+    smAlert(`Código copiado: ${code}`);
   }).catch(() => {
     smPrompt('Copie o código abaixo:', code);
   });
@@ -12854,11 +12854,11 @@ function escHtml(s) {
 
 // Status unificado (oficina + sac)
 const OS_STATUS = {
-  acao_interna:       { label: '🔧 Ação interna',       cor: 'var(--orange)',     bg: 'var(--orange-dim)' },
-  aguardando_terceiro:{ label: '⏳ Aguardando terceiro', cor: 'var(--gold-bright)',bg: 'var(--gold-dim)' },
-  pronto_entrega:     { label: '✅ Pronto pra entrega',  cor: 'var(--green)',      bg: 'var(--green-dim)' },
-  finalizado:         { label: '🏁 Finalizado',          cor: 'var(--text2)',      bg: 'var(--surface3)' },
-  transferido:        { label: '🔄 Transferido',         cor: 'var(--text3)',      bg: 'var(--surface3)' },
+  acao_interna:       { label: 'Ação interna',       cor: 'var(--orange)',     bg: 'var(--orange-dim)' },
+  aguardando_terceiro:{ label: 'Aguardando terceiro', cor: 'var(--gold-bright)',bg: 'var(--gold-dim)' },
+  pronto_entrega:     { label: 'Pronto pra entrega',  cor: 'var(--green)',      bg: 'var(--green-dim)' },
+  finalizado:         { label: 'Finalizado',          cor: 'var(--text2)',      bg: 'var(--surface3)' },
+  transferido:        { label: 'Transferido',         cor: 'var(--text3)',      bg: 'var(--surface3)' },
 };
 // Tipos de problema unificados
 const TIPOS_PROBLEMA = {
@@ -15596,15 +15596,15 @@ let _pdvSyncStatus = new Map();
 const VIACEP_URL = 'https://viacep.com.br/ws/{cep}/json/';
 
 const PDV_PAGTO_TIPOS = [
-  { code: 'dinheiro',       label: '💵 Dinheiro' },
-  { code: 'pix',            label: '⚡ PIX' },
-  { code: 'cartao_credito', label: '💳 Cartão de Crédito' },
-  { code: 'cartao_debito',  label: '💳 Cartão de Débito' },
+  { code: 'dinheiro',       label: 'Dinheiro' },
+  { code: 'pix',            label: 'PIX' },
+  { code: 'cartao_credito', label: 'Cartão de Crédito' },
+  { code: 'cartao_debito',  label: 'Cartão de Débito' },
 ];
 
 const PDV_STATUS_LABEL = {
-  aguardando_entrega: { label: '⏳ Aguardando entrega', cor: 'var(--orange)', bg: 'rgba(255,165,0,0.12)' },
-  entregue:           { label: '✅ Entregue',           cor: 'var(--green)',  bg: 'rgba(0,200,83,0.12)' },
+  aguardando_entrega: { label: 'Aguardando entrega', cor: 'var(--orange)', bg: 'rgba(255,165,0,0.12)' },
+  entregue:           { label: 'Entregue',           cor: 'var(--green)',  bg: 'rgba(0,200,83,0.12)' },
   cancelado:          { label: '⊘ Cancelado',           cor: 'var(--text3)',  bg: 'var(--surface3)' },
 };
 
