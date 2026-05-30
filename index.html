@@ -1811,7 +1811,7 @@ select:not(.input-pro):not(.search-input){
     <div style="font-size:10px;color:var(--text3);margin-top:6px;">* Só o nome é obrigatório</div>
     <div class="modal-actions">
       <button class="btn" onclick="closeCliQuickModal()">Cancelar</button>
-      <button class="btn btn-gold" onclick="salvarCliQuick()">Cadastrar e usar ⚡</button>
+      <button class="btn btn-gold" onclick="salvarCliQuick()">Cadastrar e usar</button>
     </div>
   </div>
 </div>
@@ -3030,7 +3030,7 @@ select:not(.input-pro):not(.search-input){
       </div>
       <div class="modal-actions">
         <button class="btn" onclick="closeCPModal()">Cancelar</button>
-        <button class="btn btn-gold" onclick="salvarContaPagar()">Salvar ⚡</button>
+        <button class="btn btn-gold" onclick="salvarContaPagar()">Salvar</button>
       </div>
     </div>
   </div>
@@ -3163,7 +3163,7 @@ select:not(.input-pro):not(.search-input){
         </div>
         <div class="modal-actions">
           <button class="btn" onclick="closeCRModal()">Cancelar</button>
-          <button class="btn btn-gold" onclick="salvarContaReceber()">Salvar ⚡</button>
+          <button class="btn btn-gold" onclick="salvarContaReceber()">Salvar</button>
         </div>
       </div>
     </div>
@@ -3290,7 +3290,7 @@ select:not(.input-pro):not(.search-input){
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closePricingModal()">Fechar</button>
-      <button class="btn btn-gold" onclick="savePricingToTable()">Salvar e enviar ao Tiny ⚡</button>
+      <button class="btn btn-gold" onclick="savePricingToTable()">Salvar e enviar ao Tiny</button>
     </div>
   </div>
 </div>
@@ -4645,7 +4645,7 @@ async function renderDashMargens(){
   });
   document.getElementById('dash-low-margins').innerHTML = low.length
     ? lowRows
-    : '<tr><td colspan="3" class="empty" style="padding:20px;">Nenhum alerta 🎉</td></tr>';
+    : '<tr><td colspan="3" class="empty" style="padding:20px;">Nenhum alerta</td></tr>';
 }
 
 // ── Ranking de vendas por modelo ──────────────
@@ -7291,7 +7291,7 @@ async function carregarPedidosUnif() {
   const btn   = document.getElementById('btn-ped-sync');
   const dot   = document.getElementById('ped-api-dot');
   const label = document.getElementById('ped-api-label');
-  btn.textContent = '⏳ Buscando...';
+  btn.textContent = 'Buscando...';
   btn.disabled = true;
   dot.style.background = 'var(--gold)';
   label.textContent = 'Buscando Tiny + PDV...';
@@ -7375,7 +7375,7 @@ async function carregarPedidosUnif() {
     dot.style.background = 'var(--red)';
     label.textContent = 'Erro: ' + err.message;
   } finally {
-    btn.textContent = '⚡ Buscar';
+    btn.textContent = 'Buscar';
     btn.disabled = false;
   }
 }
@@ -7939,7 +7939,7 @@ function setApiStatus(status, msg) {
 
 async function carregarProdutosTiny() {
   const btn = document.getElementById('btn-sync');
-  btn.textContent = '⏳ Sincronizando...';
+  btn.textContent = 'Sincronizando...';
   btn.disabled    = true;
   setApiStatus('carregando', 'Conectando ao Tiny ERP...');
 
@@ -7972,7 +7972,7 @@ async function carregarProdutosTiny() {
     document.getElementById('estoque-table-body').innerHTML =
       `<tr><td colspan="7" class="empty" style="color:var(--red);">Erro ao conectar: ${err.message}</td></tr>`;
   } finally {
-    btn.textContent = '⚡ Sincronizar';
+    btn.textContent = 'Sincronizar';
     btn.disabled    = false;
   }
 }
@@ -8188,7 +8188,7 @@ async function savePricingToTable() {
   // Envia para o Tiny ERP via backend
   const btn = document.querySelector('#pricing-modal .btn-gold');
   const originalText = btn.textContent;
-  btn.textContent = '⏳ Salvando no Tiny...';
+  btn.textContent = 'Salvando no Tiny...';
   btn.disabled = true;
 
   try {
@@ -9821,7 +9821,7 @@ async function analisarSaudeFinanceira() {
     }
   } catch (e) {}
 
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Analisando...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Analisando...'; }
   if (out) out.innerHTML = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:18px;">⏳ Analisando saúde financeira...</div>';
 
   const dados = buildDadosSaudeFinanceira();
@@ -9853,7 +9853,7 @@ async function analisarSaudeFinanceira() {
     console.error('[analisarSaude] erro:', err);
     if (out) out.innerHTML = '<div style="color:var(--red);padding:14px;font-size:12px;">Erro ao analisar: ' + err.message + '</div>';
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🤖 Analisar saúde financeira'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Analisar saúde financeira'; }
   }
 }
 
@@ -10328,7 +10328,7 @@ function renderLancamentos() {
       </span>
       <span style="display:flex;gap:4px;">
         <button class="action-btn edit-btn" onclick="editarLancamento('${l.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
-        <button class="action-btn del-btn" onclick="deletarLancamento('${l.id}')">✕</button>
+        <button class="action-btn del-btn" onclick="deletarLancamento('${l.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
       </span>
     </div>
   `;
@@ -10719,7 +10719,7 @@ async function openContaModal() {
 
 async function sincFinanceiro() {
   const btn = document.getElementById('btn-sinc-fin');
-  btn.textContent = '⏳ Sincronizando...';
+  btn.textContent = 'Sincronizando...';
   btn.disabled = true;
   try {
     // Busca contas a receber e pagar do Tiny
@@ -10770,7 +10770,7 @@ async function sincFinanceiro() {
   } catch(err) {
     smAlert('Erro ao sincronizar: '+err.message);
   } finally {
-    btn.textContent = '⚡ Sincronizar Tiny';
+    btn.textContent = 'Sincronizar Tiny';
     btn.disabled = false;
   }
 }
@@ -10795,7 +10795,7 @@ async function sugerirCategoriaAI() {
 
   const btn = document.getElementById('btn-ai-cat');
   const div = document.getElementById('ai-sugestao');
-  btn.textContent = '⏳';
+  btn.textContent = '…';
   btn.disabled = true;
   div.style.display = 'none';
 
@@ -10833,7 +10833,7 @@ Responda APENAS com o nome exato da categoria, sem explicação.`
     div.innerHTML = '❌ Erro ao consultar IA. Selecione a categoria manualmente.';
     div.style.display = 'block';
   } finally {
-    btn.textContent = '🤖 Sugerir';
+    btn.textContent = 'Sugerir';
     btn.disabled = false;
   }
 }
@@ -11225,7 +11225,7 @@ function renderContasPagar() {
       ? `Nenhuma conta a vencer${escopoMes}.`
       : cpAbaAtiva === 'pagas'
         ? `Nenhuma conta paga${escopoMes}.`
-        : 'Nenhuma conta atrasada — em dia! 🎉';
+        : 'Nenhuma conta atrasada — em dia!';
     el.innerHTML = `<div class="empty" style="padding:32px;">${msgVazio}</div>`;
     return;
   }
@@ -11235,9 +11235,9 @@ function renderContasPagar() {
     const dias = diasAteVencimento(c.vencimento);
     const stColors = {paga:'var(--green)',pendente:'var(--text2)',vencida:'var(--red)'};
     const stBadges = {
-      paga:'<span class="badge badge-green">✅ Paga</span>',
-      pendente:'<span class="badge badge-orange">⏳ Pendente</span>',
-      vencida:'<span class="badge badge-red">🚨 Vencida</span>',
+      paga:'<span class="badge badge-green">Paga</span>',
+      pendente:'<span class="badge badge-orange">Pendente</span>',
+      vencida:'<span class="badge badge-red">Vencida</span>',
     };
     const periodoLabel = {unico:'Único',semanal:'Semanal',mensal:'Mensal',bimestral:'Bimestral',trimestral:'Trimestral',semestral:'Semestral',anual:'Anual'};
     const eparcId = c.emprestimoParcelaId;
@@ -11274,7 +11274,7 @@ function renderContasPagar() {
               : '<button class="action-btn" onclick="despagarConta(\'' + c.id + '\')" style="font-size:10px;">↩</button>'}
             <a href="${waLink}" target="_blank" class="action-btn" style="background:#25D366;border-color:#25D366;color:#fff;text-decoration:none;padding:5px 8px;font-size:10px;font-weight:700;">📲</a>
             <button class="action-btn edit-btn" onclick="editarContaPagar('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
-            <button class="action-btn del-btn" onclick="deletarContaPagar('${c.id}')">✕</button>
+            <button class="action-btn del-btn" onclick="deletarContaPagar('${c.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
           </div>
         </div>
         ${c.obs ? `<div id="cp-obs-${c.id}" style="display:none;margin:0 20px 12px 36px;padding:10px 14px;background:var(--surface2);border-left:2px solid var(--gold);border-radius:0 6px 6px 0;font-size:11px;color:var(--text2);line-height:1.5;">${escHtml(c.obs)}</div>` : ''}
@@ -11860,7 +11860,7 @@ function parseDateBR(s) {
 
 async function importarContasTiny() {
   const btn = document.getElementById('btn-import-cp');
-  btn.textContent = '⏳ Buscando...';
+  btn.textContent = 'Buscando...';
   btn.disabled = true;
 
   try {
@@ -11909,7 +11909,7 @@ async function importarContasTiny() {
   } catch(err) {
     smAlert('Erro ao buscar do Tiny: ' + err.message);
   } finally {
-    btn.textContent = '⚡ Importar do Tiny';
+    btn.textContent = 'Importar do Tiny';
     btn.disabled = false;
   }
 }
@@ -12108,16 +12108,16 @@ function renderContasReceber() {
   if (!lista.length) {
     const msgVazio = crAbaAtiva === 'areceber'  ? `Nenhuma conta a receber${escopoMes}.`
                    : crAbaAtiva === 'recebidas' ? `Nenhuma conta recebida${escopoMes}.`
-                   : 'Nenhuma conta atrasada — em dia! 🎉';
+                   : 'Nenhuma conta atrasada — em dia!';
     el.innerHTML = `<div class="empty" style="padding:32px;">${msgVazio}</div>`;
     return;
   }
 
   const stColors = { recebido:'var(--green)', pendente:'var(--text2)', vencida:'var(--red)' };
   const stBadges = {
-    recebido:'<span class="badge badge-green">✅ Recebido</span>',
-    pendente:'<span class="badge badge-orange">⏳ Pendente</span>',
-    vencida: '<span class="badge badge-red">🚨 Vencida</span>',
+    recebido:'<span class="badge badge-green">Recebido</span>',
+    pendente:'<span class="badge badge-orange">Pendente</span>',
+    vencida: '<span class="badge badge-red">Vencida</span>',
   };
 
   el.innerHTML = lista.map(c => {
@@ -12149,7 +12149,7 @@ function renderContasReceber() {
               ? '<button class="btn btn-gold" onclick="marcarRecebido(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;" title="Marcar recebido">✅</button>'
               : '<button class="action-btn" onclick="desmarcarRecebido(\'' + c.id + '\')" style="font-size:10px;" title="Desmarcar recebido">↩</button>'}
             <button class="action-btn edit-btn" onclick="editarContaReceber('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
-            <button class="action-btn del-btn" onclick="deletarContaReceber('${c.id}')">✕</button>
+            <button class="action-btn del-btn" onclick="deletarContaReceber('${c.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
           </div>
         </div>
         ${c.obs ? `<div id="cr-obs-${c.id}" style="display:none;margin:0 20px 12px 36px;padding:10px 14px;background:var(--surface2);border-left:2px solid var(--gold);border-radius:0 6px 6px 0;font-size:11px;color:var(--text2);line-height:1.5;">${escHtml(c.obs)}</div>` : ''}
@@ -12346,7 +12346,7 @@ function initClienteSearch(containerId, opts){
   cont.innerHTML =
     `<input type="text" class="form-input cli-search-input" placeholder="${escHtml(opts.placeholder || '🔍 Buscar por nome, telefone ou CPF')}">` +
     `<span class="cli-search-tag" style="display:none;">AVULSO</span>` +
-    `<button type="button" class="cli-search-clear" style="display:none;" title="Limpar seleção">✕</button>` +
+    `<button type="button" class="cli-search-clear" style="display:none;" title="Limpar seleção"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>` +
     `<div class="cli-search-dropdown" style="display:none;"></div>`;
   const els = {
     input:    cont.querySelector('.cli-search-input'),
@@ -12619,7 +12619,7 @@ async function renderAdmin() {
         <button class="btn btn-gold" onclick="aprovarUser('${u.email}')" style="font-size:11px;padding:6px 14px;"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Aprovar</button>
         <button class="btn" onclick="rejeitarUser('${u.email}')" style="font-size:11px;padding:6px 14px;border-color:var(--red);color:var(--red);">❌ Rejeitar</button>
       `)).join('')
-    : '<div class="empty" style="padding:24px;">Nenhuma solicitação pendente 🎉</div>';
+    : '<div class="empty" style="padding:24px;">Nenhuma solicitação pendente</div>';
 
   // Ativos
   const criarBtn = '<button class="btn btn-gold" onclick="abrirCriarAcesso()" style="font-size:12px;padding:8px 16px;margin:14px 20px;">+ Criar acesso</button>';
@@ -13324,7 +13324,7 @@ function renderOficina() {
         + (next ? `<button class="btn btn-gold" onclick="ofAvancarStatus('${o.id}')" style="font-size:10px;padding:5px 10px;" title="Avançar para ${nextLabel}">→ ${nextLabel}</button>` : '')
         + `<button class="action-btn" onclick="ofImprimir('${o.id}')" title="Imprimir OS (A5)">🖨️</button>`
         + `<button class="action-btn edit-btn" onclick="abrirOfModal('${o.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
-        + `<button class="action-btn del-btn" onclick="ofExcluir('${o.id}')">✕</button>`
+        + `<button class="action-btn del-btn" onclick="ofExcluir('${o.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
       + `</div>`
       + '</div>';
   }).join('');
@@ -13671,7 +13671,7 @@ function abrirOfModal(id) {
     + `</div>`
     // ── Bloco 2 — Veículo ──
     + `<div class="modal-bloco">`
-    +   `<div class="modal-bloco-titulo">🛵 Veículo</div>`
+    +   `<div class="modal-bloco-titulo">Veículo</div>`
     +   `<div class="form-grid">`
     +     `<div class="form-group"><label>Modelo</label><input class="form-input" id="of-modelo" value="${escAttr(o&&o.modeloScooter)}"></div>`
     +     `<div class="form-group"><label>Cor</label><input class="form-input" id="of-cor" value="${escAttr(o&&o.cor)}"></div>`
@@ -13681,14 +13681,14 @@ function abrirOfModal(id) {
     + `</div>`
     // ── Bloco 3 — Problema ──
     + `<div class="modal-bloco">`
-    +   `<div class="modal-bloco-titulo">⚠️ Problema</div>`
+    +   `<div class="modal-bloco-titulo">Problema</div>`
     +   `<div class="form-grid">`
     +     `<div class="form-group full"><label>Problema relatado</label><textarea class="form-input" id="of-problema" rows="2">${escAttr(o&&o.problemaRelatado)}</textarea></div>`
     +   `</div>`
     + `</div>`
     // ── Bloco 4 — Tratamento ──
     + `<div class="modal-bloco">`
-    +   `<div class="modal-bloco-titulo">🛠️ Tratamento</div>`
+    +   `<div class="modal-bloco-titulo">Tratamento</div>`
     +   `<div class="form-grid">`
     +     `<div class="form-group"><label>Tipo do problema</label><select class="form-input" id="of-tipo" onchange="ofTipoOutroToggle()">${tipoOpts}</select></div>`
     +     `<div class="form-group" id="of-tipo-outro-wrap" style="${tipoOutroDisplay}"><label>Especifique o tipo</label><input class="form-input" id="of-tipo-outro" value="${escAttr(o&&o.tipoProblemaOutro)}"></div>`
@@ -13701,7 +13701,7 @@ function abrirOfModal(id) {
     + `</div>`
     // ── Bloco 5 — Prazos ──
     + `<div class="modal-bloco">`
-    +   `<div class="modal-bloco-titulo">📅 Prazos</div>`
+    +   `<div class="modal-bloco-titulo">Prazos</div>`
     +   `<div class="form-grid">`
     +     `<div class="form-group"><label>Data abertura</label><input class="form-input" id="of-data-abert" type="date" value="${(o&&o.dataAbertura)||new Date().toISOString().split('T')[0]}"></div>`
     +     `<div class="form-group"><label>Próximo contato</label><input class="form-input" id="of-data-prox" type="date" value="${(o&&o.dataProximoContato)||''}"></div>`
@@ -13710,7 +13710,7 @@ function abrirOfModal(id) {
     + `</div>`
     // ── Bloco 6 — Timeline ──
     + `<div class="modal-bloco">`
-    +   `<div class="modal-bloco-titulo">📍 Timeline de eventos</div>`
+    +   `<div class="modal-bloco-titulo">Timeline de eventos</div>`
     +   blocoTimelineHTML
     + `</div>`
     + `<div class="modal-actions">`
@@ -14214,7 +14214,7 @@ function renderMontagens() {
                 <td style="padding:6px 10px;font-size:11px;">${escHtml(p.observacoes || '—')}</td>
                 <td style="padding:6px 10px;font-size:10px;color:${p.lancamentoId ? 'var(--gold)' : 'var(--text3)'};">${p.lancamentoId ? '🔗 lançamento' : 'só registro'}</td>
                 <td style="padding:6px 10px;text-align:center;">
-                  <button class="action-btn del-btn" onclick="_montagensCancelarPagamento('${p.id}')" title="Cancelar este pagamento">✕</button>
+                  <button class="action-btn del-btn" onclick="_montagensCancelarPagamento('${p.id}')" title="Cancelar este pagamento"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
                 </td>
               </tr>`).join('')}
             </tbody>
@@ -14407,7 +14407,7 @@ function abrirMontagemModal(loteId) {
     +   `<div class="modal-title">${titulo}</div>`
     +   `<datalist id="mont-modelos-list">${modelosOpts}</datalist>`
     +   `<div class="modal-bloco">`
-    +     `<div class="modal-bloco-titulo">📦 Lote</div>`
+    +     `<div class="modal-bloco-titulo">Lote</div>`
     +     `<div class="form-grid">`
     +       `<div class="form-group"><label>Montador</label><select class="form-input" id="mont-modal-montador" onchange="_montagensTrocarMontador()">${montadorOpts}</select></div>`
     +       `<div class="form-group"><label>Data de envio</label><input class="form-input" id="mont-modal-data" type="date" value="${dataValue}"></div>`
@@ -14415,7 +14415,7 @@ function abrirMontagemModal(loteId) {
     +     `</div>`
     +   `</div>`
     +   `<div class="modal-bloco">`
-    +     `<div class="modal-bloco-titulo">🛵 Motos do lote</div>`
+    +     `<div class="modal-bloco-titulo">Motos do lote</div>`
     +     `<div style="overflow-x:auto;">`
     +       `<table id="mont-modal-tbl" style="width:100%;border-collapse:collapse;font-size:12px;">`
     +         `<thead>`
@@ -14467,7 +14467,7 @@ function _montagensAddRow(item) {
     + `<td style="padding:4px;"><input class="form-input mont-modal-cor" type="text" placeholder="Cor" value="${escHtml(cor).replace(/"/g,'&quot;')}"></td>`
     + `<td style="padding:4px;"><input class="form-input mont-modal-chassi" type="text" placeholder="(opcional)" value="${escHtml(chassi).replace(/"/g,'&quot;')}" style="font-family:var(--mono,monospace);text-transform:uppercase;"></td>`
     + `<td style="padding:4px;"><input class="form-input mont-modal-preco" type="number" step="0.01" value="${preco.toFixed(2)}" data-touched="${touched}" oninput="this.dataset.touched='1';_montagensRecalcTotal()" style="text-align:right;"></td>`
-    + `<td style="padding:4px;text-align:center;"><button class="action-btn del-btn" type="button" onclick="_montagensRemoveRow(this)" title="Remover">✕</button></td>`;
+    + `<td style="padding:4px;text-align:center;"><button class="action-btn del-btn" type="button" onclick="_montagensRemoveRow(this)" title="Remover"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button></td>`;
   tbody.appendChild(tr);
   _montagensRecalcTotal();
 }
@@ -15719,7 +15719,7 @@ async function _pdvRenderPainel(root) {
               <div style="text-align:right;font-size:14px;font-weight:800;color:var(--gold);">${_fmtBRMoney(p.total)}</div>
             </div>`;
           }).join('')
-        : '<div class="empty" style="padding:32px;">Nenhum pedido pendente. 🎉</div>')
+        : '<div class="empty" style="padding:32px;">Nenhum pedido pendente.</div>')
     + `</div>`;
 }
 
@@ -16274,11 +16274,11 @@ function _pdvRenderSucesso(root) {
 
   let syncBlock = '';
   if (sync?.state === 'syncing') {
-    syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--text3);">⏳ Sincronizando com Tiny…</div>`;
+    syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--text3);"><svg class="ic ic-sm"><use href="#ic-clock"/></svg> Sincronizando com Tiny…</div>`;
   } else if (sync?.state === 'success') {
-    syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--green);font-weight:700;">✅ Sincronizado com Tiny — Pedido #${escHtml(sync.tinyNumero || '?')}</div>`;
+    syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--green);font-weight:700;"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Sincronizado com Tiny — Pedido #${escHtml(sync.tinyNumero || '?')}</div>`;
   } else if (sync?.state === 'error') {
-    syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--orange);">⚠️ Falha ao sincronizar com Tiny: <span style="color:var(--text3);">${escHtml(sync.erro || 'erro desconhecido')}</span></div>`
+    syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--orange);"><svg class="ic ic-sm"><use href="#ic-alert"/></svg> Falha ao sincronizar com Tiny: <span style="color:var(--text3);">${escHtml(sync.erro || 'erro desconhecido')}</span></div>`
               + `<div style="margin-top:8px;"><button class="btn" onclick="_pdvSincronizarComTiny('${p.id}')" style="font-size:11px;padding:6px 12px;"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Tentar sincronizar de novo</button></div>`;
   }
 
@@ -16330,13 +16330,13 @@ async function _pdvAbrirDetalhe(pedidoId) {
   const syncLive = _pdvSyncStatus.get(p.id);
   let syncBlock = '';
   if (syncLive?.state === 'syncing') {
-    syncBlock = `<span style="color:var(--text3);font-size:10px;margin-left:8px;">⏳ Sincronizando com Tiny…</span>`;
+    syncBlock = `<span style="color:var(--text3);font-size:10px;margin-left:8px;"><svg class="ic ic-sm"><use href="#ic-clock"/></svg> Sincronizando com Tiny…</span>`;
   } else if (p.sincronizadoTiny) {
-    syncBlock = `<span style="color:var(--green);font-size:10px;margin-left:8px;font-weight:700;">✅ Sincronizado · Tiny #${escHtml(p.tinyNumero || '?')}</span>`;
+    syncBlock = `<span style="color:var(--green);font-size:10px;margin-left:8px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Sincronizado · Tiny #${escHtml(p.tinyNumero || '?')}</span>`;
   } else {
     // Não sincronizado: warning + erro detalhado + botão retry
     const erroTxt = (syncLive?.state === 'error' && syncLive.erro) || p.tinyErro || '';
-    syncBlock = `<span style="color:var(--orange);font-size:10px;margin-left:8px;">⚠️ Não sincronizado com Tiny</span>`
+    syncBlock = `<span style="color:var(--orange);font-size:10px;margin-left:8px;"><svg class="ic ic-sm"><use href="#ic-alert"/></svg> Não sincronizado com Tiny</span>`
               + `<button class="btn" onclick="_pdvSincronizarComTiny('${p.id}')" style="font-size:10px;padding:3px 10px;margin-left:8px;"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Sincronizar</button>`
               + (erroTxt ? `<div style="font-size:10px;color:var(--text3);margin-top:6px;background:var(--surface2);padding:8px 10px;border-radius:var(--r-sm);">Último erro: ${escHtml(erroTxt)}</div>` : '');
   }
@@ -16618,7 +16618,7 @@ function renderSac() {
       + `<div style="font-size:10px;color:var(--text3);">${vencHTML}</div>`
       + `<div style="display:flex;gap:5px;">`
         + `<button class="action-btn edit-btn" onclick="abrirSacModal('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
-        + `<button class="action-btn del-btn" onclick="sacExcluir('${c.id}')">✕</button>`
+        + `<button class="action-btn del-btn" onclick="sacExcluir('${c.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
       + `</div>`
       + '</div>';
   }).join('');
@@ -16704,7 +16704,7 @@ function abrirSacModal(id) {
     + `</div>`
     // ── Bloco 2 — Veículo ──
     + `<div class="modal-bloco">`
-    +   `<div class="modal-bloco-titulo">🛵 Veículo</div>`
+    +   `<div class="modal-bloco-titulo">Veículo</div>`
     +   `<div class="form-grid">`
     +     `<div class="form-group"><label>Modelo</label><input class="form-input" id="sac-modelo" value="${escAttr(c&&c.modeloScooter)}"></div>`
     +     `<div class="form-group"><label>Cor</label><input class="form-input" id="sac-cor" value="${escAttr(c&&c.cor)}"></div>`
@@ -16714,14 +16714,14 @@ function abrirSacModal(id) {
     + `</div>`
     // ── Bloco 3 — Problema ──
     + `<div class="modal-bloco">`
-    +   `<div class="modal-bloco-titulo">⚠️ Problema</div>`
+    +   `<div class="modal-bloco-titulo">Problema</div>`
     +   `<div class="form-grid">`
     +     `<div class="form-group full"><label>Problema relatado</label><textarea class="form-input" id="sac-desc" rows="3">${escAttr(c&&c.problemaRelatado)}</textarea></div>`
     +   `</div>`
     + `</div>`
     // ── Bloco 4 — Tratamento ──
     + `<div class="modal-bloco">`
-    +   `<div class="modal-bloco-titulo">🛠️ Tratamento</div>`
+    +   `<div class="modal-bloco-titulo">Tratamento</div>`
     +   `<div class="form-grid">`
     +     `<div class="form-group"><label>Tipo do problema</label><select class="form-input" id="sac-tipo" onchange="sacTipoOutroToggle()">${tipoOpts}</select></div>`
     +     `<div class="form-group" id="sac-tipo-outro-wrap" style="${tipoOutroDisplay}"><label>Especifique o tipo</label><input class="form-input" id="sac-tipo-outro" value="${escAttr(c&&c.tipoProblemaOutro)}"></div>`
@@ -16732,7 +16732,7 @@ function abrirSacModal(id) {
     + `</div>`
     // ── Bloco 5 — Prazos ──
     + `<div class="modal-bloco">`
-    +   `<div class="modal-bloco-titulo">📅 Prazos</div>`
+    +   `<div class="modal-bloco-titulo">Prazos</div>`
     +   `<div class="form-grid">`
     +     `<div class="form-group"><label>Data abertura</label><input class="form-input" id="sac-data-abert" type="date" value="${(c&&c.dataAbertura)||new Date().toISOString().split('T')[0]}"></div>`
     +     `<div class="form-group"><label>Próximo contato</label><input class="form-input" id="sac-prox" type="date" value="${(c&&c.dataProximoContato)||''}"></div>`
@@ -16741,7 +16741,7 @@ function abrirSacModal(id) {
     + `</div>`
     // ── Bloco 6 — Timeline ──
     + `<div class="modal-bloco">`
-    +   `<div class="modal-bloco-titulo">📍 Timeline de eventos</div>`
+    +   `<div class="modal-bloco-titulo">Timeline de eventos</div>`
     +   blocoTimelineHTML
     + `</div>`
     + `<div class="modal-actions">`
@@ -17146,7 +17146,7 @@ function renderClientes() {
       + `<div>${badge}</div>`
       + `<div style="display:flex;gap:5px;">`
         + `<button class="action-btn edit-btn" onclick="abrirCliModal('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
-        + (podeDeletar ? `<button class="action-btn del-btn" onclick="cliExcluir('${c.id}')">✕</button>` : '')
+        + (podeDeletar ? `<button class="action-btn del-btn" onclick="cliExcluir('${c.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>` : '')
       + `</div>`
       + '</div>';
   }).join('');
@@ -17238,7 +17238,7 @@ async function sincronizarClientesTiny() {
   const btn = document.getElementById('btn-cli-sync');
   if (!btn) return;
   btn.disabled = true;
-  btn.textContent = '⏳ Sincronizando...';
+  btn.textContent = 'Sincronizando...';
   try {
     let pagina = 1;
     let total = 0;
@@ -17295,7 +17295,7 @@ async function sincronizarClientesTiny() {
     smAlert('Erro ao sincronizar: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = '⚡ Sincronizar com Tiny';
+    btn.textContent = 'Sincronizar com Tiny';
   }
 }
 
@@ -17411,7 +17411,7 @@ async function _contratoCarregarPedidos(forcar) {
   const sub = document.getElementById('contrato-busca-sub');
   const btn = document.getElementById('btn-contrato-atualizar');
   if (sub) sub.textContent = 'Carregando pedidos...';
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Atualizando...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Atualizando...'; }
   try {
     const hoje = new Date();
     const ini  = new Date(hoje.getFullYear(), hoje.getMonth() - 6, hoje.getDate());
@@ -17427,7 +17427,7 @@ async function _contratoCarregarPedidos(forcar) {
     console.error('[contrato] erro ao carregar pedidos:', e);
     if (sub) sub.textContent = 'Erro ao carregar pedidos.';
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '⚡ Atualizar'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Atualizar'; }
   }
 }
 
@@ -17727,7 +17727,7 @@ async function _contratoGerarPdf() {
   if (!form.local.data)   { smAlert('Preencha a data do contrato.'); return; }
 
   const btn = document.getElementById('btn-contrato-gerar');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
   try {
     // 1) Abre janela com o contrato pra impressão / Salvar como PDF
     const html = _contratoMontarHtmlContrato(form);
@@ -17765,7 +17765,7 @@ async function _contratoGerarPdf() {
     smAlert('Contrato gerado e salvo no histórico.');
     _contratoVoltarBusca();
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '📄 Gerar Contrato PDF'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Gerar Contrato PDF'; }
   }
 }
 
@@ -19160,7 +19160,7 @@ function renderMapeamentoVendedores() {
       + `<div>${chips || '<span style="color:var(--text3);font-size:11px;">— sem nomes do Tiny associados</span>'}</div>`
       + `<div style="display:flex;gap:5px;">`
         + `<button class="action-btn edit-btn" onclick="abrirVendMapModal('${m.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
-        + `<button class="action-btn del-btn" onclick="excluirVendMap('${m.id}')">✕</button>`
+        + `<button class="action-btn del-btn" onclick="excluirVendMap('${m.id}')"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
       + `</div>`
       + '</div>';
   }).join('');
@@ -19216,7 +19216,7 @@ function vmRenderChips() {
   box.innerHTML = arr.map((n, i) =>
     `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface3);color:var(--text);padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;">`
     + `<span>${n}</span>`
-    + `<button onclick="vmRemoverChip(${i})" style="background:none;border:none;color:var(--text3);font-size:13px;cursor:pointer;padding:0;line-height:1;" title="Remover">✕</button>`
+    + `<button onclick="vmRemoverChip(${i})" style="background:none;border:none;color:var(--text3);font-size:13px;cursor:pointer;padding:0;line-height:1;" title="Remover"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
     + `</span>`
   ).join('');
 }
@@ -19353,7 +19353,7 @@ renderDashboard();
         <input class="form-input" id="login-senha" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')fazerLogin()">
       </div>
       <div class="login-error" id="login-erro"></div>
-      <button class="btn btn-gold" style="width:100%;padding:11px;" onclick="fazerLogin()">Entrar ⚡</button>
+      <button class="btn btn-gold" style="width:100%;padding:11px;" onclick="fazerLogin()">Entrar</button>
       <div style="text-align:center;">
         <button class="login-link" onclick="switchLoginTab('reset')">Esqueci minha senha</button>
       </div>
@@ -19468,7 +19468,7 @@ renderDashboard();
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeLanModal()">Cancelar</button>
-      <button class="btn btn-gold" onclick="salvarLancamento()">Salvar lançamento ⚡</button>
+      <button class="btn btn-gold" onclick="salvarLancamento()">Salvar lançamento</button>
     </div>
   </div>
 </div>
@@ -19482,7 +19482,7 @@ renderDashboard();
         <div class="db-title">Personalizar Dashboard</div>
         <div style="font-size:10px;color:var(--text3);margin-top:2px;">Arraste para reordenar · escolha o tamanho · ative ou desative</div>
       </div>
-      <button class="btn" onclick="fecharBuilder()" style="font-size:11px;padding:5px 10px;">✕</button>
+      <button class="btn" onclick="fecharBuilder()" style="font-size:11px;padding:5px 10px;"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
     </div>
     <div class="db-body" id="db-widget-list"></div>
     <div class="db-footer">
