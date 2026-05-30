@@ -1348,7 +1348,9 @@ select:not(.input-pro):not(.search-input){
   min-height:110px;
 }
 .cal-cell:hover{background:var(--surface2);}
-.cal-cell:nth-child(7n){border-right:none;}
+/* Última coluna mantém o pixel reservado pra borda (transparente) — sem isso
+   o box-sizing:border-box deixa o conteúdo 1px mais à direita que as outras. */
+.cal-cell:nth-child(7n){border-right-color:transparent;}
 /* Célula vazia (dia de outro mês): só ocupa espaço pro alinhamento semanal */
 .cal-cell.vazia{background:var(--bg);cursor:default;}
 .cal-cell.vazia:hover{background:var(--bg);}
