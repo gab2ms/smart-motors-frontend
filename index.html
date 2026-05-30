@@ -1712,6 +1712,7 @@ select:not(.input-pro):not(.search-input){
     <symbol id="ic-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></symbol>
     <symbol id="ic-filter" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></symbol>
     <symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="ic-eye-off" viewBox="0 0 24 24"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></symbol>
     <symbol id="ic-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
     <symbol id="ic-clipboard" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></symbol>
     <symbol id="ic-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></symbol>
@@ -2061,7 +2062,7 @@ select:not(.input-pro):not(.search-input){
             </tr>
           </thead>
           <tbody id="estoque-table-body">
-            <tr><td colspan="7" class="empty">Clique em ⚡ Sincronizar para carregar os produtos do Tiny ERP</td></tr>
+            <tr><td colspan="7" class="empty">Clique em Sincronizar para carregar os produtos do Tiny ERP</td></tr>
           </tbody>
         </table>
       </div>
@@ -4265,7 +4266,7 @@ function renderBuilderList() {
       +'</div>'
       +'<div class="db-size-btns">'+sizeBtns+'</div>'
       +'<button class="db-toggle'+(item.ativo?' on':'')+'" onclick="toggleWidget('+idx+')">'
-      +(item.ativo?'✓':'')+'</button>';
+      +(item.ativo?'<svg class="ic ic-sm"><use href="#ic-check"/></svg>':'')+'</button>';
 
     // Drag events
     el.addEventListener('dragstart', function(e) {
@@ -4691,7 +4692,7 @@ function renderDashVendedoresInline(ranking, receitaTotal, periodo) {
 
   // Aviso sem vendedor
   if (ranking.length === 1 && ranking[0].nome === 'Sem vendedor') {
-    html += '<div style="margin-top:8px;padding:8px 10px;background:var(--surface2);border-radius:var(--r-sm);font-size:10px;color:var(--text3);">💡 Atribua vendedores aos pedidos no Tiny para ver o ranking</div>';
+    html += '<div style="margin-top:8px;padding:8px 10px;background:var(--surface2);border-radius:var(--r-sm);font-size:10px;color:var(--text3);">Atribua vendedores aos pedidos no Tiny para ver o ranking</div>';
   }
 
   el.innerHTML = html;
@@ -5869,7 +5870,7 @@ async function _finDreCarregar(forcar) {
     if (status) {
       const ts = new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
       const aviso = (dados.dre.tinyEstabilidade && !dados.dre.tinyEstabilidade.estavel)
-        ? ` · ⚠️ resultado parcial (${dados.dre.tinyEstabilidade.contagens?.[0]||0} de ${dados.dre.tinyEstabilidade.contagens?.[1]||0} pedidos)`
+        ? ` · resultado parcial (${dados.dre.tinyEstabilidade.contagens?.[0]||0} de ${dados.dre.tinyEstabilidade.contagens?.[1]||0} pedidos)`
         : '';
       status.textContent = `Atualizado às ${ts}${aviso}`;
     }
@@ -6022,7 +6023,7 @@ function _finDreRenderCustos(co) {
     : '<tr><td colspan="2" class="text-mute" style="text-align:center;padding:14px;">(nenhuma categoria variável)</td></tr>';
 
   const inativosHTML = co.inativos.length
-    ? `<div class="card" style="margin-top:14px;"><div class="card-header"><div><div class="card-title">⚠️ Categorias Inativas</div><div class="card-sub">Sem lançamento há +2 meses</div></div></div>`
+    ? `<div class="card" style="margin-top:14px;"><div class="card-header"><div><div class="card-title">Categorias Inativas</div><div class="card-sub">Sem lançamento há +2 meses</div></div></div>`
       + `<div class="table-wrap"><table class="table-pro"><thead><tr><th>Categoria</th><th style="text-align:right;">Último lançamento</th></tr></thead><tbody>`
       + co.inativos.map(c => `<tr><td>${escHtml(c.categoria)}</td><td class="text-mute" style="text-align:right;">${c.ultimoLancamento || '—'}</td></tr>`).join('')
       + `</tbody></table></div></div>`
@@ -6705,7 +6706,7 @@ async function renderDashDreMes() {
       subEl.innerHTML = escHtml(base)
         + ` <span title="${escHtml(tip)}" style="display:inline-block;margin-left:6px;`
         + `font-size:10px;font-weight:700;color:var(--red);border:1px solid var(--red);`
-        + `border-radius:4px;padding:1px 6px;">⚠️ Resultado parcial (${escHtml(c1 + ' de ' + c2 + ' pedidos')})</span>`;
+        + `border-radius:4px;padding:1px 6px;">Resultado parcial (${escHtml(c1 + ' de ' + c2 + ' pedidos')})</span>`;
     } else {
       subEl.textContent = base;
     }
@@ -6767,7 +6768,7 @@ async function renderDashDreMes() {
       ${sublinha(`real do mês (${despCount} lançamento${despCount!==1?'s':''})`)}
       ${sublinha(`Custo Fixo Planejado: ${fmt(planejado)}`
         + (despPlanejadoBaseMeses < 3
-            ? `  ⚠️ base: ${despPlanejadoBaseMeses} ${despPlanejadoBaseMeses === 1 ? 'mês' : 'meses'}`
+            ? `  base: ${despPlanejadoBaseMeses} ${despPlanejadoBaseMeses === 1 ? 'mês' : 'meses'}`
             : ''))}
       ${linha('(−) Empréstimos pagos', empValor, {
         onclick: `_dashDreIrEmprestimos()`,
@@ -8770,7 +8771,7 @@ async function resetSenha() {
 
   // Por segurança, sempre mostra mesma mensagem
   erroEl.classList.remove('show');
-  okEl.textContent = `✅ Se houver uma conta com ${email}, a nova senha temporária é: smartmotors123
+  okEl.textContent = `Se houver uma conta com ${email}, a nova senha temporária é: smartmotors123
 
 Faça login e altere sua senha.`;
   okEl.classList.add('show');
@@ -8822,7 +8823,7 @@ function atualizarUserDisplay(user) {
           <div style="width:30px;height:30px;border-radius:50%;background:var(--gold-dim);border:1px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--gold);">${(user.nome||'U')[0].toUpperCase()}</div>
           <div>
             <div style="font-size:12px;font-weight:700;color:var(--text);">${user.nome}</div>
-            <div style="font-size:10px;color:var(--text3);">${user.role==='admin'?'🛡️ Administrador':'Usuário'}</div>
+            <div style="font-size:10px;color:var(--text3);">${user.role==='admin'?'Administrador':'Usuário'}</div>
           </div>
         </div>
         <button onclick="fazerLogout()" style="width:100%;padding:7px;border-radius:var(--r-sm);border:1px solid var(--border2);background:none;color:var(--text3);font-family:var(--font-primary);font-size:10px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:0.5px;transition:all .15s;" onmouseenter="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseleave="this.style.borderColor='var(--border2)';this.style.color='var(--text3)'">↩ Sair da conta</button>
@@ -10257,7 +10258,7 @@ function renderBadgeFiltroData() {
   el.style.display = '';
   el.innerHTML =
       '<span style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;background:var(--gold-dim2);border:1px solid rgba(245,197,24,0.3);border-radius:999px;font-size:11px;color:var(--text2);">'
-    + '🗓 Filtrando: <strong style="color:var(--text);">' + txt + '</strong>'
+    + 'Filtrando: <strong style="color:var(--text);">' + txt + '</strong>'
     + '<button class="action-btn" style="padding:2px 8px;font-size:10px;border-radius:999px;" onclick="limparFiltroData()" title="Limpar filtro de data"<svg class="ic ic-sm"><use href="#ic-x"/></svg> limpar</button>'
     + '</span>';
 }
@@ -10315,7 +10316,7 @@ function renderLancamentos() {
       ? ` <span style="color:var(--gold);font-size:11px;" title="Transferência entre contas">⇄</span>`
       : '';
     const cpIcone = l.contaPagarId
-      ? ` <span style="color:var(--gold);font-size:11px;" title="Vinculado a Contas a Pagar">📅</span>`
+      ? ` <svg class="ic ic-sm" style="color:var(--gold);" title="Vinculado a Contas a Pagar"><use href="#ic-calendar"/></svg>`
       : '';
     return `
     <div class="lancamento-row">
@@ -10451,7 +10452,7 @@ function smToast(html, opts) {
   const close = document.createElement('button');
   close.className = 'action-btn';
   close.style.cssText = 'padding:2px 8px;font-size:11px;';
-  close.textContent = '✕';
+  close.innerHTML = '<svg class="ic ic-sm"><use href="#ic-x"/></svg>';
   close.onclick = () => el.remove();
   el.appendChild(close);
   host.appendChild(el);
@@ -10823,14 +10824,14 @@ Responda APENAS com o nome exato da categoria, sem explicação.`
     if (_catNomesAtivas().includes(cat)) {
       // Auto-fill category
       document.getElementById('lan-categoria').value = cat;
-      div.innerHTML = `✅ Categoria sugerida: <strong>${cat}</strong> — aplicada automaticamente`;
+      div.innerHTML = `Categoria sugerida: <strong>${cat}</strong> — aplicada automaticamente`;
       div.style.display = 'block';
     } else {
-      div.innerHTML = `💡 Sugestão: <strong>${cat}</strong> — selecione manualmente se preferir`;
+      div.innerHTML = `Sugestão: <strong>${cat}</strong> — selecione manualmente se preferir`;
       div.style.display = 'block';
     }
   } catch(err) {
-    div.innerHTML = '❌ Erro ao consultar IA. Selecione a categoria manualmente.';
+    div.innerHTML = 'Erro ao consultar IA. Selecione a categoria manualmente.';
     div.style.display = 'block';
   } finally {
     btn.textContent = 'Sugerir';
@@ -12344,7 +12345,7 @@ function initClienteSearch(containerId, opts){
   if (!cont) { console.warn('[clienteSearch] container não encontrado: ' + containerId); return; }
   cont.classList.add('cli-search');
   cont.innerHTML =
-    `<input type="text" class="form-input cli-search-input" placeholder="${escHtml(opts.placeholder || '🔍 Buscar por nome, telefone ou CPF')}">` +
+    `<input type="text" class="form-input cli-search-input" placeholder="${escHtml(opts.placeholder || 'Buscar por nome, telefone ou CPF')}">` +
     `<span class="cli-search-tag" style="display:none;">AVULSO</span>` +
     `<button type="button" class="cli-search-clear" style="display:none;" title="Limpar seleção"<svg class="ic ic-sm"><use href="#ic-x"/></svg></button>` +
     `<div class="cli-search-dropdown" style="display:none;"></div>`;
@@ -13648,7 +13649,7 @@ function abrirOfModal(id) {
   const blocoTimelineHTML = isEdit
     ? '<div class="timeline-header-actions">'
       +   '<button type="button" class="timeline-add-btn" onclick="_smTimelineAbrirEvento(\'' + o.id + '\', \'oficina\')">+ Adicionar evento</button>'
-      +   (ofIsAdmin ? '<button type="button" class="timeline-toggle-excluidos" id="of-tl-toggle" onclick="_ofToggleExcluidos(\'' + o.id + '\')">👁 Mostrar excluídos</button>' : '')
+      +   (ofIsAdmin ? '<button type="button" class="timeline-toggle-excluidos" id="of-tl-toggle" onclick="_ofToggleExcluidos(\'' + o.id + '\')"><svg class="ic ic-sm"><use href="#ic-eye"/></svg> Mostrar excluídos</button>' : '')
       + '</div>'
       + '<div id="of-timeline" class="timeline-vazio">Carregando...</div>'
     : '<div class="timeline-vazio">Salve o caso pra começar a registrar eventos na timeline.</div>';
@@ -13758,11 +13759,11 @@ function _ofToggleExcluidos(casoId) {
   const ativo = shell.dataset.tlIncluirExcluidos === '1';
   if (ativo) {
     delete shell.dataset.tlIncluirExcluidos;
-    btn.textContent = '👁 Mostrar excluídos';
+    btn.innerHTML = '<svg class="ic ic-sm"><use href="#ic-eye"/></svg> Mostrar excluídos';
     btn.classList.remove('ativo');
   } else {
     shell.dataset.tlIncluirExcluidos = '1';
-    btn.textContent = '🙈 Esconder excluídos';
+    btn.innerHTML = '<svg class="ic ic-sm"><use href="#ic-eye-off"/></svg> Esconder excluídos';
     btn.classList.add('ativo');
   }
   _ofRecarregarTimeline(casoId);
@@ -15646,7 +15647,7 @@ async function _pdvGarantirProdutos() {
     }
     console.log('[pdv] carregou ' + produtosTiny.length + ' produtos');
     const inp = document.getElementById('pdv-busca-prod');
-    if (inp && /carregando/.test(inp.placeholder)) inp.placeholder = '🔍 Buscar produto por nome ou código...';
+    if (inp && /carregando/.test(inp.placeholder)) inp.placeholder = 'Buscar produto por nome ou código...';
   } catch (e) {
     console.warn('[pdv] erro carregar produtos:', e.message);
   }
@@ -15742,7 +15743,7 @@ function _pdvRenderNovaVenda(root) {
     +   `<div style="font-size:13px;color:var(--text3);">Nova venda — passo 1 de 2 (itens + cliente)</div>`
     + `</div>`
     + ((semVendedor || semLocal)
-        ? `<div style="background:rgba(255,0,0,0.10);border:1px solid var(--red);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:18px;font-size:12px;color:var(--text2);">⚠️ ${semVendedor?'Nenhum vendedor ativo cadastrado. ':''}${semLocal?'Nenhum local ativo cadastrado. ':''}Cadastre em <a onclick="showPage('admin')" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Administração → Vendedores PDV / Locais</a> antes de criar uma venda.</div>`
+        ? `<div style="background:rgba(255,0,0,0.10);border:1px solid var(--red);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:18px;font-size:12px;color:var(--text2);">${semVendedor?'Nenhum vendedor ativo cadastrado. ':''}${semLocal?'Nenhum local ativo cadastrado. ':''}Cadastre em <a onclick="showPage('admin')" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Administração → Vendedores PDV / Locais</a> antes de criar uma venda.</div>`
         : '')
     + `<div class="card" style="margin-bottom:18px;"><div style="padding:18px 20px;">`
     +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:10px;">Vendedor + Local</div>`
@@ -15755,7 +15756,7 @@ function _pdvRenderNovaVenda(root) {
     + `<div class="card" style="margin-bottom:18px;overflow:visible;"><div style="padding:18px 20px;">`
     +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:10px;">Itens da venda</div>`
     +   `<div style="position:relative;margin-bottom:10px;">`
-    +     `<input type="text" class="search-input" id="pdv-busca-prod" placeholder="${produtosTiny.length?'🔍 Buscar produto por nome ou código...':'⏳ carregando produtos do Tiny...'}" style="width:100%;" oninput="_pdvFiltraProdutos()" onfocus="_pdvFiltraProdutos()" onblur="setTimeout(()=>{const el=document.getElementById('pdv-prod-dropdown');if(el)el.style.display='none';},200);">`
+    +     `<input type="text" class="search-input" id="pdv-busca-prod" placeholder="${produtosTiny.length?'Buscar produto por nome ou código...':'carregando produtos do Tiny...'}" style="width:100%;" oninput="_pdvFiltraProdutos()" onfocus="_pdvFiltraProdutos()" onblur="setTimeout(()=>{const el=document.getElementById('pdv-prod-dropdown');if(el)el.style.display='none';},200);">`
     +     `<div id="pdv-prod-dropdown" style="display:none;position:absolute;top:40px;left:0;right:0;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:500px;overflow-y:auto;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>`
     +   `</div>`
     +   `<div id="pdv-itens-tabela">${_pdvRenderItensTabela()}</div>`
@@ -15764,7 +15765,7 @@ function _pdvRenderNovaVenda(root) {
     + `<div class="card" style="margin-bottom:18px;"><div style="padding:18px 20px;">`
     +   `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">`
     +     `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;">Cliente</div>`
-    +     `<button class="btn" type="button" onclick="_pdvConsumidorFinal()" style="font-size:11px;padding:4px 10px;">👤 Consumidor Final</button>`
+    +     `<button class="btn" type="button" onclick="_pdvConsumidorFinal()" style="font-size:11px;padding:4px 10px;">Consumidor Final</button>`
     +   `</div>`
     +   `<div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;">`
     +     `<div class="form-group"><label>Nome *</label><input class="form-input" type="text" value="${escHtml(v.cliente.nome).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.nome=this.value;"></div>`
@@ -15792,8 +15793,8 @@ function _pdvRenderNovaVenda(root) {
     + `<div class="card" style="margin-bottom:18px;"><div style="padding:18px 20px;">`
     +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:10px;">Entrega + observação</div>`
     +   `<div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;width:fit-content;margin-bottom:14px;">`
-    +     `<button type="button" onclick="_pdvSetEntregaImediata(false)" style="background:${v.entregaImediata?'transparent':'var(--gold)'};color:${v.entregaImediata?'var(--text2)':'#000'};padding:8px 14px;border:none;cursor:pointer;font-size:11px;font-weight:700;">📅 Entrega depois</button>`
-    +     `<button type="button" onclick="_pdvSetEntregaImediata(true)" style="background:${v.entregaImediata?'var(--gold)':'transparent'};color:${v.entregaImediata?'#000':'var(--text2)'};padding:8px 14px;border:none;cursor:pointer;font-size:11px;font-weight:700;border-left:1px solid var(--border);">🚚 Cliente leva agora</button>`
+    +     `<button type="button" onclick="_pdvSetEntregaImediata(false)" style="background:${v.entregaImediata?'transparent':'var(--gold)'};color:${v.entregaImediata?'var(--text2)':'#000'};padding:8px 14px;border:none;cursor:pointer;font-size:11px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-calendar"/></svg> Entrega depois</button>`
+    +     `<button type="button" onclick="_pdvSetEntregaImediata(true)" style="background:${v.entregaImediata?'var(--gold)':'transparent'};color:${v.entregaImediata?'#000':'var(--text2)'};padding:8px 14px;border:none;cursor:pointer;font-size:11px;font-weight:700;border-left:1px solid var(--border);"><svg class="ic ic-sm"><use href="#ic-package"/></svg> Cliente leva agora</button>`
     +   `</div>`
     +   (v.entregaImediata
         ? `<div style="font-size:11px;color:var(--green);font-style:italic;margin-bottom:10px;">↳ Status do pedido será "Entregue" automaticamente (data registrada no momento do salvamento).</div>`
@@ -16045,7 +16046,7 @@ function _pdvRenderFinalizacao(root) {
     +   `<div style="display:flex;justify-content:space-between;margin-bottom:14px;font-size:13px;align-items:center;"><span>Desconto (R$)</span><input type="number" min="0" step="0.01" class="form-input" value="${Number(v.desconto).toFixed(2)}" style="width:130px;text-align:right;" oninput="_pdvSetDesconto(this.value)"></div>`
     +   `<div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid var(--border);font-size:16px;font-weight:800;"><span>A PAGAR</span><span style="color:var(--gold);font-family:var(--mono,monospace);" id="pdv-apagar">${_fmtBRMoney(apagar)}</span></div>`
     +   `<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:12px;"><span>Restante</span><span id="pdv-restante" style="font-weight:800;font-family:var(--mono,monospace);color:${Math.abs(restante)<0.01?'var(--green)':'var(--red)'};">${_fmtBRMoney(restante)}</span></div>`
-    +   `<button class="btn btn-gold" id="pdv-btn-finalizar" onclick="_pdvFinalizarVenda()" style="width:100%;margin-top:18px;padding:14px;font-size:13px;font-weight:800;" ${Math.abs(restante)<0.01?'':'disabled'}>Finalizar venda ✓</button>`
+    +   `<button class="btn btn-gold" id="pdv-btn-finalizar" onclick="_pdvFinalizarVenda()" style="width:100%;margin-top:18px;padding:14px;font-size:13px;font-weight:800;" ${Math.abs(restante)<0.01?'':'disabled'}>Finalizar venda <svg class="ic ic-sm"><use href="#ic-check"/></svg></button>`
     + `</div></div>`
     + `</div>`;
 }
@@ -16207,7 +16208,7 @@ async function _pdvFinalizarVenda() {
     _pdvSincronizarComTiny(ped.id);
   } catch (e) {
     smAlert(e.message || 'Erro desconhecido.');
-    if (btn) { btn.disabled = false; btn.textContent = 'Finalizar venda ✓'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Finalizar venda <svg class="ic ic-sm"><use href="#ic-check"/></svg>'; }
   }
 }
 
@@ -16347,7 +16348,7 @@ async function _pdvAbrirDetalhe(pedidoId) {
   if (p.status === 'aguardando_entrega')
     acoesHTML += `<button class="btn" type="button" onclick="_pdvAlterarStatus('${p.id}','entregue')"<svg class="ic ic-sm"><use href="#ic-check"/></svg> Marcar entregue</button>`;
   if (isAdmin && p.status !== 'cancelado')
-    acoesHTML += `<button class="btn" type="button" onclick="_pdvAlterarStatus('${p.id}','cancelado')">⊘ Cancelar pedido</button>`;
+    acoesHTML += `<button class="btn" type="button" onclick="_pdvAlterarStatus('${p.id}','cancelado')"><svg class="ic ic-sm"><use href="#ic-ban"/></svg> Cancelar pedido</button>`;
   if (isAdmin)
     acoesHTML += `<button class="btn" type="button" style="color:var(--red);" onclick="_pdvExcluirPedido('${p.id}')"<svg class="ic ic-sm"><use href="#ic-trash"/></svg> Excluir</button>`;
 
@@ -16681,7 +16682,7 @@ function abrirSacModal(id) {
   const blocoTimelineHTML = isEdit
     ? '<div class="timeline-header-actions">'
       +   '<button type="button" class="timeline-add-btn" onclick="_smTimelineAbrirEvento(\'' + c.id + '\', \'sac\')">+ Adicionar evento</button>'
-      +   (isAdminUser ? '<button type="button" class="timeline-toggle-excluidos" id="sac-tl-toggle" onclick="_sacToggleExcluidos(\'' + c.id + '\')">👁 Mostrar excluídos</button>' : '')
+      +   (isAdminUser ? '<button type="button" class="timeline-toggle-excluidos" id="sac-tl-toggle" onclick="_sacToggleExcluidos(\'' + c.id + '\')"><svg class="ic ic-sm"><use href="#ic-eye"/></svg> Mostrar excluídos</button>' : '')
       + '</div>'
       + '<div id="sac-timeline" class="timeline-vazio">Carregando...</div>'
     : '<div class="timeline-vazio">Salve o caso pra começar a registrar eventos na timeline.</div>';
@@ -16790,11 +16791,11 @@ function _sacToggleExcluidos(casoId) {
   const ativo = shell.dataset.tlIncluirExcluidos === '1';
   if (ativo) {
     delete shell.dataset.tlIncluirExcluidos;
-    btn.textContent = '👁 Mostrar excluídos';
+    btn.innerHTML = '<svg class="ic ic-sm"><use href="#ic-eye"/></svg> Mostrar excluídos';
     btn.classList.remove('ativo');
   } else {
     shell.dataset.tlIncluirExcluidos = '1';
-    btn.textContent = '🙈 Esconder excluídos';
+    btn.innerHTML = '<svg class="ic ic-sm"><use href="#ic-eye-off"/></svg> Esconder excluídos';
     btn.classList.add('ativo');
   }
   _sacRecarregarTimeline(casoId);
