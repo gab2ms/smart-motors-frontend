@@ -5283,15 +5283,22 @@ async function gerarFechamentoMes() {
     const PCT = '0.0%;[Red]-0.0%';
     const colorVal = (v, base) => Object.assign({}, base || {}, v >= 0 ? POS : NEG);
 
-    // Aplica fundo INK em todo range 16×N pra cobrir gridlines + esconde grid
+    // Aplica fundo INK em todo range 24×N pra cobrir gridlines + esconde grid
     // explícito + cor dourada da tab. Chamado uma vez por aba.
+    // - Célula sem `s`     → ganha BASE inteiro
+    // - Célula com `s` mas sem `fill` (ex: POS/NEG/colorVal) → completa fill INK
     function _fechAcabar(ws, lastDataRow) {
-      const COLS = 16, ROWS = Math.max(60, (lastDataRow || 0) + 8);
+      const COLS = 24, ROWS = Math.max(100, (lastDataRow || 0) + 15);
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const addr = XLSX.utils.encode_cell({ r, c });
-          if (!ws[addr]) ws[addr] = { t: 's', v: '', s: BASE };
-          else if (!ws[addr].s) ws[addr].s = BASE;
+          if (!ws[addr]) {
+            ws[addr] = { t: 's', v: '', s: BASE };
+          } else if (!ws[addr].s) {
+            ws[addr].s = BASE;
+          } else if (!ws[addr].s.fill) {
+            ws[addr].s = { ...ws[addr].s, fill: BASE.fill };
+          }
         }
       }
       ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: ROWS - 1, c: COLS - 1 } });
