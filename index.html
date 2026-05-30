@@ -6152,16 +6152,18 @@ async function carregarFaturamentoDash(forcar) {
     var kpiClickCus = ' style="border-top:2px solid var(--gold);cursor:pointer;" onclick="showPage(&quot;custos&quot;)"';
     var kpiNormal   = ' style="border-top:2px solid var(--gold);"';
     var _kpisIsAdmin = _isAdminUser();
-    // Unidades de scooter no período (mesma regra do resumo WhatsApp) — exibido
-    // como 2ª medida no subtexto, deixando claro que difere de nº de pedidos.
-    var scootersUnid = _contarScootersUnidades(pedidos);
-    var scootersTxt  = scootersUnid + ' ' + (scootersUnid === 1 ? 'scooter' : 'scooters');
+    // Unidades de scooter (mesma regra do resumo WhatsApp: SCOOTER_RE + soma
+    // quantidade) — destaque do card. Período anterior conta sobre mergedAnt,
+    // cujo range já é "mês cheio vs mês cheio" via calcPeriodoAnterior.
+    var scootersUnid    = _contarScootersUnidades(pedidos);
+    var scootersUnidAnt = _contarScootersUnidades(mergedAnt);
+    var pedidosTxt      = totalPedidos + ' ' + (totalPedidos === 1 ? 'pedido' : 'pedidos');
     var pedidosKpiHTML =
         '<div class="kpi"' + kpiClickPed + '>'
-      + '<div class="kpi-label">Pedidos faturados</div>'
-      + '<div class="kpi-value gold">' + totalPedidos + '</div>'
-      + deltaHTML(totalPedidos, ka.qtd)
-      + '<div class="kpi-change">' + scootersTxt + ' · no período</div></div>';
+      + '<div class="kpi-label">Scooters vendidas</div>'
+      + '<div class="kpi-value gold">' + scootersUnid + '</div>'
+      + deltaHTML(scootersUnid, scootersUnidAnt)
+      + '<div class="kpi-change">' + pedidosTxt + ' · no período</div></div>';
     if (_kpisIsAdmin) {
       kpis.innerHTML =
         '<div class="kpi"' + kpiClickPed + '>'
