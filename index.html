@@ -7453,10 +7453,12 @@ function renderPedidosUnif() {
   tbody.innerHTML = filtered.map(p => {
     const stMeta = PEDIDO_STATUS_GROUPS[p.statusGroup] || PEDIDO_STATUS_GROUPS.aguardando;
     const pdvNaoSync = p.origem === 'pdv' && p.raw?.sincronizadoTiny === false;
+    const pdvEditado = p.origem === 'pdv' && p.raw?.editadoAposSync === true;
     const seloHTML = p.origem === 'tiny'
       ? '<span class="pill pill--blue">TINY</span>'
       : '<span class="pill pill--gold">PDV</span>'
-        + (pdvNaoSync ? ' <svg class="ic ic-sm" style="color:var(--orange);margin-left:4px;" title="Não sincronizado com Tiny — abrir detalhe pra tentar de novo"><use href="#ic-alert"/></svg>' : '');
+        + (pdvNaoSync ? ' <svg class="ic ic-sm" style="color:var(--orange);margin-left:4px;" title="Não sincronizado com Tiny — abrir detalhe pra tentar de novo"><use href="#ic-alert"/></svg>' : '')
+        + (pdvEditado ? ' <svg class="ic ic-sm" style="color:var(--orange);margin-left:4px;" title="Editado aqui · pode estar diferente no Tiny"><use href="#ic-alert"/></svg>' : '');
     const stClass = STATUS_PILL[p.statusGroup] || 'pill--neutral';
     const statusHTML = `<span class="pill ${stClass}">${stMeta.label}</span>`;
     const vendedorCell = p.vendedor
@@ -15630,6 +15632,7 @@ let _pdvPedidosLista        = [];    // cache da lista de pedidos PDV
 let _pdvUltimoPedidoCriado  = null;  // mostrado no step 3 (sucesso)
 let _pdvUltimoComprovante   = null;  // snapshot p/ impressão do comprovante A4
 let _pdvReprintSnap         = null;  // snapshot remontado p/ reimprimir (2ª via) no detalhe
+let _pdvUltimaFoiEdicao     = false; // true quando o step 3 (sucesso) veio de uma EDIÇÃO, não de venda nova
 let _pdvCepTimer            = null;  // debounce do ViaCEP
 // State do sync Tiny por pedido. Map { pedidoId → { state, tinyNumero?, erro? } }.
 // state ∈ 'syncing' | 'success' | 'error'. Lido pelo step 3 (sucesso) e pelo
@@ -15786,11 +15789,13 @@ function _pdvRenderNovaVenda(root) {
   const optVendedor = '<option value="">Selecione vendedor *</option>' + vendedoresAtivos.map(x => `<option value="${x.id}"${v.vendedorId===x.id?' selected':''}>${escHtml(x.nome)}</option>`).join('');
   const optLocal    = '<option value="">Selecione local *</option>'    + locaisAtivos.map(x =>     `<option value="${x.id}"${v.localId===x.id?' selected':''}>${escHtml(x.nome)}</option>`).join('');
 
+  const emEdicao = !!v._editId;
   root.innerHTML =
       `<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap;">`
-    +   `<button class="btn" onclick="_pdvCancelarVenda()">← Voltar ao painel</button>`
-    +   `<div style="font-size:13px;color:var(--text3);">Nova venda — passo 1 de 2 (itens + cliente)</div>`
+    +   `<button class="btn" onclick="_pdvCancelarVenda()">← ${emEdicao ? 'Cancelar edição' : 'Voltar ao painel'}</button>`
+    +   `<div style="font-size:13px;color:var(--text3);">${emEdicao ? `Editando pedido #${escHtml(v._editNumero || '?')} — passo 1 de 2 (itens + cliente)` : 'Nova venda — passo 1 de 2 (itens + cliente)'}</div>`
     + `</div>`
+    + (emEdicao ? _pdvAvisoEdicaoFaturamento() : '')
     + ((semVendedor || semLocal)
         ? `<div style="background:rgba(255,0,0,0.10);border:1px solid var(--red);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:18px;font-size:12px;color:var(--text2);">${semVendedor?'Nenhum vendedor ativo cadastrado. ':''}${semLocal?'Nenhum local ativo cadastrado. ':''}Cadastre em <a onclick="showPage('admin')" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Administração → Vendedores PDV / Locais</a> antes de criar uma venda.</div>`
         : '')
@@ -15881,6 +15886,7 @@ function _pdvRenderItensTabela() {
           <td style="padding:8px;">
             <div style="font-weight:700;">${escHtml(it.produtoNomeTiny)}</div>
             <div style="font-size:10px;color:var(--text3);font-family:var(--mono,monospace);">${escHtml(it.codigo || 'sem código')}</div>
+            ${SCOOTER_RE.test(it.produtoNomeTiny || '') ? `<input class="form-input" type="text" value="${escHtml(it.chassi || '').replace(/"/g,'&quot;')}" placeholder="Chassi (opcional)" style="margin-top:6px;font-size:11px;padding:5px 8px;max-width:260px;text-transform:uppercase;" oninput="_pdvSetItem(${idx},'chassi',this.value.toUpperCase());this.value=this.value.toUpperCase();">` : ''}
           </td>
           <td style="padding:6px;text-align:center;"><input class="form-input" type="number" min="1" step="1" value="${it.qtd}" style="width:64px;text-align:center;" oninput="_pdvSetItem(${idx},'qtd',this.value)"></td>
           <td style="padding:6px;text-align:right;"><input class="form-input" type="number" min="0" step="0.01" value="${Number(it.precoUnit).toFixed(2)}" style="width:130px;text-align:right;" oninput="_pdvSetItem(${idx},'precoUnit',this.value)"></td>
@@ -15893,6 +15899,8 @@ function _pdvRenderItensTabela() {
 
 function _pdvSetItem(idx, campo, valor) {
   if (!_pdvVenda?.itens?.[idx]) return;
+  // Chassi é texto (não numérico) e não mexe em subtotal/total.
+  if (campo === 'chassi') { _pdvVenda.itens[idx].chassi = valor; return; }
   const novo = (campo === 'qtd') ? parseInt(valor || 0, 10) : parseFloat(valor || 0);
   _pdvVenda.itens[idx][campo] = isNaN(novo) ? 0 : novo;
   const it = _pdvVenda.itens[idx];
@@ -15935,6 +15943,7 @@ async function _pdvAddItemFromIdx(idx) {
       produtoModelo: null,
       qtd: 1,
       precoUnit: Number(p.preco) || 0,
+      chassi: '',
     });
   }
   document.getElementById('pdv-itens-tabela').innerHTML = _pdvRenderItensTabela();
@@ -16261,11 +16270,13 @@ function _pdvRenderFinalizacao(root) {
   const soma     = v.pagamentos.reduce((s, p) => s + Number(p.valor || 0), 0);
   const restante = apagar - soma;
 
+  const emEdicao = !!v._editId;
   root.innerHTML =
       `<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap;">`
     +   `<button class="btn" onclick="_pdvStep=1;renderPdv();">← Voltar</button>`
-    +   `<div style="font-size:13px;color:var(--text3);">Nova venda — passo 2 de 2 (pagamento)</div>`
+    +   `<div style="font-size:13px;color:var(--text3);">${emEdicao ? `Editando pedido #${escHtml(v._editNumero || '?')} — passo 2 de 2 (pagamento)` : 'Nova venda — passo 2 de 2 (pagamento)'}</div>`
     + `</div>`
+    + (emEdicao ? _pdvAvisoEdicaoFaturamento() : '')
     + `<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:20px;align-items:start;">`
     + `<div class="card"><div style="padding:18px 20px;">`
     +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:14px;">Formas de pagamento <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;">(pode dividir)</span></div>`
@@ -16278,7 +16289,7 @@ function _pdvRenderFinalizacao(root) {
     +   `<div style="display:flex;justify-content:space-between;margin-bottom:14px;font-size:13px;align-items:center;"><span>Desconto (R$)</span><input type="number" min="0" step="0.01" class="form-input" value="${Number(v.desconto).toFixed(2)}" style="width:130px;text-align:right;" oninput="_pdvSetDesconto(this.value)"></div>`
     +   `<div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid var(--border);font-size:16px;font-weight:800;"><span>A PAGAR</span><span style="color:var(--gold);font-family:var(--mono,monospace);" id="pdv-apagar">${_fmtBRMoney(apagar)}</span></div>`
     +   `<div id="pdv-pgto-resumo">${_pdvPgtoResumoInner(soma, apagar)}</div>`
-    +   `<button class="btn btn-gold" id="pdv-btn-finalizar" onclick="_pdvFinalizarVenda()" style="width:100%;margin-top:18px;padding:14px;font-size:13px;font-weight:800;" ${Math.abs(restante)<0.01?'':'disabled'}>Finalizar venda <svg class="ic ic-sm"><use href="#ic-check"/></svg></button>`
+    +   `<button class="btn btn-gold" id="pdv-btn-finalizar" onclick="_pdvFinalizarVenda()" style="width:100%;margin-top:18px;padding:14px;font-size:13px;font-weight:800;" ${Math.abs(restante)<0.01?'':'disabled'}>${emEdicao ? 'Salvar alterações' : 'Finalizar venda'} <svg class="ic ic-sm"><use href="#ic-check"/></svg></button>`
     + `</div></div>`
     + `</div>`;
 }
@@ -16391,6 +16402,9 @@ async function _pdvFinalizarVenda() {
     }),
   };
 
+  // Modo edição: desvia pro caminho de update (não cria pedido novo).
+  if (v._editId) return _pdvSalvarEdicao(v, { clienteDados, formaPagamento, subtotal, desconto, total });
+
   const btn = document.getElementById('pdv-btn-finalizar');
   if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
   try {
@@ -16427,6 +16441,7 @@ async function _pdvFinalizarVenda() {
       quantidade: parseInt(it.qtd, 10),
       valor_unitario: Number(it.precoUnit),
       valor_total: Number(it.qtd) * Number(it.precoUnit),
+      chassi: (SCOOTER_RE.test(it.produtoNomeTiny || '') && it.chassi?.trim()) ? it.chassi.trim() : null,
       ordem: idx,
     }));
     if (itensRows.length) {
@@ -16452,6 +16467,7 @@ async function _pdvFinalizarVenda() {
         nome:      it.produtoModelo || it.produtoNomeTiny || '—',
         qtd:       Number(it.qtd),
         precoUnit: Number(it.precoUnit),
+        chassi:    (SCOOTER_RE.test(it.produtoNomeTiny || '') && it.chassi?.trim()) ? it.chassi.trim() : '',
       })),
       pagamentos:   formaPagamento.metodos,
       subtotal, desconto, total,
@@ -16461,6 +16477,7 @@ async function _pdvFinalizarVenda() {
     };
 
     _pdvUltimoPedidoCriado = toCamel(ped);
+    _pdvUltimaFoiEdicao = false;
     _pdvVenda = null;
     _pdvStep  = 3;
     renderPdv();
@@ -16550,7 +16567,7 @@ function _pdvRenderSucesso(root) {
   root.innerHTML =
       `<div style="text-align:center;padding:60px 20px;">`
     +   `<div style="font-size:72px;line-height:1;">✅</div>`
-    +   `<div style="font-size:24px;font-weight:800;margin-top:14px;">Venda criada</div>`
+    +   `<div style="font-size:24px;font-weight:800;margin-top:14px;">${_pdvUltimaFoiEdicao ? 'Pedido atualizado' : 'Venda criada'}</div>`
     +   `<div style="font-size:14px;color:var(--text3);margin-top:6px;">Pedido <span style="font-family:var(--mono,monospace);font-weight:800;color:var(--gold);">#${p.numeroSmart ?? '?'}</span></div>`
     +   `<div style="font-size:13px;color:var(--text2);margin-top:14px;">${escHtml(cli.nome || '—')} · ${_fmtBRMoney(p.total || 0)}</div>`
     +   syncBlock
@@ -16617,7 +16634,7 @@ function _pdvImprimirComprovante(snap) {
         : '—');
 
   const itensRows = c.itens.map(it =>
-    `<tr><td>${e(it.nome)}</td><td class="ctr">${it.qtd}</td>`
+    `<tr><td>${e(it.nome)}${it.chassi ? `<div style="font-size:8pt;color:#777;margin-top:2px;">Chassi: ${e(it.chassi)}</div>` : ''}</td><td class="ctr">${it.qtd}</td>`
     + `<td class="rgt">${_fmtBRMoney(it.precoUnit)}</td>`
     + `<td class="rgt">${_fmtBRMoney(it.qtd * it.precoUnit)}</td></tr>`).join('');
 
@@ -16763,6 +16780,7 @@ function _pdvMontarSnapshotComprovante(p, itensCam, vNome, lNome) {
       nome:      it.produtoModelo || it.produtoNomeTiny || '—',
       qtd:       Number(it.quantidade),
       precoUnit: Number(it.valorUnitario),
+      chassi:    it.chassi || '',
     })),
     pagamentos:   (p.formaPagamento && p.formaPagamento.metodos) || [],
     subtotal:     (itensCam || []).reduce((s, it) => s + (it.valorTotal != null ? Number(it.valorTotal) : Number(it.quantidade) * Number(it.valorUnitario)), 0),
@@ -16828,6 +16846,10 @@ async function _pdvAbrirDetalhe(pedidoId) {
     // Cancelado no nosso lado, mas o cancelamento NÃO é propagado pro Tiny —
     // o pedido segue ativo lá. Selo de DIVERGÊNCIA (alerta), nunca verde.
     syncBlock = `<span style="color:var(--orange);font-size:10px;margin-left:8px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-alert"/></svg> Cancelado aqui · ainda ativo no Tiny #${escHtml(p.tinyNumero || '?')}</span>`;
+  } else if (p.sincronizadoTiny && p.editadoAposSync) {
+    // Editado localmente DEPOIS de sincronizar — o Tiny NÃO foi atualizado
+    // (correção manual). Selo de DIVERGÊNCIA, nunca verde.
+    syncBlock = `<span style="color:var(--orange);font-size:10px;margin-left:8px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-alert"/></svg> Editado aqui · pode estar diferente no Tiny #${escHtml(p.tinyNumero || '?')}</span>`;
   } else if (p.sincronizadoTiny) {
     syncBlock = `<span style="color:var(--green);font-size:10px;margin-left:8px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Sincronizado · Tiny #${escHtml(p.tinyNumero || '?')}</span>`;
   } else {
@@ -16841,6 +16863,8 @@ async function _pdvAbrirDetalhe(pedidoId) {
   // Ações: marcar entregue (qualquer vendedor) · cancelar/excluir (só admin).
   const isAdmin = _isAdminUser();
   let acoesHTML = '';
+  if (isAdmin && p.status !== 'cancelado')
+    acoesHTML += `<button class="btn" type="button" onclick="_pdvEditarPedido('${p.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg> Editar</button>`;
   if (p.status === 'aguardando_entrega')
     acoesHTML += `<button class="btn" type="button" onclick="_pdvAlterarStatus('${p.id}','entregue')"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Marcar entregue</button>`;
   if (isAdmin && p.status !== 'cancelado')
@@ -16869,7 +16893,7 @@ async function _pdvAbrirDetalhe(pedidoId) {
     +   `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Itens (${itensCam.length})</div>`
     +   `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:18px;">`
     +     `<thead><tr style="background:var(--surface2);"><th style="text-align:left;padding:6px;">Produto</th><th style="text-align:center;padding:6px;">Qtd</th><th style="text-align:right;padding:6px;">Unit</th><th style="text-align:right;padding:6px;">Total</th></tr></thead>`
-    +     `<tbody>${itensCam.map(it => `<tr style="border-bottom:1px solid var(--border);"><td style="padding:6px;"><div style="font-weight:700;">${escHtml(it.produtoNomeTiny)}</div>${it.codigo?`<div style="font-size:9px;color:var(--text3);font-family:var(--mono,monospace);">${escHtml(it.codigo)}</div>`:''}</td><td style="padding:6px;text-align:center;">${it.quantidade}</td><td style="padding:6px;text-align:right;">${_fmtBRMoney(it.valorUnitario)}</td><td style="padding:6px;text-align:right;font-weight:800;color:var(--gold);">${_fmtBRMoney(it.valorTotal)}</td></tr>`).join('')}</tbody>`
+    +     `<tbody>${itensCam.map(it => `<tr style="border-bottom:1px solid var(--border);"><td style="padding:6px;"><div style="font-weight:700;">${escHtml(it.produtoNomeTiny)}</div>${it.codigo?`<div style="font-size:9px;color:var(--text3);font-family:var(--mono,monospace);">${escHtml(it.codigo)}</div>`:''}${it.chassi?`<div style="font-size:9px;color:var(--text3);">Chassi: ${escHtml(it.chassi)}</div>`:''}</td><td style="padding:6px;text-align:center;">${it.quantidade}</td><td style="padding:6px;text-align:right;">${_fmtBRMoney(it.valorUnitario)}</td><td style="padding:6px;text-align:right;font-weight:800;color:var(--gold);">${_fmtBRMoney(it.valorTotal)}</td></tr>`).join('')}</tbody>`
     +   `</table>`
     +   `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Pagamento</div>`
     +   `<div style="background:var(--surface2);padding:10px 12px;border-radius:var(--r-sm);font-size:12px;margin-bottom:18px;">`
@@ -16879,7 +16903,15 @@ async function _pdvAbrirDetalhe(pedidoId) {
     +   `</div>`
     +   `${p.observacao?`<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Observação</div><div style="font-size:12px;background:var(--surface2);padding:10px 12px;border-radius:var(--r-sm);margin-bottom:18px;">${escHtml(p.observacao)}</div>`:''}`
     +   `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Histórico</div>`
-    +   `<div style="font-size:11px;color:var(--text2);margin-bottom:18px;">${auditCam.length?auditCam.map(a => `<div style="padding:4px 0;border-bottom:1px solid var(--border);">${fmtDT(a.quando)} — <b>${escHtml(a.acao)}</b>${a.motivo?` · ${escHtml(a.motivo)}`:''}</div>`).join(''):'<div style="color:var(--text3);">sem registros</div>'}</div>`
+    +   `<div style="font-size:11px;color:var(--text2);margin-bottom:18px;">${auditCam.length?auditCam.map(a => {
+          let det = '';
+          if (a.campoAlterado) {
+            det = ` · <b>${escHtml(a.campoAlterado)}</b>` + ((a.valorAntes!=null||a.valorDepois!=null) ? `: ${escHtml(a.valorAntes||'—')} → ${escHtml(a.valorDepois||'—')}` : '');
+          } else if (a.motivo) {
+            det = ` · ${escHtml(a.motivo)}`;
+          }
+          return `<div style="padding:4px 0;border-bottom:1px solid var(--border);">${fmtDT(a.quando)} — <b>${escHtml(a.acao)}</b>${det}</div>`;
+        }).join(''):'<div style="color:var(--text3);">sem registros</div>'}</div>`
     +   `<div class="modal-actions"><button class="btn" type="button" onclick="_pdvImprimirComprovante(_pdvReprintSnap)"><svg class="ic ic-sm"><use href="#ic-printer"/></svg> Imprimir comprovante</button>${acoesHTML}<button class="btn" type="button" onclick="document.getElementById('pdvp-det-modal').remove();">Fechar</button></div>`
     + `</div>`;
   document.body.appendChild(shell);
@@ -16943,6 +16975,190 @@ async function _pdvExcluirPedido(pedidoId) {
   const m = document.getElementById('pdvp-det-modal'); if (m) m.remove();
   await carregarPedidosUnif();
   smAlert(`Pedido #${p.numeroSmart} excluído.`);
+}
+
+// ═══════════════════════════════════════════════════════════
+// EDITAR PEDIDO (só admin) — recarrega o pedido dentro do fluxo
+// de venda (steps 1-2) em modo edição. Pedido cancelado é
+// bloqueado. NÃO mexe no Tiny; só marca a divergência local.
+// ═══════════════════════════════════════════════════════════
+
+// Banner de aviso mostrado nas telas de edição (impacto no faturamento).
+function _pdvAvisoEdicaoFaturamento() {
+  return `<div style="background:rgba(212,160,42,0.10);border:1px solid var(--gold);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:18px;font-size:12px;color:var(--text2);">`
+    + `<strong style="color:var(--gold);">Atenção:</strong> alterar itens, valor unitário, quantidade, desconto ou pagamento `
+    + `recalcula o <strong>total</strong> deste pedido e muda o faturamento histórico e o ranking do dashboard `
+    + `da data original da venda. Editar só cliente, observação ou chassi não altera nenhum número.`
+    + `</div>`;
+}
+
+// ISO (UTC) → string local YYYY-MM-DDTHH:mm pro input datetime-local.
+function _isoParaInputLocal(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate())
+       + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+// Resumo textual comparável do state da venda — base da trilha de auditoria.
+function _pdvResumoParaAudit(v) {
+  const subtotal = v.itens.reduce((s, it) => s + Number(it.qtd||0) * Number(it.precoUnit||0), 0);
+  const total    = Math.max(0, subtotal - Number(v.desconto||0));
+  return {
+    cliente:    (v.cliente.nome || '').trim(),
+    itens:      v.itens.map(it => `${it.qtd}× ${it.produtoNomeTiny}${it.chassi?` [chassi ${it.chassi}]`:''} @ ${Number(it.precoUnit).toFixed(2)}`).join(' | ') || '(vazio)',
+    desconto:   Number(v.desconto||0).toFixed(2),
+    total:      total.toFixed(2),
+    observacao: (v.observacao || '').trim(),
+    pagamento:  v.pagamentos.map(pg => `${pg.tipo}${pg.parcelas?`(${pg.parcelas}x)`:''}: ${Number(pg.valor||0).toFixed(2)}`).join(' | ') || '(nenhum)',
+    entrega:    v.entregaImediata ? 'leva agora' : (v.dataPrevistaEntrega || 'sem data'),
+  };
+}
+
+async function _pdvEditarPedido(pedidoId) {
+  if (!_isAdminUser()) { smAlert('Apenas admin pode editar um pedido.'); return; }
+  const p = _pdvPedidosLista.find(x => x.id === pedidoId);
+  if (!p) { smAlert('Pedido não encontrado.'); return; }
+  if (p.status === 'cancelado') { smAlert('Pedido cancelado não pode ser editado.'); return; }
+
+  // Itens vêm do banco (o cache da lista não traz itens).
+  const r = await sb.from('pdv_itens_pedido').select('*').eq('pedido_id', pedidoId).order('ordem');
+  if (r.error) { smAlert('Erro ao carregar itens do pedido: ' + r.error.message); return; }
+  const itensCam = (r.data || []).map(toCamel);
+  const cli = p.clienteDados || {};
+
+  _pdvVenda = {
+    _editId:          pedidoId,
+    _editNumero:      p.numeroSmart,
+    _eraSincronizado: !!p.sincronizadoTiny,
+    vendedorId:       p.vendedorId || '',
+    localId:          p.localVendaId || '',
+    itens: itensCam.map(it => ({
+      tinyProdutoId:   it.tinyProdutoId || '',
+      codigo:          '',
+      produtoNomeTiny: it.produtoNomeTiny || '',
+      produtoModelo:   it.produtoModelo || null,
+      qtd:             Number(it.quantidade) || 0,
+      precoUnit:       Number(it.valorUnitario) || 0,
+      chassi:          it.chassi || '',
+    })),
+    cliente: {
+      nome:        cli.nome || '',
+      cpfCnpj:     cli.cpf_cnpj || '',
+      telefone:    cli.telefone || '',
+      email:       cli.email || '',
+      cep:         cli.cep || '',
+      rua:         cli.rua || '',
+      numero:      cli.numero || '',
+      complemento: cli.complemento || '',
+      bairro:      cli.bairro || '',
+      cidade:      cli.cidade || '',
+      uf:          cli.uf || '',
+      _consumidorFinal: false, _clienteId: null,
+    },
+    dataPrevistaEntrega: _isoParaInputLocal(p.dataPrevistaEntrega),
+    entregaImediata:     !p.dataPrevistaEntrega,
+    observacao:          p.observacao || '',
+    desconto:            Number(p.desconto || 0),
+    pagamentos: ((p.formaPagamento && p.formaPagamento.metodos) || []).map(m => {
+      const o = { tipo: m.tipo, valor: Number(m.valor || 0) };
+      if (m.parcelas) o.parcelas = parseInt(m.parcelas, 10);
+      return o;
+    }),
+  };
+  // Snapshot do estado ORIGINAL — base do diff de auditoria no save.
+  _pdvVenda._orig = _pdvResumoParaAudit(_pdvVenda);
+
+  const m = document.getElementById('pdvp-det-modal'); if (m) m.remove();
+  _pdvStep = 1;
+  showPage('pdv'); // initPdv não reseta o step com _pdvVenda já setado
+}
+
+// Salva a edição: update do pedido + reinsert dos itens + trilha de
+// auditoria + flag de divergência. Chamado por _pdvFinalizarVenda quando
+// _pdvVenda._editId está setado.
+async function _pdvSalvarEdicao(v, built) {
+  const { clienteDados, formaPagamento, desconto, total } = built;
+  const btn = document.getElementById('pdv-btn-finalizar');
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    const pedidoPatch = {
+      vendedor_id:     v.vendedorId,
+      local_venda_id:  v.localId,
+      cliente_dados:   clienteDados,
+      forma_pagamento: formaPagamento,
+      desconto,
+      total,
+      observacao:      v.observacao?.trim() || null,
+      // Entrega: só ajusta a data prevista — NÃO mexe no status (fluxo próprio).
+      data_prevista_entrega: v.entregaImediata
+        ? null
+        : (v.dataPrevistaEntrega ? new Date(v.dataPrevistaEntrega).toISOString() : null),
+    };
+    // Divergência: se o pedido já estava sincronizado, marca (Tiny é manual).
+    if (v._eraSincronizado) pedidoPatch.editado_apos_sync = true;
+
+    const upd = await sb.from('pdv_pedidos').update(pedidoPatch).eq('id', v._editId);
+    if (upd.error) throw new Error('Erro ao salvar pedido: ' + upd.error.message);
+
+    // Itens: apaga e reinsere (mantém ordem; mais simples que diff por linha).
+    const del = await sb.from('pdv_itens_pedido').delete().eq('pedido_id', v._editId);
+    if (del.error) throw new Error('Erro ao atualizar itens: ' + del.error.message);
+    const itensRows = v.itens.map((it, idx) => ({
+      pedido_id:         v._editId,
+      produto_modelo:    it.produtoModelo || null,
+      produto_nome_tiny: it.produtoNomeTiny,
+      tiny_produto_id:   it.tinyProdutoId || null,
+      quantidade:        parseInt(it.qtd, 10),
+      valor_unitario:    Number(it.precoUnit),
+      valor_total:       Number(it.qtd) * Number(it.precoUnit),
+      chassi:            (SCOOTER_RE.test(it.produtoNomeTiny || '') && it.chassi?.trim()) ? it.chassi.trim() : null,
+      ordem:             idx,
+    }));
+    if (itensRows.length) {
+      const insI = await sb.from('pdv_itens_pedido').insert(itensRows);
+      if (insI.error) throw new Error('Pedido salvo, mas os itens falharam: ' + insI.error.message);
+    }
+
+    // Trilha de auditoria — uma linha por campo alterado.
+    const depois = _pdvResumoParaAudit(v);
+    const antes  = v._orig || {};
+    const quem   = _pdvQuem();
+    const campos = [['cliente','cliente'],['itens','itens'],['desconto','desconto'],['total','total'],['observacao','observação'],['pagamento','pagamento'],['entrega','entrega']];
+    const linhas = [];
+    campos.forEach(([k, label]) => {
+      if (String(antes[k] ?? '') !== String(depois[k] ?? '')) {
+        linhas.push({ pedido_id: v._editId, acao: 'editou', campo_alterado: label,
+          valor_antes: String(antes[k] ?? ''), valor_depois: String(depois[k] ?? ''), quem });
+      }
+    });
+    if (!linhas.length) linhas.push({ pedido_id: v._editId, acao: 'editou', campo_alterado: '(sem mudança detectada)', quem });
+    try { await sb.from('pdv_auditoria_log').insert(linhas); }
+    catch (e) { console.warn('[pdv] audit edição falhou (edição continua ok):', e.message); }
+
+    // Recarrega o pedido + itens atualizados pro comprovante e a tela de sucesso.
+    const rPed = await sb.from('pdv_pedidos').select('*').eq('id', v._editId).single();
+    const pedCam = (!rPed.error && rPed.data) ? toCamel(rPed.data) : null;
+    if (pedCam) {
+      const vNome = (pdvVendedores.find(x => x.id === v.vendedorId) || {}).nome || '—';
+      const lNome = (pdvLocais.find(x => x.id === v.localId) || {}).nome || '—';
+      const rIt = await sb.from('pdv_itens_pedido').select('*').eq('pedido_id', v._editId).order('ordem');
+      const itCam = (!rIt.error && rIt.data) ? rIt.data.map(toCamel) : [];
+      _pdvUltimoComprovante  = _pdvMontarSnapshotComprovante(pedCam, itCam, vNome, lNome);
+      _pdvUltimoPedidoCriado = pedCam;
+    }
+    _pdvUltimaFoiEdicao = true;
+    _pdvVenda = null;
+    _pdvStep  = 3;
+    renderPdv();
+    // Atualiza a lista unificada (selo de divergência, totais) em background.
+    if (typeof carregarPedidosUnif === 'function') carregarPedidosUnif();
+  } catch (e) {
+    smAlert(e.message || 'Erro ao salvar a edição.');
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Salvar alterações <svg class="ic ic-sm"><use href="#ic-check"/></svg>'; }
+  }
 }
 
 let sacCasos = [];
