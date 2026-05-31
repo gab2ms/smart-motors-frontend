@@ -16855,9 +16855,13 @@ async function _pdvAbrirDetalhe(pedidoId) {
   let syncBlock = '';
   if (syncLive?.state === 'syncing') {
     syncBlock = `<span style="color:var(--text3);font-size:10px;margin-left:8px;"><svg class="ic ic-sm"><use href="#ic-clock"/></svg> Sincronizando com Tiny…</span>`;
+  } else if (p.sincronizadoTiny && p.status === 'cancelado' && p.canceladoTiny) {
+    // Cancelado aqui E no Tiny (endpoint /pdv/pedido-cancelar deu ok) — está
+    // sincronizado de verdade. Não é divergência: selo verde informativo.
+    syncBlock = `<span style="color:var(--green);font-size:10px;margin-left:8px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Cancelado aqui e no Tiny #${escHtml(p.tinyNumero || '?')}</span>`;
   } else if (p.sincronizadoTiny && p.status === 'cancelado') {
-    // Cancelado no nosso lado, mas o cancelamento NÃO é propagado pro Tiny —
-    // o pedido segue ativo lá. Selo de DIVERGÊNCIA (alerta), nunca verde.
+    // Cancelado no nosso lado, mas o cancelamento NÃO chegou no Tiny (falha ou
+    // ação manual) — o pedido segue ativo lá. Selo de DIVERGÊNCIA, nunca verde.
     syncBlock = `<span style="color:var(--orange);font-size:10px;margin-left:8px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-alert"/></svg> Cancelado aqui · ainda ativo no Tiny #${escHtml(p.tinyNumero || '?')}</span>`;
   } else if (p.sincronizadoTiny && p.revertidoAposSync) {
     // Cancelamento revertido localmente — o Tiny não acompanhou o cancelamento
@@ -16957,12 +16961,15 @@ async function _pdvAlterarStatus(pedidoId, novoStatus) {
   if (!p) return;
   const labelNovo = (PDV_STATUS_LABEL[novoStatus] || {}).label || novoStatus;
   const aviso = novoStatus === 'cancelado'
-    ? ' O pedido sai do faturamento. O cancelamento no Tiny continua sendo manual.' : '';
+    ? (' O pedido sai do faturamento.' + (p.sincronizadoTiny ? ' Vou cancelar no Tiny também.' : ''))
+    : '';
   const ok = await smConfirm(`Mudar o pedido #${p.numeroSmart} para "${labelNovo}"?` + aviso);
   if (!ok) return;
   const statusAntes = p.status;
   const patch = { status: novoStatus };
   if (novoStatus === 'entregue' && !p.dataEntregaReal) patch.data_entrega_real = new Date().toISOString();
+  // Cancelamento começa "não cancelado no Tiny" — vira true só se o endpoint ok.
+  if (novoStatus === 'cancelado') patch.cancelado_tiny = false;
   const { error } = await sb.from('pdv_pedidos').update(patch).eq('id', pedidoId);
   if (error) { smAlert('Erro ao alterar status: ' + error.message); return; }
   try {
@@ -16972,8 +16979,43 @@ async function _pdvAlterarStatus(pedidoId, novoStatus) {
     });
   } catch (e) { console.warn('[pdv] audit status falhou (alteração continua ok):', e.message); }
   const m = document.getElementById('pdvp-det-modal'); if (m) m.remove();
+
+  // Cancelamento de pedido sincronizado: tenta cancelar no Tiny (bloqueante).
+  // Local já está cancelado acima — o Tiny é um "melhor esforço" com aviso.
+  let msgFinal = `Pedido #${p.numeroSmart} agora está "${labelNovo}".`;
+  if (novoStatus === 'cancelado' && p.sincronizadoTiny) {
+    const r = await _pdvCancelarNoTiny(pedidoId);
+    msgFinal = r.ok
+      ? `Pedido #${p.numeroSmart} cancelado aqui e no Tiny #${p.tinyNumero || '?'}.`
+      : `Pedido #${p.numeroSmart} cancelado aqui, MAS o cancelamento no Tiny falhou — cancele manual no Tiny #${p.tinyNumero || '?'}.${r.erro ? ' (' + r.erro + ')' : ''}`;
+  }
   await carregarPedidosUnif();
-  smAlert(`Pedido #${p.numeroSmart} agora está "${labelNovo}".`);
+  smAlert(msgFinal);
+}
+
+// Cancela o pedido no Tiny via backend (POST /pdv/pedido-cancelar). Idempotente
+// no backend. Em sucesso, persiste cancelado_tiny=true. Retorna { ok, erro? }.
+// Falha de rede, ok:false ou acao_manual:true → { ok:false } (cancelamento
+// manual no Tiny continua necessário). NÃO desfaz o cancelamento local.
+async function _pdvCancelarNoTiny(pedidoId) {
+  try {
+    const res = await fetch(`${API_URL}/pdv/pedido-cancelar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pedidoPdvId: pedidoId }),
+    });
+    const data = await res.json();
+    if (!data.ok || data.acao_manual) {
+      return { ok: false, erro: data.erro || (data.acao_manual ? 'requer cancelamento manual' : 'falha no cancelamento') };
+    }
+    await sb.from('pdv_pedidos').update({ cancelado_tiny: true }).eq('id', pedidoId);
+    const idx = (_pdvPedidosLista || []).findIndex(x => x.id === pedidoId);
+    if (idx >= 0) _pdvPedidosLista[idx].canceladoTiny = true;
+    return { ok: true };
+  } catch (e) {
+    console.warn('[pdv-cancel-tiny]', e.message);
+    return { ok: false, erro: e.message };
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -16992,7 +17034,7 @@ async function _pdvReverterCancelamento(pedidoId, novoStatus) {
   const ok = await smConfirm(`Reverter o cancelamento do pedido #${p.numeroSmart} para "${labelNovo}"? `
     + `O pedido volta pro faturamento. A correção no Tiny continua sendo manual.`);
   if (!ok) return;
-  const patch = { status: novoStatus };
+  const patch = { status: novoStatus, cancelado_tiny: false };
   if (novoStatus === 'entregue' && !p.dataEntregaReal) patch.data_entrega_real = new Date().toISOString();
   // Divergência: se já estava sincronizado, marca (Tiny não acompanhou).
   if (p.sincronizadoTiny) patch.revertido_apos_sync = true;
