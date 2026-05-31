@@ -7464,9 +7464,11 @@ function renderPedidosUnif() {
     const vendedorCell = p.vendedor
       ? `<span class="text-soft">${escHtml(p.vendedor)}</span>`
       : '<span class="text-mute">—</span>';
+    const podeEditar = p.origem === 'pdv' && _isAdminUser() && p.raw?.status !== 'cancelado';
     const acaoHTML = p.origem === 'pdv'
       ? `<button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:6px 10px;" onclick="_pdvAbrirDetalhe('${p.raw.id}')">Ver detalhe</button>`
         + ` <button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:6px 8px;" title="Imprimir comprovante (2ª via)" onclick="_pdvReimprimirDireto('${p.raw.id}')"><svg class="ic ic-sm"><use href="#ic-printer"/></svg></button>`
+        + (podeEditar ? ` <button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:6px 8px;" title="Editar pedido" onclick="_pdvEditarPedido('${p.raw.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>` : '')
       : '';
     return `<tr>
       <td class="num-tab" style="white-space:nowrap;color:var(--text2);">${p.dataDisplay}</td>
@@ -16196,9 +16198,15 @@ async function _pdvBuscaCep() {
 }
 
 async function _pdvCancelarVenda() {
-  const ok = await smConfirm('Descartar a venda em andamento? Os itens adicionados serão perdidos.');
+  const emEdicao = !!(_pdvVenda && _pdvVenda._editId);
+  const origem   = _pdvVenda && _pdvVenda._editOrigem;
+  const ok = await smConfirm(emEdicao
+    ? 'Descartar as alterações? O pedido não será modificado.'
+    : 'Descartar a venda em andamento? Os itens adicionados serão perdidos.');
   if (!ok) return;
   _pdvVenda = null;
+  // Edição aberta a partir da lista de Pedidos volta pra lá; senão, painel do PDV.
+  if (emEdicao && origem === 'pedidos') { showPage('pedidos'); return; }
   _pdvStep = 0;
   renderPdv();
 }
@@ -17029,9 +17037,16 @@ async function _pdvEditarPedido(pedidoId) {
   const itensCam = (r.data || []).map(toCamel);
   const cli = p.clienteDados || {};
 
+  // Origem do "voltar/cancelar edição": a tela onde o clique aconteceu.
+  // Lido ANTES do showPage('pdv') abaixo (que sobrescreve sm_pagina_atual).
+  let _paginaAtual = '';
+  try { _paginaAtual = localStorage.getItem('sm_pagina_atual') || ''; } catch (e) {}
+  const editOrigem = _paginaAtual === 'pdv' ? 'pdv' : 'pedidos';
+
   _pdvVenda = {
     _editId:          pedidoId,
     _editNumero:      p.numeroSmart,
+    _editOrigem:      editOrigem,
     _eraSincronizado: !!p.sincronizadoTiny,
     vendedorId:       p.vendedorId || '',
     localId:          p.localVendaId || '',
