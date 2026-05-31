@@ -17291,14 +17291,40 @@ function _pdvContabGerar() {
     chassi:     (document.getElementById('contab-chassi-' + i)?.value || '').trim(),
   })) };
   const texto = _pdvContabMontarTexto(ctx, dados);
-  const fechar = () => { const m = document.getElementById('pdv-contab-modal'); if (m) m.remove(); };
-  if (navigator.clipboard && navigator.clipboard.writeText) {
+  const fechar  = () => { const m = document.getElementById('pdv-contab-modal'); if (m) m.remove(); };
+  const sucesso = () => { fechar(); smAlert('Texto copiado — cole no grupo da contabilidade.'); };
+  const manual  = () => { fechar(); smPrompt('Não consegui copiar automaticamente. Copie o texto abaixo:', texto); };
+
+  // HTTPS (futuro): tenta a API moderna primeiro; se falhar, cai no execCommand.
+  if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(texto)
-      .then(() => { fechar(); smAlert('Texto copiado — cole no grupo da contabilidade.'); })
-      .catch(() => { fechar(); smPrompt('Não consegui copiar automático. Copie o texto abaixo:', texto); });
-  } else {
-    fechar();
-    smPrompt('Copie o texto abaixo:', texto);
+      .then(sucesso)
+      .catch(() => { _pdvCopiarViaExec(texto) ? sucesso() : manual(); });
+    return;
+  }
+  // HTTP (nosso caso): execCommand('copy') funciona — feito no gesto do clique.
+  _pdvCopiarViaExec(texto) ? sucesso() : manual();
+}
+
+// Copia texto via <textarea> temporário + execCommand('copy'). Funciona em
+// http (onde navigator.clipboard é bloqueado). Síncrono; chamar no gesto do
+// clique. Retorna true se copiou.
+function _pdvCopiarViaExec(texto) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = texto;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-9999px';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, texto.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return !!ok;
+  } catch (e) {
+    return false;
   }
 }
 
