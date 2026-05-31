@@ -15636,7 +15636,7 @@ const _fmtBRMoney = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR', { minimumF
 function _pdvVendaNova() {
   return {
     vendedorId: '', localId: '', itens: [],
-    cliente: { nome:'', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'' },
+    cliente: { nome:'', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'', _consumidorFinal:false },
     dataPrevistaEntrega: '', entregaImediata: false, observacao: '', desconto: 0, pagamentos: [],
   };
 }
@@ -15790,26 +15790,26 @@ function _pdvRenderNovaVenda(root) {
     +     `<button class="btn" type="button" onclick="_pdvConsumidorFinal()" style="font-size:11px;padding:4px 10px;">Consumidor Final</button>`
     +   `</div>`
     +   `<div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;">`
-    +     `<div class="form-group"><label>Nome *</label><input class="form-input" type="text" value="${escHtml(v.cliente.nome).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.nome=this.value;"></div>`
-    +     `<div class="form-group"><label>CPF / CNPJ</label><input class="form-input" type="text" value="${escHtml(v.cliente.cpfCnpj).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.cpfCnpj=this.value;"></div>`
+    +     `<div class="form-group"><label>Nome *</label><input class="form-input" type="text" value="${escHtml(v.cliente.nome).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.nome=this.value;_pdvVenda.cliente._consumidorFinal=false;"></div>`
+    +     `<div class="form-group"><label>CPF / CNPJ *</label><input class="form-input" type="text" value="${escHtml(v.cliente.cpfCnpj).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.cpfCnpj=this.value;"></div>`
     +   `</div>`
     +   `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">`
-    +     `<div class="form-group"><label>Telefone</label><input class="form-input" type="text" value="${escHtml(v.cliente.telefone).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.telefone=this.value;"></div>`
+    +     `<div class="form-group"><label>Celular *</label><input class="form-input" type="text" value="${escHtml(v.cliente.telefone).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.telefone=this.value;"></div>`
     +     `<div class="form-group"><label>Email</label><input class="form-input" type="text" value="${escHtml(v.cliente.email).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.email=this.value;"></div>`
     +   `</div>`
     +   `<div style="display:grid;grid-template-columns:130px 3fr 100px 1fr;gap:10px;margin-top:8px;">`
-    +     `<div class="form-group" style="margin:0;"><label>CEP</label><input class="form-input" id="pdv-cli-cep" type="text" value="${escHtml(v.cliente.cep).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.cep=this.value;_pdvAgendaCep();"></div>`
-    +     `<div class="form-group" style="margin:0;"><label>Rua</label><input class="form-input" id="pdv-cli-rua" type="text" value="${escHtml(v.cliente.rua).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.rua=this.value;"></div>`
-    +     `<div class="form-group" style="margin:0;"><label>Número</label><input class="form-input" id="pdv-cli-num" type="text" value="${escHtml(v.cliente.numero).replace(/"/g,'&quot;')}" placeholder="—" oninput="_pdvVenda.cliente.numero=this.value;"></div>`
+    +     `<div class="form-group" style="margin:0;"><label>CEP *</label><input class="form-input" id="pdv-cli-cep" type="text" value="${escHtml(v.cliente.cep).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.cep=this.value;_pdvAgendaCep();"></div>`
+    +     `<div class="form-group" style="margin:0;"><label>Rua *</label><input class="form-input" id="pdv-cli-rua" type="text" value="${escHtml(v.cliente.rua).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.rua=this.value;"></div>`
+    +     `<div class="form-group" style="margin:0;"><label>Número *</label><input class="form-input" id="pdv-cli-num" type="text" value="${escHtml(v.cliente.numero).replace(/"/g,'&quot;')}" placeholder="—" oninput="_pdvVenda.cliente.numero=this.value;"></div>`
     +     `<div class="form-group" style="margin:0;"><label>Complemento</label><input class="form-input" type="text" value="${escHtml(v.cliente.complemento).replace(/"/g,'&quot;')}" placeholder="apto, bloco, ref." oninput="_pdvVenda.cliente.complemento=this.value;"></div>`
     +   `</div>`
     +   `<div id="pdv-cli-cep-msg" style="font-size:10px;color:var(--text3);margin-top:4px;min-height:14px;"></div>`
     +   `<div style="display:grid;grid-template-columns:2fr 2fr 70px;gap:10px;margin-top:4px;">`
-    +     `<div class="form-group" style="margin:0;"><label>Bairro</label><input class="form-input" id="pdv-cli-bairro" type="text" value="${escHtml(v.cliente.bairro).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.bairro=this.value;"></div>`
-    +     `<div class="form-group" style="margin:0;"><label>Cidade</label><input class="form-input" id="pdv-cli-cidade" type="text" value="${escHtml(v.cliente.cidade).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.cidade=this.value;"></div>`
-    +     `<div class="form-group" style="margin:0;"><label>UF</label><input class="form-input" id="pdv-cli-uf" type="text" maxlength="2" style="text-transform:uppercase;" value="${escHtml(v.cliente.uf).replace(/"/g,'&quot;')}" placeholder="—" oninput="_pdvVenda.cliente.uf=this.value.toUpperCase();this.value=this.value.toUpperCase();"></div>`
+    +     `<div class="form-group" style="margin:0;"><label>Bairro *</label><input class="form-input" id="pdv-cli-bairro" type="text" value="${escHtml(v.cliente.bairro).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.bairro=this.value;"></div>`
+    +     `<div class="form-group" style="margin:0;"><label>Cidade *</label><input class="form-input" id="pdv-cli-cidade" type="text" value="${escHtml(v.cliente.cidade).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.cidade=this.value;"></div>`
+    +     `<div class="form-group" style="margin:0;"><label>UF *</label><input class="form-input" id="pdv-cli-uf" type="text" maxlength="2" style="text-transform:uppercase;" value="${escHtml(v.cliente.uf).replace(/"/g,'&quot;')}" placeholder="—" oninput="_pdvVenda.cliente.uf=this.value.toUpperCase();this.value=this.value.toUpperCase();"></div>`
     +   `</div>`
-    +   `<div style="font-size:10px;color:var(--text3);margin-top:6px;font-style:italic;">Endereço opcional — digite o CEP pra preencher automaticamente Rua, Bairro, Cidade e UF.</div>`
+    +   `<div style="font-size:10px;color:var(--text3);margin-top:6px;font-style:italic;">Digite o CEP pra preencher Rua, Bairro, Cidade e UF automaticamente. <strong>*</strong> campos obrigatórios (exceto Consumidor Final).</div>`
     + `</div></div>`
 
     + `<div class="card" style="margin-bottom:18px;"><div style="padding:18px 20px;">`
@@ -15954,7 +15954,7 @@ function _pdvFiltraProdutos() {
 
 function _pdvConsumidorFinal() {
   if (!_pdvVenda) return;
-  _pdvVenda.cliente = { nome:'Consumidor Final', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'' };
+  _pdvVenda.cliente = { nome:'Consumidor Final', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'', _consumidorFinal:true };
   renderPdv();
 }
 
@@ -16028,6 +16028,36 @@ async function _pdvCancelarVenda() {
   renderPdv();
 }
 
+// Validação real de CPF (11 díg.) com dígito verificador.
+function _validarCpf(str) {
+  const c = (str || '').replace(/\D/g, '');
+  if (c.length !== 11 || /^(\d)\1{10}$/.test(c)) return false;
+  let s = 0;
+  for (let i = 0; i < 9; i++) s += parseInt(c[i], 10) * (10 - i);
+  let d1 = (s * 10) % 11; if (d1 === 10) d1 = 0;
+  if (d1 !== parseInt(c[9], 10)) return false;
+  s = 0;
+  for (let i = 0; i < 10; i++) s += parseInt(c[i], 10) * (11 - i);
+  let d2 = (s * 10) % 11; if (d2 === 10) d2 = 0;
+  return d2 === parseInt(c[10], 10);
+}
+
+// Validação real de CNPJ (14 díg.) com dígito verificador.
+function _validarCnpj(str) {
+  const c = (str || '').replace(/\D/g, '');
+  if (c.length !== 14 || /^(\d)\1{13}$/.test(c)) return false;
+  const calc = (base, pesos) => {
+    let s = 0;
+    for (let i = 0; i < pesos.length; i++) s += parseInt(base[i], 10) * pesos[i];
+    const r = s % 11;
+    return r < 2 ? 0 : 11 - r;
+  };
+  const d1 = calc(c, [5,4,3,2,9,8,7,6,5,4,3,2]);
+  if (d1 !== parseInt(c[12], 10)) return false;
+  const d2 = calc(c, [6,5,4,3,2,9,8,7,6,5,4,3,2]);
+  return d2 === parseInt(c[13], 10);
+}
+
 function _pdvAvancarParaFinalizacao() {
   const v = _pdvVenda;
   if (!v.vendedorId)   return smAlert('Selecione um vendedor.');
@@ -16036,7 +16066,21 @@ function _pdvAvancarParaFinalizacao() {
   if (v.itens.some(it => !(Number(it.qtd) > 0)))      return smAlert('Todo item precisa ter quantidade ≥ 1.');
   if (v.itens.some(it => !(Number(it.precoUnit) >= 0))) return smAlert('Preço inválido em algum item.');
   if (!v.entregaImediata && !v.dataPrevistaEntrega)   return smAlert("Informe a data prevista de entrega ou marque 'Cliente leva agora'.");
-  if (!(v.cliente.nome || '').trim()) return smAlert('Nome do cliente é obrigatório.');
+  const cli = v.cliente;
+  if (!(cli.nome || '').trim()) return smAlert('Nome do cliente é obrigatório.');
+  // Campos do cliente obrigatórios — exceto venda "Consumidor Final" (isenta).
+  if (!cli._consumidorFinal) {
+    const doc = (cli.cpfCnpj || '').replace(/\D/g, '');
+    if (!doc)                                       return smAlert('CPF / CNPJ é obrigatório.');
+    if (!(_validarCpf(doc) || _validarCnpj(doc)))   return smAlert('CPF / CNPJ inválido — confira os dígitos.');
+    if (!(cli.telefone || '').trim()) return smAlert('Celular do cliente é obrigatório.');
+    if (!(cli.cep    || '').trim())   return smAlert('CEP é obrigatório.');
+    if (!(cli.rua    || '').trim())   return smAlert('Rua é obrigatória.');
+    if (!(cli.numero || '').trim())   return smAlert('Número é obrigatório.');
+    if (!(cli.bairro || '').trim())   return smAlert('Bairro é obrigatório.');
+    if (!(cli.cidade || '').trim())   return smAlert('Cidade é obrigatória.');
+    if (!(cli.uf     || '').trim())   return smAlert('UF é obrigatória.');
+  }
   const subtotal = v.itens.reduce((s, it) => s + Number(it.qtd) * Number(it.precoUnit), 0);
   if (!v.pagamentos.length) v.pagamentos = [{ tipo: 'dinheiro', valor: subtotal }];
   _pdvStep = 2;
