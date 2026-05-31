@@ -15,6 +15,7 @@ Link: `contas_pagar.emprestimo_parcela_id UUID REFERENCES emprestimo_parcelas(id
 
 ## Migrations recentes
 
+- **`clientes`** ganhou **endereço estruturado**: `cep`, `rua`, `numero`, `complemento`, `bairro` (todos `text NULL`). Aditiva pura (`ADD COLUMN IF NOT EXISTS`), nada alterado/removido; RLS `acesso_total` já cobre. Motivação: o PDV captura endereço estruturado (obrigatório), mas `clientes` só tinha `endereco` (texto livre) + `cidade`/`uf`. Agora o PDV grava **estruturado + `endereco` composto** (Tela Clientes e sync Tiny seguem lendo `endereco`/`cidade`/`uf` intactos). Registros antigos (229) ficam com os novos campos `NULL` e enriquecem na 1ª venda PDV; clientes vindos do Tiny só têm `endereco` texto. Consumido pela busca/prefill de cliente no PDV (`_pdvPreencherCliente`) e pela gravação best-effort no finalizar (dedup por `cpf_cnpj`). Sem índice novo (cardinalidade/uso não justificam por ora).
 - `lancamentos.transferencia_id UUID NULL` + `idx_lancamentos_transferencia` (parcial, WHERE transferencia_id IS NOT NULL) — vincula par de lançamentos que representam uma transferência entre contas. Convenções na seção "Lançamentos" abaixo.
 - `contas_pagar.recorrencia_id UUID NULL` + `idx_contas_pagar_recorrencia` (parcial, WHERE recorrencia_id IS NOT NULL) — vincula todas as ocorrências de uma conta recorrente. Pré-geração de N ocorrências (52 semanais, 12 mensais, etc) no momento da criação.
 - `contas_pagar.dia_semana_fixo SMALLINT NULL` — dia da semana fixo (0=dom..6=sáb) pra séries semanais/quinzenais. Sem índice (cardinalidade muito baixa).

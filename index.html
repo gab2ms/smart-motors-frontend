@@ -15637,7 +15637,7 @@ const _fmtBRMoney = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR', { minimumF
 function _pdvVendaNova() {
   return {
     vendedorId: '', localId: '', itens: [],
-    cliente: { nome:'', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'', _consumidorFinal:false },
+    cliente: { nome:'', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'', _consumidorFinal:false, _clienteId:null },
     dataPrevistaEntrega: '', entregaImediata: false, observacao: '', desconto: 0, pagamentos: [],
   };
 }
@@ -15646,6 +15646,12 @@ async function initPdv() {
   if (!pdvVendedores.length) try { await initPdvVendedores(); } catch(e) {}
   if (!pdvLocais.length)     try { await initPdvLocais();     } catch(e) {}
   _pdvGarantirProdutos();  // não bloqueia
+  // Carrega a base de clientes pra busca/prefill (não bloqueia o render).
+  if (!clientesAll.length) {
+    sb.from('clientes').select('*').order('nome')
+      .then(r => { if (!r.error && r.data) clientesAll = toCamelArr(r.data); })
+      .catch(() => {});
+  }
   if (![0,1,2,3].includes(_pdvStep)) _pdvStep = 0;
   // Reset pra painel se não há venda em andamento E não está mostrando sucesso
   if (!_pdvVenda && _pdvStep !== 3) _pdvStep = 0;
@@ -15790,12 +15796,13 @@ function _pdvRenderNovaVenda(root) {
     +     `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;">Cliente</div>`
     +     `<button class="btn" type="button" onclick="_pdvConsumidorFinal()" style="font-size:11px;padding:4px 10px;">Consumidor Final</button>`
     +   `</div>`
+    +   `<div id="pdv-cli-sugestao" style="margin-bottom:4px;"></div>`
     +   `<div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;">`
-    +     `<div class="form-group"><label>Nome *</label><input class="form-input" type="text" value="${escHtml(v.cliente.nome).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.nome=this.value;_pdvVenda.cliente._consumidorFinal=false;"></div>`
-    +     `<div class="form-group"><label>CPF / CNPJ *</label><input class="form-input" type="text" value="${escHtml(v.cliente.cpfCnpj).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.cpfCnpj=this.value;"></div>`
+    +     `<div class="form-group"><label>Nome *</label><input class="form-input" type="text" value="${escHtml(v.cliente.nome).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.nome=this.value;_pdvVenda.cliente._consumidorFinal=false;_pdvBuscaCliente('nome');"></div>`
+    +     `<div class="form-group"><label>CPF / CNPJ *</label><input class="form-input" type="text" value="${escHtml(v.cliente.cpfCnpj).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.cpfCnpj=this.value;_pdvBuscaCliente('cpf');"></div>`
     +   `</div>`
     +   `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">`
-    +     `<div class="form-group"><label>Celular *</label><input class="form-input" type="text" value="${escHtml(v.cliente.telefone).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.telefone=this.value;"></div>`
+    +     `<div class="form-group"><label>Celular *</label><input class="form-input" type="text" value="${escHtml(v.cliente.telefone).replace(/"/g,'&quot;')}" oninput="_pdvVenda.cliente.telefone=this.value;_pdvBuscaCliente('celular');"></div>`
     +     `<div class="form-group"><label>Email</label><input class="form-input" type="text" value="${escHtml(v.cliente.email).replace(/"/g,'&quot;')}" placeholder="opcional" oninput="_pdvVenda.cliente.email=this.value;"></div>`
     +   `</div>`
     +   `<div style="display:grid;grid-template-columns:130px 3fr 100px 1fr;gap:10px;margin-top:8px;">`
@@ -15955,8 +15962,146 @@ function _pdvFiltraProdutos() {
 
 function _pdvConsumidorFinal() {
   if (!_pdvVenda) return;
-  _pdvVenda.cliente = { nome:'Consumidor Final', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'', _consumidorFinal:true };
+  _pdvVenda.cliente = { nome:'Consumidor Final', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'', _consumidorFinal:true, _clienteId:null };
   renderPdv();
+}
+
+// ── Busca de cliente já cadastrado (prefill) ────────────────
+// Dispara debounced (~400ms) a partir dos campos Nome/CPF/Celular. NÃO
+// sobrescreve nada: só mostra sugestão clicável. _cliBuscar é o mesmo matcher
+// da tela Clientes (nome acento-insensível, telefone/CPF por dígitos).
+let _pdvCliBuscaTimer = null;
+function _pdvBuscaCliente(campo) {
+  if (_pdvCliBuscaTimer) clearTimeout(_pdvCliBuscaTimer);
+  _pdvCliBuscaTimer = setTimeout(() => {
+    const cli = (_pdvVenda && _pdvVenda.cliente) || {};
+    if (cli._consumidorFinal) return _pdvSetSugestao('');
+    let q = '';
+    if (campo === 'nome') {
+      q = (cli.nome || '').trim();
+      if (q.length < 3) return _pdvSetSugestao('');
+    } else if (campo === 'cpf') {
+      q = (cli.cpfCnpj || '').replace(/\D/g, '');
+      if (q.length !== 11 && q.length !== 14) return _pdvSetSugestao('');
+    } else if (campo === 'celular') {
+      q = (cli.telefone || '').replace(/\D/g, '');
+      if (q.length < 8) return _pdvSetSugestao('');
+    }
+    _pdvSetSugestao(_pdvRenderSugestaoCliente(_cliBuscar(q)));
+  }, 400);
+}
+
+function _pdvSetSugestao(html) {
+  const el = document.getElementById('pdv-cli-sugestao');
+  if (el) el.innerHTML = html || '';
+}
+
+function _pdvRenderSugestaoCliente(res) {
+  if (!res || !res.length) return '';
+  const lista = res.slice(0, 6);
+  const cab = res.length === 1
+    ? 'Cliente encontrado — clique para preencher:'
+    : `${res.length} clientes encontrados${res.length > 6 ? ' (mostrando 6)' : ''} — escolha:`;
+  const rows = lista.map(c => {
+    const tel = c.telefone ? _cliFmtTel(c.telefone) : 'sem telefone';
+    const cpfRaw = _cliCpfDe(c);
+    const cpf = cpfRaw ? _cliFmtCpf(cpfRaw) : 'sem CPF';
+    return `<div onclick="_pdvPreencherCliente('${escHtml(String(c.id))}')" style="padding:7px 10px;border:1px solid var(--border2);border-radius:var(--r-sm);margin-top:6px;cursor:pointer;background:var(--surface2);" onmouseenter="this.style.borderColor='var(--gold)'" onmouseleave="this.style.borderColor='var(--border2)'">`
+      + `<div style="font-weight:700;font-size:12px;">${escHtml(c.nome)}</div>`
+      + `<div style="font-size:10px;color:var(--text3);margin-top:1px;">${escHtml(tel)} · ${escHtml(cpf)}</div></div>`;
+  }).join('');
+  return `<div style="background:var(--gold-dim2);border:1px solid rgba(245,197,24,0.3);border-radius:var(--r-sm);padding:8px 10px;">`
+    + `<div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.4px;">${cab}</div>${rows}</div>`;
+}
+
+// Preenche o form a partir de um cliente cadastrado. Tudo editável depois.
+function _pdvPreencherCliente(id) {
+  if (!_pdvVenda) return;
+  const c = (clientesAll || []).find(x => String(x.id) === String(id));
+  if (!c) return;
+  _pdvVenda.cliente = {
+    nome:        c.nome || '',
+    cpfCnpj:     _cliCpfDe(c) || '',
+    telefone:    c.telefone || '',
+    email:       c.email || '',
+    cep:         c.cep || '',
+    rua:         c.rua || '',
+    numero:      c.numero || '',
+    complemento: c.complemento || '',
+    bairro:      c.bairro || '',
+    cidade:      c.cidade || '',
+    uf:          c.uf || '',
+    _consumidorFinal: false,
+    _clienteId:  c.id,
+  };
+  _pdvSetSugestao('');
+  renderPdv();
+}
+
+// Cria/atualiza o cadastro do cliente — chamado SÓ no finalizar, best-effort
+// (nunca quebra a venda). Dedup por CPF/CNPJ. Consumidor Final não grava.
+async function _pdvUpsertCliente(cli) {
+  try {
+    if (!cli || cli._consumidorFinal) return;
+    const nome = (cli.nome || '').trim();
+    if (!nome) return;
+    const enderecoComposto = [
+      [cli.rua, cli.numero].filter(Boolean).join(', '),
+      cli.complemento, cli.bairro,
+    ].filter(Boolean).join(' - ') || null;
+    const payload = {
+      nome,
+      telefone:    (cli.telefone || '').trim() || null,
+      email:       (cli.email || '').trim() || null,
+      cpf_cnpj:    (cli.cpfCnpj || '').trim() || null,
+      cep:         (cli.cep || '').trim() || null,
+      rua:         (cli.rua || '').trim() || null,
+      numero:      (cli.numero || '').trim() || null,
+      complemento: (cli.complemento || '').trim() || null,
+      bairro:      (cli.bairro || '').trim() || null,
+      cidade:      (cli.cidade || '').trim() || null,
+      uf:          (cli.uf || '').trim().toUpperCase() || null,
+      endereco:    enderecoComposto,
+      atualizado_em: new Date().toISOString(),
+    };
+
+    // Alvo: o cliente prefillado (_clienteId) OU dedup por CPF/CNPJ.
+    let alvo = null;
+    if (cli._clienteId) {
+      alvo = (clientesAll || []).find(x => String(x.id) === String(cli._clienteId)) || { id: cli._clienteId };
+    } else {
+      const docDig = (cli.cpfCnpj || '').replace(/\D/g, '');
+      if (docDig) alvo = (clientesAll || []).find(x => _cliDigitos(_cliCpfDe(x)) === docDig) || null;
+    }
+
+    if (alvo) {
+      const mudou = !_pdvClienteIgual(alvo, payload);
+      const { data, error } = await sb.from('clientes').update(payload).eq('id', alvo.id).select().single();
+      if (error) { console.warn('[pdv-cli] update falhou:', error.message); return; }
+      const i = (clientesAll || []).findIndex(x => String(x.id) === String(alvo.id));
+      if (i >= 0) clientesAll[i] = toCamel(data); else clientesAll.push(toCamel(data));
+      if (mudou) smToast('Dados do cliente atualizados');
+    } else {
+      payload.origem = 'pdv';
+      const { data, error } = await sb.from('clientes').insert(payload).select().single();
+      if (error) { console.warn('[pdv-cli] insert falhou:', error.message); return; }
+      clientesAll.push(toCamel(data));
+    }
+  } catch (e) { console.warn('[pdv-cli] upsert erro:', e.message); }
+}
+
+// Compara campos relevantes do cache (camel) com o payload (snake) — só pra
+// decidir se houve edição e mostrar o aviso "dados atualizados".
+function _pdvClienteIgual(cacheRow, payload) {
+  const norm = v => (v == null ? '' : String(v).trim());
+  const pares = [
+    [cacheRow.nome, payload.nome], [cacheRow.telefone, payload.telefone],
+    [cacheRow.email, payload.email], [_cliCpfDe(cacheRow), payload.cpf_cnpj],
+    [cacheRow.cep, payload.cep], [cacheRow.rua, payload.rua], [cacheRow.numero, payload.numero],
+    [cacheRow.complemento, payload.complemento], [cacheRow.bairro, payload.bairro],
+    [cacheRow.cidade, payload.cidade], [cacheRow.uf, payload.uf],
+  ];
+  return pares.every(([a, b]) => norm(a) === norm(b));
 }
 
 // Toggle "Entrega depois" / "Cliente leva agora". Quando muda pra
@@ -16302,6 +16447,9 @@ async function _pdvFinalizarVenda() {
 
     // Sync Tiny em background — não bloqueia a UI; atualiza badge quando retorna.
     _pdvSincronizarComTiny(ped.id);
+    // Cria/atualiza o cadastro do cliente — best-effort, fora do try da venda
+    // (v ainda referencia a venda mesmo após _pdvVenda=null). Nunca quebra nada.
+    _pdvUpsertCliente(v.cliente);
   } catch (e) {
     smAlert(e.message || 'Erro desconhecido.');
     if (btn) { btn.disabled = false; btn.innerHTML = 'Finalizar venda <svg class="ic ic-sm"><use href="#ic-check"/></svg>'; }
