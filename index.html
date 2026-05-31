@@ -16111,7 +16111,7 @@ function _pdvRenderFinalizacao(root) {
     +   `<div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;"><span>Total dos itens</span><span style="font-family:var(--mono,monospace);">${_fmtBRMoney(subtotal)}</span></div>`
     +   `<div style="display:flex;justify-content:space-between;margin-bottom:14px;font-size:13px;align-items:center;"><span>Desconto (R$)</span><input type="number" min="0" step="0.01" class="form-input" value="${Number(v.desconto).toFixed(2)}" style="width:130px;text-align:right;" oninput="_pdvSetDesconto(this.value)"></div>`
     +   `<div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid var(--border);font-size:16px;font-weight:800;"><span>A PAGAR</span><span style="color:var(--gold);font-family:var(--mono,monospace);" id="pdv-apagar">${_fmtBRMoney(apagar)}</span></div>`
-    +   `<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:12px;"><span>Restante</span><span id="pdv-restante" style="font-weight:800;font-family:var(--mono,monospace);color:${Math.abs(restante)<0.01?'var(--green)':'var(--red)'};">${_fmtBRMoney(restante)}</span></div>`
+    +   `<div id="pdv-pgto-resumo">${_pdvPgtoResumoInner(soma, apagar)}</div>`
     +   `<button class="btn btn-gold" id="pdv-btn-finalizar" onclick="_pdvFinalizarVenda()" style="width:100%;margin-top:18px;padding:14px;font-size:13px;font-weight:800;" ${Math.abs(restante)<0.01?'':'disabled'}>Finalizar venda <svg class="ic ic-sm"><use href="#ic-check"/></svg></button>`
     + `</div></div>`
     + `</div>`;
@@ -16166,18 +16166,27 @@ function _pdvSetDesconto(valor) {
   _pdvAtualizaRestante();
 }
 
+// "Pago: X de Y" + status (Falta / Exato ✓ / Sobra — ajuste). Usado no render
+// e no update ao vivo. Soma exata é a única condição que libera o Finalizar.
+function _pdvPgtoResumoInner(soma, apagar) {
+  const restante = apagar - soma;
+  const exato = Math.abs(restante) < 0.01;
+  let statusTxt, cor;
+  if (exato)             { statusTxt = 'Exato ✓';                                          cor = 'var(--green)'; }
+  else if (restante > 0) { statusTxt = 'Falta ' + _fmtBRMoney(restante);                   cor = 'var(--red)'; }
+  else                   { statusTxt = 'Sobra ' + _fmtBRMoney(-restante) + ' — ajuste';    cor = 'var(--red)'; }
+  return `<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:12px;color:var(--text3);"><span>Pago</span><span style="font-family:var(--mono,monospace);">${_fmtBRMoney(soma)} de ${_fmtBRMoney(apagar)}</span></div>`
+       + `<div style="text-align:center;margin-top:8px;font-size:14px;font-weight:800;color:${cor};">${statusTxt}</div>`;
+}
+
 function _pdvAtualizaRestante() {
   const v = _pdvVenda;
   const subtotal = v.itens.reduce((s, it) => s + Number(it.qtd) * Number(it.precoUnit), 0);
   const apagar   = Math.max(0, subtotal - Number(v.desconto||0));
   const soma     = v.pagamentos.reduce((s, p) => s + Number(p.valor||0), 0);
   const restante = apagar - soma;
-  const ap = document.getElementById('pdv-apagar');     if (ap) ap.textContent = _fmtBRMoney(apagar);
-  const r  = document.getElementById('pdv-restante');
-  if (r) {
-    r.textContent  = _fmtBRMoney(restante);
-    r.style.color  = Math.abs(restante)<0.01 ? 'var(--green)' : 'var(--red)';
-  }
+  const ap = document.getElementById('pdv-apagar');      if (ap) ap.textContent = _fmtBRMoney(apagar);
+  const rz = document.getElementById('pdv-pgto-resumo'); if (rz) rz.innerHTML   = _pdvPgtoResumoInner(soma, apagar);
   const btn = document.getElementById('pdv-btn-finalizar');
   if (btn) btn.disabled = !(Math.abs(restante)<0.01);
 }
