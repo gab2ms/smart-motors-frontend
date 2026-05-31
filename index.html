@@ -15628,6 +15628,7 @@ let _pdvVenda               = null;  // state da venda em progresso (em memória
 let _pdvPedidosLista        = [];    // cache da lista de pedidos PDV
 let _pdvUltimoPedidoCriado  = null;  // mostrado no step 3 (sucesso)
 let _pdvUltimoComprovante   = null;  // snapshot p/ impressão do comprovante A4
+let _pdvReprintSnap         = null;  // snapshot remontado p/ reimprimir (2ª via) no detalhe
 let _pdvCepTimer            = null;  // debounce do ViaCEP
 // State do sync Tiny por pedido. Map { pedidoId → { state, tinyNumero?, erro? } }.
 // state ∈ 'syncing' | 'success' | 'error'. Lido pelo step 3 (sucesso) e pelo
@@ -16564,8 +16565,8 @@ function _pdvRenderSucesso(root) {
 // Gera + imprime um comprovante A4 do snapshot _pdvUltimoComprovante.
 // Impressão nativa (window.open + window.print), sem biblioteca externa.
 // Padrão espelhado do contrato de garantia (_imprimirContratoGarantia).
-function _pdvImprimirComprovante() {
-  const c = _pdvUltimoComprovante;
+function _pdvImprimirComprovante(snap) {
+  const c = snap || _pdvUltimoComprovante;
   if (!c) return smAlert('Comprovante indisponível — refaça a venda.');
   const e = (s) => escHtml(s == null ? '' : String(s));
   const pgLabel = code => (PDV_PAGTO_TIPOS.find(t => t.code === code) || {}).label || code;
@@ -16731,6 +16732,29 @@ async function _pdvAbrirDetalhe(pedidoId) {
   const stMeta = PDV_STATUS_LABEL[p.status] || PDV_STATUS_LABEL.aguardando_entrega;
   const fmtDT = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '—';
 
+  // Snapshot p/ reimpressão do comprovante (2ª via) — remonta o MESMO shape do
+  // _pdvUltimoComprovante a partir do que já foi buscado acima, pra sair igual
+  // ao original. Disponível em qualquer status (inclusive cancelado).
+  _pdvReprintSnap = {
+    numero:       p.numeroSmart,
+    data:         p.criadoEm,
+    vendedorNome: vNome,
+    localNome:    lNome,
+    cliente:      cli,
+    itens:        itensCam.map(it => ({
+      nome:      it.produtoModelo || it.produtoNomeTiny || '—',
+      qtd:       Number(it.quantidade),
+      precoUnit: Number(it.valorUnitario),
+    })),
+    pagamentos:   (p.formaPagamento && p.formaPagamento.metodos) || [],
+    subtotal:     itensCam.reduce((s, it) => s + (it.valorTotal != null ? Number(it.valorTotal) : Number(it.quantidade) * Number(it.valorUnitario)), 0),
+    desconto:     Number(p.desconto || 0),
+    total:        Number(p.total || 0),
+    observacao:   p.observacao || '',
+    entregaImediata:     !p.dataPrevistaEntrega,
+    dataPrevistaEntrega: p.dataPrevistaEntrega || '',
+  };
+
   const old = document.getElementById('pdvp-det-modal');
   if (old) old.remove();
   const shell = document.createElement('div');
@@ -16799,7 +16823,7 @@ async function _pdvAbrirDetalhe(pedidoId) {
     +   `${p.observacao?`<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Observação</div><div style="font-size:12px;background:var(--surface2);padding:10px 12px;border-radius:var(--r-sm);margin-bottom:18px;">${escHtml(p.observacao)}</div>`:''}`
     +   `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Histórico</div>`
     +   `<div style="font-size:11px;color:var(--text2);margin-bottom:18px;">${auditCam.length?auditCam.map(a => `<div style="padding:4px 0;border-bottom:1px solid var(--border);">${fmtDT(a.quando)} — <b>${escHtml(a.acao)}</b>${a.motivo?` · ${escHtml(a.motivo)}`:''}</div>`).join(''):'<div style="color:var(--text3);">sem registros</div>'}</div>`
-    +   `<div class="modal-actions">${acoesHTML}<button class="btn" type="button" onclick="document.getElementById('pdvp-det-modal').remove();">Fechar</button></div>`
+    +   `<div class="modal-actions"><button class="btn" type="button" onclick="_pdvImprimirComprovante(_pdvReprintSnap)"><svg class="ic ic-sm"><use href="#ic-printer"/></svg> Imprimir comprovante</button>${acoesHTML}<button class="btn" type="button" onclick="document.getElementById('pdvp-det-modal').remove();">Fechar</button></div>`
     + `</div>`;
   document.body.appendChild(shell);
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
