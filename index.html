@@ -261,7 +261,12 @@ nav{padding:14px 10px;flex:1;}
   font-size:13px;font-weight:500;
   border:none;background:none;width:100%;text-align:left;
   font-family:var(--font-primary);
+  text-decoration:none;box-sizing:border-box;
 }
+/* itens do menu agora são <a href>: anula a cor azul de link sem afetar
+   .active (gold) nem :hover — :where() mantém especificidade (0,1,1), que
+   perde pra .nav-item.active/:hover (0,2,0). */
+a.nav-item:where(:link,:visited){color:var(--text2);}
 .nav-item:hover{background:var(--surface2);color:var(--text);}
 .nav-item.active{
   background:var(--gold-dim);
@@ -1740,7 +1745,7 @@ select:not(.input-pro):not(.search-input){
 
 <!-- SIDEBAR -->
 <div class="sidebar" id="sidebar">
-  <div class="logo-wrap" onclick="showPage('dashboard')" style="cursor:pointer;" title="Voltar ao dashboard">
+  <a class="logo-wrap" href="#dashboard" onclick="return _navLinkClick(event,'dashboard')" style="cursor:pointer;display:block;text-decoration:none;color:inherit;" title="Voltar ao dashboard">
     <div class="logo-inner">
       <!-- BOLT SVG — recriation of the Smart Motors logo mark -->
       <div class="logo-bolt">
@@ -1763,7 +1768,7 @@ select:not(.input-pro):not(.search-input){
         <div class="logo-tagline">mobilidade inteligente</div>
       </div>
     </div>
-  </div>
+  </a>
 
   <!-- Nav renderizada por renderSidebar() a partir de NAV_TREE.
        Fallback: se renderSidebar falhar, o boot reinjeta a árvore mínima. -->
@@ -7741,12 +7746,25 @@ function _navItemHTML(child, opts) {
   const dotHTML = child.dotId
     ? `<span class="nav-dot" id="${child.dotId}"${child.id==='admin'?' style="background:var(--red);display:none;"':''}></span>`
     : (opts.semDot ? '' : '<span class="nav-dot"></span>');
-  // title= dá tooltip nativo do browser quando o menu está recolhido
-  return `<button class="${cls.join(' ')}" data-page-id="${child.id}" title="${child.label}" onclick="showPage('${child.id}')">`
+  // title= dá tooltip nativo do browser quando o menu está recolhido.
+  // <a href="#id> = link real → o navegador oferece "abrir em nova guia"
+  // (botão direito / Ctrl+clique / clique do meio). Clique normal é
+  // interceptado por _navLinkClick → showPage (mesma aba, sem reload).
+  return `<a href="#${child.id}" class="${cls.join(' ')}" data-page-id="${child.id}" title="${child.label}" onclick="return _navLinkClick(event,'${child.id}')">`
     + `<span class="nav-icon"><svg class="ic"><use href="#${child.icon}"/></svg></span>`
     + `<span class="nav-item-label">${child.label}</span>`
     + dotHTML
-    + `</button>`;
+    + `</a>`;
+}
+
+// Interceptador do clique nos links do menu. Deixa o navegador abrir em nova
+// guia quando há modificador (Ctrl/Cmd/Shift) ou clique do meio; senão troca
+// de tela na mesma aba via showPage (showPage já cuida do hash/histórico).
+function _navLinkClick(e, id) {
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return true;
+  e.preventDefault();
+  showPage(id);
+  return false;
 }
 
 function renderSidebar() {
