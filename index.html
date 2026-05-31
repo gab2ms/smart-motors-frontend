@@ -7452,13 +7452,15 @@ function renderPedidosUnif() {
 
   tbody.innerHTML = filtered.map(p => {
     const stMeta = PEDIDO_STATUS_GROUPS[p.statusGroup] || PEDIDO_STATUS_GROUPS.aguardando;
-    const pdvNaoSync = p.origem === 'pdv' && p.raw?.sincronizadoTiny === false;
-    const pdvEditado = p.origem === 'pdv' && p.raw?.editadoAposSync === true;
+    const pdvNaoSync  = p.origem === 'pdv' && p.raw?.sincronizadoTiny === false;
+    const pdvEditado  = p.origem === 'pdv' && p.raw?.editadoAposSync === true;
+    const pdvRevertido = p.origem === 'pdv' && p.raw?.revertidoAposSync === true;
     const seloHTML = p.origem === 'tiny'
       ? '<span class="pill pill--blue">TINY</span>'
       : '<span class="pill pill--gold">PDV</span>'
         + (pdvNaoSync ? ' <svg class="ic ic-sm" style="color:var(--orange);margin-left:4px;" title="Não sincronizado com Tiny — abrir detalhe pra tentar de novo"><use href="#ic-alert"/></svg>' : '')
-        + (pdvEditado ? ' <svg class="ic ic-sm" style="color:var(--orange);margin-left:4px;" title="Editado aqui · pode estar diferente no Tiny"><use href="#ic-alert"/></svg>' : '');
+        + (pdvEditado ? ' <svg class="ic ic-sm" style="color:var(--orange);margin-left:4px;" title="Editado aqui · pode estar diferente no Tiny"><use href="#ic-alert"/></svg>' : '')
+        + (pdvRevertido ? ' <svg class="ic ic-sm" style="color:var(--orange);margin-left:4px;" title="Revertido aqui · confira no Tiny"><use href="#ic-alert"/></svg>' : '');
     const stClass = STATUS_PILL[p.statusGroup] || 'pill--neutral';
     const statusHTML = `<span class="pill ${stClass}">${stMeta.label}</span>`;
     const vendedorCell = p.vendedor
@@ -16857,6 +16859,11 @@ async function _pdvAbrirDetalhe(pedidoId) {
     // Cancelado no nosso lado, mas o cancelamento NÃO é propagado pro Tiny —
     // o pedido segue ativo lá. Selo de DIVERGÊNCIA (alerta), nunca verde.
     syncBlock = `<span style="color:var(--orange);font-size:10px;margin-left:8px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-alert"/></svg> Cancelado aqui · ainda ativo no Tiny #${escHtml(p.tinyNumero || '?')}</span>`;
+  } else if (p.sincronizadoTiny && p.revertidoAposSync) {
+    // Cancelamento revertido localmente — o Tiny não acompanhou o cancelamento
+    // nem a reversão. Selo de DIVERGÊNCIA próprio (correção manual no Tiny é
+    // diferente da de uma edição). Nunca verde.
+    syncBlock = `<span style="color:var(--orange);font-size:10px;margin-left:8px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-alert"/></svg> Revertido aqui · confira no Tiny #${escHtml(p.tinyNumero || '?')}</span>`;
   } else if (p.sincronizadoTiny && p.editadoAposSync) {
     // Editado localmente DEPOIS de sincronizar — o Tiny NÃO foi atualizado
     // (correção manual). Selo de DIVERGÊNCIA, nunca verde.
@@ -16880,6 +16887,9 @@ async function _pdvAbrirDetalhe(pedidoId) {
     acoesHTML += `<button class="btn" type="button" onclick="_pdvAlterarStatus('${p.id}','entregue')"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Marcar entregue</button>`;
   if (isAdmin && p.status !== 'cancelado')
     acoesHTML += `<button class="btn" type="button" onclick="_pdvAlterarStatus('${p.id}','cancelado')"><svg class="ic ic-sm"><use href="#ic-ban"/></svg> Cancelar pedido</button>`;
+  if (isAdmin && p.status === 'cancelado')
+    acoesHTML += `<button class="btn" type="button" onclick="_pdvReverterCancelamento('${p.id}','entregue')"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Reverter → Concluído</button>`
+              +  `<button class="btn" type="button" onclick="_pdvReverterCancelamento('${p.id}','aguardando_entrega')"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Reverter → Aguardando entrega</button>`;
   if (isAdmin)
     acoesHTML += `<button class="btn" type="button" style="color:var(--red);" onclick="_pdvExcluirPedido('${p.id}')"><svg class="ic ic-sm"><use href="#ic-trash"/></svg> Excluir</button>`;
 
@@ -16964,6 +16974,39 @@ async function _pdvAlterarStatus(pedidoId, novoStatus) {
   const m = document.getElementById('pdvp-det-modal'); if (m) m.remove();
   await carregarPedidosUnif();
   smAlert(`Pedido #${p.numeroSmart} agora está "${labelNovo}".`);
+}
+
+// ═══════════════════════════════════════════════════════════
+// _pdvReverterCancelamento — desfaz o cancelamento (só admin), voltando
+// o pedido pra 'entregue' (Concluído) ou 'aguardando_entrega'. Grava
+// auditoria (acao='reverteu'). NÃO mexe no Tiny: se o pedido era
+// sincronizado, marca revertido_apos_sync → selo de divergência próprio.
+// ═══════════════════════════════════════════════════════════
+async function _pdvReverterCancelamento(pedidoId, novoStatus) {
+  if (!_isAdminUser()) { smAlert('Apenas admin pode reverter um cancelamento.'); return; }
+  const p = _pdvPedidosLista.find(x => x.id === pedidoId);
+  if (!p) return;
+  if (p.status !== 'cancelado') { smAlert('Só dá pra reverter um pedido cancelado.'); return; }
+  if (novoStatus !== 'entregue' && novoStatus !== 'aguardando_entrega') return;
+  const labelNovo = (PDV_STATUS_LABEL[novoStatus] || {}).label || novoStatus;
+  const ok = await smConfirm(`Reverter o cancelamento do pedido #${p.numeroSmart} para "${labelNovo}"? `
+    + `O pedido volta pro faturamento. A correção no Tiny continua sendo manual.`);
+  if (!ok) return;
+  const patch = { status: novoStatus };
+  if (novoStatus === 'entregue' && !p.dataEntregaReal) patch.data_entrega_real = new Date().toISOString();
+  // Divergência: se já estava sincronizado, marca (Tiny não acompanhou).
+  if (p.sincronizadoTiny) patch.revertido_apos_sync = true;
+  const { error } = await sb.from('pdv_pedidos').update(patch).eq('id', pedidoId);
+  if (error) { smAlert('Erro ao reverter cancelamento: ' + error.message); return; }
+  try {
+    await sb.from('pdv_auditoria_log').insert({
+      pedido_id: pedidoId, acao: 'reverteu', campo_alterado: 'status',
+      valor_antes: 'cancelado', valor_depois: novoStatus, quem: _pdvQuem(),
+    });
+  } catch (e) { console.warn('[pdv] audit reversão falhou (reversão continua ok):', e.message); }
+  const m = document.getElementById('pdvp-det-modal'); if (m) m.remove();
+  await carregarPedidosUnif();
+  smAlert(`Cancelamento revertido — pedido #${p.numeroSmart} agora está "${labelNovo}".`);
 }
 
 // ═══════════════════════════════════════════════════════════
