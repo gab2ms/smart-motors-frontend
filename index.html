@@ -16576,13 +16576,29 @@ function _pdvImprimirComprovante() {
     ? '—'
     : dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-  const endereco = [
-    [cli.rua, cli.numero].filter(Boolean).join(', '),
-    cli.complemento,
-    cli.bairro,
-    [cli.cidade, cli.uf].filter(Boolean).join(' - '),
-    cli.cep ? ('CEP ' + cli.cep) : '',
-  ].filter(Boolean).join(' · ');
+  // Cliente campo-a-campo (só renderiza linha com valor; Nome sempre presente).
+  const cliRows = [
+    ['Nome', cli.nome],
+    ['CPF / CNPJ', cli.cpf_cnpj],
+    ['Celular', cli.telefone],
+    ['Email', cli.email],
+    ['Endereço', [[cli.rua, cli.numero].filter(Boolean).join(', '), cli.complemento].filter(Boolean).join(' - ')],
+    ['Bairro', cli.bairro],
+    ['Cidade / UF', [cli.cidade, cli.uf].filter(Boolean).join(' / ')],
+    ['CEP', cli.cep],
+  ].filter(([, v]) => v && String(v).trim())
+   .map(([k, v]) => `<tr><td class="k">${e(k)}</td><td>${e(v)}</td></tr>`).join('');
+
+  // Checklist de vistoria — só quando a venda inclui veículo (mesma regra do
+  // resumo/ranking: SCOOTER_RE). Venda só de acessório não mostra checklist.
+  const temScooter = (c.itens || []).some(it => SCOOTER_RE.test(it.nome || ''));
+  const VISTORIA = ['Carregador separado', 'Chave reserva', 'Brinde incluído', 'NF emitida', 'Scooter testada/ligada', 'Bateria carregada', 'Pneus calibrados', 'Freios testados', 'Avarias/riscos conferidos'];
+  const checklistHTML = temScooter ? `
+  <div class="checklist">
+    <div class="checklist-tit">Checklist de vistoria</div>
+    <div class="checklist-grid">${VISTORIA.map(i => `<div class="chk"><span class="box"></span>${e(i)}</div>`).join('')}</div>
+    <div class="conferido">Conferido por: <span class="linha-conf"></span></div>
+  </div>` : '';
 
   const entregaTxt = c.entregaImediata
     ? 'Cliente levou na hora'
@@ -16600,32 +16616,38 @@ function _pdvImprimirComprovante() {
     + `<td class="rgt">${_fmtBRMoney(pg.valor)}</td></tr>`).join('');
 
   const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
-<title>Comprovante #${e(c.numero)} — Smart Motors</title>
+<title>Venda #${e(c.numero)} — Smart Motors</title>
 <style>
   * { box-sizing: border-box; }
-  @page { size: A4; margin: 16mm; }
-  body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; color: #111; margin: 0; font-size: 11pt; }
-  .header { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #f5c518; padding-bottom: 12px; margin-bottom: 18px; }
-  .brand-logo { width: 42px; height: 52px; flex: none; }
-  .header .titulo { font-size: 15pt; font-weight: 800; letter-spacing: 0.5px; }
-  .header .sub { font-size: 9.5pt; color: #555; margin-top: 2px; }
-  .meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 9.5pt; color: #333; margin-bottom: 16px; }
-  .meta .num { font-weight: 800; color: #111; font-size: 11pt; }
+  @page { size: A4; margin: 14mm; }
+  body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; color: #111; margin: 0; font-size: 10.5pt; line-height: 1.35; }
+  .header { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #f5c518; padding-bottom: 10px; }
+  .brand-logo { width: 40px; height: 50px; flex: none; }
+  .header .titulo { font-size: 16pt; font-weight: 800; letter-spacing: 0.5px; }
+  .header .sub { font-size: 9pt; color: #555; margin-top: 2px; }
+  .venda-tit { font-size: 14pt; font-weight: 800; margin: 14px 0 1px; }
+  .venda-meta { font-size: 8.5pt; color: #999; margin-bottom: 16px; }
   .bloco { margin-bottom: 14px; }
-  .bloco-tit { font-size: 9pt; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 800; color: #888; margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 3px; }
+  .bloco-tit { font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 800; color: #999; margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 3px; }
   .row { font-size: 10pt; line-height: 1.5; }
   .row .lbl { font-weight: 700; color: #333; }
-  table { width: 100%; border-collapse: collapse; font-size: 10pt; }
-  th { text-align: left; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.4px; color: #888; border-bottom: 1.5px solid #ddd; padding: 5px 6px; }
-  td { padding: 5px 6px; border-bottom: 1px solid #f0f0f0; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.4px; color: #999; border-bottom: 1.5px solid #ddd; padding: 5px 6px; }
+  td { padding: 5px 6px; border-bottom: 1px solid #f1f1f1; font-size: 10pt; }
   .ctr { text-align: center; } .rgt { text-align: right; font-variant-numeric: tabular-nums; }
-  .totais { margin-top: 10px; margin-left: auto; width: 56%; }
+  .cli-table td.k { width: 32%; font-weight: 700; color: #444; }
+  .totais { margin-top: 10px; margin-left: auto; width: 54%; }
   .totais .lin { display: flex; justify-content: space-between; padding: 3px 0; font-size: 10pt; }
   .totais .tot { border-top: 1.5px solid #111; margin-top: 4px; padding-top: 6px; font-size: 13pt; font-weight: 800; }
   .totais .tot span:last-child { color: #b8860b; }
-  .footer { margin-top: 26px; font-size: 8.5pt; color: #777; border-top: 1px solid #eee; padding-top: 8px; }
-  .assinatura { margin-top: 46px; display: flex; justify-content: center; }
-  .assinatura .linha { border-top: 1px solid #111; padding-top: 4px; font-size: 9pt; font-weight: 700; letter-spacing: 0.5px; width: 60%; text-align: center; }
+  .footer { margin-top: 18px; font-size: 8.5pt; color: #777; border-top: 1px solid #eee; padding-top: 8px; }
+  .checklist { margin-top: 16px; border: 1.5px dashed #bbb; border-radius: 6px; padding: 12px 14px; }
+  .checklist-tit { font-size: 10pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+  .checklist-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 26px; }
+  .chk { font-size: 10pt; display: flex; align-items: center; }
+  .chk .box { display: inline-block; width: 13px; height: 13px; border: 1.5px solid #111; border-radius: 2px; margin-right: 9px; flex: none; }
+  .conferido { margin-top: 14px; font-size: 10pt; font-weight: 600; }
+  .conferido .linha-conf { display: inline-block; border-bottom: 1px solid #111; width: 55%; vertical-align: bottom; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style></head><body>
   <div class="header">
@@ -16634,20 +16656,17 @@ function _pdvImprimirComprovante() {
     </svg>
     <div>
       <div class="titulo">SMART MOTORS</div>
-      <div class="sub">Mobilidade Inteligente · CNPJ ${e(_CONTRATO_LOJA.cnpj)} · ${e(_CONTRATO_LOJA.telefone)}</div>
+      <div class="sub">Mobilidade Inteligente · ${e(_CONTRATO_LOJA.telefone)}</div>
       <div class="sub">${e(_CONTRATO_LOJA.endereco)}</div>
     </div>
   </div>
 
-  <div class="meta">
-    <div>Comprovante de venda <span class="num">#${e(c.numero)}</span></div>
-    <div>${e(dataBR)} · Vendedor: ${e(c.vendedorNome)} · ${e(c.localNome)}</div>
-  </div>
+  <div class="venda-tit">Venda <span style="color:#b8860b;">#${e(c.numero)}</span></div>
+  <div class="venda-meta">${e(dataBR)} · Vendedor: ${e(c.vendedorNome)} · ${e(c.localNome)}</div>
 
   <div class="bloco">
     <div class="bloco-tit">Cliente</div>
-    <div class="row"><span class="lbl">Nome:</span> ${e(cli.nome) || '—'}${cli.cpf_cnpj ? ` &nbsp;·&nbsp; <span class="lbl">CPF/CNPJ:</span> ${e(cli.cpf_cnpj)}` : ''}${cli.telefone ? ` &nbsp;·&nbsp; <span class="lbl">Celular:</span> ${e(cli.telefone)}` : ''}</div>
-    ${endereco ? `<div class="row"><span class="lbl">Endereço:</span> ${e(endereco)}</div>` : ''}
+    <table class="cli-table"><tbody>${cliRows}</tbody></table>
   </div>
 
   <div class="bloco">
@@ -16673,9 +16692,9 @@ function _pdvImprimirComprovante() {
     ${c.observacao ? `<div class="row"><span class="lbl">Observação:</span> ${e(c.observacao)}</div>` : ''}
   </div>
 
-  <div class="assinatura"><div class="linha">ASSINATURA DO CLIENTE</div></div>
-
   <div class="footer">Este comprovante não substitui a Nota Fiscal. Emitido por Smart Motors em ${e(dataBR)}.</div>
+
+  ${checklistHTML}
 
   <script>
     window.addEventListener('load', function(){
