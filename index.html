@@ -7464,6 +7464,7 @@ function renderPedidosUnif() {
       : '<span class="text-mute">—</span>';
     const acaoHTML = p.origem === 'pdv'
       ? `<button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:6px 10px;" onclick="_pdvAbrirDetalhe('${p.raw.id}')">Ver detalhe</button>`
+        + ` <button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:6px 8px;" title="Imprimir comprovante (2ª via)" onclick="_pdvReimprimirDireto('${p.raw.id}')"><svg class="ic ic-sm"><use href="#ic-printer"/></svg></button>`
       : '';
     return `<tr>
       <td class="num-tab" style="white-space:nowrap;color:var(--text2);">${p.dataDisplay}</td>
@@ -16710,6 +16711,43 @@ function _pdvImprimirComprovante(snap) {
   w.document.close();
 }
 
+// Monta o snapshot do comprovante (shape do _pdvUltimoComprovante) a partir de
+// um pedido PDV + seus itens já buscados. Usado nas reimpressões (2ª via).
+function _pdvMontarSnapshotComprovante(p, itensCam, vNome, lNome) {
+  return {
+    numero:       p.numeroSmart,
+    data:         p.criadoEm,
+    vendedorNome: vNome,
+    localNome:    lNome,
+    cliente:      p.clienteDados || {},
+    itens:        (itensCam || []).map(it => ({
+      nome:      it.produtoModelo || it.produtoNomeTiny || '—',
+      qtd:       Number(it.quantidade),
+      precoUnit: Number(it.valorUnitario),
+    })),
+    pagamentos:   (p.formaPagamento && p.formaPagamento.metodos) || [],
+    subtotal:     (itensCam || []).reduce((s, it) => s + (it.valorTotal != null ? Number(it.valorTotal) : Number(it.quantidade) * Number(it.valorUnitario)), 0),
+    desconto:     Number(p.desconto || 0),
+    total:        Number(p.total || 0),
+    observacao:   p.observacao || '',
+    entregaImediata:     !p.dataPrevistaEntrega,
+    dataPrevistaEntrega: p.dataPrevistaEntrega || '',
+  };
+}
+
+// Reimprime o comprovante DIRETO da lista (sem abrir o detalhe). Busca os itens
+// do pedido, monta o snapshot e chama o gerador. PDV-only.
+async function _pdvReimprimirDireto(pedidoId) {
+  const p = _pdvPedidosLista.find(x => x.id === pedidoId);
+  if (!p) return smAlert('Pedido não encontrado.');
+  const r = await sb.from('pdv_itens_pedido').select('*').eq('pedido_id', pedidoId).order('ordem');
+  if (r.error) return smAlert('Erro ao buscar itens do pedido: ' + r.error.message);
+  const itensCam = (r.data || []).map(toCamel);
+  const vNome = (pdvVendedores.find(x => x.id === p.vendedorId) || {}).nome || '—';
+  const lNome = (pdvLocais.find(x => x.id === p.localVendaId) || {}).nome || '—';
+  _pdvImprimirComprovante(_pdvMontarSnapshotComprovante(p, itensCam, vNome, lNome));
+}
+
 // ═══════════════════════════════════════════════════════════
 // _pdvAbrirDetalhe — modal read-only de um pedido PDV.
 // Lista unificada (page-pedidos) usa essa função no botão "Ver detalhe"
@@ -16732,28 +16770,8 @@ async function _pdvAbrirDetalhe(pedidoId) {
   const stMeta = PDV_STATUS_LABEL[p.status] || PDV_STATUS_LABEL.aguardando_entrega;
   const fmtDT = iso => iso ? new Date(iso).toLocaleString('pt-BR') : '—';
 
-  // Snapshot p/ reimpressão do comprovante (2ª via) — remonta o MESMO shape do
-  // _pdvUltimoComprovante a partir do que já foi buscado acima, pra sair igual
-  // ao original. Disponível em qualquer status (inclusive cancelado).
-  _pdvReprintSnap = {
-    numero:       p.numeroSmart,
-    data:         p.criadoEm,
-    vendedorNome: vNome,
-    localNome:    lNome,
-    cliente:      cli,
-    itens:        itensCam.map(it => ({
-      nome:      it.produtoModelo || it.produtoNomeTiny || '—',
-      qtd:       Number(it.quantidade),
-      precoUnit: Number(it.valorUnitario),
-    })),
-    pagamentos:   (p.formaPagamento && p.formaPagamento.metodos) || [],
-    subtotal:     itensCam.reduce((s, it) => s + (it.valorTotal != null ? Number(it.valorTotal) : Number(it.quantidade) * Number(it.valorUnitario)), 0),
-    desconto:     Number(p.desconto || 0),
-    total:        Number(p.total || 0),
-    observacao:   p.observacao || '',
-    entregaImediata:     !p.dataPrevistaEntrega,
-    dataPrevistaEntrega: p.dataPrevistaEntrega || '',
-  };
+  // Snapshot p/ reimpressão (2ª via) — mesmo shape do original, via helper.
+  _pdvReprintSnap = _pdvMontarSnapshotComprovante(p, itensCam, vNome, lNome);
 
   const old = document.getElementById('pdvp-det-modal');
   if (old) old.remove();
