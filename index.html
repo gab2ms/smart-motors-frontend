@@ -15609,6 +15609,7 @@ let _pdvStep                = 0;     // 0=painel | 1=montar | 2=finalizar | 3=su
 let _pdvVenda               = null;  // state da venda em progresso (em memória)
 let _pdvPedidosLista        = [];    // cache da lista de pedidos PDV
 let _pdvUltimoPedidoCriado  = null;  // mostrado no step 3 (sucesso)
+let _pdvUltimoComprovante   = null;  // snapshot p/ impressão do comprovante A4
 let _pdvCepTimer            = null;  // debounce do ViaCEP
 // State do sync Tiny por pedido. Map { pedidoId → { state, tinyNumero?, erro? } }.
 // state ∈ 'syncing' | 'success' | 'error'. Lido pelo step 3 (sucesso) e pelo
@@ -16274,6 +16275,26 @@ async function _pdvFinalizarVenda() {
       quem: criadoPor,
     });
 
+    // Snapshot p/ o comprovante A4 — captura itens, pagamentos e nomes de
+    // vendedor/local AGORA (v ainda existe; itens vivem em outra tabela).
+    _pdvUltimoComprovante = {
+      numero:       ped.numero_smart,
+      data:         ped.criado_em || new Date().toISOString(),
+      vendedorNome: (pdvVendedores.find(x => x.id === v.vendedorId) || {}).nome || '—',
+      localNome:    (pdvLocais.find(x => x.id === v.localId) || {}).nome || '—',
+      cliente:      clienteDados,
+      itens:        v.itens.map(it => ({
+        nome:      it.produtoModelo || it.produtoNomeTiny || '—',
+        qtd:       Number(it.qtd),
+        precoUnit: Number(it.precoUnit),
+      })),
+      pagamentos:   formaPagamento.metodos,
+      subtotal, desconto, total,
+      observacao:          v.observacao?.trim() || '',
+      entregaImediata:     v.entregaImediata,
+      dataPrevistaEntrega: v.dataPrevistaEntrega || '',
+    };
+
     _pdvUltimoPedidoCriado = toCamel(ped);
     _pdvVenda = null;
     _pdvStep  = 3;
@@ -16366,11 +16387,141 @@ function _pdvRenderSucesso(root) {
     +   `<div style="font-size:13px;color:var(--text2);margin-top:14px;">${escHtml(cli.nome || '—')} · ${_fmtBRMoney(p.total || 0)}</div>`
     +   syncBlock
     +   `<div style="margin-top:36px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">`
-    +     `<button class="btn btn-gold" onclick="_pdvIniciarVenda()" style="padding:12px 24px;"><svg class="ic ic-sm"><use href="#ic-cart"/></svg> Nova venda</button>`
+    +     (_pdvUltimoComprovante ? `<button class="btn btn-gold" onclick="_pdvImprimirComprovante()" style="padding:12px 24px;"><svg class="ic ic-sm"><use href="#ic-printer"/></svg> Imprimir comprovante</button>` : '')
+    +     `<button class="btn" onclick="_pdvIniciarVenda()" style="padding:12px 24px;"><svg class="ic ic-sm"><use href="#ic-cart"/></svg> Nova venda</button>`
     +     `<button class="btn" onclick="showPage('pedidos')" style="padding:12px 24px;"><svg class="ic ic-sm"><use href="#ic-file-text"/></svg> Ver lista</button>`
     +     `<button class="btn" onclick="_pdvStep=0;_pdvUltimoPedidoCriado=null;renderPdv();" style="padding:12px 24px;">← Voltar ao painel</button>`
     +   `</div>`
     + `</div>`;
+}
+
+// Gera + imprime um comprovante A4 do snapshot _pdvUltimoComprovante.
+// Impressão nativa (window.open + window.print), sem biblioteca externa.
+// Padrão espelhado do contrato de garantia (_imprimirContratoGarantia).
+function _pdvImprimirComprovante() {
+  const c = _pdvUltimoComprovante;
+  if (!c) return smAlert('Comprovante indisponível — refaça a venda.');
+  const e = (s) => escHtml(s == null ? '' : String(s));
+  const pgLabel = code => (PDV_PAGTO_TIPOS.find(t => t.code === code) || {}).label || code;
+  const cli = c.cliente || {};
+
+  const dt = new Date(c.data);
+  const dataBR = isNaN(dt.getTime())
+    ? '—'
+    : dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  const endereco = [
+    [cli.rua, cli.numero].filter(Boolean).join(', '),
+    cli.complemento,
+    cli.bairro,
+    [cli.cidade, cli.uf].filter(Boolean).join(' - '),
+    cli.cep ? ('CEP ' + cli.cep) : '',
+  ].filter(Boolean).join(' · ');
+
+  const entregaTxt = c.entregaImediata
+    ? 'Cliente levou na hora'
+    : (c.dataPrevistaEntrega
+        ? ('Entrega prevista: ' + new Date(c.dataPrevistaEntrega).toLocaleDateString('pt-BR'))
+        : '—');
+
+  const itensRows = c.itens.map(it =>
+    `<tr><td>${e(it.nome)}</td><td class="ctr">${it.qtd}</td>`
+    + `<td class="rgt">${_fmtBRMoney(it.precoUnit)}</td>`
+    + `<td class="rgt">${_fmtBRMoney(it.qtd * it.precoUnit)}</td></tr>`).join('');
+
+  const pgtoRows = (c.pagamentos || []).map(pg =>
+    `<tr><td>${e(pgLabel(pg.tipo))}${pg.parcelas ? ` (${pg.parcelas}x)` : ''}</td>`
+    + `<td class="rgt">${_fmtBRMoney(pg.valor)}</td></tr>`).join('');
+
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Comprovante #${e(c.numero)} — Smart Motors</title>
+<style>
+  * { box-sizing: border-box; }
+  @page { size: A4; margin: 16mm; }
+  body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; color: #111; margin: 0; font-size: 11pt; }
+  .header { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #f5c518; padding-bottom: 12px; margin-bottom: 18px; }
+  .brand-logo { width: 42px; height: 52px; flex: none; }
+  .header .titulo { font-size: 15pt; font-weight: 800; letter-spacing: 0.5px; }
+  .header .sub { font-size: 9.5pt; color: #555; margin-top: 2px; }
+  .meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 9.5pt; color: #333; margin-bottom: 16px; }
+  .meta .num { font-weight: 800; color: #111; font-size: 11pt; }
+  .bloco { margin-bottom: 14px; }
+  .bloco-tit { font-size: 9pt; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 800; color: #888; margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 3px; }
+  .row { font-size: 10pt; line-height: 1.5; }
+  .row .lbl { font-weight: 700; color: #333; }
+  table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+  th { text-align: left; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.4px; color: #888; border-bottom: 1.5px solid #ddd; padding: 5px 6px; }
+  td { padding: 5px 6px; border-bottom: 1px solid #f0f0f0; }
+  .ctr { text-align: center; } .rgt { text-align: right; font-variant-numeric: tabular-nums; }
+  .totais { margin-top: 10px; margin-left: auto; width: 56%; }
+  .totais .lin { display: flex; justify-content: space-between; padding: 3px 0; font-size: 10pt; }
+  .totais .tot { border-top: 1.5px solid #111; margin-top: 4px; padding-top: 6px; font-size: 13pt; font-weight: 800; }
+  .totais .tot span:last-child { color: #b8860b; }
+  .footer { margin-top: 26px; font-size: 8.5pt; color: #777; border-top: 1px solid #eee; padding-top: 8px; }
+  .assinatura { margin-top: 46px; display: flex; justify-content: center; }
+  .assinatura .linha { border-top: 1px solid #111; padding-top: 4px; font-size: 9pt; font-weight: 700; letter-spacing: 0.5px; width: 60%; text-align: center; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style></head><body>
+  <div class="header">
+    <svg class="brand-logo" viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M24 2L4 28h14l-4 20L36 22H22L26 2z" stroke="#b8860b" stroke-width="2.5" stroke-linejoin="round" fill="#f5c518"/>
+    </svg>
+    <div>
+      <div class="titulo">SMART MOTORS</div>
+      <div class="sub">Mobilidade Inteligente · CNPJ ${e(_CONTRATO_LOJA.cnpj)} · ${e(_CONTRATO_LOJA.telefone)}</div>
+      <div class="sub">${e(_CONTRATO_LOJA.endereco)}</div>
+    </div>
+  </div>
+
+  <div class="meta">
+    <div>Comprovante de venda <span class="num">#${e(c.numero)}</span></div>
+    <div>${e(dataBR)} · Vendedor: ${e(c.vendedorNome)} · ${e(c.localNome)}</div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-tit">Cliente</div>
+    <div class="row"><span class="lbl">Nome:</span> ${e(cli.nome) || '—'}${cli.cpf_cnpj ? ` &nbsp;·&nbsp; <span class="lbl">CPF/CNPJ:</span> ${e(cli.cpf_cnpj)}` : ''}${cli.telefone ? ` &nbsp;·&nbsp; <span class="lbl">Celular:</span> ${e(cli.telefone)}` : ''}</div>
+    ${endereco ? `<div class="row"><span class="lbl">Endereço:</span> ${e(endereco)}</div>` : ''}
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-tit">Itens</div>
+    <table>
+      <thead><tr><th>Produto</th><th class="ctr">Qtd</th><th class="rgt">Valor unit.</th><th class="rgt">Subtotal</th></tr></thead>
+      <tbody>${itensRows}</tbody>
+    </table>
+    <div class="totais">
+      <div class="lin"><span>Subtotal</span><span>${_fmtBRMoney(c.subtotal)}</span></div>
+      ${Number(c.desconto) > 0 ? `<div class="lin"><span>Desconto</span><span>− ${_fmtBRMoney(c.desconto)}</span></div>` : ''}
+      <div class="lin tot"><span>TOTAL</span><span>${_fmtBRMoney(c.total)}</span></div>
+    </div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-tit">Pagamento</div>
+    <table><tbody>${pgtoRows}</tbody></table>
+  </div>
+
+  <div class="bloco">
+    <div class="row"><span class="lbl">Entrega:</span> ${e(entregaTxt)}</div>
+    ${c.observacao ? `<div class="row"><span class="lbl">Observação:</span> ${e(c.observacao)}</div>` : ''}
+  </div>
+
+  <div class="assinatura"><div class="linha">ASSINATURA DO CLIENTE</div></div>
+
+  <div class="footer">Este comprovante não substitui a Nota Fiscal. Emitido por Smart Motors em ${e(dataBR)}.</div>
+
+  <script>
+    window.addEventListener('load', function(){
+      setTimeout(function(){ try { window.focus(); window.print(); } catch(e){} }, 250);
+    });
+  <\/script>
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) return smAlert('Permita pop-ups para imprimir o comprovante.');
+  w.document.write(html);
+  w.document.close();
 }
 
 // ═══════════════════════════════════════════════════════════
