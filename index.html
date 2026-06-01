@@ -5332,8 +5332,11 @@ function onDashDateChange() {
   carregarFaturamentoDash();
 }
 
-// Calcula período imediatamente anterior do mesmo tamanho.
-// Ex: 01/04 a 12/04 (12 dias) → 20/03 a 31/03 (12 dias).
+// Calcula o período anterior pra comparação "vs período anterior". 3 modos:
+//  • Mês corrente em andamento (01..hoje) → mês anterior até o MESMO DIA.
+//  • Mês cheio já fechado → mês anterior INTEIRO (full vs full).
+//  • Qualquer outro range → janela do mesmo tamanho em dias antes do início.
+//    Ex: 01/04 a 12/04 (12 dias) → 20/03 a 31/03 (12 dias).
 function calcPeriodoAnterior(iniISO, fimISO) {
   const ini = new Date(iniISO + 'T00:00:00');
   const fim = new Date(fimISO + 'T00:00:00');
@@ -5347,6 +5350,22 @@ function calcPeriodoAnterior(iniISO, fimISO) {
     && ini.getMonth() === fim.getMonth()
     && fim.getDate() === ultimoDiaMesAtual;
   if (ehMesCheio) {
+    // Mês corrente EM ANDAMENTO: o range é o mês de hoje e ainda não chegou no
+    // último dia. Aí o "anterior" é cortado no MESMO DIA (mês até hoje vs mês
+    // anterior até o mesmo dia) — comparação justa no mesmo ponto do mês. O lado
+    // atual já é naturalmente "até hoje" (não há dado no futuro do mês).
+    // No último dia do mês (ou olhando mês já fechado) cai no full-vs-full abaixo.
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const ehMesCorrenteEmAndamento = fim.getFullYear() === hoje.getFullYear()
+      && fim.getMonth() === hoje.getMonth()
+      && hoje.getDate() < ultimoDiaMesAtual;
+    if (ehMesCorrenteEmAndamento) {
+      const ultimoDiaMesAnt = new Date(ini.getFullYear(), ini.getMonth(), 0).getDate();
+      const diaCorteAnt = Math.min(hoje.getDate(), ultimoDiaMesAnt); // fim-de-mês: usa último dia disponível
+      const iniAnt = new Date(ini.getFullYear(), ini.getMonth() - 1, 1);
+      const fimAnt = new Date(ini.getFullYear(), ini.getMonth() - 1, diaCorteAnt);
+      return { ini: _toISO(iniAnt), fim: _toISO(fimAnt) };
+    }
     const iniAnt = new Date(ini.getFullYear(), ini.getMonth() - 1, 1);
     const fimAnt = new Date(ini.getFullYear(), ini.getMonth(), 0); // último dia do mês anterior
     return { ini: _toISO(iniAnt), fim: _toISO(fimAnt) };
