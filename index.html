@@ -1875,7 +1875,7 @@ select:not(.input-pro):not(.search-input){
         <input type="date" id="dash-fat-fim" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;" onchange="onDashDateChange()">
         <button class="btn" id="btn-dash-personalizar" onclick="abrirBuilder()" style="font-size:11px;padding:6px 12px;">Personalizar</button>
         <span id="dash-ultima-atualizacao" style="font-size:10px;color:var(--text3);font-weight:500;letter-spacing:0.2px;">—</span>
-        <button class="btn btn-gold" onclick="carregarFaturamentoDash(true)" style="font-size:11px;padding:6px 14px;" title="Ignora cache (30min) e busca direto no Tiny"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
+        <button class="btn btn-gold" onclick="carregarFaturamentoDash(true)" style="font-size:11px;padding:6px 14px;" title="Recarrega os dados do dashboard (nosso banco)"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
         <button class="btn" onclick="gerarFechamentoMes()" style="font-size:11px;padding:6px 12px;" title="Exporta DRE + planilhas detalhadas em xlsx"><svg class="ic ic-sm"><use href="#ic-bar-chart"/></svg> Fechar Mês</button>
       </div>
     </div>
@@ -4840,16 +4840,58 @@ function _pdvParaVenda(p, itens, vendedor) {
   return out;
 }
 
-// Busca vendas do período mesclando Tiny (faturado) + PDV (Supabase), com a
-// MESMA regra do resumo do WhatsApp: PDV é prioritário e o Tiny só entra
-// quando o pedido NÃO veio do PDV (dedup pelo id do Tiny — tiny_pedido_id).
-// Pedido PDV cancelado fica de fora. Retorna { tiny, merged }:
-//   tiny   = array cru do Tiny (preservado pra callers legados);
-//   merged = Tiny deduplicado + PDV (com itens + vendedor pra rankings).
-// Se o PDV falhar, merged cai pra só-Tiny (nunca pior que hoje).
+// Converte um row de tiny_pedidos (NOSSO arquivo) pro mesmo shape que o
+// /pedidos-completos devolvia (id, valor, situacao, itens, vendedor). itens vêm
+// do raw.itens; guard array-only IGUAL ao fetchPedidoDetalhes pra bater com o Tiny.
+function _arquivoParaVendaTiny(row) {
+  var raw = row.raw || {};
+  var itensRaw = Array.isArray(raw.itens) ? raw.itens : [];
+  var itens = itensRaw.map(function(it){
+    var r = it.item || it;
+    return {
+      produto:       r.descricao || r.produto || '',
+      quantidade:    parseFloat(r.quantidade)     || 0,
+      valorUnitario: parseFloat(r.valor_unitario) || 0,
+    };
+  });
+  var dp = (row.data || '').split('-'); // YYYY-MM-DD → dd/mm/yyyy (formato do Tiny ao vivo)
+  return {
+    id:       row.tiny_id,
+    numero:   row.numero,
+    data:     dp.length === 3 ? (dp[2]+'/'+dp[1]+'/'+dp[0]) : '',
+    cliente:  row.cliente_nome || '',
+    situacao: row.situacao || '',
+    valor:    Number(row.valor_total) || 0,
+    vendedor: row.vendedor ? { nome: row.vendedor } : null,
+    itens:    itens,
+  };
+}
+
+// Busca vendas do período mesclando o HISTÓRICO (arquivo tiny_pedidos, faturado,
+// até o corte 31/05) + PDV (Supabase). NÃO consulta mais o Tiny ao vivo. Mesma
+// regra do resumo do WhatsApp: PDV é prioritário e o histórico só entra quando o
+// pedido NÃO veio do PDV (dedup pelo id do Tiny — tiny_pedido_id). Pedido PDV
+// cancelado fica de fora. Retorna { tiny, merged }:
+//   tiny   = array do arquivo (faturado) já no shape de venda;
+//   merged = histórico deduplicado + PDV (com itens + vendedor pra rankings).
+// `forcar` não é mais usado aqui (Supabase é sempre fresco).
 async function buscarVendasMescladas(iniISO, fimISO, forcar) {
-  var fmtDate = function(iso){ var p=(iso||'').split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:''; };
-  var tiny = await buscarPedidosCompletos(fmtDate(iniISO), fmtDate(fimISO), forcar);
+  // Histórico: lê do arquivo, só FATURADO, só até o corte. Espelha o que o
+  // /pedidos-completos entregava (faturado + itens), mas do nosso banco.
+  var tiny = [];
+  try {
+    var respArq = await sb.from('tiny_pedidos')
+      .select('tiny_id,numero,data,cliente_nome,vendedor,situacao,valor_total,raw')
+      .gte('data', iniISO)
+      .lte('data', fimISO)
+      .lt('data', PEDIDOS_ARQUIVO_CORTE);
+    if (respArq.error) throw new Error(respArq.error.message);
+    tiny = (respArq.data || [])
+      .filter(function(row){ return _pedStatusGroup('tiny', row.situacao) === 'concluido'; })
+      .map(_arquivoParaVendaTiny);
+  } catch (e) {
+    console.warn('[vendas-mescladas] arquivo falhou, segue só com PDV:', e.message);
+  }
   var pdvVendas = [];
   var idsPdv = new Set();
   // Garante pdvVendedores carregado (lookup de nome no ranking depende disso).
