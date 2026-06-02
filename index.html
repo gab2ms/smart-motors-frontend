@@ -7257,22 +7257,29 @@ function _pedStatusGroup(origem, statusRaw) {
   return _STATUS_PDV_MAP[s] || 'aguardando';
 }
 
-function _unifTiny(p) {
-  // Tiny vem como "dd/mm/yyyy"
-  const [d, m, y] = (p.data || '').split('/');
-  const dataISO = (d && m && y) ? `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}` : '';
+// Data de corte do arquivo na tela de Pedidos: histórico (tiny_pedidos) só ATÉ
+// 31/05/2026. De junho em diante a fonte é o PDV — o pedido feito direto no Tiny
+// em junho não aparece pelo arquivo (entra só pelo PDV quando relançado).
+const PEDIDOS_ARQUIVO_CORTE = '2026-06-01'; // .lt → estritamente antes de jun/2026
+
+// Converte um row de tiny_pedidos (NOSSO arquivo) pro shape unificado da lista.
+// data vem ISO ("YYYY-MM-DD"); vendedor já vem preenchido (coluna real do arquivo).
+// raw.id = tiny_id — a dedup contra o PDV depende dessa chave.
+function _unifArquivo(row) {
+  const dataISO = row.data || '';
+  const [y, m, d] = dataISO.split('-');
   return {
-    uid: 'tiny-' + p.id,
+    uid: 'tiny-' + row.tiny_id,
     origem: 'tiny',
-    numero: p.numero || p.id,
+    numero: row.numero || row.tiny_id,
     dataISO,
-    dataDisplay: p.data || '—',
-    cliente: p.cliente || '—',
-    vendedor: null,
-    valor: Number(p.valor) || 0,
-    statusOriginal: p.situacao || '',
-    statusGroup: _pedStatusGroup('tiny', p.situacao),
-    raw: p,
+    dataDisplay: (y && m && d) ? `${d}/${m}/${y}` : '—',
+    cliente: row.cliente_nome || '—',
+    vendedor: row.vendedor || null,
+    valor: Number(row.valor_total) || 0,
+    statusOriginal: row.situacao || '',
+    statusGroup: _pedStatusGroup('tiny', row.situacao),
+    raw: { ...row, id: row.tiny_id },
   };
 }
 function _unifPdv(p) {
@@ -7341,34 +7348,28 @@ async function carregarPedidosUnif() {
   btn.textContent = 'Buscando...';
   btn.disabled = true;
   dot.style.background = 'var(--gold)';
-  label.textContent = 'Buscando Tiny + PDV...';
+  label.textContent = 'Buscando histórico + PDV...';
 
   try {
     const iniISO = document.getElementById('ped-data-ini').value;
     const fimISO = document.getElementById('ped-data-fim').value;
-    const dataInicial = toAPIDate(iniISO);
-    const dataFinal   = toAPIDate(fimISO);
 
-    // ── Tiny: busca tudo no range (sem filtro de situação — filtramos client-side por status group)
-    let tinyArr = [];
-    let tinyErr = null;
+    // ── Histórico: lê do NOSSO arquivo tiny_pedidos (NÃO do Tiny ao vivo), só até
+    // o corte (31/05). Todos os status — filtramos client-side por status group.
+    let arqArr = [];
+    let arqErr = null;
     try {
-      const url = `${API_URL}/pedidos-venda?situacao=&dataInicial=${encodeURIComponent(dataInicial)}&dataFinal=${encodeURIComponent(dataFinal)}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.erro || 'Tiny falhou');
-      tinyArr = data.pedidos || [];
-      if (data.totalPaginas > 1) {
-        const extras = await Promise.all(
-          Array.from({length: data.totalPaginas - 1}, (_, i) =>
-            fetch(`${url}&pagina=${i+2}`).then(r => r.json())
-          )
-        );
-        extras.forEach(e => { if (e.ok) tinyArr.push(...(e.pedidos || [])); });
-      }
+      const { data, error } = await sb.from('tiny_pedidos')
+        .select('tiny_id,numero,data,cliente_nome,vendedor,situacao,valor_total')
+        .gte('data', iniISO)
+        .lte('data', fimISO)
+        .lt('data', PEDIDOS_ARQUIVO_CORTE)
+        .order('data', { ascending: false });
+      if (error) throw new Error(error.message);
+      arqArr = data || [];
     } catch (e) {
-      tinyErr = e.message;
-      console.warn('[pedidos-unif] tiny:', e.message);
+      arqErr = e.message;
+      console.warn('[pedidos-unif] arquivo:', e.message);
     }
 
     // ── PDV: filtra por range no criado_em
@@ -7387,7 +7388,7 @@ async function carregarPedidosUnif() {
     }
 
     // ── Normaliza
-    let unifTinyArr = tinyArr.map(_unifTiny);
+    let unifTinyArr = arqArr.map(_unifArquivo);
     const unifPdvArr = pdvArr.map(_unifPdv);
 
     // DEDUP: pedidos PDV sincronizados têm tiny_pedido_id preenchido.
@@ -7404,18 +7405,18 @@ async function carregarPedidosUnif() {
     // Mantém _pdvPedidosLista atualizado pro _pdvAbrirDetalhe achar o pedido pelo id
     _pdvPedidosLista = pdvArr;
 
-    if (tinyErr && pdvErr) {
+    if (arqErr && pdvErr) {
       dot.style.background = 'var(--red)';
       label.textContent = 'Erro nas 2 origens';
-    } else if (tinyErr) {
+    } else if (arqErr) {
       dot.style.background = 'var(--orange)';
-      label.textContent = `${pdvArr.length} PDV (Tiny falhou)`;
+      label.textContent = `${pdvArr.length} PDV (histórico falhou)`;
     } else if (pdvErr) {
       dot.style.background = 'var(--orange)';
-      label.textContent = `${tinyArr.length} Tiny (PDV falhou)`;
+      label.textContent = `${arqArr.length} histórico (PDV falhou)`;
     } else {
       dot.style.background = 'var(--green)';
-      label.textContent = `${tinyArr.length} Tiny · ${pdvArr.length} PDV`;
+      label.textContent = `${arqArr.length} histórico · ${pdvArr.length} PDV`;
     }
     renderPedidosUnif();
   } catch (err) {
