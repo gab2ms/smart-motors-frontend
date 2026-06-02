@@ -7444,20 +7444,25 @@ function renderPedidosUnif() {
   const aviso = document.getElementById('ped-aviso-vendedor');
   if (aviso) aviso.style.display = fVendedor ? '' : 'none';
 
-  let filtered = pedidosUnif.slice();
-  if (fOrigem)   filtered = filtered.filter(p => p.origem === fOrigem);
-  // Status: filtro explícito mostra exatamente esse grupo. Sem filtro (default)
-  // esconde cancelados — só aparecem quando o usuário escolher "Cancelado".
-  if (fStatus)   filtered = filtered.filter(p => p.statusGroup === fStatus);
-  else           filtered = filtered.filter(p => p.statusGroup !== 'cancelado');
-  if (fVendedor) filtered = filtered.filter(p => p.origem === 'pdv' && p.raw.vendedorId === fVendedor);
-  if (q)         filtered = filtered.filter(p =>
+  // Filtros comuns à LISTA e aos CARDS (menos o status): origem, vendedor, busca.
+  let base = pedidosUnif.slice();
+  if (fOrigem)   base = base.filter(p => p.origem === fOrigem);
+  if (fVendedor) base = base.filter(p => p.origem === 'pdv' && p.raw.vendedorId === fVendedor);
+  if (q)         base = base.filter(p =>
     String(p.numero).toLowerCase().includes(q) ||
     (p.cliente  || '').toLowerCase().includes(q) ||
     (p.vendedor || '').toLowerCase().includes(q)
   );
 
-  renderPedKpisUnif(filtered);
+  // LISTA: aplica o filtro de status. Filtro explícito mostra exatamente esse
+  // grupo; sem filtro (default) esconde cancelados — só aparecem ao escolher
+  // "Cancelado" no dropdown.
+  let filtered = fStatus ? base.filter(p => p.statusGroup === fStatus)
+                         : base.filter(p => p.statusGroup !== 'cancelado');
+
+  // CARDS: SÓ faturado/concluído (venda real), independente do filtro de status
+  // da lista. É o número que bate com o Tiny ("só Faturado").
+  renderPedKpisUnif(base.filter(p => p.statusGroup === 'concluido'));
 
   if (count) count.textContent =
     `${filtered.length} pedido${filtered.length===1?'':'s'} encontrado${filtered.length===1?'':'s'}`;
@@ -7505,29 +7510,19 @@ function renderPedidosUnif() {
   }).join('');
 }
 
-function renderPedKpisUnif(filtered) {
-  // Receita e ticket sempre excluem cancelados; "Total pedidos" reflete o
-  // que está na lista (que já segue o filtro de status).
-  const naoCancelado = filtered.filter(p => p.statusGroup !== 'cancelado');
-  const total   = filtered.length;
-  const receita = naoCancelado.reduce((s, p) => s + (p.valor || 0), 0);
-  const ticket  = naoCancelado.length ? receita / naoCancelado.length : 0;
+function renderPedKpisUnif(faturados) {
+  // Cards contam SÓ vendas faturadas/concluídas (venda real) — recebe já o
+  // subconjunto 'concluido', independente do filtro de status da lista.
+  const total   = faturados.length;
+  const receita = faturados.reduce((s, p) => s + (p.valor || 0), 0);
+  const ticket  = total ? receita / total : 0;
   const kpis = document.getElementById('ped-kpis');
   if (!kpis) return;
-  // Hint do "Total pedidos" reflete o filtro de status ativo.
-  const fStatus = document.getElementById('ped-filtro-status')?.value || '';
-  const HINT_TOTAL = {
-    '':           'cancelados ocultos',
-    'aguardando': 'só aguardando',
-    'concluido':  'só concluídos',
-    'cancelado':  'só cancelados',
-  };
-  const hintTotal = HINT_TOTAL[fStatus] || '';
   // 1 KPI dourado por tela (Receita). Os outros ficam neutros.
   kpis.innerHTML =
-      `<div class="kpi-pro"><div class="kpi-pro__label">Total pedidos</div><div class="kpi-pro__value">${total}</div><div class="kpi-pro__hint">${hintTotal}</div></div>`
-    + `<div class="kpi-pro kpi-pro--accent"><div class="kpi-pro__label">Receita</div><div class="kpi-pro__value">${_fmtBRMoney(receita)}</div><div class="kpi-pro__hint">exclui cancelados</div></div>`
-    + `<div class="kpi-pro"><div class="kpi-pro__label">Ticket médio</div><div class="kpi-pro__value">${_fmtBRMoney(ticket)}</div><div class="kpi-pro__hint">${naoCancelado.length} pedido${naoCancelado.length===1?'':'s'}</div></div>`;
+      `<div class="kpi-pro"><div class="kpi-pro__label">Total pedidos</div><div class="kpi-pro__value">${total}</div><div class="kpi-pro__hint">só faturados</div></div>`
+    + `<div class="kpi-pro kpi-pro--accent"><div class="kpi-pro__label">Receita</div><div class="kpi-pro__value">${_fmtBRMoney(receita)}</div><div class="kpi-pro__hint">só faturados</div></div>`
+    + `<div class="kpi-pro"><div class="kpi-pro__label">Ticket médio</div><div class="kpi-pro__value">${_fmtBRMoney(ticket)}</div><div class="kpi-pro__hint">${total} faturado${total===1?'':'s'}</div></div>`;
 }
 
 // ── Mantém funções legadas pra não quebrar refs antigas ──
