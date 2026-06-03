@@ -2020,54 +2020,35 @@ select:not(.input-pro):not(.search-input){
         <div style="font-size:11px;color:var(--text3);margin-top:3px;" id="api-last-sync"></div>
       </div>
       <div style="display:flex;gap:8px;">
-        <select class="search-input" id="estoque-filtro-sit" onchange="filtrarEstoque()" style="max-width:150px;">
-          <option value="A">Ativos</option>
-          <option value="I">Inativos</option>
-          <option value="T">Todos</option>
-        </select>
-        <button class="btn btn-gold" onclick="carregarProdutosTiny()" id="btn-sync"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Sincronizar</button>
+        <button class="btn btn-gold" onclick="carregarProdutosCatalogo()" id="btn-sync"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
       </div>
     </div>
 
-    <!-- KPIs -->
-    <div class="kpi-grid" id="estoque-kpis" style="margin-bottom:22px;">
-      <div class="kpi"><div class="kpi-label">Status</div><div class="kpi-value gold" style="font-size:14px;">Clique em Sincronizar</div><div class="kpi-change">para carregar do Tiny ERP</div></div>
-    </div>
-
-    <!-- Busca -->
+    <!-- Busca (KPIs de estoque voltam na Fase 2, junto com o saldo) -->
     <div class="search-bar" style="margin-bottom:16px;">
-      <input type="text" class="search-input" placeholder="Buscar produto..." id="estoque-search" oninput="filtrarEstoque()">
-      <select class="search-input" id="estoque-filtro-estoque" onchange="filtrarEstoque()" style="max-width:180px;">
-        <option value="">Todos os estoques</option>
-        <option value="ok">Em estoque</option>
-        <option value="zero">Estoque zerado</option>
-        <option value="baixo">Estoque baixo (≤2)</option>
-      </select>
+      <input type="text" class="search-input" placeholder="Buscar produto por nome ou código..." id="estoque-search" oninput="renderCatalogoProdutos()">
     </div>
 
     <!-- Tabela -->
     <div class="card">
       <div class="card-header">
-        <div><div class="card-title">Produtos do Tiny ERP</div><div class="card-sub" id="estoque-count">—</div></div>
+        <div><div class="card-title">Produtos (nosso banco)</div><div class="card-sub" id="estoque-count">—</div></div>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr id="estoque-thead">
-              <th onclick="sortEstoque('nome')" style="cursor:pointer;user-select:none;">Produto <span id="sort-nome">↕</span></th>
+              <th>Produto</th>
               <th>Código</th>
-              <th onclick="sortEstoque('situacao')" style="cursor:pointer;user-select:none;">Situação <span id="sort-situacao">↕</span></th>
-              <th onclick="sortEstoque('preco')" style="cursor:pointer;user-select:none;">Preço venda <span id="sort-preco">↕</span></th>
-              <th onclick="sortEstoque('precoCusto')" style="cursor:pointer;user-select:none;">Custo total <span id="sort-precoCusto">↕</span></th>
-              <th onclick="sortEstoque('margem')" style="cursor:pointer;user-select:none;">MC R$ <span id="sort-margem">↕</span></th>
-              <th onclick="sortEstoque('margemPct')" style="cursor:pointer;user-select:none;">MC % <span id="sort-margemPct">↕</span></th>
-              <th onclick="sortEstoque('estoque')" style="cursor:pointer;user-select:none;">Estoque <span id="sort-estoque">↕</span></th>
-              <th onclick="sortEstoque('status')" style="cursor:pointer;user-select:none;">Status <span id="sort-status">↕</span></th>
-              <th>Precificar</th>
+              <th>Preço venda</th>
+              <th>Custo</th>
+              <th>MC R$</th>
+              <th>MC %</th>
+              <th>Categoria</th>
             </tr>
           </thead>
           <tbody id="estoque-table-body">
-            <tr><td colspan="7" class="empty">Clique em Sincronizar para carregar os produtos do Tiny ERP</td></tr>
+            <tr><td colspan="7" class="empty">Carregando produtos…</td></tr>
           </tbody>
         </table>
       </div>
@@ -8048,6 +8029,78 @@ function setApiStatus(status, msg) {
   label.textContent      = msg;
 }
 
+// ── CATÁLOGO (Fase 1c, Etapa 1) ──
+// A aba Produtos & Estoque lista do NOSSO banco (tabela produtos), não mais do
+// Tiny ao vivo. Array próprio (produtosCatalogo) — NÃO toca produtosTiny (PDV).
+// Sem saldo/estoque nesta etapa (volta na Fase 2). Só leitura (editar/criar = etapas 2/3).
+let produtosCatalogo = [];
+
+async function carregarProdutosCatalogo() {
+  const btn = document.getElementById('btn-sync');
+  if (btn) { btn.textContent = 'Atualizando...'; btn.disabled = true; }
+  setApiStatus('carregando', 'Carregando produtos...');
+  try {
+    const { data, error } = await sb.from('produtos')
+      .select('nome,codigo,preco_venda,custo,categoria').order('nome');
+    if (error) throw new Error(error.message || 'erro Supabase produtos');
+    produtosCatalogo = (data || []).map(p => ({
+      nome:       p.nome   || '',
+      codigo:     p.codigo || '',
+      precoVenda: Number(p.preco_venda) || 0,
+      custo:      p.custo == null ? null : Number(p.custo),
+      categoria:  p.categoria || '',
+    }));
+    setApiStatus('online', `${produtosCatalogo.length} produtos`);
+    const sync = document.getElementById('api-last-sync');
+    if (sync) sync.textContent = 'Atualizado: ' + new Date().toLocaleString('pt-BR');
+    renderCatalogoProdutos();
+  } catch (err) {
+    setApiStatus('erro', 'Erro: ' + err.message);
+    const tb = document.getElementById('estoque-table-body');
+    if (tb) tb.innerHTML = `<tr><td colspan="7" class="empty" style="color:var(--red);">Erro ao carregar: ${escHtml(err.message)}</td></tr>`;
+  } finally {
+    if (btn) { btn.textContent = 'Atualizar'; btn.disabled = false; }
+  }
+}
+
+function _catBadgeProduto(cat) {
+  const c = (cat || '').toLowerCase();
+  if (c === 'motoneta')  return '<span class="badge badge-green">Motoneta</span>';
+  if (c === 'acessorio') return '<span class="badge" style="background:var(--gold-dim);color:var(--gold);">Acessório</span>';
+  return '<span class="badge" style="background:var(--surface3);color:var(--text3);">—</span>';
+}
+
+function renderCatalogoProdutos() {
+  const q = (document.getElementById('estoque-search')?.value || '').toLowerCase();
+  const filtered = produtosCatalogo.filter(p =>
+    !q || p.nome.toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q));
+
+  const cnt = document.getElementById('estoque-count');
+  if (cnt) cnt.textContent = `${filtered.length} produto${filtered.length !== 1 ? 's' : ''}`;
+
+  const tbody = document.getElementById('estoque-table-body');
+  if (!tbody) return;
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">Nenhum produto encontrado</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(p => {
+    const temCusto = p.custo != null;
+    const mc       = temCusto ? p.precoVenda - p.custo : null;
+    const mcp      = (temCusto && p.precoVenda > 0) ? (mc / p.precoVenda) * 100 : null;
+    const mcColor  = mcp == null ? 'var(--text3)' : mcp >= 30 ? 'var(--gold)' : mcp >= 15 ? 'var(--orange)' : 'var(--red)';
+    return `<tr>
+      <td class="td-model" style="max-width:260px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}</td>
+      <td><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
+      <td class="td-mono" style="font-weight:700;">${fmt(p.precoVenda)}</td>
+      <td class="td-mono" style="color:var(--text3);">${temCusto ? fmt(p.custo) : '—'}</td>
+      <td class="td-mono" style="font-weight:700;color:${mcColor};">${mc != null ? fmt(mc) : '—'}</td>
+      <td style="font-weight:700;color:${mcColor};">${mcp != null ? mcp.toFixed(1) + '%' : '—'}</td>
+      <td>${_catBadgeProduto(p.categoria)}</td>
+    </tr>`;
+  }).join('');
+}
+
 async function carregarProdutosTiny() {
   const btn = document.getElementById('btn-sync');
   btn.textContent = 'Sincronizando...';
@@ -8345,11 +8398,10 @@ document.getElementById('pricing-modal')?.addEventListener('click', function(e) 
 });
 
 function initEstoque() {
-  // Se já tinha dados carregados, só re-renderiza
-  if (produtosTiny.length > 0) {
-    filtrarEstoque();
-    renderEstoqueKpis();
-  }
+  // Lista do nosso banco (tabela produtos). Já carregado? só re-renderiza;
+  // senão busca. (Fase 1c, Etapa 1 — não usa mais produtosTiny/Tiny ao vivo.)
+  if (produtosCatalogo.length > 0) renderCatalogoProdutos();
+  else carregarProdutosCatalogo();
 }
 
 // ══════════════════════════════════════════
