@@ -3752,13 +3752,15 @@ function mcBar(pct){
 }
 
 // ══════════════════════════════════════════
-//  PREÇO DE VENDA — FONTE OFICIAL = TINY
+//  PREÇO DE VENDA — FONTE = NOSSA TABELA produtos
 // ══════════════════════════════════════════
 // CUSTO vem do Supabase (Custos de Produtos é a fonte oficial — Gabriel edita só lá).
-// VENDA vem do Tiny (vendedores atualizam no PDV todo dia). Esta seção carrega
-// preços do Tiny on-demand (primeira tela que precise dispara o fetch) e mantém
-// cache local de 30min alinhado com o cache backend (/produtos PRODUTOS_CACHE_TTL).
-// Match products[i].modelo ↔ produto Tiny usa _matchProdutoPorNome invertido.
+// VENDA agora vem da nossa tabela `produtos` (preco_venda), populada do Tiny no
+// backfill (Fase 1b). Antes lia do Tiny ao vivo (/produtos); trocamos a FONTE pra
+// zerar a dependência do Tiny no Dashboard/DRE/Preços, SEM mudar conjunto nem
+// cálculo (avgMCpct segue sobre products[]/produtos_precos). Cache local de 30min.
+// Nomes mantidos (TINY_PRECOS_IDX, carregarTinyPrecos) p/ não tocar os 9 consumidores.
+// Match products[i].modelo ↔ nome do produto usa _matchProdutoPorNome invertido.
 let _TINY_PRECOS_CACHE   = null;            // { ts, items: [{nome, preco}, ...] }
 let _TINY_PRECOS_FETCH   = null;            // Promise em vôo (evita refetch concorrente)
 let TINY_PRECOS_IDX      = new Map();       // products[i].modelo → preço Tiny
@@ -3807,18 +3809,11 @@ async function carregarTinyPrecos({ force = false } = {}) {
   if (_TINY_PRECOS_FETCH) return _TINY_PRECOS_FETCH;
   _TINY_PRECOS_FETCH = (async () => {
     try {
-      const items = [];
-      let pagina = 1, totalPaginas = 1;
-      do {
-        const r = await fetch(`${API_URL}/produtos?situacao=A&comEstoque=0&pagina=${pagina}`);
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const data = await r.json();
-        for (const p of (data.produtos || [])) {
-          items.push({ nome: p.nome || '', preco: Number(p.preco) || 0 });
-        }
-        totalPaginas = Number(data.totalPaginas) || 1;
-        pagina++;
-      } while (pagina <= totalPaginas && pagina <= 50);
+      // Fonte = nossa tabela `produtos` (ativos). nome/preco_venda foram gravados
+      // verbatim do Tiny no backfill, então o matcher casa igual ao Tiny ao vivo.
+      const { data, error } = await sb.from('produtos').select('nome,preco_venda').eq('ativo', true);
+      if (error) throw new Error(error.message || 'erro Supabase produtos');
+      const items = (data || []).map(p => ({ nome: p.nome || '', preco: Number(p.preco_venda) || 0 }));
       _TINY_PRECOS_CACHE = { ts: Date.now(), items };
       _rebuildTinyPrecosIdx();
     } catch (e) {
@@ -5110,7 +5105,7 @@ async function renderizarRankingScooters(ranking, receitaTotal) {
   await carregarTinyPrecos();
 
   var maxQtd = ranking[0].qtd || 1;
-  if (sub) sub.textContent = 'Top ' + ranking.length + ' modelos · dados do Tiny ERP';
+  if (sub) sub.textContent = 'Top ' + ranking.length + ' modelos';
 
   var isAdmin = _isAdminUser();
   var rows = '';
@@ -6155,7 +6150,7 @@ async function carregarFaturamentoDash(forcar) {
   if (!dot) return;
 
   dot.style.background = 'var(--gold)';
-  label.textContent    = 'Carregando dados do Tiny...';
+  label.textContent    = 'Carregando dados...';
 
   var rankEl  = document.getElementById('dash-ranking-body');
   var vendEl  = document.getElementById('ranking-vendedores');
