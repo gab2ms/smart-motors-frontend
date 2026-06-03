@@ -2040,15 +2040,16 @@ select:not(.input-pro):not(.search-input){
             <tr id="estoque-thead">
               <th>Produto</th>
               <th>Código</th>
+              <th>Categoria</th>
+              <th>Fornecedor</th>
+              <th>Custo total</th>
               <th>Preço venda</th>
-              <th>Custo</th>
               <th>MC R$</th>
               <th>MC %</th>
-              <th>Categoria</th>
             </tr>
           </thead>
           <tbody id="estoque-table-body">
-            <tr><td colspan="7" class="empty">Carregando produtos…</td></tr>
+            <tr><td colspan="8" class="empty">Carregando produtos…</td></tr>
           </tbody>
         </table>
       </div>
@@ -8081,22 +8082,30 @@ function renderCatalogoProdutos() {
   const tbody = document.getElementById('estoque-table-body');
   if (!tbody) return;
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty">Nenhum produto encontrado</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">Nenhum produto encontrado</td></tr>';
     return;
   }
   tbody.innerHTML = filtered.map(p => {
-    const temCusto = p.custo != null;
-    const mc       = temCusto ? p.precoVenda - p.custo : null;
-    const mcp      = (temCusto && p.precoVenda > 0) ? (mc / p.precoVenda) * 100 : null;
-    const mcColor  = mcp == null ? 'var(--text3)' : mcp >= 30 ? 'var(--gold)' : mcp >= 15 ? 'var(--orange)' : 'var(--red)';
+    // Junção por nome com produtos_precos (mesma cascata do dashboard/Custos):
+    // traz fornecedor + custo total VIVO (ctReal = puro+montagem+comissão+nf).
+    // Sem match (acessórios etc) → custo/fornecedor/MC = "—".
+    const pp        = _matchProdutoPorNome(p.nome);
+    const fornecedor= pp?.fornecedor || '';
+    const categoria = pp?.categoria || p.categoria || '';
+    const ctr       = pp ? ctReal(pp) : null;
+    const venda     = p.precoVenda;
+    const mc        = (ctr != null && venda > 0) ? venda - ctr : null;
+    const mcp       = (mc  != null && venda > 0) ? (mc / venda) * 100 : null;
+    const mcColor   = mcp == null ? 'var(--text3)' : mcp >= 30 ? 'var(--gold)' : mcp >= 15 ? 'var(--orange)' : 'var(--red)';
     return `<tr>
-      <td class="td-model" style="max-width:260px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}</td>
+      <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}</td>
       <td><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
-      <td class="td-mono" style="font-weight:700;">${fmt(p.precoVenda)}</td>
-      <td class="td-mono" style="color:var(--text3);">${temCusto ? fmt(p.custo) : '—'}</td>
+      <td>${_catBadgeProduto(categoria)}</td>
+      <td><span class="td-supplier">${escHtml(fornecedor) || '—'}</span></td>
+      <td class="td-mono" style="font-weight:700;">${ctr != null ? fmt(ctr) : '—'}</td>
+      <td class="td-mono">${fmt(venda)}</td>
       <td class="td-mono" style="font-weight:700;color:${mcColor};">${mc != null ? fmt(mc) : '—'}</td>
       <td style="font-weight:700;color:${mcColor};">${mcp != null ? mcp.toFixed(1) + '%' : '—'}</td>
-      <td>${_catBadgeProduto(p.categoria)}</td>
     </tr>`;
   }).join('');
 }
