@@ -3358,6 +3358,46 @@ select:not(.input-pro):not(.search-input){
   </div>
 </div>
 
+<!-- ══════════════ MODAL — PRODUTO (tela única, Fase 1c etapa 3) ══════════════ -->
+<!-- Catálogo grava em produtos (por id); custos gravam em produtos_precos (via
+     cpSave/products[] + salvarDados). Margem sempre sobre ctReal. -->
+<div class="modal-overlay" id="prod-modal">
+  <div class="modal">
+    <div class="modal-title" id="prod-modal-title">Editar <span>produto</span></div>
+    <input type="hidden" id="prod-edit-id">
+    <input type="hidden" id="prod-precos-idx">
+    <input type="hidden" id="prod-venda">
+    <div class="form-grid">
+      <div class="form-group full"><label>Nome</label><input class="form-input" id="prod-nome" type="text"></div>
+      <div class="form-group"><label>Código</label><input class="form-input" id="prod-codigo" type="text"></div>
+      <div class="form-group"><label>Categoria</label>
+        <select class="form-input" id="prod-categoria" onchange="prodToggleComissao();prodUpdateComputed();">
+          <option value="motoneta">Motoneta</option>
+          <option value="acessorio">Acessório</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Fornecedor / Fabricante</label><input class="form-input" id="prod-fornecedor" type="text"></div>
+      <div class="form-group"><label>Cor</label><input class="form-input" id="prod-cor" type="text"></div>
+      <div class="form-group"><label>Motor</label><input class="form-input" id="prod-motor" type="text"></div>
+      <div class="form-group full"><label>Descrição / características</label><textarea class="form-input" id="prod-descricao" rows="2"></textarea></div>
+      <div class="form-group full" style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:4px;">Custos detalhados</div>
+      <div class="form-group"><label>Custo puro (R$)</label><input class="form-input" id="prod-custo-puro" type="number" oninput="prodUpdateComputed()"></div>
+      <div class="form-group"><label>Custo montagem (R$)</label><input class="form-input" id="prod-montagem" type="number" oninput="prodUpdateComputed()"></div>
+      <div class="form-group"><label>Comissão vendedor (R$)</label><input class="form-input" id="prod-comissao" type="number" oninput="prodUpdateComputed()"></div>
+      <div class="form-group"><label>Preço de venda (R$)</label><input class="form-input" id="prod-venda-display" type="number" readonly style="opacity:0.55;"></div>
+    </div>
+    <div class="computed-row">
+      <div><div class="computed-label">Custo total (CtReal)</div><div class="computed-value" id="prod-modal-ctreal">R$ —</div></div>
+      <div><div class="computed-label">MC R$</div><div class="computed-value" id="prod-modal-mc">R$ —</div></div>
+      <div><div class="computed-label">MC %</div><div class="computed-value" id="prod-modal-mcp">—%</div></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="prodCloseModal()">Cancelar</button>
+      <button class="btn btn-gold" onclick="prodSave()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════════
 //  BOOTSTRAP — primeira coisa, sem dependências
@@ -8042,14 +8082,19 @@ async function carregarProdutosCatalogo() {
   setApiStatus('carregando', 'Carregando produtos...');
   try {
     const { data, error } = await sb.from('produtos')
-      .select('nome,codigo,preco_venda,custo,categoria').order('nome');
+      .select('id,nome,codigo,preco_venda,custo,categoria,fabricante,cor,motor,descricao').order('nome');
     if (error) throw new Error(error.message || 'erro Supabase produtos');
     produtosCatalogo = (data || []).map(p => ({
+      id:         p.id,
       nome:       p.nome   || '',
       codigo:     p.codigo || '',
       precoVenda: Number(p.preco_venda) || 0,
       custo:      p.custo == null ? null : Number(p.custo),
       categoria:  p.categoria || '',
+      fabricante: p.fabricante || '',
+      cor:        p.cor || '',
+      motor:      p.motor || '',
+      descricao:  p.descricao || '',
     }));
     setApiStatus('online', `${produtosCatalogo.length} produtos`);
     const sync = document.getElementById('api-last-sync');
@@ -8097,7 +8142,7 @@ function renderCatalogoProdutos() {
     const mc        = (ctr != null && venda > 0) ? venda - ctr : null;
     const mcp       = (mc  != null && venda > 0) ? (mc / venda) * 100 : null;
     const mcColor   = mcp == null ? 'var(--text3)' : mcp >= 30 ? 'var(--gold)' : mcp >= 15 ? 'var(--orange)' : 'var(--red)';
-    return `<tr>
+    return `<tr onclick="prodOpenEdit('${p.id}')" style="cursor:pointer;">
       <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}</td>
       <td><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
       <td>${_catBadgeProduto(categoria)}</td>
@@ -8109,6 +8154,123 @@ function renderCatalogoProdutos() {
     </tr>`;
   }).join('');
 }
+
+// ── MODAL DE EDIÇÃO (Fase 1c etapa 3) ──
+// Catálogo → produtos (por id). Custo → produtos_precos (via products[] +
+// salvarDados, mesma mecânica do cpSave). Margem sempre sobre ctReal.
+function prodCloseModal(){ document.getElementById('prod-modal').classList.remove('open'); }
+
+function prodToggleComissao(){
+  const cat=document.getElementById('prod-categoria').value;
+  const com=document.getElementById('prod-comissao');
+  if(cat==='acessorio'){ com.value=0; com.disabled=true; com.style.opacity='0.5'; }
+  else { com.disabled=false; com.style.opacity=''; }
+}
+
+function prodUpdateComputed(){
+  const cat=document.getElementById('prod-categoria').value;
+  const p={
+    categoria:cat,
+    custoPuro:+document.getElementById('prod-custo-puro').value||0,
+    montagem:+document.getElementById('prod-montagem').value||0,
+    comissao:cat==='acessorio'?0:(+document.getElementById('prod-comissao').value||0),
+  };
+  const ctr=ctReal(p);                                   // puro+montagem+comissão+nf
+  const venda=+document.getElementById('prod-venda').value||0;
+  const mc=venda>0?venda-ctr:null;
+  const mcp=(mc!=null&&venda>0)?(mc/venda*100):null;
+  document.getElementById('prod-modal-ctreal').textContent=fmt(ctr);
+  const mcEl=document.getElementById('prod-modal-mc');
+  mcEl.textContent=mc!=null?((mc<0?'-':'')+fmt(Math.abs(mc))):'R$ —';
+  mcEl.style.color=mc==null?'var(--text3)':mc>=0?'var(--green)':'var(--red)';
+  const pctEl=document.getElementById('prod-modal-mcp');
+  pctEl.textContent=mcp!=null?fmtP(mcp):'—%';
+  pctEl.style.color=mcp==null?'var(--text3)':mcp>=30?'var(--gold)':mcp>=15?'var(--orange)':'var(--red)';
+}
+
+function prodOpenEdit(id){
+  const item=produtosCatalogo.find(p=>String(p.id)===String(id));
+  if(!item)return;
+  // Linha de custo casada por nome; guarda o ÍNDICE em products[] (robusto a rename).
+  const pp=_matchProdutoPorNome(item.nome);
+  const idx=pp?products.indexOf(pp):-1;
+  document.getElementById('prod-modal-title').innerHTML=`Editar — <span>${escHtml(item.nome||'')}</span>`;
+  document.getElementById('prod-edit-id').value=item.id;
+  document.getElementById('prod-precos-idx').value=idx;
+  document.getElementById('prod-venda').value=item.precoVenda||0;
+  document.getElementById('prod-nome').value=item.nome||'';
+  document.getElementById('prod-codigo').value=item.codigo||'';
+  document.getElementById('prod-categoria').value=(pp?.categoria)||item.categoria||'motoneta';
+  document.getElementById('prod-fornecedor').value=(pp?.fornecedor)||item.fabricante||'';
+  document.getElementById('prod-cor').value=item.cor||'';
+  document.getElementById('prod-motor').value=item.motor||'';
+  document.getElementById('prod-descricao').value=item.descricao||'';
+  document.getElementById('prod-custo-puro').value=pp?(pp.custoPuro||0):0;
+  document.getElementById('prod-montagem').value=pp?(pp.montagem||0):0;
+  document.getElementById('prod-comissao').value=pp?(pp.comissao||0):0;
+  document.getElementById('prod-venda-display').value=item.precoVenda||0;
+  prodToggleComissao();
+  prodUpdateComputed();
+  document.getElementById('prod-modal').classList.add('open');
+}
+
+async function prodSave(){
+  const id=document.getElementById('prod-edit-id').value;
+  const item=produtosCatalogo.find(p=>String(p.id)===String(id));
+  if(!item){smAlert('Produto não encontrado');return;}
+  const nome=document.getElementById('prod-nome').value.trim();
+  if(!nome){smAlert('Preencha o nome do produto');return;}
+  const cat=document.getElementById('prod-categoria').value;
+  const fornecedor=document.getElementById('prod-fornecedor').value.trim();
+  const codigo=document.getElementById('prod-codigo').value.trim();
+  const cor=document.getElementById('prod-cor').value.trim();
+  const motor=document.getElementById('prod-motor').value.trim();
+  const descricao=document.getElementById('prod-descricao').value.trim();
+  const custoPuro=+document.getElementById('prod-custo-puro').value||0;
+  const montagem=+document.getElementById('prod-montagem').value||0;
+  const comissao=cat==='acessorio'?0:(+document.getElementById('prod-comissao').value||0);
+
+  const btn=document.querySelector('#prod-modal .btn-gold');
+  const txt=btn?btn.textContent:''; if(btn){btn.textContent='Salvando...';btn.disabled=true;}
+  try{
+    // 1) CATÁLOGO → produtos (por id). fabricante recebe o mesmo valor do fornecedor.
+    const {error}=await sb.from('produtos').update({
+      nome, codigo:codigo||null, fabricante:fornecedor||null, cor:cor||null,
+      motor:motor||null, descricao:descricao||null, categoria:cat,
+      atualizado_em:new Date().toISOString(),
+    }).eq('id', id);
+    if(error)throw new Error(error.message||'erro ao salvar catálogo');
+
+    // 2) CUSTO → produtos_precos (mecânica do cpSave: muta products[] + salvarDados).
+    const idx=+document.getElementById('prod-precos-idx').value;
+    const temCusto=custoPuro>0||montagem>0||comissao>0;
+    if(idx>=0&&products[idx]){
+      // Atualiza SÓ custo/categoria/fornecedor. NÃO mexe em .modelo (chave do match
+      // por modelo — renomear aqui quebraria as outras variantes).
+      const pr=products[idx];
+      pr.categoria=cat; pr.custoPuro=custoPuro; pr.montagem=montagem; pr.comissao=comissao;
+      pr.fornecedor=fornecedor||'—';
+      salvarDados();
+    } else if(idx<0&&temCusto){
+      // Sem linha de custo + custo preenchido → cria (modelo = nome, casa exato).
+      products.push({modelo:nome, fornecedor:fornecedor||'—', categoria:cat,
+        custoPuro, montagem, comissao, venda:item.precoVenda||0, ativo:true});
+      salvarDados();
+    } // idx<0 && !temCusto → não cria linha (acessório sem custo não mexe no dashboard)
+
+    // 3) Atualiza memória + telas.
+    Object.assign(item,{nome,codigo,fabricante:fornecedor,cor,motor,descricao,categoria:cat});
+    renderCatalogoProdutos();
+    renderDashboard();
+    prodCloseModal();
+    smAlert('"'+nome+'" salvo!');
+  }catch(err){
+    smAlert('Erro ao salvar: '+err.message);
+  }finally{
+    if(btn){btn.textContent=txt;btn.disabled=false;}
+  }
+}
+document.getElementById('prod-modal')?.addEventListener('click', function(e){ if(e.target===this) prodCloseModal(); });
 
 async function carregarProdutosTiny() {
   const btn = document.getElementById('btn-sync');
