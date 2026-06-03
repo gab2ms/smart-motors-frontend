@@ -1976,7 +1976,7 @@ select:not(.input-pro):not(.search-input){
       <select class="search-input" id="cp-filter-fornecedor" onchange="renderCustosProdutos()" style="max-width:180px;"></select>
       <select class="search-input" id="cp-filter-categoria" onchange="renderCustosProdutos()" style="max-width:170px;">
         <option value="">Todas as categorias</option>
-        <option value="motoneta">Motoneta</option>
+        <option value="scooter">Scooter</option>
         <option value="acessorio">Acessório</option>
       </select>
       <select class="search-input" id="cp-filter-status" onchange="renderCustosProdutos()" style="max-width:140px;">
@@ -3331,7 +3331,7 @@ select:not(.input-pro):not(.search-input){
       <div class="form-group full"><label>Fornecedor</label><input class="form-input" id="cp-edit-fornecedor" type="text"></div>
       <div class="form-group"><label>Categoria</label>
         <select class="form-input" id="cp-edit-categoria" onchange="cpToggleComissao();cpUpdateComputed();">
-          <option value="motoneta">Motoneta</option>
+          <option value="scooter">Scooter</option>
           <option value="acessorio">Acessório</option>
         </select>
       </div>
@@ -3372,7 +3372,7 @@ select:not(.input-pro):not(.search-input){
       <div class="form-group"><label>Código</label><input class="form-input" id="prod-codigo" type="text"></div>
       <div class="form-group"><label>Categoria</label>
         <select class="form-input" id="prod-categoria" onchange="prodToggleComissao();prodUpdateComputed();">
-          <option value="motoneta">Motoneta</option>
+          <option value="scooter">Scooter</option>
           <option value="acessorio">Acessório</option>
         </select>
       </div>
@@ -3744,7 +3744,7 @@ let emprestimoSelecionadoId = null;
 // Acessório não tem comissão própria nem NF própria (a NF é a do pedido).
 const ctReal = p => {
   const base = (p.custoPuro||0) + (p.montagem||0);
-  return (p.categoria||'motoneta') === 'acessorio'
+  return (p.categoria||'scooter') === 'acessorio'
     ? base
     : base + (p.comissao||0) + (CONFIG_CUSTOS.nf_pedido||0);
 };
@@ -5129,7 +5129,7 @@ async function renderizarRankingScooters(ranking, receitaTotal) {
   if (!el) return;
 
   if (!ranking || !ranking.length) {
-    if (sub) sub.textContent = 'Nenhuma motoneta encontrada nos pedidos';
+    if (sub) sub.textContent = 'Nenhuma scooter encontrada nos pedidos';
     el.innerHTML = '<div class="empty" style="padding:20px;font-size:11px;">Nenhuma venda no período.<br>Verifique se os pedidos têm itens no Tiny.</div>';
     return;
   }
@@ -7029,7 +7029,7 @@ async function renderCustosProdutos(){
     if(status==='inativos'&&p.ativo!==false)return false;
     if(q&&!(p.modelo||'').toLowerCase().includes(q))return false;
     if(forn&&p.fornecedor!==forn)return false;
-    if(cat&&(p.categoria||'motoneta')!==cat)return false;
+    if(cat&&(p.categoria||'scooter')!==cat)return false;
     return true;
   });
 
@@ -7042,7 +7042,7 @@ async function renderCustosProdutos(){
     const mcpV=temVenda?((venda-ctr)/venda*100):0;
     const mcCor=!temVenda?'var(--text3)':mcpV>=30?'var(--gold)':mcpV>=15?'var(--orange)':'var(--red)';
     const inativo=p.ativo===false;
-    const catLabel=(p.categoria||'motoneta')==='acessorio'?'Acessório':'Motoneta';
+    const catLabel=(p.categoria||'scooter')==='acessorio'?'Acessório':'Scooter';
     return `<tr onclick="cpOpenEdit(${p._i})" style="cursor:pointer;${inativo?'opacity:0.5;':''}">
       <td class="td-model">${inativo
         ?`<s>${escHtml(p.modelo||'')}</s> <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;">inativo</span>`
@@ -7093,7 +7093,7 @@ function cpOpenEdit(i){
   document.getElementById('cp-edit-idx').value=i;
   document.getElementById('cp-edit-modelo').value=p.modelo||'';
   document.getElementById('cp-edit-fornecedor').value=p.fornecedor||'';
-  document.getElementById('cp-edit-categoria').value=p.categoria||'motoneta';
+  document.getElementById('cp-edit-categoria').value=p.categoria||'scooter';
   document.getElementById('cp-edit-custo-puro').value=p.custoPuro||0;
   document.getElementById('cp-edit-montagem').value=p.montagem||0;
   document.getElementById('cp-edit-comissao').value=p.comissao||0;
@@ -7111,7 +7111,7 @@ function cpOpenNovo(){
   document.getElementById('cp-edit-idx').value=-1;
   document.getElementById('cp-edit-modelo').value='';
   document.getElementById('cp-edit-fornecedor').value='';
-  document.getElementById('cp-edit-categoria').value='motoneta';
+  document.getElementById('cp-edit-categoria').value='scooter';
   ['cp-edit-custo-puro','cp-edit-montagem','cp-edit-comissao','cp-edit-venda'].forEach(id=>document.getElementById(id).value=0);
   document.getElementById('cp-edit-ativo').checked=true;
   // modo novo: preço de venda inicial é editável
@@ -7235,7 +7235,7 @@ function saveProduct(){
     // Produtos) — mas TÊM que ser preservados, senão salvar a venda
     // pelo #precos zeraria os dois no objeto em memória.
     custoPuro:+document.getElementById('edit-custo-puro').value||0,
-    categoria:(i>=0&&products[i]?products[i].categoria:null)||'motoneta',
+    categoria:(i>=0&&products[i]?products[i].categoria:null)||'scooter',
     montagem:+document.getElementById('edit-montagem').value||0,
     comissao:+document.getElementById('edit-comissao').value||0,
     nfCompra:+document.getElementById('edit-nf-compra').value||0,
@@ -8111,7 +8111,7 @@ async function carregarProdutosCatalogo() {
 
 function _catBadgeProduto(cat) {
   const c = (cat || '').toLowerCase();
-  if (c === 'motoneta')  return '<span class="badge badge-green">Motoneta</span>';
+  if (c === 'scooter')   return '<span class="badge badge-green">Scooter</span>';
   if (c === 'acessorio') return '<span class="badge" style="background:var(--gold-dim);color:var(--gold);">Acessório</span>';
   return '<span class="badge" style="background:var(--surface3);color:var(--text3);">—</span>';
 }
@@ -8200,7 +8200,7 @@ function prodOpenEdit(id){
   document.getElementById('prod-venda').value=item.precoVenda||0;
   document.getElementById('prod-nome').value=item.nome||'';
   document.getElementById('prod-codigo').value=item.codigo||'';
-  document.getElementById('prod-categoria').value=(pp?.categoria)||item.categoria||'motoneta';
+  document.getElementById('prod-categoria').value=(pp?.categoria)||item.categoria||'scooter';
   document.getElementById('prod-fornecedor').value=(pp?.fornecedor)||item.fabricante||'';
   document.getElementById('prod-cor').value=item.cor||'';
   document.getElementById('prod-motor').value=item.motor||'';
