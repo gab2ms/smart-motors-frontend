@@ -4127,6 +4127,16 @@ async function carregarDados() {
     };
     if (!c.error)  contas      = await seed('contas_bancarias', contas,      CONTAS_SEED);
     if (!pr.error) products    = await seed('produtos_precos',  products,    PRODUCTS_SEED);
+
+    // Rede de segurança da corrida preço×custo: o renderDashboard de nível de
+    // módulo (linha ~20335) dispara carregarTinyPrecos ANTES daqui. Com o preço
+    // vindo rápido do nosso banco, o índice de margem pode ter sido montado com
+    // products[] (custos) ainda vazio → margem 0 presa no cache de 30min. Agora
+    // que products carregou, reconstrói o índice a partir dos itens já cacheados
+    // (local, sem rede). Se nada foi cacheado ainda, o próximo carregarTinyPrecos
+    // monta normal com products já presente.
+    if (_TINY_PRECOS_CACHE && _TINY_PRECOS_CACHE.items?.length) _rebuildTinyPrecosIdx();
+
     // custos_fixos NÃO é mais semeada nem sincronizada — a aba Custos
     // Operacionais lê de lancamentos. As linhas serão deletadas num
     // passo separado; o fetch continua só pra aba antiga não quebrar.
