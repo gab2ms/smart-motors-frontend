@@ -2024,7 +2024,10 @@ select:not(.input-pro):not(.search-input){
       </div>
     </div>
 
-    <!-- Busca (KPIs de estoque voltam na Fase 2, junto com o saldo) -->
+    <!-- KPIs de estoque (lê do nosso banco — produtos.estoque) -->
+    <div class="kpi-grid" id="estoque-kpis" style="margin-bottom:16px;"></div>
+
+    <!-- Busca -->
     <div class="search-bar" style="margin-bottom:16px;">
       <input type="text" class="search-input" placeholder="Buscar produto por nome ou código..." id="estoque-search" oninput="renderCatalogoProdutos()">
     </div>
@@ -2044,12 +2047,13 @@ select:not(.input-pro):not(.search-input){
               <th>Fornecedor</th>
               <th>Custo total</th>
               <th>Preço venda</th>
+              <th>Estoque</th>
               <th>MC R$</th>
               <th>MC %</th>
             </tr>
           </thead>
           <tbody id="estoque-table-body">
-            <tr><td colspan="8" class="empty">Carregando produtos…</td></tr>
+            <tr><td colspan="9" class="empty">Carregando produtos…</td></tr>
           </tbody>
         </table>
       </div>
@@ -8082,7 +8086,7 @@ async function carregarProdutosCatalogo() {
   setApiStatus('carregando', 'Carregando produtos...');
   try {
     const { data, error } = await sb.from('produtos')
-      .select('id,nome,codigo,preco_venda,custo,categoria,fabricante,cor,motor,descricao').order('nome');
+      .select('id,nome,codigo,preco_venda,custo,categoria,fabricante,cor,motor,descricao,estoque').order('nome');
     if (error) throw new Error(error.message || 'erro Supabase produtos');
     produtosCatalogo = (data || []).map(p => ({
       id:         p.id,
@@ -8095,6 +8099,7 @@ async function carregarProdutosCatalogo() {
       cor:        p.cor || '',
       motor:      p.motor || '',
       descricao:  p.descricao || '',
+      estoque:    Number(p.estoque) || 0,
     }));
     setApiStatus('online', `${produtosCatalogo.length} produtos`);
     const sync = document.getElementById('api-last-sync');
@@ -8103,7 +8108,7 @@ async function carregarProdutosCatalogo() {
   } catch (err) {
     setApiStatus('erro', 'Erro: ' + err.message);
     const tb = document.getElementById('estoque-table-body');
-    if (tb) tb.innerHTML = `<tr><td colspan="7" class="empty" style="color:var(--red);">Erro ao carregar: ${escHtml(err.message)}</td></tr>`;
+    if (tb) tb.innerHTML = `<tr><td colspan="9" class="empty" style="color:var(--red);">Erro ao carregar: ${escHtml(err.message)}</td></tr>`;
   } finally {
     if (btn) { btn.textContent = 'Atualizar'; btn.disabled = false; }
   }
@@ -8116,6 +8121,14 @@ function _catBadgeProduto(cat) {
   return '<span class="badge" style="background:var(--surface3);color:var(--text3);">—</span>';
 }
 
+// Saldo (produtos.estoque): negativo = pílula vermelha (destaque p/ ajustar),
+// zerado = cinza, positivo = verde. Lê do nosso banco (sem Tiny).
+function _estoqueCell(n) {
+  if (n < 0)  return `<span style="display:inline-block;background:var(--red);color:#fff;padding:2px 9px;border-radius:10px;font-weight:800;">${n}</span>`;
+  if (n === 0) return '<span style="color:var(--text3);">0</span>';
+  return `<span style="color:var(--green);font-weight:700;">${n}</span>`;
+}
+
 function renderCatalogoProdutos() {
   const q = (document.getElementById('estoque-search')?.value || '').toLowerCase();
   const filtered = produtosCatalogo.filter(p =>
@@ -8124,10 +8137,24 @@ function renderCatalogoProdutos() {
   const cnt = document.getElementById('estoque-count');
   if (cnt) cnt.textContent = `${filtered.length} produto${filtered.length !== 1 ? 's' : ''}`;
 
+  // KPIs de estoque — do catálogo TODO (não do filtro), pra ficarem estáveis.
+  const kpiEl = document.getElementById('estoque-kpis');
+  if (kpiEl) {
+    const tot       = produtosCatalogo.length;
+    const comSaldo  = produtosCatalogo.filter(p => p.estoque > 0).length;
+    const zerados   = produtosCatalogo.filter(p => p.estoque === 0).length;
+    const negativos = produtosCatalogo.filter(p => p.estoque < 0).length;
+    kpiEl.innerHTML =
+        `<div class="kpi"><div class="kpi-label">Total de produtos</div><div class="kpi-value gold">${tot}</div></div>`
+      + `<div class="kpi"><div class="kpi-label">Com saldo</div><div class="kpi-value green">${comSaldo}</div></div>`
+      + `<div class="kpi"><div class="kpi-label">Zerados</div><div class="kpi-value">${zerados}</div></div>`
+      + `<div class="kpi"><div class="kpi-label">Negativos</div><div class="kpi-value ${negativos > 0 ? 'red' : ''}">${negativos}</div></div>`;
+  }
+
   const tbody = document.getElementById('estoque-table-body');
   if (!tbody) return;
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">Nenhum produto encontrado</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">Nenhum produto encontrado</td></tr>';
     return;
   }
   tbody.innerHTML = filtered.map(p => {
@@ -8149,6 +8176,7 @@ function renderCatalogoProdutos() {
       <td><span class="td-supplier">${escHtml(fornecedor) || '—'}</span></td>
       <td class="td-mono" style="font-weight:700;">${ctr != null ? fmt(ctr) : '—'}</td>
       <td class="td-mono">${fmt(venda)}</td>
+      <td class="td-mono">${_estoqueCell(p.estoque)}</td>
       <td class="td-mono" style="font-weight:700;color:${mcColor};">${mc != null ? fmt(mc) : '—'}</td>
       <td style="font-weight:700;color:${mcColor};">${mcp != null ? mcp.toFixed(1) + '%' : '—'}</td>
     </tr>`;
