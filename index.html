@@ -1886,6 +1886,12 @@ select:not(.input-pro):not(.search-input){
          NÃO duplicar markup aqui — IDs colidem (dash-fat-kpis,
          dash-int-kpis, dash-vendedores-card, etc) e os renders
          apontariam para o elemento errado, mostrando KPIs duplicados. -->
+    <!-- Estoque total por categoria (lê produtos.estoque do nosso banco) -->
+    <div id="dash-estoque-cat" class="card" style="margin-bottom:14px;padding:12px 18px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
+      <span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Estoque (nosso banco)</span>
+      <span style="font-size:13px;color:var(--text2);">Scooters: <b id="dash-est-scooter" style="color:var(--gold);font-size:15px;">—</b> un</span>
+      <span style="font-size:13px;color:var(--text2);">Acessórios: <b id="dash-est-acessorio" style="color:var(--gold);font-size:15px;">—</b> un</span>
+    </div>
     <div id="dash-dynamic-container"></div>
   </div>
 
@@ -2020,6 +2026,7 @@ select:not(.input-pro):not(.search-input){
         <div style="font-size:11px;color:var(--text3);margin-top:3px;" id="api-last-sync"></div>
       </div>
       <div style="display:flex;gap:8px;">
+        <button class="btn" onclick="prodSugerirCategorias()">Sugerir categorias</button>
         <button class="btn btn-gold" onclick="carregarProdutosCatalogo()" id="btn-sync"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
       </div>
     </div>
@@ -2041,15 +2048,15 @@ select:not(.input-pro):not(.search-input){
         <table>
           <thead>
             <tr id="estoque-thead">
-              <th>Produto</th>
+              <th onclick="catSort('nome')" style="cursor:pointer;user-select:none;">Produto <span id="catsort-nome" style="color:var(--text3);">↕</span></th>
               <th>Código</th>
               <th>Categoria</th>
               <th>Fornecedor</th>
-              <th>Custo total</th>
-              <th>Preço venda</th>
-              <th>Estoque</th>
+              <th onclick="catSort('custo')" style="cursor:pointer;user-select:none;">Custo total <span id="catsort-custo" style="color:var(--text3);">↕</span></th>
+              <th onclick="catSort('preco')" style="cursor:pointer;user-select:none;">Preço venda <span id="catsort-preco" style="color:var(--text3);">↕</span></th>
+              <th onclick="catSort('estoque')" style="cursor:pointer;user-select:none;">Estoque <span id="catsort-estoque" style="color:var(--text3);">↕</span></th>
               <th>MC R$</th>
-              <th>MC %</th>
+              <th onclick="catSort('mcp')" style="cursor:pointer;user-select:none;">MC % <span id="catsort-mcp" style="color:var(--text3);">↕</span></th>
             </tr>
           </thead>
           <tbody id="estoque-table-body">
@@ -3427,6 +3434,20 @@ select:not(.input-pro):not(.search-input){
   </div>
 </div>
 
+<!-- ══ Prévia de "Sugerir categorias" (Fase 2d+): mostra antes de gravar em massa ══ -->
+<div class="modal-overlay" id="cat-sugerir-modal">
+  <div class="modal" style="width:560px;">
+    <div class="modal-title">Sugerir <span>categorias</span></div>
+    <div id="cat-sug-resumo" style="font-size:13px;margin-bottom:12px;"></div>
+    <div id="cat-sug-lista" style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:8px;"></div>
+    <div style="font-size:10px;color:var(--text3);margin-bottom:14px;">Detecta pelo nome (MOTONETA/SCOOTER/TRICICLO → scooter; senão acessório). Grava em produtos.categoria. Só afeta produtos sem categoria.</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="prodFecharSugestao()">Cancelar</button>
+      <button class="btn btn-gold" onclick="prodConfirmarCategorias()">Confirmar e gravar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════════
 //  BOOTSTRAP — primeira coisa, sem dependências
@@ -3900,7 +3921,7 @@ const pageMeta={
   dashboard:['Dashboard','Resumo geral da Smart Motors'],
   precos:['Preços & Margens','Gerencie preços e veja margens de contribuição'],
   vendas:['Vendas do Mês','Importe o relatório do Tiny ERP e veja a margem líquida real'],
-  estoque:['Produtos & Estoque','Produtos e estoque sincronizados do Tiny ERP em tempo real'],
+  estoque:['Produtos & Estoque','Produtos e estoque — controle próprio'],
   pedidos:['Pedidos','Lista unificada de pedidos — Tiny e PDV no mesmo lugar'],
   oficina:['Oficina','Ordens de serviço e cadastro de clientes'],
   sac:['SAC','Atendimento pós-venda, garantias e contatos com fornecedores'],
@@ -6383,6 +6404,7 @@ setInterval(() => {
 function renderDashboard(){
   renderDashboardDynamic(); // renderiza layout configurado pelo usuário
   initFaturamentoDash();
+  renderDashEstoqueCategoria(); // faixa de estoque por categoria (nosso banco)
   // Esconde o botão "Personalizar" pra não-admin (só admin reorganiza o dashboard).
   var btnPers = document.getElementById('btn-dash-personalizar');
   if (btnPers) btnPers.style.display = _isAdminUser() ? '' : 'none';
@@ -8180,32 +8202,113 @@ function renderCatalogoProdutos() {
   if (!tbody) return;
   if (!filtered.length) {
     tbody.innerHTML = '<tr><td colspan="9" class="empty">Nenhum produto encontrado</td></tr>';
+    _catAtualizaSetas();
     return;
   }
-  tbody.innerHTML = filtered.map(p => {
-    // Junção por nome com produtos_precos (mesma cascata do dashboard/Custos):
-    // traz fornecedor + custo total VIVO (ctReal = puro+montagem+comissão+nf).
-    // Sem match (acessórios etc) → custo/fornecedor/MC = "—".
-    const pp        = _matchProdutoPorNome(p.nome);
-    const fornecedor= pp?.fornecedor || '';
-    const categoria = pp?.categoria || p.categoria || '';
-    const ctr       = pp ? ctReal(pp) : null;
-    const venda     = p.precoVenda;
-    const mc        = (ctr != null && venda > 0) ? venda - ctr : null;
-    const mcp       = (mc  != null && venda > 0) ? (mc / venda) * 100 : null;
-    const mcColor   = mcp == null ? 'var(--text3)' : mcp >= 30 ? 'var(--gold)' : mcp >= 15 ? 'var(--orange)' : 'var(--red)';
+  // Enriquece com os valores computados (custo total/MC via produtos_precos) p/ poder ordenar.
+  const linhas = filtered.map(p => {
+    const pp  = _matchProdutoPorNome(p.nome);   // junção por nome (mesma cascata do dashboard/Custos)
+    const ctr = pp ? ctReal(pp) : null;         // custo total VIVO (puro+montagem+comissão+nf)
+    const venda = p.precoVenda;
+    const mc  = (ctr != null && venda > 0) ? venda - ctr : null;
+    const mcp = (mc  != null && venda > 0) ? (mc / venda) * 100 : null;
+    return { p, fornecedor: pp?.fornecedor || '', categoria: pp?.categoria || p.categoria || '', ctr, venda, mc, mcp };
+  });
+  // Ordenação por coluna (Nome alfabético; Custo/Preço/Estoque/MC numérico; nulos no fim).
+  if (catSortCol) {
+    const dir = catSortDir;
+    linhas.sort((a, b) => {
+      if (catSortCol === 'nome') return dir * a.p.nome.localeCompare(b.p.nome, 'pt-BR');
+      let va, vb;
+      if (catSortCol === 'custo')        { va = a.ctr; vb = b.ctr; }
+      else if (catSortCol === 'preco')   { va = a.venda; vb = b.venda; }
+      else if (catSortCol === 'estoque') { va = a.p.estoque; vb = b.p.estoque; }
+      else if (catSortCol === 'mcp')     { va = a.mcp; vb = b.mcp; }
+      const an = va == null, bn = vb == null;
+      if (an && bn) return 0; if (an) return 1; if (bn) return -1;
+      return dir * (va - vb);
+    });
+  }
+  tbody.innerHTML = linhas.map(L => {
+    const p = L.p;
+    const mcColor = L.mcp == null ? 'var(--text3)' : L.mcp >= 30 ? 'var(--gold)' : L.mcp >= 15 ? 'var(--orange)' : 'var(--red)';
     return `<tr onclick="prodOpenEdit('${p.id}')" style="cursor:pointer;">
       <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}</td>
       <td><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
-      <td>${_catBadgeProduto(categoria)}</td>
-      <td><span class="td-supplier">${escHtml(fornecedor) || '—'}</span></td>
-      <td class="td-mono" style="font-weight:700;">${ctr != null ? fmt(ctr) : '—'}</td>
-      <td class="td-mono">${fmt(venda)}</td>
+      <td>${_catBadgeProduto(L.categoria)}</td>
+      <td><span class="td-supplier">${escHtml(L.fornecedor) || '—'}</span></td>
+      <td class="td-mono" style="font-weight:700;">${L.ctr != null ? fmt(L.ctr) : '—'}</td>
+      <td class="td-mono">${fmt(L.venda)}</td>
       <td class="td-mono">${_estoqueCell(p.estoque)}</td>
-      <td class="td-mono" style="font-weight:700;color:${mcColor};">${mc != null ? fmt(mc) : '—'}</td>
-      <td style="font-weight:700;color:${mcColor};">${mcp != null ? mcp.toFixed(1) + '%' : '—'}</td>
+      <td class="td-mono" style="font-weight:700;color:${mcColor};">${L.mc != null ? fmt(L.mc) : '—'}</td>
+      <td style="font-weight:700;color:${mcColor};">${L.mcp != null ? L.mcp.toFixed(1) + '%' : '—'}</td>
     </tr>`;
   }).join('');
+  _catAtualizaSetas();
+}
+
+// Ordenação da lista de produtos (só visual; nenhuma escrita).
+let catSortCol = '', catSortDir = 1;
+function catSort(col) {
+  if (catSortCol === col) catSortDir *= -1; else { catSortCol = col; catSortDir = 1; }
+  renderCatalogoProdutos();
+}
+function _catAtualizaSetas() {
+  ['nome','custo','preco','estoque','mcp'].forEach(c => {
+    const el = document.getElementById('catsort-' + c);
+    if (!el) return;
+    el.textContent = c === catSortCol ? (catSortDir === 1 ? '↑' : '↓') : '↕';
+    el.style.color = c === catSortCol ? 'var(--gold)' : 'var(--text3)';
+  });
+}
+
+// ── Sugerir categorias (prévia + confirmação) ──
+let _catSugestoes = [];
+function prodSugerirCategorias() {
+  const alvos = produtosCatalogo.filter(p => !p.categoria);   // categoria vazia/null
+  if (!alvos.length) { smAlert('Nenhum produto sem categoria — nada a sugerir.'); return; }
+  _catSugestoes = alvos.map(p => ({ id: p.id, nome: p.nome, sug: SCOOTER_RE.test(p.nome) ? 'scooter' : 'acessorio' }));
+  const nSc = _catSugestoes.filter(s => s.sug === 'scooter').length;
+  const nAc = _catSugestoes.filter(s => s.sug === 'acessorio').length;
+  document.getElementById('cat-sug-resumo').innerHTML =
+    `${_catSugestoes.length} produto(s) sem categoria → <b style="color:var(--green);">${nSc} scooter</b>, <b style="color:var(--gold);">${nAc} acessório</b>`;
+  document.getElementById('cat-sug-lista').innerHTML = _catSugestoes.map(s =>
+    `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid var(--border);font-size:11px;">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(s.nome)}</span>${_catBadgeProduto(s.sug)}</div>`).join('');
+  document.getElementById('cat-sugerir-modal').classList.add('open');
+}
+function prodFecharSugestao() { document.getElementById('cat-sugerir-modal').classList.remove('open'); }
+async function prodConfirmarCategorias() {
+  const btn = document.querySelector('#cat-sugerir-modal .btn-gold');
+  const txt = btn ? btn.textContent : ''; if (btn) { btn.textContent = 'Gravando...'; btn.disabled = true; }
+  const scIds = _catSugestoes.filter(s => s.sug === 'scooter').map(s => s.id);
+  const acIds = _catSugestoes.filter(s => s.sug === 'acessorio').map(s => s.id);
+  const ts = new Date().toISOString();
+  try {
+    if (scIds.length) { const { error } = await sb.from('produtos').update({ categoria: 'scooter', atualizado_em: ts }).in('id', scIds); if (error) throw new Error(error.message); }
+    if (acIds.length) { const { error } = await sb.from('produtos').update({ categoria: 'acessorio', atualizado_em: ts }).in('id', acIds); if (error) throw new Error(error.message); }
+    _catSugestoes.forEach(s => { const it = produtosCatalogo.find(p => String(p.id) === String(s.id)); if (it) it.categoria = s.sug; });
+    const n = _catSugestoes.length;
+    prodFecharSugestao();
+    renderCatalogoProdutos();
+    smAlert(`${n} produto(s) categorizado(s).`);
+  } catch (err) {
+    smAlert('Erro ao gravar: ' + err.message);
+  } finally {
+    if (btn) { btn.textContent = txt; btn.disabled = false; }
+  }
+}
+
+// Estoque total por categoria no Dashboard (lê produtos.estoque do nosso banco; só soma).
+async function renderDashEstoqueCategoria() {
+  try {
+    const { data, error } = await sb.from('produtos').select('categoria,estoque');
+    if (error) return;
+    let sc = 0, ac = 0;
+    (data || []).forEach(p => { const e = Number(p.estoque) || 0; if (p.categoria === 'scooter') sc += e; else if (p.categoria === 'acessorio') ac += e; });
+    const elS = document.getElementById('dash-est-scooter'); if (elS) elS.textContent = sc;
+    const elA = document.getElementById('dash-est-acessorio'); if (elA) elA.textContent = ac;
+  } catch (e) {}
 }
 
 // ── MODAL DE EDIÇÃO (Fase 1c etapa 3) ──
