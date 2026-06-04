@@ -1984,6 +1984,7 @@ select:not(.input-pro):not(.search-input){
         <option value="">Todas as categorias</option>
         <option value="scooter">Scooter</option>
         <option value="acessorio">Acessório</option>
+        <option value="servico">Serviço</option>
       </select>
       <select class="search-input" id="cp-filter-status" onchange="renderCustosProdutos()" style="max-width:140px;">
         <option value="ativos">Ativos</option>
@@ -3344,6 +3345,7 @@ select:not(.input-pro):not(.search-input){
         <select class="form-input" id="cp-edit-categoria" onchange="cpToggleComissao();cpUpdateComputed();">
           <option value="scooter">Scooter</option>
           <option value="acessorio">Acessório</option>
+          <option value="servico">Serviço</option>
         </select>
       </div>
       <div class="form-group"><label>Custo puro (R$)</label><input class="form-input" id="cp-edit-custo-puro" type="number" oninput="cpUpdateComputed()"></div>
@@ -3385,6 +3387,7 @@ select:not(.input-pro):not(.search-input){
         <select class="form-input" id="prod-categoria" onchange="prodToggleComissao();prodUpdateComputed();">
           <option value="scooter">Scooter</option>
           <option value="acessorio">Acessório</option>
+          <option value="servico">Serviço</option>
         </select>
       </div>
       <div class="form-group"><label>Fornecedor / Fabricante</label><input class="form-input" id="prod-fornecedor" type="text"></div>
@@ -4896,6 +4899,11 @@ function _janelaPdvUTC(iniISO, fimISO) {
 // (backend). Centralizada aqui pra que rankings e contagem de unidades no
 // frontend usem EXATAMENTE a mesma regra do resumo no WhatsApp.
 const SCOOTER_RE = /MOTONETA|TRICICLO|SCOOTER/i;
+
+// Detecção de SERVIÇO pelo nome (Frete, Manutenção, etc). Conservadora de
+// propósito — a prévia de "Sugerir categorias" é a rede de segurança. NÃO afeta
+// a contagem de scooters vendidas (essa usa SCOOTER_RE no nome do item do pedido).
+const SERVICO_RE = /frete|manuten|servi[cç]o/i;
 
 // Converte row de pdv_pedidos pra venda no formato unificado (mesmo shape
 // dos pedidos do Tiny). Quando `itens` e `vendedor` são passados, vão
@@ -8165,6 +8173,7 @@ function _catBadgeProduto(cat) {
   const c = (cat || '').toLowerCase();
   if (c === 'scooter')   return '<span class="badge badge-green">Scooter</span>';
   if (c === 'acessorio') return '<span class="badge" style="background:var(--gold-dim);color:var(--gold);">Acessório</span>';
+  if (c === 'servico')   return '<span class="badge" style="background:var(--blue-soft);color:var(--blue);">Serviço</span>';
   return '<span class="badge" style="background:var(--surface3);color:var(--text3);">—</span>';
 }
 
@@ -8267,11 +8276,16 @@ let _catSugestoes = [];
 function prodSugerirCategorias() {
   const alvos = produtosCatalogo.filter(p => !p.categoria);   // categoria vazia/null
   if (!alvos.length) { smAlert('Nenhum produto sem categoria — nada a sugerir.'); return; }
-  _catSugestoes = alvos.map(p => ({ id: p.id, nome: p.nome, sug: SCOOTER_RE.test(p.nome) ? 'scooter' : 'acessorio' }));
+  // Ordem segura: serviço primeiro (mais específico), depois scooter, senão acessório.
+  _catSugestoes = alvos.map(p => ({
+    id: p.id, nome: p.nome,
+    sug: SERVICO_RE.test(p.nome) ? 'servico' : SCOOTER_RE.test(p.nome) ? 'scooter' : 'acessorio',
+  }));
   const nSc = _catSugestoes.filter(s => s.sug === 'scooter').length;
   const nAc = _catSugestoes.filter(s => s.sug === 'acessorio').length;
+  const nSv = _catSugestoes.filter(s => s.sug === 'servico').length;
   document.getElementById('cat-sug-resumo').innerHTML =
-    `${_catSugestoes.length} produto(s) sem categoria → <b style="color:var(--green);">${nSc} scooter</b>, <b style="color:var(--gold);">${nAc} acessório</b>`;
+    `${_catSugestoes.length} produto(s) sem categoria → <b style="color:var(--green);">${nSc} scooter</b>, <b style="color:var(--gold);">${nAc} acessório</b>, <b style="color:var(--blue);">${nSv} serviço</b>`;
   document.getElementById('cat-sug-lista').innerHTML = _catSugestoes.map(s =>
     `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid var(--border);font-size:11px;">
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(s.nome)}</span>${_catBadgeProduto(s.sug)}</div>`).join('');
@@ -8283,10 +8297,12 @@ async function prodConfirmarCategorias() {
   const txt = btn ? btn.textContent : ''; if (btn) { btn.textContent = 'Gravando...'; btn.disabled = true; }
   const scIds = _catSugestoes.filter(s => s.sug === 'scooter').map(s => s.id);
   const acIds = _catSugestoes.filter(s => s.sug === 'acessorio').map(s => s.id);
+  const svIds = _catSugestoes.filter(s => s.sug === 'servico').map(s => s.id);
   const ts = new Date().toISOString();
   try {
     if (scIds.length) { const { error } = await sb.from('produtos').update({ categoria: 'scooter', atualizado_em: ts }).in('id', scIds); if (error) throw new Error(error.message); }
     if (acIds.length) { const { error } = await sb.from('produtos').update({ categoria: 'acessorio', atualizado_em: ts }).in('id', acIds); if (error) throw new Error(error.message); }
+    if (svIds.length) { const { error } = await sb.from('produtos').update({ categoria: 'servico', atualizado_em: ts }).in('id', svIds); if (error) throw new Error(error.message); }
     _catSugestoes.forEach(s => { const it = produtosCatalogo.find(p => String(p.id) === String(s.id)); if (it) it.categoria = s.sug; });
     const n = _catSugestoes.length;
     prodFecharSugestao();
