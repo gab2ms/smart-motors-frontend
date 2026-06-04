@@ -2050,13 +2050,13 @@ select:not(.input-pro):not(.search-input){
           <thead>
             <tr id="estoque-thead">
               <th onclick="catSort('nome')" style="cursor:pointer;user-select:none;">Produto <span id="catsort-nome" style="color:var(--text3);">↕</span></th>
-              <th>Código</th>
-              <th>Categoria</th>
-              <th>Fornecedor</th>
+              <th onclick="catSort('codigo')" style="cursor:pointer;user-select:none;">Código <span id="catsort-codigo" style="color:var(--text3);">↕</span></th>
+              <th onclick="catSort('categoria')" style="cursor:pointer;user-select:none;">Categoria <span id="catsort-categoria" style="color:var(--text3);">↕</span></th>
+              <th onclick="catSort('fornecedor')" style="cursor:pointer;user-select:none;">Fornecedor <span id="catsort-fornecedor" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('custo')" style="cursor:pointer;user-select:none;">Custo total <span id="catsort-custo" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('preco')" style="cursor:pointer;user-select:none;">Preço venda <span id="catsort-preco" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('estoque')" style="cursor:pointer;user-select:none;">Estoque <span id="catsort-estoque" style="color:var(--text3);">↕</span></th>
-              <th>MC R$</th>
+              <th onclick="catSort('mc')" style="cursor:pointer;user-select:none;">MC R$ <span id="catsort-mc" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('mcp')" style="cursor:pointer;user-select:none;">MC % <span id="catsort-mcp" style="color:var(--text3);">↕</span></th>
             </tr>
           </thead>
@@ -8200,11 +8200,27 @@ function renderCatalogoProdutos() {
     const comSaldo  = produtosCatalogo.filter(p => p.estoque > 0).length;
     const zerados   = produtosCatalogo.filter(p => p.estoque === 0).length;
     const negativos = produtosCatalogo.filter(p => p.estoque < 0).length;
+    // Unidades por categoria (serviço fora) + valor parado (custo×saldo, só admin).
+    let unidSc = 0, unidAc = 0, valor = 0, semCusto = 0;
+    produtosCatalogo.forEach(p => {
+      if (p.categoria === 'scooter')        unidSc += p.estoque;
+      else if (p.categoria === 'acessorio') unidAc += p.estoque;
+      const pp  = _matchProdutoPorNome(p.nome);
+      const ctr = pp ? ctReal(pp) : null;     // mesmo custo da coluna "Custo total"
+      if (ctr != null) valor += ctr * Math.max(p.estoque, 0);  // negativo conta como 0
+      else if (p.estoque > 0) semCusto++;     // tem saldo mas sem custo → fica fora
+    });
+    const valorCard = _isAdminUser()
+      ? `<div class="kpi"><div class="kpi-label">Valor em estoque</div><div class="kpi-value gold">${fmt(valor)}</div><div class="kpi-change">${semCusto > 0 ? semCusto + ' c/ saldo sem custo (fora)' : 'custo × saldo'}</div></div>`
+      : '';
     kpiEl.innerHTML =
         `<div class="kpi"><div class="kpi-label">Total de produtos</div><div class="kpi-value gold">${tot}</div></div>`
       + `<div class="kpi"><div class="kpi-label">Com saldo</div><div class="kpi-value green">${comSaldo}</div></div>`
       + `<div class="kpi"><div class="kpi-label">Zerados</div><div class="kpi-value">${zerados}</div></div>`
-      + `<div class="kpi"><div class="kpi-label">Negativos</div><div class="kpi-value ${negativos > 0 ? 'red' : ''}">${negativos}</div></div>`;
+      + `<div class="kpi"><div class="kpi-label">Negativos</div><div class="kpi-value ${negativos > 0 ? 'red' : ''}">${negativos}</div></div>`
+      + `<div class="kpi"><div class="kpi-label">Unid. scooters</div><div class="kpi-value gold">${unidSc}</div></div>`
+      + `<div class="kpi"><div class="kpi-label">Unid. acessórios</div><div class="kpi-value">${unidAc}</div></div>`
+      + valorCard;
   }
 
   const tbody = document.getElementById('estoque-table-body');
@@ -8226,12 +8242,19 @@ function renderCatalogoProdutos() {
   // Ordenação por coluna (Nome alfabético; Custo/Preço/Estoque/MC numérico; nulos no fim).
   if (catSortCol) {
     const dir = catSortDir;
+    const _catRank = c => ({ scooter: 0, acessorio: 1, servico: 2 }[c] ?? 3);
     linhas.sort((a, b) => {
-      if (catSortCol === 'nome') return dir * a.p.nome.localeCompare(b.p.nome, 'pt-BR');
+      // colunas de texto (alfabético) e categoria (ordem lógica)
+      if (catSortCol === 'nome')       return dir * a.p.nome.localeCompare(b.p.nome, 'pt-BR');
+      if (catSortCol === 'codigo')     return dir * (a.p.codigo || '').localeCompare(b.p.codigo || '', 'pt-BR');
+      if (catSortCol === 'fornecedor') return dir * (a.fornecedor || '').localeCompare(b.fornecedor || '', 'pt-BR');
+      if (catSortCol === 'categoria')  return dir * (_catRank(a.categoria) - _catRank(b.categoria));
+      // colunas numéricas (nulos sempre no fim)
       let va, vb;
       if (catSortCol === 'custo')        { va = a.ctr; vb = b.ctr; }
       else if (catSortCol === 'preco')   { va = a.venda; vb = b.venda; }
       else if (catSortCol === 'estoque') { va = a.p.estoque; vb = b.p.estoque; }
+      else if (catSortCol === 'mc')      { va = a.mc; vb = b.mc; }
       else if (catSortCol === 'mcp')     { va = a.mcp; vb = b.mcp; }
       const an = va == null, bn = vb == null;
       if (an && bn) return 0; if (an) return 1; if (bn) return -1;
@@ -8263,7 +8286,7 @@ function catSort(col) {
   renderCatalogoProdutos();
 }
 function _catAtualizaSetas() {
-  ['nome','custo','preco','estoque','mcp'].forEach(c => {
+  ['nome','codigo','categoria','fornecedor','custo','preco','estoque','mc','mcp'].forEach(c => {
     const el = document.getElementById('catsort-' + c);
     if (!el) return;
     el.textContent = c === catSortCol ? (catSortDir === 1 ? '↑' : '↓') : '↕';
