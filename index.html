@@ -3395,6 +3395,36 @@ select:not(.input-pro):not(.search-input){
       <div><div class="computed-label">MC R$</div><div class="computed-value" id="prod-modal-mc">R$ —</div></div>
       <div><div class="computed-label">MC %</div><div class="computed-value" id="prod-modal-mcp">—%</div></div>
     </div>
+
+    <!-- ══ Estoque (Fase 2d) — ajuste manual via registrar_movimento (origem 'manual') ══ -->
+    <div style="border-top:1px solid var(--border);margin-top:18px;padding-top:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Estoque</div>
+        <div style="font-size:12px;color:var(--text2);">Saldo atual: <span id="prod-est-saldo" style="font-size:18px;font-weight:800;">—</span></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Definir saldo (contagem física)</label>
+          <div style="display:flex;gap:8px;">
+            <input class="form-input" id="prod-est-alvo" type="number" placeholder="saldo real" style="flex:1;">
+            <button class="btn" type="button" onclick="prodAjusteSaldo()" style="white-space:nowrap;">Definir</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Entrada / Saída (movimento)</label>
+          <div style="display:flex;gap:8px;">
+            <input class="form-input" id="prod-est-qtd" type="number" placeholder="quantidade" style="flex:1;">
+            <button class="btn" type="button" onclick="prodMovimento('entrada')" style="white-space:nowrap;color:var(--green);">+ Entrada</button>
+            <button class="btn" type="button" onclick="prodMovimento('saida')" style="white-space:nowrap;color:var(--red);">− Saída</button>
+          </div>
+        </div>
+        <div class="form-group full"><label>Motivo (opcional)</label><input class="form-input" id="prod-est-motivo" type="text" placeholder="Ex: contagem física, perda, recebimento..."></div>
+      </div>
+      <div id="prod-est-status" style="font-size:11px;min-height:14px;margin:2px 0 10px;color:var(--green);"></div>
+      <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">Histórico de movimentos</div>
+      <div id="prod-est-historico" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r-sm);"></div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn" onclick="prodCloseModal()">Cancelar</button>
       <button class="btn btn-gold" onclick="prodSave()">Salvar</button>
@@ -8239,7 +8269,97 @@ function prodOpenEdit(id){
   document.getElementById('prod-venda-display').value=item.precoVenda||0;
   prodToggleComissao();
   prodUpdateComputed();
+  // Estoque (2d): mostra saldo, limpa inputs/status e carrega o histórico do produto.
+  _prodSetSaldoDisplay(item.estoque);
+  document.getElementById('prod-est-alvo').value='';
+  document.getElementById('prod-est-qtd').value='';
+  document.getElementById('prod-est-motivo').value='';
+  document.getElementById('prod-est-status').textContent='';
+  prodCarregarHistorico(item.id);
   document.getElementById('prod-modal').classList.add('open');
+}
+
+// ── Estoque no modal (2d): ajuste manual via registrar_movimento (origem 'manual') ──
+function _prodSetSaldoDisplay(n){
+  const el=document.getElementById('prod-est-saldo'); if(!el)return;
+  el.textContent=n;
+  el.style.color = n<0?'var(--red)':n>0?'var(--green)':'var(--text2)';
+}
+
+function _prodMovBadge(tipo){
+  const m={
+    inicial:['Inicial','var(--text3)','var(--surface3)'],
+    entrada:['Entrada','var(--green)','var(--green-dim)'],
+    saida:  ['Saída','var(--red)','var(--red-dim)'],
+    ajuste: ['Ajuste','var(--gold)','var(--gold-dim)'],
+  };
+  const [lbl,cor,bg]=m[tipo]||[tipo,'var(--text3)','var(--surface3)'];
+  return `<span class="badge" style="background:${bg};color:${cor};">${lbl}</span>`;
+}
+
+async function prodCarregarHistorico(produtoId){
+  const box=document.getElementById('prod-est-historico'); if(!box)return;
+  box.innerHTML='<div style="padding:12px;font-size:11px;color:var(--text3);">Carregando…</div>';
+  const {data,error}=await sb.from('estoque_movimentos')
+    .select('tipo,quantidade,saldo_apos,motivo,origem,data,criado_em')
+    .eq('produto_id',produtoId).order('criado_em',{ascending:false});
+  if(error){ box.innerHTML=`<div style="padding:12px;font-size:11px;color:var(--red);">Erro: ${escHtml(error.message)}</div>`; return; }
+  if(!data||!data.length){ box.innerHTML='<div style="padding:12px;font-size:11px;color:var(--text3);">Sem movimentos.</div>'; return; }
+  box.innerHTML=data.map(m=>{
+    const dt=new Date(m.criado_em||m.data).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const q=Number(m.quantidade); const qStr=(q>0?'+':'')+q;
+    const qCor=q>0?'var(--green)':q<0?'var(--red)':'var(--text3)';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:11px;">
+      <span style="color:var(--text3);white-space:nowrap;">${dt}</span>
+      ${_prodMovBadge(m.tipo)}
+      <span class="td-mono" style="font-weight:700;color:${qCor};">${qStr}</span>
+      <span style="color:var(--text3);white-space:nowrap;">→ saldo ${Number(m.saldo_apos)}</span>
+      <span style="flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(m.motivo||'')}</span>
+      <span style="color:var(--text3);font-size:10px;">${escHtml(m.origem||'')}</span>
+    </div>`;
+  }).join('');
+}
+
+async function _prodAplicaMovimento(tipo,quantidade){
+  const id=document.getElementById('prod-edit-id').value;
+  const item=produtosCatalogo.find(p=>String(p.id)===String(id));
+  if(!item){smAlert('Produto não encontrado');return;}
+  const motivo=document.getElementById('prod-est-motivo').value.trim();
+  const status=document.getElementById('prod-est-status');
+  const botoes=document.querySelectorAll('#prod-est-alvo ~ button, #prod-est-qtd ~ button');
+  botoes.forEach(b=>b.disabled=true);
+  if(status){ status.style.color='var(--text3)'; status.textContent='Salvando…'; }
+  try{
+    const {data,error}=await sb.rpc('registrar_movimento',{
+      p_produto_id:id, p_tipo:tipo, p_quantidade:quantidade,
+      p_motivo:motivo||null, p_origem:'manual', p_ref_id:null,
+    });
+    if(error)throw new Error(error.message);
+    const mov=Array.isArray(data)?data[0]:data;
+    const novo=Number(mov.saldo_apos);
+    item.estoque=novo;
+    _prodSetSaldoDisplay(novo);
+    renderCatalogoProdutos();          // atualiza coluna Estoque + KPIs
+    await prodCarregarHistorico(id);
+    document.getElementById('prod-est-alvo').value='';
+    document.getElementById('prod-est-qtd').value='';
+    if(status){ status.style.color='var(--green)'; status.textContent=`Saldo atualizado: ${novo}`; }
+  }catch(err){
+    if(status){ status.style.color='var(--red)'; status.textContent='Erro: '+err.message; }
+  }finally{
+    botoes.forEach(b=>b.disabled=false);
+  }
+}
+
+function prodAjusteSaldo(){
+  const v=document.getElementById('prod-est-alvo').value;
+  if(v===''||isNaN(+v)){smAlert('Informe o saldo real');return;}
+  _prodAplicaMovimento('ajuste',+v);
+}
+function prodMovimento(tipo){
+  const q=+document.getElementById('prod-est-qtd').value;
+  if(!(q>0)){smAlert('Informe uma quantidade maior que zero');return;}
+  _prodAplicaMovimento(tipo,q);
 }
 
 async function prodSave(){
