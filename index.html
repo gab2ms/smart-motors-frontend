@@ -16284,19 +16284,23 @@ async function initPdv() {
 async function _pdvGarantirProdutos() {
   if (produtosTiny.length) return;
   try {
-    const res = await fetch(`${API_URL}/produtos?situacao=A&pagina=1`);
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.erro || 'erro Tiny');
-    produtosTiny = data.produtos || [];
-    if (data.total > 1) {
-      const promises = [];
-      for (let p = 2; p <= data.total; p++) {
-        promises.push(fetch(`${API_URL}/produtos?situacao=A&pagina=${p}`).then(r => r.json()));
-      }
-      const extras = await Promise.all(promises);
-      extras.forEach(e => { if (e.ok) produtosTiny.push(...(e.produtos || [])); });
-    }
-    console.log('[pdv] carregou ' + produtosTiny.length + ' produtos');
+    // Lê do NOSSO banco (tabela produtos) — instantâneo, saldo real, sem Tiny ao
+    // vivo (que travava no N+1 de estoque). Mapeia pro mesmo shape do produtosTiny[]:
+    // id ← tiny_id (mantém o link pra venda no Tiny + a baixa 2e-2), preco ← preco_venda.
+    const { data, error } = await sb.from('produtos')
+      .select('tiny_id,nome,codigo,preco_venda,estoque')
+      .eq('ativo', true).order('nome');
+    if (error) throw new Error(error.message || 'erro ao carregar produtos');
+    produtosTiny = (data || [])
+      .filter(p => p.tiny_id)   // precisa do id do Tiny pro item (push + baixa)
+      .map(p => ({
+        id:      String(p.tiny_id),
+        nome:    p.nome   || '',
+        codigo:  p.codigo || '',
+        preco:   Number(p.preco_venda) || 0,
+        estoque: Number(p.estoque) || 0,
+      }));
+    console.log('[pdv] carregou ' + produtosTiny.length + ' produtos (nosso banco)');
     const inp = document.getElementById('pdv-busca-prod');
     if (inp && /carregando/.test(inp.placeholder)) inp.placeholder = 'Buscar produto por nome ou código...';
   } catch (e) {
@@ -16409,7 +16413,7 @@ function _pdvRenderNovaVenda(root) {
     + `<div class="card" style="margin-bottom:18px;overflow:visible;"><div style="padding:18px 20px;">`
     +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:10px;">Itens da venda</div>`
     +   `<div style="position:relative;margin-bottom:10px;">`
-    +     `<input type="text" class="search-input" id="pdv-busca-prod" placeholder="${produtosTiny.length?'Buscar produto por nome ou código...':'carregando produtos do Tiny...'}" style="width:100%;" oninput="_pdvFiltraProdutos()" onfocus="_pdvFiltraProdutos()" onblur="setTimeout(()=>{const el=document.getElementById('pdv-prod-dropdown');if(el)el.style.display='none';},200);">`
+    +     `<input type="text" class="search-input" id="pdv-busca-prod" placeholder="${produtosTiny.length?'Buscar produto por nome ou código...':'carregando produtos...'}" style="width:100%;" oninput="_pdvFiltraProdutos()" onfocus="_pdvFiltraProdutos()" onblur="setTimeout(()=>{const el=document.getElementById('pdv-prod-dropdown');if(el)el.style.display='none';},200);">`
     +     `<div id="pdv-prod-dropdown" style="display:none;position:absolute;top:40px;left:0;right:0;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);max-height:500px;overflow-y:auto;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>`
     +   `</div>`
     +   `<div id="pdv-itens-tabela">${_pdvRenderItensTabela()}</div>`
