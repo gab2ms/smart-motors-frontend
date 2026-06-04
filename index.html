@@ -3366,7 +3366,7 @@ select:not(.input-pro):not(.search-input){
 <!-- Catálogo grava em produtos (por id); custos gravam em produtos_precos (via
      cpSave/products[] + salvarDados). Margem sempre sobre ctReal. -->
 <div class="modal-overlay" id="prod-modal">
-  <div class="modal">
+  <div class="modal" style="width:760px;">
     <div class="modal-title" id="prod-modal-title">Editar <span>produto</span></div>
     <input type="hidden" id="prod-edit-id">
     <input type="hidden" id="prod-precos-idx">
@@ -3403,20 +3403,15 @@ select:not(.input-pro):not(.search-input){
         <div style="font-size:12px;color:var(--text2);">Saldo atual: <span id="prod-est-saldo" style="font-size:18px;font-weight:800;">—</span></div>
       </div>
       <div class="form-grid">
-        <div class="form-group">
-          <label>Definir saldo (contagem física)</label>
-          <div style="display:flex;gap:8px;">
-            <input class="form-input" id="prod-est-alvo" type="number" placeholder="saldo real" style="flex:1;">
-            <button class="btn" type="button" onclick="prodAjusteSaldo()" style="white-space:nowrap;">Definir</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Entrada / Saída (movimento)</label>
-          <div style="display:flex;gap:8px;">
-            <input class="form-input" id="prod-est-qtd" type="number" placeholder="quantidade" style="flex:1;">
+        <div class="form-group full">
+          <label>Lançar movimento</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <input class="form-input" id="prod-est-valor" type="number" placeholder="quantidade" style="flex:1;min-width:130px;">
             <button class="btn" type="button" onclick="prodMovimento('entrada')" style="white-space:nowrap;color:var(--green);">+ Entrada</button>
             <button class="btn" type="button" onclick="prodMovimento('saida')" style="white-space:nowrap;color:var(--red);">− Saída</button>
+            <button class="btn" type="button" onclick="prodAjusteSaldo()" style="white-space:nowrap;">= Definir saldo</button>
           </div>
+          <div style="font-size:10px;color:var(--text3);margin-top:4px;">Entrada/Saída somam/subtraem; Definir saldo grava o número como o saldo real (contagem física).</div>
         </div>
         <div class="form-group full"><label>Motivo (opcional)</label><input class="form-input" id="prod-est-motivo" type="text" placeholder="Ex: contagem física, perda, recebimento..."></div>
       </div>
@@ -8271,8 +8266,7 @@ function prodOpenEdit(id){
   prodUpdateComputed();
   // Estoque (2d): mostra saldo, limpa inputs/status e carrega o histórico do produto.
   _prodSetSaldoDisplay(item.estoque);
-  document.getElementById('prod-est-alvo').value='';
-  document.getElementById('prod-est-qtd').value='';
+  document.getElementById('prod-est-valor').value='';
   document.getElementById('prod-est-motivo').value='';
   document.getElementById('prod-est-status').textContent='';
   prodCarregarHistorico(item.id);
@@ -8301,7 +8295,7 @@ async function prodCarregarHistorico(produtoId){
   const box=document.getElementById('prod-est-historico'); if(!box)return;
   box.innerHTML='<div style="padding:12px;font-size:11px;color:var(--text3);">Carregando…</div>';
   const {data,error}=await sb.from('estoque_movimentos')
-    .select('tipo,quantidade,saldo_apos,motivo,origem,data,criado_em')
+    .select('id,tipo,quantidade,saldo_apos,motivo,origem,data,criado_em')
     .eq('produto_id',produtoId).order('criado_em',{ascending:false});
   if(error){ box.innerHTML=`<div style="padding:12px;font-size:11px;color:var(--red);">Erro: ${escHtml(error.message)}</div>`; return; }
   if(!data||!data.length){ box.innerHTML='<div style="padding:12px;font-size:11px;color:var(--text3);">Sem movimentos.</div>'; return; }
@@ -8309,6 +8303,10 @@ async function prodCarregarHistorico(produtoId){
     const dt=new Date(m.criado_em||m.data).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
     const q=Number(m.quantidade); const qStr=(q>0?'+':'')+q;
     const qCor=q>0?'var(--green)':q<0?'var(--red)':'var(--text3)';
+    // 🗑 só em movimento MANUAL (a função apagar_movimento bloqueia os outros no banco também).
+    const del=m.origem==='manual'
+      ? `<button class="action-btn" type="button" title="Apagar lançamento" onclick="prodApagarMovimento('${m.id}')" style="color:var(--red);padding:2px 6px;">🗑</button>`
+      : '<span style="width:24px;"></span>';
     return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:11px;">
       <span style="color:var(--text3);white-space:nowrap;">${dt}</span>
       ${_prodMovBadge(m.tipo)}
@@ -8316,8 +8314,29 @@ async function prodCarregarHistorico(produtoId){
       <span style="color:var(--text3);white-space:nowrap;">→ saldo ${Number(m.saldo_apos)}</span>
       <span style="flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(m.motivo||'')}</span>
       <span style="color:var(--text3);font-size:10px;">${escHtml(m.origem||'')}</span>
+      ${del}
     </div>`;
   }).join('');
+}
+
+async function prodApagarMovimento(movId){
+  if(!(await smConfirm('Apagar este lançamento? O saldo será recalculado.')))return;
+  const id=document.getElementById('prod-edit-id').value;
+  const item=produtosCatalogo.find(p=>String(p.id)===String(id));
+  const status=document.getElementById('prod-est-status');
+  if(status){ status.style.color='var(--text3)'; status.textContent='Apagando…'; }
+  try{
+    const {data,error}=await sb.rpc('apagar_movimento',{p_mov_id:movId});
+    if(error)throw new Error(error.message);
+    const novo=Number(data);
+    if(item)item.estoque=novo;
+    _prodSetSaldoDisplay(novo);
+    renderCatalogoProdutos();
+    await prodCarregarHistorico(id);
+    if(status){ status.style.color='var(--green)'; status.textContent=`Lançamento apagado. Saldo: ${novo}`; }
+  }catch(err){
+    if(status){ status.style.color='var(--red)'; status.textContent='Erro: '+err.message; }
+  }
 }
 
 async function _prodAplicaMovimento(tipo,quantidade){
@@ -8326,7 +8345,7 @@ async function _prodAplicaMovimento(tipo,quantidade){
   if(!item){smAlert('Produto não encontrado');return;}
   const motivo=document.getElementById('prod-est-motivo').value.trim();
   const status=document.getElementById('prod-est-status');
-  const botoes=document.querySelectorAll('#prod-est-alvo ~ button, #prod-est-qtd ~ button');
+  const botoes=document.querySelectorAll('#prod-est-valor ~ button');
   botoes.forEach(b=>b.disabled=true);
   if(status){ status.style.color='var(--text3)'; status.textContent='Salvando…'; }
   try{
@@ -8341,8 +8360,7 @@ async function _prodAplicaMovimento(tipo,quantidade){
     _prodSetSaldoDisplay(novo);
     renderCatalogoProdutos();          // atualiza coluna Estoque + KPIs
     await prodCarregarHistorico(id);
-    document.getElementById('prod-est-alvo').value='';
-    document.getElementById('prod-est-qtd').value='';
+    document.getElementById('prod-est-valor').value='';
     if(status){ status.style.color='var(--green)'; status.textContent=`Saldo atualizado: ${novo}`; }
   }catch(err){
     if(status){ status.style.color='var(--red)'; status.textContent='Erro: '+err.message; }
@@ -8352,12 +8370,12 @@ async function _prodAplicaMovimento(tipo,quantidade){
 }
 
 function prodAjusteSaldo(){
-  const v=document.getElementById('prod-est-alvo').value;
+  const v=document.getElementById('prod-est-valor').value;
   if(v===''||isNaN(+v)){smAlert('Informe o saldo real');return;}
   _prodAplicaMovimento('ajuste',+v);
 }
 function prodMovimento(tipo){
-  const q=+document.getElementById('prod-est-qtd').value;
+  const q=+document.getElementById('prod-est-valor').value;
   if(!(q>0)){smAlert('Informe uma quantidade maior que zero');return;}
   _prodAplicaMovimento(tipo,q);
 }
