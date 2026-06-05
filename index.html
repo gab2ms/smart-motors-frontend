@@ -17643,6 +17643,14 @@ async function _pdvReverterCancelamento(pedidoId, novoStatus) {
       valor_antes: 'cancelado', valor_depois: novoStatus, quem: _pdvQuem(),
     });
   } catch (e) { console.warn('[pdv] audit reversão falhou (reversão continua ok):', e.message); }
+  // A venda volta a valer → re-baixa o estoque (best-effort; idempotente por
+  // contagem no backend). Não bloqueia a reversão se falhar.
+  try {
+    await fetch(`${API_URL}/pdv/pedido-baixar-estoque`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pedidoPdvId: pedidoId }),
+    });
+  } catch (e) { console.warn('[pdv] re-baixa na reversão falhou (reversão segue ok):', e.message); }
   const m = document.getElementById('pdvp-det-modal'); if (m) m.remove();
   await carregarPedidosUnif();
   smAlert(`Cancelamento revertido — pedido #${p.numeroSmart} agora está "${labelNovo}".`);
