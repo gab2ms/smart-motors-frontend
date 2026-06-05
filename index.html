@@ -2036,8 +2036,11 @@ select:not(.input-pro):not(.search-input){
     <div class="kpi-grid" id="estoque-kpis" style="margin-bottom:16px;"></div>
 
     <!-- Busca -->
-    <div class="search-bar" style="margin-bottom:16px;">
-      <input type="text" class="search-input" placeholder="Buscar produto por nome ou código..." id="estoque-search" oninput="renderCatalogoProdutos()">
+    <div class="search-bar" style="margin-bottom:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+      <input type="text" class="search-input" placeholder="Buscar produto por nome ou código..." id="estoque-search" oninput="renderCatalogoProdutos()" style="flex:1;min-width:220px;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);white-space:nowrap;cursor:pointer;user-select:none;">
+        <input type="checkbox" id="estoque-mostrar-inativos" onchange="renderCatalogoProdutos()"> Mostrar inativos
+      </label>
     </div>
 
     <!-- Tabela -->
@@ -3430,9 +3433,13 @@ select:not(.input-pro):not(.search-input){
       <div id="prod-est-historico" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r-sm);"></div>
     </div>
 
-    <div class="modal-actions">
-      <button class="btn" onclick="prodCloseModal()">Cancelar</button>
-      <button class="btn btn-gold" onclick="prodSave()">Salvar</button>
+    <div class="modal-actions" style="justify-content:space-between;">
+      <button class="btn" id="prod-excluir-btn" onclick="prodExcluir()" style="color:var(--red);">Excluir</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" id="prod-ativo-btn" onclick="prodToggleAtivo()">Inativar</button>
+        <button class="btn" onclick="prodCloseModal()">Cancelar</button>
+        <button class="btn btn-gold" onclick="prodSave()">Salvar</button>
+      </div>
     </div>
   </div>
 </div>
@@ -8141,7 +8148,7 @@ async function carregarProdutosCatalogo() {
   setApiStatus('carregando', 'Carregando produtos...');
   try {
     const { data, error } = await sb.from('produtos')
-      .select('id,nome,codigo,preco_venda,custo,categoria,fabricante,cor,motor,descricao,estoque').order('nome');
+      .select('id,nome,codigo,preco_venda,custo,categoria,fabricante,cor,motor,descricao,estoque,ativo').order('nome');
     if (error) throw new Error(error.message || 'erro Supabase produtos');
     produtosCatalogo = (data || []).map(p => ({
       id:         p.id,
@@ -8155,6 +8162,7 @@ async function carregarProdutosCatalogo() {
       motor:      p.motor || '',
       descricao:  p.descricao || '',
       estoque:    Number(p.estoque) || 0,
+      ativo:      p.ativo !== false,
     }));
     setApiStatus('online', `${produtosCatalogo.length} produtos`);
     const sync = document.getElementById('api-last-sync');
@@ -8187,22 +8195,26 @@ function _estoqueCell(n) {
 
 function renderCatalogoProdutos() {
   const q = (document.getElementById('estoque-search')?.value || '').toLowerCase();
-  const filtered = produtosCatalogo.filter(p =>
+  const verInativos = !!document.getElementById('estoque-mostrar-inativos')?.checked;
+  // Inativos só aparecem com o toggle ligado; o panorama (KPIs) sempre conta só ativos.
+  const ativos = produtosCatalogo.filter(p => p.ativo !== false);
+  const base = verInativos ? produtosCatalogo : ativos;
+  const filtered = base.filter(p =>
     !q || p.nome.toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q));
 
   const cnt = document.getElementById('estoque-count');
   if (cnt) cnt.textContent = `${filtered.length} produto${filtered.length !== 1 ? 's' : ''}`;
 
-  // KPIs de estoque — do catálogo TODO (não do filtro), pra ficarem estáveis.
+  // KPIs de estoque — só ATIVOS (inativos ficam fora do panorama), estáveis ao filtro.
   const kpiEl = document.getElementById('estoque-kpis');
   if (kpiEl) {
-    const tot       = produtosCatalogo.length;
-    const comSaldo  = produtosCatalogo.filter(p => p.estoque > 0).length;
-    const zerados   = produtosCatalogo.filter(p => p.estoque === 0).length;
-    const negativos = produtosCatalogo.filter(p => p.estoque < 0).length;
+    const tot       = ativos.length;
+    const comSaldo  = ativos.filter(p => p.estoque > 0).length;
+    const zerados   = ativos.filter(p => p.estoque === 0).length;
+    const negativos = ativos.filter(p => p.estoque < 0).length;
     // Unidades por categoria (serviço fora) + valor parado (custo×saldo, só admin).
     let unidSc = 0, unidAc = 0, valor = 0, semCusto = 0;
-    produtosCatalogo.forEach(p => {
+    ativos.forEach(p => {
       if (p.categoria === 'scooter')        unidSc += p.estoque;
       else if (p.categoria === 'acessorio') unidAc += p.estoque;
       const pp  = _matchProdutoPorNome(p.nome);
@@ -8263,9 +8275,10 @@ function renderCatalogoProdutos() {
   }
   tbody.innerHTML = linhas.map(L => {
     const p = L.p;
+    const inativo = p.ativo === false;
     const mcColor = L.mcp == null ? 'var(--text3)' : L.mcp >= 30 ? 'var(--gold)' : L.mcp >= 15 ? 'var(--orange)' : 'var(--red)';
-    return `<tr onclick="prodOpenEdit('${p.id}')" style="cursor:pointer;">
-      <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}</td>
+    return `<tr onclick="prodOpenEdit('${p.id}')" style="cursor:pointer;${inativo ? 'opacity:0.5;' : ''}">
+      <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}${inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">Inativo</span>' : ''}</td>
       <td><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
       <td>${_catBadgeProduto(L.categoria)}</td>
       <td><span class="td-supplier">${escHtml(L.fornecedor) || '—'}</span></td>
@@ -8404,6 +8417,16 @@ function prodOpenEdit(id){
   document.getElementById('prod-montagem').value=pp?(pp.montagem||0):0;
   document.getElementById('prod-comissao').value=pp?(pp.comissao||0):0;
   document.getElementById('prod-venda-display').value=item.precoVenda||0;
+  // Inativar/Reativar — rótulo e cor conforme o estado atual do produto.
+  const ativoBtn=document.getElementById('prod-ativo-btn');
+  if(ativoBtn){
+    const inativo=item.ativo===false;
+    ativoBtn.textContent=inativo?'Reativar':'Inativar';
+    ativoBtn.style.color=inativo?'var(--green)':'var(--orange)';
+    ativoBtn.disabled=false;
+  }
+  const exclBtn=document.getElementById('prod-excluir-btn');
+  if(exclBtn){ exclBtn.textContent='Excluir'; exclBtn.disabled=false; }
   prodToggleComissao();
   prodUpdateComputed();
   // Estoque (2d): mostra saldo, limpa inputs/status e carrega o histórico do produto.
@@ -8578,6 +8601,56 @@ async function prodSave(){
     if(btn){btn.textContent=txt;btn.disabled=false;}
   }
 }
+// ── Inativar / Reativar (Fase 2g): soft-delete via produtos.ativo (reversível) ──
+async function prodToggleAtivo(){
+  const id=document.getElementById('prod-edit-id').value;
+  const item=produtosCatalogo.find(p=>String(p.id)===String(id));
+  if(!item){smAlert('Produto não encontrado');return;}
+  const inativar=item.ativo!==false;            // ativo agora → ação é inativar
+  const msg=inativar
+    ? `Inativar "${item.nome}"? Ele some da lista do dia a dia e não aparece mais no PDV. O histórico fica intacto e dá pra reativar quando quiser.`
+    : `Reativar "${item.nome}"? Ele volta a aparecer na lista e no PDV.`;
+  if(!(await smConfirm(msg)))return;
+  const btn=document.getElementById('prod-ativo-btn');
+  const txt=btn?btn.textContent:''; if(btn){btn.textContent='...';btn.disabled=true;}
+  try{
+    const {error}=await sb.from('produtos').update({
+      ativo:!inativar, atualizado_em:new Date().toISOString(),
+    }).eq('id',id);
+    if(error)throw new Error(error.message);
+    item.ativo=!inativar;
+    renderCatalogoProdutos();
+    prodCloseModal();
+    smAlert(`"${item.nome}" ${inativar?'inativado':'reativado'}.`);
+  }catch(err){
+    smAlert(`Erro ao ${inativar?'inativar':'reativar'}: `+err.message);
+    if(btn){btn.textContent=txt;btn.disabled=false;}
+  }
+}
+
+// ── Excluir de vez (Fase 2g): a RPC excluir_produto barra no banco se houver histórico ──
+async function prodExcluir(){
+  const id=document.getElementById('prod-edit-id').value;
+  const item=produtosCatalogo.find(p=>String(p.id)===String(id));
+  if(!item){smAlert('Produto não encontrado');return;}
+  // Duplo-confirm.
+  if(!(await smConfirm(`Excluir "${item.nome}" PERMANENTEMENTE? Só funciona se ele nunca teve movimento de estoque nem venda. Se tiver histórico, use Inativar.`)))return;
+  if(!(await smConfirm(`Tem certeza mesmo? "${item.nome}" será apagado de vez — não dá pra desfazer.`)))return;
+  const btn=document.getElementById('prod-excluir-btn');
+  const txt=btn?btn.textContent:''; if(btn){btn.textContent='Excluindo...';btn.disabled=true;}
+  try{
+    const {error}=await sb.rpc('excluir_produto',{p_id:id});
+    if(error)throw new Error(error.message);
+    produtosCatalogo=produtosCatalogo.filter(p=>String(p.id)!==String(id));
+    renderCatalogoProdutos();
+    prodCloseModal();
+    smAlert(`"${item.nome}" excluído.`);
+  }catch(err){
+    smAlert('Não deu pra excluir: '+err.message);
+    if(btn){btn.textContent=txt;btn.disabled=false;}
+  }
+}
+
 document.getElementById('prod-modal')?.addEventListener('click', function(e){ if(e.target===this) prodCloseModal(); });
 
 async function carregarProdutosTiny() {
