@@ -7613,12 +7613,14 @@ function renderPedidosUnif() {
 
   tbody.innerHTML = filtered.map(p => {
     const stMeta = PEDIDO_STATUS_GROUPS[p.statusGroup] || PEDIDO_STATUS_GROUPS.aguardando;
-    const pdvNaoSync  = p.origem === 'pdv' && p.raw?.sincronizadoTiny === false;
+    const pdvLocal    = p.origem === 'pdv' && p.raw?.vendaLocal === true;
+    const pdvNaoSync  = p.origem === 'pdv' && p.raw?.sincronizadoTiny === false && !pdvLocal;
     const pdvEditado  = p.origem === 'pdv' && p.raw?.editadoAposSync === true;
     const pdvRevertido = p.origem === 'pdv' && p.raw?.revertidoAposSync === true;
     const seloHTML = p.origem === 'tiny'
       ? '<span class="pill pill--blue">TINY</span>'
       : '<span class="pill pill--gold">PDV</span>'
+        + (pdvLocal ? ' <span class="pill pill--neutral" style="margin-left:4px;" title="Venda local — não enviada ao Tiny">LOCAL</span>' : '')
         + (pdvNaoSync ? ' <svg class="ic ic-sm" style="color:var(--orange);margin-left:4px;" title="Não sincronizado com Tiny — abrir detalhe pra tentar de novo"><use href="#ic-alert"/></svg>' : '')
         + (pdvEditado ? ' <svg class="ic ic-sm" style="color:var(--orange);margin-left:4px;" title="Editado aqui · pode estar diferente no Tiny"><use href="#ic-alert"/></svg>' : '')
         + (pdvRevertido ? ' <svg class="ic ic-sm" style="color:var(--text3);margin-left:4px;" title="Cancelamento revertido"><use href="#ic-refresh"/></svg>' : '');
@@ -16461,18 +16463,21 @@ async function _pdvGarantirProdutos() {
     // vivo (que travava no N+1 de estoque). Mapeia pro mesmo shape do produtosTiny[]:
     // id ← tiny_id (mantém o link pra venda no Tiny + a baixa 2e-2), preco ← preco_venda.
     const { data, error } = await sb.from('produtos')
-      .select('tiny_id,nome,codigo,preco_venda,estoque')
+      .select('id,tiny_id,nome,codigo,preco_venda,estoque')
       .eq('ativo', true).order('nome');
     if (error) throw new Error(error.message || 'erro ao carregar produtos');
-    produtosTiny = (data || [])
-      .filter(p => p.tiny_id)   // precisa do id do Tiny pro item (push + baixa)
-      .map(p => ({
-        id:      String(p.tiny_id),
-        nome:    p.nome   || '',
-        codigo:  p.codigo || '',
-        preco:   Number(p.preco_venda) || 0,
-        estoque: Number(p.estoque) || 0,
-      }));
+    // Inclui TAMBÉM produtos sem tiny_id (venda local). Produto com tiny_id segue
+    // idêntico (id ← tiny_id mantém push/baixa Tiny). Produto local: id vazio,
+    // produtoId = uuid do catálogo (baixa por produto_id), local = true.
+    produtosTiny = (data || []).map(p => ({
+      id:        p.tiny_id ? String(p.tiny_id) : '',
+      produtoId: String(p.id),
+      local:     !p.tiny_id,
+      nome:      p.nome   || '',
+      codigo:    p.codigo || '',
+      preco:     Number(p.preco_venda) || 0,
+      estoque:   Number(p.estoque) || 0,
+    }));
     console.log('[pdv] carregou ' + produtosTiny.length + ' produtos (nosso banco)');
     const inp = document.getElementById('pdv-busca-prod');
     if (inp && /carregando/.test(inp.placeholder)) inp.placeholder = 'Buscar produto por nome ou código...';
@@ -16702,18 +16707,28 @@ function _pdvRemoveItem(idx) {
 async function _pdvAddItemFromIdx(idx) {
   const p = produtosTiny[idx];
   if (!p) return;
+  // Proíbe carrinho misto: produto do Tiny e produto local não se misturam na mesma
+  // venda (a venda inteira é Tiny OU local — define se vai/não pro Tiny no fechamento).
+  if (_pdvVenda.itens.length && _pdvVenda.itens.some(it => !!it.local) !== !!p.local) {
+    smAlert('Não dá pra misturar produto do Tiny com produto local na mesma venda.\n\nFinalize ou limpe o carrinho primeiro.');
+    return;
+  }
   // Se sem estoque, confirma antes — o badge no dropdown já avisou visualmente.
   if (Number(p.estoque || 0) <= 0) {
     const ok = await smConfirm(`⚠️ Produto sem estoque: "${p.nome || 'item'}".\n\nAdicionar mesmo assim?`);
     if (!ok) return;
   }
-  // Se já tem o mesmo produto, soma 1 na qtd em vez de criar linha nova
-  const existente = _pdvVenda.itens.find(it => String(it.tinyProdutoId||'') === String(p.id||''));
+  // Dedup: local casa por produtoId, Tiny por tinyProdutoId.
+  const chaveDe = it => it.local ? ('L:' + it.produtoId) : ('T:' + (it.tinyProdutoId || ''));
+  const chave = p.local ? ('L:' + p.produtoId) : ('T:' + (p.id || ''));
+  const existente = _pdvVenda.itens.find(it => chaveDe(it) === chave);
   if (existente) {
     existente.qtd = Number(existente.qtd||0) + 1;
   } else {
     _pdvVenda.itens.push({
       tinyProdutoId: p.id ? String(p.id) : '',
+      produtoId: p.produtoId || null,
+      local: !!p.local,
       codigo: p.codigo || '',
       produtoNomeTiny: p.nome || '',
       produtoModelo: null,
@@ -17192,6 +17207,9 @@ async function _pdvFinalizarVenda() {
   try {
     // "Cliente leva agora" → status='entregue' já na criação, data_entrega_real
     // = now() e data_prevista_entrega fica null. Modo normal segue como antes.
+    // Venda local = todos os itens são produtos do nosso sistema (sem tiny_id).
+    // Carrinho misto é proibido no add, então é uniforme: ou tudo Tiny ou tudo local.
+    const vendaLocal = v.itens.length > 0 && v.itens.every(it => it.local);
     const pedidoPayload = {
       vendedor_id: v.vendedorId,
       local_venda_id: v.localId,
@@ -17202,6 +17220,7 @@ async function _pdvFinalizarVenda() {
       observacao: v.observacao?.trim() || null,
       criado_por: criadoPor,
       sincronizado_tiny: false,
+      venda_local: vendaLocal,
     };
     if (v.entregaImediata) {
       pedidoPayload.status                = 'entregue';
@@ -17220,6 +17239,7 @@ async function _pdvFinalizarVenda() {
       produto_modelo: it.produtoModelo || null,
       produto_nome_tiny: it.produtoNomeTiny,
       tiny_produto_id: it.tinyProdutoId || null,
+      produto_id: it.produtoId || null,
       quantidade: parseInt(it.qtd, 10),
       valor_unitario: Number(it.precoUnit),
       valor_total: Number(it.qtd) * Number(it.precoUnit),
@@ -17264,8 +17284,10 @@ async function _pdvFinalizarVenda() {
     _pdvStep  = 3;
     renderPdv();
 
-    // Sync Tiny em background — não bloqueia a UI; atualiza badge quando retorna.
-    _pdvSincronizarComTiny(ped.id);
+    // Venda local: NÃO vai pro Tiny — baixa o estoque por produto_id direto.
+    // Venda Tiny: fluxo de sempre (sync em background, que já faz a baixa lá).
+    if (vendaLocal) _pdvBaixarEstoqueLocal(ped.id);
+    else            _pdvSincronizarComTiny(ped.id);
     // Cria/atualiza o cadastro do cliente — best-effort, fora do try da venda
     // (v ainda referencia a venda mesmo após _pdvVenda=null). Nunca quebra nada.
     _pdvUpsertCliente(v.cliente);
@@ -17331,13 +17353,43 @@ function _pdvAtualizaDetalheModalSync(pedidoId) {
 }
 
 // ─── Step 3: Sucesso ────────────────────────────────────────
+// Venda LOCAL (sem Tiny): baixa o estoque por produto_id via backend (idempotente
+// por contagem). Best-effort — erro aqui não derruba a venda (que já está salva).
+async function _pdvBaixarEstoqueLocal(pedidoId, motivo) {
+  if (!pedidoId) return;
+  try {
+    const res = await fetch(`${API_URL}/pdv/pedido-baixar-estoque`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pedidoPdvId: pedidoId, motivo: motivo || 'Venda PDV (local)' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!data.ok) console.warn('[pdv-local] baixa falhou:', data.erro);
+  } catch (e) { console.warn('[pdv-local] baixa erro:', e.message); }
+}
+
+// Venda LOCAL: estorna o estoque baixado por produto_id (devolve ao saldo). Usado na
+// EDIÇÃO — estorna os itens ANTIGOS antes de trocá-los. Best-effort.
+async function _pdvEstornarEstoqueLocal(pedidoId, motivo) {
+  if (!pedidoId) return;
+  try {
+    const res = await fetch(`${API_URL}/pdv/pedido-estornar-estoque`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pedidoPdvId: pedidoId, motivo: motivo || 'Estorno por edição (PDV local)' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!data.ok) console.warn('[pdv-local] estorno falhou:', data.erro);
+  } catch (e) { console.warn('[pdv-local] estorno erro:', e.message); }
+}
+
 function _pdvRenderSucesso(root) {
   const p = _pdvUltimoPedidoCriado || {};
   const cli = p.clienteDados || {};
   const sync = (p.id && _pdvSyncStatus.get(p.id)) || (p.sincronizadoTiny ? { state:'success', tinyNumero: p.tinyNumero } : null);
 
   let syncBlock = '';
-  if (sync?.state === 'syncing') {
+  if (p.vendaLocal) {
+    syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--text3);"><svg class="ic ic-sm"><use href="#ic-store"/></svg> Venda local — não enviada ao Tiny</div>`;
+  } else if (sync?.state === 'syncing') {
     syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--text3);"><svg class="ic ic-sm"><use href="#ic-clock"/></svg> Sincronizando com Tiny…</div>`;
   } else if (sync?.state === 'success') {
     syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--green);font-weight:700;"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Sincronizado com Tiny — Pedido #${escHtml(sync.tinyNumero || '?')}</div>`;
@@ -17643,6 +17695,9 @@ async function _pdvAbrirDetalhe(pedidoId) {
     syncBlock = `<span style="color:var(--orange);font-size:10px;margin-left:8px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-alert"/></svg> Editado aqui · pode estar diferente no Tiny #${escHtml(p.tinyNumero || '?')}</span>`;
   } else if (p.sincronizadoTiny) {
     syncBlock = `<span style="color:var(--green);font-size:10px;margin-left:8px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Sincronizado · Tiny #${escHtml(p.tinyNumero || '?')}</span>`;
+  } else if (p.vendaLocal) {
+    // Venda local: nunca foi pro Tiny por design. Selo neutro, SEM botão de retry.
+    syncBlock = `<span style="color:var(--text3);font-size:10px;margin-left:8px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-store"/></svg> Venda local — não enviada ao Tiny</span>`;
   } else {
     // Não sincronizado: warning + erro detalhado + botão retry
     const erroTxt = (syncLive?.state === 'error' && syncLive.erro) || p.tinyErro || '';
@@ -17757,6 +17812,10 @@ async function _pdvAlterarStatus(pedidoId, novoStatus) {
     msgFinal = r.ok
       ? `Pedido #${p.numeroSmart} cancelado aqui e no Tiny #${p.tinyNumero || '?'}.`
       : `Pedido #${p.numeroSmart} cancelado aqui, MAS o cancelamento no Tiny falhou — cancele manual no Tiny #${p.tinyNumero || '?'}.${r.erro ? ' (' + r.erro + ')' : ''}`;
+  } else if (novoStatus === 'cancelado' && p.vendaLocal) {
+    // Venda local: não há Tiny — só devolve o NOSSO estoque (estorno por produto_id).
+    await _pdvEstornarEstoqueLocal(pedidoId, 'Estorno por cancelamento (PDV local)');
+    msgFinal = `Pedido #${p.numeroSmart} cancelado. Estoque devolvido.`;
   }
   await carregarPedidosUnif();
   smAlert(msgFinal);
@@ -17801,7 +17860,8 @@ async function _pdvReverterCancelamento(pedidoId, novoStatus) {
   if (novoStatus !== 'entregue' && novoStatus !== 'aguardando_entrega') return;
   const labelNovo = (PDV_STATUS_LABEL[novoStatus] || {}).label || novoStatus;
   const ok = await smConfirm(`Reverter o cancelamento do pedido #${p.numeroSmart} para "${labelNovo}"? `
-    + `O pedido volta pro faturamento. A correção no Tiny continua sendo manual.`);
+    + `O pedido volta pro faturamento.`
+    + (p.vendaLocal ? ' O estoque será re-baixado.' : ' A correção no Tiny continua sendo manual.'));
   if (!ok) return;
   const patch = { status: novoStatus, cancelado_tiny: false };
   if (novoStatus === 'entregue' && !p.dataEntregaReal) patch.data_entrega_real = new Date().toISOString();
@@ -17913,10 +17973,13 @@ async function _pdvEditarPedido(pedidoId) {
     _editNumero:      p.numeroSmart,
     _editOrigem:      editOrigem,
     _eraSincronizado: !!p.sincronizadoTiny,
+    vendaLocal:       !!p.vendaLocal,
     vendedorId:       p.vendedorId || '',
     localId:          p.localVendaId || '',
     itens: itensCam.map(it => ({
       tinyProdutoId:   it.tinyProdutoId || '',
+      produtoId:       it.produtoId || null,
+      local:           !!p.vendaLocal,
       codigo:          '',
       produtoNomeTiny: it.produtoNomeTiny || '',
       produtoModelo:   it.produtoModelo || null,
@@ -17983,6 +18046,15 @@ async function _pdvSalvarEdicao(v, built) {
     const upd = await sb.from('pdv_pedidos').update(pedidoPatch).eq('id', v._editId);
     if (upd.error) throw new Error('Erro ao salvar pedido: ' + upd.error.message);
 
+    // VENDA LOCAL — re-sincroniza o estoque sem zerar nem dobrar:
+    //   1) estorna os itens ANTIGOS (devolve o saldo) — ANTES de apagá-los;
+    //   2) (abaixo) apaga e reinsere os itens novos;
+    //   3) (abaixo) re-baixa os itens NOVOS.
+    // A idempotência por contagem (saída×entrada por ref_id) garante: estorno só age se
+    // está baixado; baixa só age se está neutro/estornado. Net = saldo − itens novos.
+    const vendaLocalEdit = !!v.vendaLocal;
+    if (vendaLocalEdit) await _pdvEstornarEstoqueLocal(v._editId, 'Estorno por edição (PDV local)');
+
     // Itens: apaga e reinsere (mantém ordem; mais simples que diff por linha).
     const del = await sb.from('pdv_itens_pedido').delete().eq('pedido_id', v._editId);
     if (del.error) throw new Error('Erro ao atualizar itens: ' + del.error.message);
@@ -17991,6 +18063,7 @@ async function _pdvSalvarEdicao(v, built) {
       produto_modelo:    it.produtoModelo || null,
       produto_nome_tiny: it.produtoNomeTiny,
       tiny_produto_id:   it.tinyProdutoId || null,
+      produto_id:        it.produtoId || null,
       quantidade:        parseInt(it.qtd, 10),
       valor_unitario:    Number(it.precoUnit),
       valor_total:       Number(it.qtd) * Number(it.precoUnit),
@@ -18001,6 +18074,9 @@ async function _pdvSalvarEdicao(v, built) {
       const insI = await sb.from('pdv_itens_pedido').insert(itensRows);
       if (insI.error) throw new Error('Pedido salvo, mas os itens falharam: ' + insI.error.message);
     }
+
+    // Venda local: re-baixa os itens NOVOS (passo 3). Saldo final = saldo − itens novos.
+    if (vendaLocalEdit) await _pdvBaixarEstoqueLocal(v._editId, 'Venda PDV (edição)');
 
     // Trilha de auditoria — uma linha por campo alterado.
     const depois = _pdvResumoParaAudit(v);
