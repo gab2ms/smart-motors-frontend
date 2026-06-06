@@ -16892,17 +16892,28 @@ async function _pdvUpsertCliente(cli) {
     if (alvo) {
       const mudou = !_pdvClienteIgual(alvo, payload);
       const { data, error } = await sb.from('clientes').update(payload).eq('id', alvo.id).select().single();
-      if (error) { console.warn('[pdv-cli] update falhou:', error.message); return; }
+      if (error) {
+        console.warn('[pdv-cli] update falhou:', error.message);
+        smAlert(`Atenção: a venda foi salva, mas NÃO consegui atualizar o cadastro do cliente "${nome}".\n\n${error.message}`);
+        return;
+      }
       const i = (clientesAll || []).findIndex(x => String(x.id) === String(alvo.id));
       if (i >= 0) clientesAll[i] = toCamel(data); else clientesAll.push(toCamel(data));
       if (mudou) smToast('Dados do cliente atualizados');
     } else {
       payload.origem = 'pdv';
       const { data, error } = await sb.from('clientes').insert(payload).select().single();
-      if (error) { console.warn('[pdv-cli] insert falhou:', error.message); return; }
+      if (error) {
+        console.warn('[pdv-cli] insert falhou:', error.message);
+        smAlert(`Atenção: a venda foi salva, mas NÃO consegui salvar o cliente novo "${nome}".\n\n${error.message}`);
+        return;
+      }
       clientesAll.push(toCamel(data));
     }
-  } catch (e) { console.warn('[pdv-cli] upsert erro:', e.message); }
+  } catch (e) {
+    console.warn('[pdv-cli] upsert erro:', e.message);
+    smAlert('Atenção: a venda foi salva, mas houve um erro ao salvar o cliente.\n\n' + (e.message || e));
+  }
 }
 
 // Compara campos relevantes do cache (camel) com o payload (snake) — só pra
