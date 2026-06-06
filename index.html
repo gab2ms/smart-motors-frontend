@@ -16466,13 +16466,13 @@ async function _pdvGarantirProdutos() {
       .select('id,tiny_id,nome,codigo,preco_venda,estoque')
       .eq('ativo', true).order('nome');
     if (error) throw new Error(error.message || 'erro ao carregar produtos');
-    // Inclui TAMBÉM produtos sem tiny_id (venda local). Produto com tiny_id segue
-    // idêntico (id ← tiny_id mantém push/baixa Tiny). Produto local: id vazio,
-    // produtoId = uuid do catálogo (baixa por produto_id), local = true.
+    // Fase 3: TODA venda do PDV é local (sem Tiny). Baixa sempre por produto_id (uuid
+    // do catálogo). tinyProdutoId ainda é guardado no item p/ rastreabilidade, mas
+    // não é mais usado pra estoque. Produto com tiny_id também vende como local.
     produtosTiny = (data || []).map(p => ({
       id:        p.tiny_id ? String(p.tiny_id) : '',
       produtoId: String(p.id),
-      local:     !p.tiny_id,
+      local:     true,
       nome:      p.nome   || '',
       codigo:    p.codigo || '',
       preco:     Number(p.preco_venda) || 0,
@@ -16707,12 +16707,7 @@ function _pdvRemoveItem(idx) {
 async function _pdvAddItemFromIdx(idx) {
   const p = produtosTiny[idx];
   if (!p) return;
-  // Proíbe carrinho misto: produto do Tiny e produto local não se misturam na mesma
-  // venda (a venda inteira é Tiny OU local — define se vai/não pro Tiny no fechamento).
-  if (_pdvVenda.itens.length && _pdvVenda.itens.some(it => !!it.local) !== !!p.local) {
-    smAlert('Não dá pra misturar produto do Tiny com produto local na mesma venda.\n\nFinalize ou limpe o carrinho primeiro.');
-    return;
-  }
+  // Fase 3: toda venda é local — não existe mais "carrinho misto" pra travar.
   // Se sem estoque, confirma antes — o badge no dropdown já avisou visualmente.
   if (Number(p.estoque || 0) <= 0) {
     const ok = await smConfirm(`⚠️ Produto sem estoque: "${p.nome || 'item'}".\n\nAdicionar mesmo assim?`);
@@ -17207,9 +17202,7 @@ async function _pdvFinalizarVenda() {
   try {
     // "Cliente leva agora" → status='entregue' já na criação, data_entrega_real
     // = now() e data_prevista_entrega fica null. Modo normal segue como antes.
-    // Venda local = todos os itens são produtos do nosso sistema (sem tiny_id).
-    // Carrinho misto é proibido no add, então é uniforme: ou tudo Tiny ou tudo local.
-    const vendaLocal = v.itens.length > 0 && v.itens.every(it => it.local);
+    // Fase 3: TODA venda nasce local (sem Tiny). venda_local sempre true.
     const pedidoPayload = {
       vendedor_id: v.vendedorId,
       local_venda_id: v.localId,
@@ -17220,7 +17213,7 @@ async function _pdvFinalizarVenda() {
       observacao: v.observacao?.trim() || null,
       criado_por: criadoPor,
       sincronizado_tiny: false,
-      venda_local: vendaLocal,
+      venda_local: true,
     };
     if (v.entregaImediata) {
       pedidoPayload.status                = 'entregue';
@@ -17284,10 +17277,10 @@ async function _pdvFinalizarVenda() {
     _pdvStep  = 3;
     renderPdv();
 
-    // Venda local: NÃO vai pro Tiny — baixa o estoque por produto_id direto.
-    // Venda Tiny: fluxo de sempre (sync em background, que já faz a baixa lá).
-    if (vendaLocal) _pdvBaixarEstoqueLocal(ped.id);
-    else            _pdvSincronizarComTiny(ped.id);
+    // Fase 3: toda venda é local — NÃO vai pro Tiny. Baixa por produto_id direto.
+    // (_pdvSincronizarComTiny continua no código, usada só pelo retry de pedido
+    // ANTIGO não sincronizado — histórico/reversibilidade.)
+    _pdvBaixarEstoqueLocal(ped.id);
     // Cria/atualiza o cadastro do cliente — best-effort, fora do try da venda
     // (v ainda referencia a venda mesmo após _pdvVenda=null). Nunca quebra nada.
     _pdvUpsertCliente(v.cliente);
@@ -17785,7 +17778,7 @@ async function _pdvAlterarStatus(pedidoId, novoStatus) {
   if (!p) return;
   const labelNovo = (PDV_STATUS_LABEL[novoStatus] || {}).label || novoStatus;
   const aviso = novoStatus === 'cancelado'
-    ? (' O pedido sai do faturamento.' + (p.sincronizadoTiny ? ' Vou cancelar no Tiny também.' : ''))
+    ? ' O pedido sai do faturamento e o estoque é devolvido.'
     : '';
   const ok = await smConfirm(`Mudar o pedido #${p.numeroSmart} para "${labelNovo}"?` + aviso);
   if (!ok) return;
@@ -17804,17 +17797,13 @@ async function _pdvAlterarStatus(pedidoId, novoStatus) {
   } catch (e) { console.warn('[pdv] audit status falhou (alteração continua ok):', e.message); }
   const m = document.getElementById('pdvp-det-modal'); if (m) m.remove();
 
-  // Cancelamento de pedido sincronizado: tenta cancelar no Tiny (bloqueante).
-  // Local já está cancelado acima — o Tiny é um "melhor esforço" com aviso.
+  // Fase 3: cancelamento NÃO toca mais o Tiny (nem em pedido antigo sincronizado —
+  // ele fica aberto no Tiny, e tudo bem). Só devolve o NOSSO estoque: estorno por
+  // produto_id (venda nova) ou por tiny_id (item antigo, fallback no backend).
+  // _pdvCancelarNoTiny continua no código (não usada) p/ histórico/reversibilidade.
   let msgFinal = `Pedido #${p.numeroSmart} agora está "${labelNovo}".`;
-  if (novoStatus === 'cancelado' && p.sincronizadoTiny) {
-    const r = await _pdvCancelarNoTiny(pedidoId);
-    msgFinal = r.ok
-      ? `Pedido #${p.numeroSmart} cancelado aqui e no Tiny #${p.tinyNumero || '?'}.`
-      : `Pedido #${p.numeroSmart} cancelado aqui, MAS o cancelamento no Tiny falhou — cancele manual no Tiny #${p.tinyNumero || '?'}.${r.erro ? ' (' + r.erro + ')' : ''}`;
-  } else if (novoStatus === 'cancelado' && p.vendaLocal) {
-    // Venda local: não há Tiny — só devolve o NOSSO estoque (estorno por produto_id).
-    await _pdvEstornarEstoqueLocal(pedidoId, 'Estorno por cancelamento (PDV local)');
+  if (novoStatus === 'cancelado') {
+    await _pdvEstornarEstoqueLocal(pedidoId, 'Estorno por cancelamento (PDV)');
     msgFinal = `Pedido #${p.numeroSmart} cancelado. Estoque devolvido.`;
   }
   await carregarPedidosUnif();
