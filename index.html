@@ -1848,7 +1848,7 @@ select:not(.input-pro):not(.search-input){
       </div>
     </div>
     <div style="display:flex;gap:8px;">
-<button class="btn btn-gold" onclick="cpOpenNovo()" id="btn-add-produto" style="display:none;">+ Produto</button>
+<button class="btn btn-gold" onclick="prodOpenNovo()" id="btn-add-produto" style="display:none;">+ Produto</button>
     </div>
   </div>
 
@@ -3380,6 +3380,7 @@ select:not(.input-pro):not(.search-input){
 <div class="modal-overlay" id="prod-modal">
   <div class="modal" style="width:760px;">
     <div class="modal-title" id="prod-modal-title">Editar <span>produto</span></div>
+    <div id="prod-novo-nota" style="display:none;font-size:11px;color:var(--text3);background:var(--surface3);border-radius:var(--r-sm);padding:8px 12px;margin-bottom:12px;line-height:1.5;">Produto novo nasce só no nosso sistema (sem vínculo com o Tiny): aparece na lista, no Dashboard e no estoque — mas <b>não no PDV</b> enquanto não tiver vínculo com o Tiny.</div>
     <input type="hidden" id="prod-edit-id">
     <input type="hidden" id="prod-precos-idx">
     <input type="hidden" id="prod-venda">
@@ -3401,7 +3402,7 @@ select:not(.input-pro):not(.search-input){
       <div class="form-group"><label>Custo puro (R$)</label><input class="form-input" id="prod-custo-puro" type="number" oninput="prodUpdateComputed()"></div>
       <div class="form-group"><label>Custo montagem (R$)</label><input class="form-input" id="prod-montagem" type="number" oninput="prodUpdateComputed()"></div>
       <div class="form-group"><label>Comissão vendedor (R$)</label><input class="form-input" id="prod-comissao" type="number" oninput="prodUpdateComputed()"></div>
-      <div class="form-group"><label>Preço de venda (R$)</label><input class="form-input" id="prod-venda-display" type="number" readonly style="opacity:0.55;"></div>
+      <div class="form-group"><label>Preço de venda (R$)</label><input class="form-input" id="prod-venda-display" type="number" readonly style="opacity:0.55;" oninput="document.getElementById('prod-venda').value=this.value;prodUpdateComputed();"></div>
     </div>
     <div class="computed-row">
       <div><div class="computed-label">Custo total (CtReal)</div><div class="computed-value" id="prod-modal-ctreal">R$ —</div></div>
@@ -3410,7 +3411,7 @@ select:not(.input-pro):not(.search-input){
     </div>
 
     <!-- ══ Estoque (Fase 2d) — ajuste manual via registrar_movimento (origem 'manual') ══ -->
-    <div style="border-top:1px solid var(--border);margin-top:18px;padding-top:14px;">
+    <div id="prod-estoque-box" style="border-top:1px solid var(--border);margin-top:18px;padding-top:14px;">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Estoque</div>
         <div style="font-size:12px;color:var(--text2);">Saldo atual: <span id="prod-est-saldo" style="font-size:18px;font-weight:800;">—</span></div>
@@ -8396,9 +8397,32 @@ function prodUpdateComputed(){
   pctEl.style.color=mcp==null?'var(--text3)':mcp>=30?'var(--gold)':mcp>=15?'var(--orange)':'var(--red)';
 }
 
+// ── Criar produto novo (Fase 1c etapa 4): reusa o prod-modal em modo NOVO.
+//    prod-edit-id vazio = sinal de criação (consumido por prodSave→prodSaveNovo).
+function prodOpenNovo(){
+  document.getElementById('prod-modal-title').innerHTML='Novo <span>produto</span>';
+  document.getElementById('prod-novo-nota').style.display='';
+  document.getElementById('prod-edit-id').value='';     // vazio = modo novo
+  document.getElementById('prod-precos-idx').value=-1;
+  document.getElementById('prod-venda').value=0;
+  ['prod-nome','prod-codigo','prod-fornecedor','prod-cor','prod-motor','prod-descricao'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('prod-categoria').value='scooter';
+  ['prod-custo-puro','prod-montagem','prod-comissao'].forEach(id=>document.getElementById(id).value=0);
+  // Preço editável só no modo novo (no editar muda em Preços & Margens).
+  const vd=document.getElementById('prod-venda-display');
+  vd.value=0; vd.readOnly=false; vd.style.opacity='';
+  // Sem produto/id ainda → esconde Inativar/Excluir e a seção de Estoque.
+  const ativoBtn=document.getElementById('prod-ativo-btn'); if(ativoBtn) ativoBtn.style.display='none';
+  const exclBtn=document.getElementById('prod-excluir-btn'); if(exclBtn) exclBtn.style.display='none';
+  const estBox=document.getElementById('prod-estoque-box'); if(estBox) estBox.style.display='none';
+  prodToggleComissao();
+  prodUpdateComputed();
+  document.getElementById('prod-modal').classList.add('open');
+}
 function prodOpenEdit(id){
   const item=produtosCatalogo.find(p=>String(p.id)===String(id));
   if(!item)return;
+  document.getElementById('prod-novo-nota').style.display='none';
   // Linha de custo casada por nome; guarda o ÍNDICE em products[] (robusto a rename).
   const pp=_matchProdutoPorNome(item.nome);
   const idx=pp?products.indexOf(pp):-1;
@@ -8416,17 +8440,20 @@ function prodOpenEdit(id){
   document.getElementById('prod-custo-puro').value=pp?(pp.custoPuro||0):0;
   document.getElementById('prod-montagem').value=pp?(pp.montagem||0):0;
   document.getElementById('prod-comissao').value=pp?(pp.comissao||0):0;
-  document.getElementById('prod-venda-display').value=item.precoVenda||0;
+  // Preço read-only no editar (reverte o modo novo, que o deixa editável).
+  const vd=document.getElementById('prod-venda-display');
+  vd.value=item.precoVenda||0; vd.readOnly=true; vd.style.opacity='0.55';
   // Inativar/Reativar — rótulo e cor conforme o estado atual do produto.
   const ativoBtn=document.getElementById('prod-ativo-btn');
   if(ativoBtn){
     const inativo=item.ativo===false;
     ativoBtn.textContent=inativo?'Reativar':'Inativar';
     ativoBtn.style.color=inativo?'var(--green)':'var(--orange)';
-    ativoBtn.disabled=false;
+    ativoBtn.disabled=false; ativoBtn.style.display='';
   }
   const exclBtn=document.getElementById('prod-excluir-btn');
-  if(exclBtn){ exclBtn.textContent='Excluir'; exclBtn.disabled=false; }
+  if(exclBtn){ exclBtn.textContent='Excluir'; exclBtn.disabled=false; exclBtn.style.display=''; }
+  const estBox=document.getElementById('prod-estoque-box'); if(estBox) estBox.style.display='';
   prodToggleComissao();
   prodUpdateComputed();
   // Estoque (2d): mostra saldo, limpa inputs/status e carrega o histórico do produto.
@@ -8547,6 +8574,7 @@ function prodMovimento(tipo){
 
 async function prodSave(){
   const id=document.getElementById('prod-edit-id').value;
+  if(!id){ return prodSaveNovo(); }   // id vazio = modo novo (criação no catálogo)
   const item=produtosCatalogo.find(p=>String(p.id)===String(id));
   if(!item){smAlert('Produto não encontrado');return;}
   const nome=document.getElementById('prod-nome').value.trim();
@@ -8597,6 +8625,63 @@ async function prodSave(){
     smAlert('"'+nome+'" salvo!');
   }catch(err){
     smAlert('Erro ao salvar: '+err.message);
+  }finally{
+    if(btn){btn.textContent=txt;btn.disabled=false;}
+  }
+}
+
+// ── Criar produto novo no catálogo (Fase 1c etapa 4). INSERT em produtos (sem tiny_id:
+//    nasce só no nosso sistema → aparece na lista/Dashboard/estoque, mas NÃO no PDV,
+//    que filtra por tiny_id). Custo opcional → produtos_precos (mesma mecânica do prodSave).
+async function prodSaveNovo(){
+  const nome=document.getElementById('prod-nome').value.trim();
+  if(!nome){smAlert('Preencha o nome do produto');return;}
+  const cat=document.getElementById('prod-categoria').value;
+  const fornecedor=document.getElementById('prod-fornecedor').value.trim();
+  const codigo=document.getElementById('prod-codigo').value.trim();
+  const cor=document.getElementById('prod-cor').value.trim();
+  const motor=document.getElementById('prod-motor').value.trim();
+  const descricao=document.getElementById('prod-descricao').value.trim();
+  const custoPuro=+document.getElementById('prod-custo-puro').value||0;
+  const montagem=+document.getElementById('prod-montagem').value||0;
+  const comissao=cat==='acessorio'?0:(+document.getElementById('prod-comissao').value||0);
+  const venda=+document.getElementById('prod-venda-display').value||0;
+  if(!(venda>0)){smAlert('Informe um preço de venda maior que zero.');return;}
+  // Trava de duplicado por nome (normalizado) — evita repetir o problema dos 2 X14.
+  const norm=s=>(s||'').trim().toLowerCase();
+  if(produtosCatalogo.some(p=>norm(p.nome)===norm(nome))){
+    smAlert(`Já existe um produto chamado "${nome}". Use outro nome ou edite o existente.`);
+    return;
+  }
+  const btn=document.querySelector('#prod-modal .btn-gold');
+  const txt=btn?btn.textContent:''; if(btn){btn.textContent='Criando...';btn.disabled=true;}
+  try{
+    // 1) CATÁLOGO → produtos (INSERT). Sem tiny_id; estoque usa o default 0.
+    const {data,error}=await sb.from('produtos').insert({
+      nome, codigo:codigo||null, fabricante:fornecedor||null, cor:cor||null,
+      motor:motor||null, descricao:descricao||null, categoria:cat,
+      preco_venda:venda, ativo:true,
+    }).select().single();
+    if(error)throw new Error(error.message||'erro ao criar produto');
+    // 2) CUSTO opcional → produtos_precos (modelo = nome; mesma mecânica do prodSave/cpSave).
+    const temCusto=custoPuro>0||montagem>0||comissao>0;
+    if(temCusto){
+      products.push({modelo:nome, fornecedor:fornecedor||'—', categoria:cat,
+        custoPuro, montagem, comissao, venda, ativo:true});
+      salvarDados();
+    }
+    // 3) Memória + telas (mesmo shape do carregarProdutosCatalogo).
+    produtosCatalogo.push({
+      id:data.id, nome, codigo:codigo||'', precoVenda:venda, custo:null,
+      categoria:cat, fabricante:fornecedor||'', cor:cor||'', motor:motor||'',
+      descricao:descricao||'', estoque:Number(data.estoque)||0, ativo:true,
+    });
+    renderCatalogoProdutos();
+    renderDashboard();
+    prodCloseModal();
+    smAlert('"'+nome+'" criado!');
+  }catch(err){
+    smAlert('Erro ao criar: '+err.message);
   }finally{
     if(btn){btn.textContent=txt;btn.disabled=false;}
   }
