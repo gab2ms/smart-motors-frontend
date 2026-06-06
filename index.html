@@ -15177,6 +15177,12 @@ function _montagensAddRow(item) {
   const touched = item ? '1' : '0';
   const tr = document.createElement('tr');
   tr.className = 'mont-modal-row';
+  // Preserva o estado de recebimento da moto (modo edição). Sem isto, salvar a edição
+  // recriaria a moto como 'fila' e apagaria a data. Linha nova não tem dataset → 'fila'.
+  if (item) {
+    tr.dataset.statusMontagem = item.statusMontagem || 'fila';
+    if (item.dataRecebimento) tr.dataset.dataRecebimento = item.dataRecebimento;
+  }
   tr.innerHTML =
       `<td style="padding:4px;"><input list="mont-modelos-list" class="form-input mont-modal-modelo" type="text" placeholder="Modelo" value="${escHtml(modelo).replace(/"/g,'&quot;')}"></td>`
     + `<td style="padding:4px;"><input class="form-input mont-modal-cor" type="text" placeholder="Cor" value="${escHtml(cor).replace(/"/g,'&quot;')}"></td>`
@@ -15242,7 +15248,11 @@ async function _montagensSalvarLote() {
     if (!modelo)      { smAlert('Linha ' + (idx+1) + ': preencha o modelo.'); return; }
     if (!cor)         { smAlert('Linha ' + (idx+1) + ': preencha a cor.'); return; }
     if (!(preco > 0)) { smAlert('Linha ' + (idx+1) + ': preço inválido.'); return; }
-    itens.push({ modelo, cor, chassi, preco_montagem: preco });
+    // Preserva recebimento da moto que permanece (dataset gravado em _montagensAddRow).
+    // Linha nova não tem dataset → entra como 'fila' sem data.
+    const statusMontagem  = r.dataset.statusMontagem || 'fila';
+    const dataRecebimento = statusMontagem === 'recebida' ? (r.dataset.dataRecebimento || null) : null;
+    itens.push({ modelo, cor, chassi, preco_montagem: preco, status_montagem: statusMontagem, data_recebimento: dataRecebimento });
   }
 
   // Duplicidade interna — só pra chassis NÃO-NULL (múltiplos NULLs são ok).
@@ -15928,8 +15938,9 @@ async function _montagensSetStatus(itemId, novoStatus) {
     // Sair de 'recebida' (ou trocar entre fila/montando/montada) → zera data_recebimento.
     payload = { status_montagem: novoStatus, data_recebimento: null };
   }
-  const { error } = await sb.from('montagens_itens').update(payload).eq('id', itemId);
+  const { data: upd, error } = await sb.from('montagens_itens').update(payload).eq('id', itemId).select('id');
   if (error) { smAlert('Erro ao atualizar status: ' + error.message); await initMontagens(); return; }
+  if (!upd || !upd.length) { smAlert('Nada foi atualizado — recarregue a página e tente de novo.'); await initMontagens(); return; }
   await initMontagens();
 }
 
@@ -15942,12 +15953,16 @@ async function _montagensReceberLoteCompleto(loteId) {
   if (!naoRecebidas.length) { smAlert('Todas as motos deste lote já estão recebidas.'); return; }
   const data = await _montagensPedirData(`Receber ${naoRecebidas.length} moto${naoRecebidas.length===1?'':'s'} do LOTE-${String(lote.numeroLote).padStart(4,'0')}`);
   if (!data) { smAlert('Operação cancelada — nenhuma moto foi marcada como recebida.'); return; }
-  const { error } = await sb.from('montagens_itens')
+  const { data: upd, error } = await sb.from('montagens_itens')
     .update({ status_montagem: 'recebida', data_recebimento: data })
     .eq('lote_id', loteId)
-    .neq('status_montagem', 'recebida');
+    .neq('status_montagem', 'recebida')
+    .select('id');
   if (error) { smAlert('Erro ao receber lote: ' + error.message); return; }
+  const n = (upd || []).length;
+  if (!n) { smAlert('Nada foi atualizado — recarregue a página e tente de novo.'); await initMontagens(); return; }
   await initMontagens();
+  smAlert(`${n} moto${n === 1 ? '' : 's'} marcada${n === 1 ? '' : 's'} como recebida${n === 1 ? '' : 's'}.`);
 }
 
 // Desativar/Reativar — sem DELETE (preserva histórico de lotes vinculados).
