@@ -3958,7 +3958,7 @@ const BREADCRUMB_MAP = {
   oficina:         ['Operação', 'Oficina'],
   sac:             ['Operação', 'SAC'],
   calendario:      ['Visão Geral', 'Calendário'],
-  montagens:       ['Produtos', 'Montagens'],
+  montagens:       ['Operação', 'Montagens'],
   clientes:        ['Operação', 'Clientes'],
   contratos:       ['Operação', 'Contrato'],
   financeiro:      ['Financeiro', 'Caixa'],
@@ -7828,11 +7828,11 @@ const NAV_TREE = [
   { kind:'group', label:'Produtos',   icon:'ic-store', children:[
       { id:'estoque',         label:'Produtos & Estoque', icon:'ic-store' },
       { id:'custos-produtos', label:'Custos de Produtos', icon:'ic-tag'   },
-      { id:'montagens',       label:'Montagens',          icon:'ic-tool'  },
   ]},
   { kind:'group', label:'Operação',   icon:'ic-wrench', children:[
-      { id:'oficina', label:'Oficina', icon:'ic-wrench' },
-      { id:'sac',     label:'SAC',     icon:'ic-phone',  dotId:'dot-sac' },
+      { id:'oficina',   label:'Oficina',   icon:'ic-wrench' },
+      { id:'sac',       label:'SAC',       icon:'ic-phone',  dotId:'dot-sac' },
+      { id:'montagens', label:'Montagens', icon:'ic-tool'  },
   ]},
   { kind:'group', label:'Financeiro', icon:'ic-wallet', children:[
       { id:'financeiro',     label:'Financeiro',           icon:'ic-wallet'  },
