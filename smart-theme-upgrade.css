@@ -1,0 +1,196 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   SMART MOTORS — CAMADA 4 · "SMART THEME UPGRADE"
+   ───────────────────────────────────────────────────────────────────────
+   Alinha o sistema de gestão à estética do site comercial:
+   • Tipografia Sora (números/títulos) + Manrope (interface)
+   • Dourado âmbar #F6A41C (no lugar do amarelo-limão)
+   • Verde/vermelho sóbrios (mantêm o significado financeiro)
+   • REMOVE o excesso de "glow"/neon/animação da camada PREMIUM GLOW UP
+   • Hairlines sutis no lugar das bordas douradas em todo card
+
+   É ADITIVO: não altera o HTML/JS. Só entra por cima do CSS existente.
+
+   ► COMO USAR (ver instruções detalhadas no fim do arquivo):
+     1) adicionar o <link> das fontes no <head>
+     2) colar este CSS como ÚLTIMO bloco de <style> (ou <link>) do <head>,
+        DEPOIS de toda a camada "PREMIUM GLOW UP".
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Caso prefira não mexer no <head>, o @import abaixo já carrega as fontes.
+   (Para máxima performance, use o <link> — ver instruções no rodapé.) */
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap');
+
+/* ─────────────────────────────────────────────────────────────
+   1) TOKENS — redefine cores e fontes (cascata vence a base)
+   ───────────────────────────────────────────────────────────── */
+:root{
+  /* tipografia da marca */
+  --font-primary: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Sora', 'Manrope', sans-serif;
+  /* --mono continua JetBrains Mono nas tabelas finas (alinhamento) */
+
+  /* superfícies (um tom mais refinado, levemente mais frio) */
+  --bg:       #141517;
+  --surface:  #1E1F22;
+  --surface2: #26282C;
+  --surface3: #2E3035;
+  --border:   rgba(255,255,255,0.08);
+  --border2:  rgba(255,255,255,0.15);
+  --text:     #F4F3EF;
+  --text2:    rgba(255,255,255,0.64);
+  --text3:    rgba(255,255,255,0.42);
+
+  /* DOURADO ÂMBAR (substitui o amarelo-limão) — gradientes herdam destes */
+  --gold:     #F6A41C;
+  --gold2:    #E0900E;
+  --gold3:    #FFD24D;
+  --gold-bright:#FFCB45;
+  --gold-dim: rgba(246,164,28,0.12);
+  --gold-dim2:rgba(246,164,28,0.05);
+  --bolt-grad:linear-gradient(142deg, #FFF3CF 0%, #F6A41C 50%, #B5740A 100%);
+  --gold-grad:linear-gradient(142deg, #F6991A 0%, #FFC83A 58%, #FFD96B 100%);
+
+  /* verde/vermelho sóbrios (dados financeiros) */
+  --green:    #35C281;
+  --red:      #EF6048;
+  --orange:   #F0A53B;
+  --green-dim:rgba(53,194,129,0.12);
+  --red-dim:  rgba(239,96,72,0.12);
+  --orange-dim:rgba(240,165,59,0.12);
+
+  /* DESLIGA OS GLOWS de uma vez: tudo que usa estas variáveis some o brilho */
+  --green-glow: transparent;
+  --red-glow:   transparent;
+  --gold-glow:  transparent;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   2) NÚMEROS E TÍTULOS EM SORA (o que mais "eleva" visualmente)
+   ───────────────────────────────────────────────────────────── */
+.kpi-value, .conta-saldo, .order-total-val, .computed-value,
+.kpi-pro__value, .total .v{
+  font-family: var(--font-display) !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.topbar-title, .card-title, .modal-title, .login-title, .db-title,
+.order-name, .page-h, .panel__h{
+  font-family: var(--font-display) !important;
+  letter-spacing: -0.01em;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   3) DES-GLOW — neutraliza a camada "PREMIUM GLOW UP"
+   ───────────────────────────────────────────────────────────── */
+
+/* KPIs: fundo chapado, hairline, sem barra dourada animada, sem glow */
+.kpi{
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: none !important;
+  border-radius: 16px !important;
+}
+.kpi::before, .kpi:hover::before{ display: none !important; }
+.kpi:hover{
+  transform: none !important;
+  border-color: var(--border2) !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35) !important;
+}
+.kpi-value, .kpi:hover .kpi-value{ text-shadow: none !important; }
+
+/* Cards / pedidos / login: sem borda-degradê dourada, hairline sutil */
+.card, .order-card, .login-box{
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.30) !important;
+}
+.card::before, .order-card::before, .login-box::before{ display: none !important; }
+
+/* Cards de conta (financeiro): hover calmo */
+.conta-card{ background: var(--surface) !important; }
+.conta-card:hover{
+  transform: none !important;
+  box-shadow: none !important;
+  border-color: var(--gold) !important;
+}
+
+/* Badges sem brilho */
+.badge-green, .badge-red, .badge-gold, .badge-orange{ box-shadow: none !important; }
+
+/* Lançamentos sem text-shadow */
+.lan-type-entrada, .lan-type-saida{ text-shadow: none !important; }
+.kpi-delta.up, .kpi-delta.down, .fin-tab-btn.active, .login-tab.active{ text-shadow: none !important; }
+
+/* Logo: para de pulsar e de "brilhar"; wordmark em dourado chapado */
+.logo-bolt svg, .boot-loader-logo svg{ animation: none !important; filter: none !important; }
+.logo-name span{
+  background: none !important;
+  -webkit-text-fill-color: var(--gold) !important;
+  color: var(--gold) !important;
+}
+
+/* Sidebar: item ativo calmo (faixa dourada + fundo suave), sem glow/translate */
+.nav-item.active{
+  background: var(--gold-dim) !important;
+  color: var(--gold) !important;
+  border-left: 3px solid var(--gold) !important;
+  padding-left: 7px !important;
+  box-shadow: none !important;
+}
+.nav-item:hover{ transform: none !important; }
+.nav-item:not(.active):hover{ background: var(--surface2) !important; color: var(--text) !important; }
+
+/* Linhas/topbar: hairlines neutros no lugar dos degradês dourados */
+.topbar::after, .card-header::after, .logo-wrap::after, .fin-tabs::after{
+  background: var(--border) !important; height: 1px !important;
+}
+.lancamento-row, .custo-row, tbody tr{ border-bottom: 1px solid var(--border) !important; }
+.lancamento-row:last-child, .custo-row:last-child, tbody tr:last-child{ border-bottom: none !important; }
+
+/* Inputs: foco só com borda dourada (sem glow box-shadow) */
+.search-input:focus, .form-input:focus, .sm-modal-input:focus, .input-pro:focus{
+  box-shadow: none !important;
+  border-color: var(--gold) !important;
+}
+
+/* Botão dourado: gradiente âmbar, sem brilho exagerado nem shimmer */
+.btn-gold{
+  background: var(--gold-grad) !important;
+  box-shadow: none !important;
+  color: #1A1300 !important;
+  text-shadow: none !important;
+}
+.btn-gold::after{ display: none !important; }
+.btn-gold:hover{
+  filter: brightness(1.04) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 18px rgba(246,164,28,0.30) !important;
+}
+.dash-preset-btn.active{ box-shadow: none !important; }
+
+/* Scrollbar discreta (não dourada) */
+*{ scrollbar-color: rgba(255,255,255,0.16) transparent !important; }
+*::-webkit-scrollbar-thumb{ background: rgba(255,255,255,0.16) !important; }
+*::-webkit-scrollbar-thumb:hover{ background: rgba(255,255,255,0.28) !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   INSTRUÇÕES DE INSTALAÇÃO (peça ajuda ao Claude Code se quiser)
+   ───────────────────────────────────────────────────────────────────────
+   PASSO 1 — Fontes: no <head> do index.html, troque/adicione o <link> de
+   fontes por este (pode manter o de Inter/JetBrains se quiser):
+
+     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+   PASSO 2 — O CSS: o jeito mais limpo é salvar este arquivo como
+   "smart-theme-upgrade.css" no projeto e linká-lo como ÚLTIMO item do <head>:
+
+     <link rel="stylesheet" href="smart-theme-upgrade.css">
+
+   (Se preferir tudo num arquivo só, cole o conteúdo — da linha 1 até aqui —
+    dentro de um novo <style> ... </style> no FINAL do <head>, depois do
+    bloco "PREMIUM GLOW UP". Importante ser o último para a cascata vencer.)
+
+   Pronto. O sistema continua idêntico em função; muda só a estética.
+   Para reverter, é só remover esta camada — nada do original foi alterado.
+   ═══════════════════════════════════════════════════════════════════════ */
