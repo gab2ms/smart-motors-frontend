@@ -6561,14 +6561,14 @@ async function _tinyStabilityCheck(iniBR, fimBR) {
 // pelo widget renderDashDreMes (mês corrente) e por gerarFechamentoMes
 // (range escolhido no selector do Dashboard).
 async function calcularDRE(iniISO, fimISO) {
-  const fmtBR = iso => { const p = iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
-
   let receita = 0, pedidos = [], tinyEstabilidade = { estavel: true, contagens: [0,0] };
   try {
-    const tiny = await _tinyStabilityCheck(fmtBR(iniISO), fmtBR(fimISO));
-    pedidos = tiny.pedidos;
-    tinyEstabilidade = { estavel: tiny.estavel, contagens: tiny.contagens };
+    // Fonte LOCAL (sem Tiny ao vivo): arquivo faturado ≤ corte + PDV, deduplicado.
+    // Mesmo .merged que o Dashboard/Vendas do Mês já consomem.
+    pedidos = (await buscarVendasMescladas(iniISO, fimISO)).merged;
     receita = pedidos.reduce((s,p) => s + (p.valor || 0), 0);
+    // Local é sempre completo — não há "resultado parcial" como no Tiny ao vivo.
+    tinyEstabilidade = { estavel: true, contagens: [pedidos.length, pedidos.length] };
   } catch(e) {
     console.warn('[calcularDRE] falha ao buscar pedidos:', e.message);
   }
