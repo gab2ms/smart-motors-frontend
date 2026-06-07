@@ -2723,7 +2723,6 @@ select:not(.input-pro):not(.search-input){
           <option value="tiny">Tiny</option>
         </select>
         <input type="text" class="search-input" id="cli-busca" placeholder="Nome, CPF/CNPJ, telefone..." oninput="renderClientes()" style="min-width:240px;">
-        <button class="btn" onclick="sincronizarClientesTiny()" id="btn-cli-sync"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Sincronizar com Tiny</button>
         <button class="btn btn-gold" onclick="abrirCliModal()">+ Novo cliente</button>
       </div>
     </div>
@@ -18329,71 +18328,6 @@ async function cliExcluir(id) {
   clientesAll = clientesAll.filter(x => x.id !== id);
   oficinaClientes = clientesAll.slice();
   renderClientesKpis(); renderClientes();
-}
-
-async function sincronizarClientesTiny() {
-  const btn = document.getElementById('btn-cli-sync');
-  if (!btn) return;
-  btn.disabled = true;
-  btn.textContent = 'Sincronizando...';
-  try {
-    let pagina = 1;
-    let total = 0;
-    let novos = 0;
-    let atualizados = 0;
-    const existsByTinyId = new Map();
-    clientesAll.forEach(c => { if (c.tinyId) existsByTinyId.set(String(c.tinyId), c); });
-
-    while (true) {
-      const res = await fetch(`${API_URL}/clientes-tiny?pagina=${pagina}`);
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.erro || 'Erro na resposta do Tiny');
-      const lote = json.contatos || [];
-      total += lote.length;
-      for (const t of lote) {
-        const tinyId = String(t.id);
-        const payload = {
-          nome:        (t.nome || '').trim() || 'Sem nome',
-          telefone:    t.fone || t.celular || null,
-          email:       t.email || null,
-          cpf_cnpj:    t.cpfCnpj || null,
-          cidade:      t.cidade || null,
-          uf:          t.uf || null,
-          endereco:    t.endereco || null,
-          origem:      'tiny',
-          tiny_id:     tinyId,
-        };
-        const existente = existsByTinyId.get(tinyId);
-        if (existente) {
-          const { data, error } = await sb.from('clientes').update(payload).eq('id', existente.id).select().single();
-          if (!error && data) {
-            Object.assign(existente, toCamel(data));
-            atualizados++;
-          }
-        } else {
-          const { data, error } = await sb.from('clientes').insert(payload).select().single();
-          if (!error && data) {
-            clientesAll.push(toCamel(data));
-            existsByTinyId.set(tinyId, clientesAll[clientesAll.length - 1]);
-            novos++;
-          } else if (error) {
-            console.warn('[cli sync] insert falhou:', error.message);
-          }
-        }
-      }
-      if (!json.totalPaginas || pagina >= json.totalPaginas) break;
-      pagina++;
-      if (pagina > 50) break; // hard guard
-    }
-    oficinaClientes = clientesAll.slice();
-    renderClientesKpis(); renderClientes();
-    smAlert(`Sincronização concluída.\n${total} contatos lidos do Tiny.\n+${novos} novos · ${atualizados} atualizados.`);
-  } catch (e) {
-    smAlert('Erro ao sincronizar: ' + e.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Sincronizar com Tiny';
-  }
 }
 
 // ══════════════════════════════════════════
