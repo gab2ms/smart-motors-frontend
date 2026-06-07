@@ -16937,9 +16937,7 @@ async function _pdvFinalizarVenda() {
     _pdvStep  = 3;
     renderPdv();
 
-    // Fase 3: toda venda é local — NÃO vai pro Tiny. Baixa por produto_id direto.
-    // (_pdvSincronizarComTiny continua no código, usada só pelo retry de pedido
-    // ANTIGO não sincronizado — histórico/reversibilidade.)
+    // Toda venda é local — NÃO vai pro Tiny. Baixa por produto_id direto.
     _pdvBaixarEstoqueLocal(ped.id);
     // Cria/atualiza o cadastro do cliente — best-effort, fora do try da venda
     // (v ainda referencia a venda mesmo após _pdvVenda=null). Nunca quebra nada.
@@ -16948,61 +16946,6 @@ async function _pdvFinalizarVenda() {
     smAlert(e.message || 'Erro desconhecido.');
     if (btn) { btn.disabled = false; btn.innerHTML = 'Finalizar venda <svg class="ic ic-sm"><use href="#ic-check"/></svg>'; }
   }
-}
-
-// Tenta criar o pedido no Tiny via backend. Não bloqueia: chama
-// /pdv/pedido-incluir em background, atualiza o state local e
-// re-renderiza step 3 (se for o pedido atual) e detail modal (se aberto).
-async function _pdvSincronizarComTiny(pedidoId) {
-  if (!pedidoId) return;
-  _pdvSyncStatus.set(pedidoId, { state: 'syncing' });
-  // Re-render do que estiver visível
-  if (_pdvUltimoPedidoCriado?.id === pedidoId && _pdvStep === 3) renderPdv();
-  _pdvAtualizaDetalheModalSync(pedidoId);
-
-  try {
-    const res = await fetch(`${API_URL}/pdv/pedido-incluir`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pedidoPdvId: pedidoId }),
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.erro || 'erro desconhecido');
-
-    _pdvSyncStatus.set(pedidoId, { state: 'success', tinyNumero: data.tiny_numero, tinyId: data.tiny_id });
-
-    // Atualiza in-memory pra refletir na lista/detalhe sem refetch
-    if (_pdvUltimoPedidoCriado?.id === pedidoId) {
-      _pdvUltimoPedidoCriado.sincronizadoTiny = true;
-      _pdvUltimoPedidoCriado.tinyPedidoId     = data.tiny_id;
-      _pdvUltimoPedidoCriado.tinyNumero       = data.tiny_numero;
-      if (_pdvStep === 3) renderPdv();
-    }
-    const idx = (_pdvPedidosLista || []).findIndex(x => x.id === pedidoId);
-    if (idx >= 0) {
-      _pdvPedidosLista[idx].sincronizadoTiny = true;
-      _pdvPedidosLista[idx].tinyPedidoId     = data.tiny_id;
-      _pdvPedidosLista[idx].tinyNumero       = data.tiny_numero;
-      _pdvPedidosLista[idx].tinyErro         = null;
-    }
-    _pdvAtualizaDetalheModalSync(pedidoId);
-  } catch (e) {
-    console.warn('[pdv-sync]', e.message);
-    _pdvSyncStatus.set(pedidoId, { state: 'error', erro: e.message });
-    if (_pdvUltimoPedidoCriado?.id === pedidoId && _pdvStep === 3) renderPdv();
-    _pdvAtualizaDetalheModalSync(pedidoId);
-  }
-}
-
-// Helper: se o modal de detalhe deste pedido estiver aberto, re-renderiza.
-// Implementação simples: fecha + reabre (refetch). Pequeno custo, garante
-// consistência sem precisar dissecar o DOM do modal.
-function _pdvAtualizaDetalheModalSync(pedidoId) {
-  const modal = document.getElementById('pdvp-det-modal');
-  if (!modal) return;
-  // dataset.pedidoId é setado em _pdvAbrirDetalhe abaixo.
-  if (modal.dataset.pedidoId !== pedidoId) return;
-  _pdvAbrirDetalhe(pedidoId);
 }
 
 // ─── Step 3: Sucesso ────────────────────────────────────────
@@ -17047,8 +16990,7 @@ function _pdvRenderSucesso(root) {
   } else if (sync?.state === 'success') {
     syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--green);font-weight:700;"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Sincronizado com Tiny — Pedido #${escHtml(sync.tinyNumero || '?')}</div>`;
   } else if (sync?.state === 'error') {
-    syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--orange);"><svg class="ic ic-sm"><use href="#ic-alert"/></svg> Falha ao sincronizar com Tiny: <span style="color:var(--text3);">${escHtml(sync.erro || 'erro desconhecido')}</span></div>`
-              + `<div style="margin-top:8px;"><button class="btn" onclick="_pdvSincronizarComTiny('${p.id}')" style="font-size:11px;padding:6px 12px;"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Tentar sincronizar de novo</button></div>`;
+    syncBlock = `<div style="margin-top:20px;font-size:12px;color:var(--orange);"><svg class="ic ic-sm"><use href="#ic-alert"/></svg> Falha ao sincronizar com Tiny: <span style="color:var(--text3);">${escHtml(sync.erro || 'erro desconhecido')}</span></div>`;
   }
 
   root.innerHTML =
@@ -17352,10 +17294,9 @@ async function _pdvAbrirDetalhe(pedidoId) {
     // Venda local: nunca foi pro Tiny por design. Selo neutro, SEM botão de retry.
     syncBlock = `<span style="color:var(--text3);font-size:10px;margin-left:8px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-store"/></svg> Venda local — não enviada ao Tiny</span>`;
   } else {
-    // Não sincronizado: warning + erro detalhado + botão retry
+    // Não sincronizado: warning + erro detalhado (pedido antigo; sem retry — Tiny desligado)
     const erroTxt = (syncLive?.state === 'error' && syncLive.erro) || p.tinyErro || '';
     syncBlock = `<span style="color:var(--orange);font-size:10px;margin-left:8px;"><svg class="ic ic-sm"><use href="#ic-alert"/></svg> Não sincronizado com Tiny</span>`
-              + `<button class="btn" onclick="_pdvSincronizarComTiny('${p.id}')" style="font-size:10px;padding:3px 10px;margin-left:8px;"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Sincronizar</button>`
               + (erroTxt ? `<div style="font-size:10px;color:var(--text3);margin-top:6px;background:var(--surface2);padding:8px 10px;border-radius:var(--r-sm);">Último erro: ${escHtml(erroTxt)}</div>` : '');
   }
 
@@ -17457,10 +17398,9 @@ async function _pdvAlterarStatus(pedidoId, novoStatus) {
   } catch (e) { console.warn('[pdv] audit status falhou (alteração continua ok):', e.message); }
   const m = document.getElementById('pdvp-det-modal'); if (m) m.remove();
 
-  // Fase 3: cancelamento NÃO toca mais o Tiny (nem em pedido antigo sincronizado —
-  // ele fica aberto no Tiny, e tudo bem). Só devolve o NOSSO estoque: estorno por
+  // Cancelamento NÃO toca o Tiny (nem em pedido antigo sincronizado — ele fica
+  // aberto no Tiny, e tudo bem). Só devolve o NOSSO estoque: estorno por
   // produto_id (venda nova) ou por tiny_id (item antigo, fallback no backend).
-  // _pdvCancelarNoTiny continua no código (não usada) p/ histórico/reversibilidade.
   let msgFinal = `Pedido #${p.numeroSmart} agora está "${labelNovo}".`;
   if (novoStatus === 'cancelado') {
     await _pdvEstornarEstoqueLocal(pedidoId, 'Estorno por cancelamento (PDV)');
@@ -17468,31 +17408,6 @@ async function _pdvAlterarStatus(pedidoId, novoStatus) {
   }
   await carregarPedidosUnif();
   smAlert(msgFinal);
-}
-
-// Cancela o pedido no Tiny via backend (POST /pdv/pedido-cancelar). Idempotente
-// no backend. Em sucesso, persiste cancelado_tiny=true. Retorna { ok, erro? }.
-// Falha de rede, ok:false ou acao_manual:true → { ok:false } (cancelamento
-// manual no Tiny continua necessário). NÃO desfaz o cancelamento local.
-async function _pdvCancelarNoTiny(pedidoId) {
-  try {
-    const res = await fetch(`${API_URL}/pdv/pedido-cancelar`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pedidoPdvId: pedidoId }),
-    });
-    const data = await res.json();
-    if (!data.ok || data.acao_manual) {
-      return { ok: false, erro: data.erro || (data.acao_manual ? 'requer cancelamento manual' : 'falha no cancelamento') };
-    }
-    await sb.from('pdv_pedidos').update({ cancelado_tiny: true }).eq('id', pedidoId);
-    const idx = (_pdvPedidosLista || []).findIndex(x => x.id === pedidoId);
-    if (idx >= 0) _pdvPedidosLista[idx].canceladoTiny = true;
-    return { ok: true };
-  } catch (e) {
-    console.warn('[pdv-cancel-tiny]', e.message);
-    return { ok: false, erro: e.message };
-  }
 }
 
 // ═══════════════════════════════════════════════════════════
