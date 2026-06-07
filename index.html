@@ -4754,46 +4754,6 @@ function renderizarRankingVendedores(ranking) {
   el.innerHTML = rows;
 }
 
-// comMeta (4º parâmetro) controla o formato do retorno:
-//  - false (default): resolve com o array de pedidos — callers existentes
-//    não mudam.
-//  - true: resolve com { pedidos, parcial, total, retornados }, expondo
-//    os metadados que o backend manda quando a busca ao Tiny foi parcial.
-function buscarPedidosCompletos(dataInicial, dataFinal, forcar, comMeta) {
-  var url = API_URL + '/pedidos-completos'
-    + '?dataInicial=' + encodeURIComponent(dataInicial)
-    + '&dataFinal='   + encodeURIComponent(dataFinal)
-    + (forcar ? '&forcar=true' : '');
-  console.log('[pedidos-completos] GET', url);
-  function vazio() {
-    return comMeta ? { pedidos: [], parcial: false, total: 0, retornados: 0 } : [];
-  }
-  return fetch(url)
-    .then(function(r){
-      console.log('[pedidos-completos] status', r.status, r.statusText);
-      if (!r.ok) {
-        return r.text().then(function(txt){
-          console.warn('[pedidos-completos] resposta nao-OK:', txt.slice(0, 300));
-          return vazio();
-        });
-      }
-      return r.json().then(function(data){
-        var arr = Array.isArray(data) ? data : (data && data.pedidos) || [];
-        console.log('[pedidos-completos] recebidos', arr.length, 'pedidos');
-        if (comMeta) {
-          var total      = (data && typeof data.total      === 'number') ? data.total      : arr.length;
-          var retornados = (data && typeof data.retornados === 'number') ? data.retornados : arr.length;
-          return { pedidos: arr, parcial: !!(data && data.parcial), total: total, retornados: retornados };
-        }
-        return arr;
-      });
-    })
-    .catch(function(err){
-      console.error('[pedidos-completos] erro de rede:', err.message);
-      return vazio();
-    });
-}
-
 // Janela BR → UTC pro filtro de criado_em do PDV (Brasília = UTC-3).
 // Espelha a conversão do backend (resumoWhatsapp.js) pra Dashboard/Vendas
 // baterem EXATAMENTE com o resumo do WhatsApp nas viradas de mês.
