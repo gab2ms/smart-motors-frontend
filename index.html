@@ -2756,7 +2756,7 @@ select:not(.input-pro):not(.search-input){
       <div id="contrato-busca-state">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
           <input type="text" class="search-input" id="contrato-busca" placeholder="Buscar pedido por nome do cliente..." oninput="_contratoFiltrarPedidos()" style="flex:1;min-width:240px;">
-          <button class="btn" id="btn-contrato-atualizar" onclick="_contratoCarregarPedidos(true)" title="Ignora cache (30min) e busca direto no Tiny"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
+          <button class="btn" id="btn-contrato-atualizar" onclick="_contratoCarregarPedidos(true)" title="Recarrega os pedidos do nosso banco"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
         </div>
         <div class="card">
           <div class="card-header"><div><div class="card-sub" id="contrato-busca-sub">Carregando pedidos...</div></div></div>
@@ -18426,8 +18426,9 @@ async function _contratoCarregarPedidos(forcar) {
   try {
     const hoje = new Date();
     const ini  = new Date(hoje.getFullYear(), hoje.getMonth() - 6, hoje.getDate());
-    const fmt  = d => String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
-    const arr  = await buscarPedidosCompletos(fmt(ini), fmt(hoje), !!forcar);
+    const fmtISO = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    // Fonte LOCAL (sem Tiny ao vivo) — .merged (arquivo faturado + PDV).
+    const arr  = (await buscarVendasMescladas(fmtISO(ini), fmtISO(hoje))).merged;
     _contratoPedidos = (arr || []).slice().sort((a, b) => {
       const da = (a.data || '').split('/').reverse().join('-');
       const db = (b.data || '').split('/').reverse().join('-');
