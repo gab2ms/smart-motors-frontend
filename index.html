@@ -5444,8 +5444,8 @@ function deltaHTML(curr, prev, invertido) {
 // Consumido por: gerarFechamentoMes (Excel) E a sub-aba "DRE" do Financeiro.
 // Tela e Excel batem sempre porque vêm daqui.
 async function coletarFechamento(iniISO, fimISO) {
-  const fmtDateBR = iso => { const p = iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
-  const pedidos = await buscarPedidosCompletos(fmtDateBR(iniISO), fmtDateBR(fimISO));
+  // Fonte LOCAL (sem Tiny ao vivo) — mesmo .merged do calcularDRE/Dashboard.
+  const pedidos = (await buscarVendasMescladas(iniISO, fimISO)).merged;
   const lancFiltrados = (lancamentos || []).filter(l => l.data >= iniISO && l.data <= fimISO);
   const dre = await calcularDRE(iniISO, fimISO);
 
@@ -5935,12 +5935,7 @@ async function _finDreCarregar(forcar) {
   });
 
   try {
-    // forcar invalida o cache de buscarPedidosCompletos (30min) — segue
-    // mesma mecânica do Dashboard.
-    if (forcar) {
-      const fmtBR = iso => { const p = iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
-      try { await buscarPedidosCompletos(fmtBR(iniISO), fmtBR(fimISO), true); } catch(e) {}
-    }
+    // Fonte local (Supabase) é sempre fresca — sem warm-cache de Tiny.
     const dados = await coletarFechamento(iniISO, fimISO);
     _finDreRenderResumo(dados.dre);
     _finDreRenderProdutos(dados.vendasPorProduto);
@@ -6541,21 +6536,6 @@ const _DRE_CATEGORIAS_FORA_DESPESA = [
   // Investimento em Ponto — caução/abertura de unidade, não-recorrente.
   'Comissão de Vendas', 'Investimento em Ponto',
 ];
-
-// Faz 1 busca (não-forçada) ao Tiny pro período, pedindo os metadados
-// (comMeta=true). O próprio backend já sabe se o resultado veio parcial
-// (paginação incompleta/erro 500 do Tiny) — o DRE sinaliza isso
-// visualmente. Retorna também os pedidos pro calcularDRE reusar.
-// contagens = [retornados, total]; estavel = !parcial.
-async function _tinyStabilityCheck(iniBR, fimBR) {
-  let meta = { pedidos: [], parcial: false, total: 0, retornados: 0 };
-  try { meta = (await buscarPedidosCompletos(iniBR, fimBR, false, true)) || meta; } catch(e) {}
-  return {
-    estavel: !meta.parcial,
-    contagens: [meta.retornados, meta.total],
-    pedidos: meta.pedidos || [],
-  };
-}
 
 // Cálculo puro do DRE pra um período arbitrário. Não toca DOM. Consumido
 // pelo widget renderDashDreMes (mês corrente) e por gerarFechamentoMes
