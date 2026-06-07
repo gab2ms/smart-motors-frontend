@@ -2041,6 +2041,7 @@ select:not(.input-pro):not(.search-input){
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);white-space:nowrap;cursor:pointer;user-select:none;">
         <input type="checkbox" id="estoque-mostrar-inativos" onchange="renderCatalogoProdutos()"> Mostrar inativos
       </label>
+      <button class="btn" id="estoque-limpar-filtro" onclick="catKpiFiltrar('')" style="display:none;white-space:nowrap;"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Limpar filtro</button>
     </div>
 
     <!-- Tabela -->
@@ -8196,17 +8197,38 @@ function _estoqueCell(n) {
   return `<span style="color:var(--green);font-weight:700;">${n}</span>`;
 }
 
+// ── Etapa 1: filtro por card de KPI (estado compartilhado com a Etapa 3) ──
+// catKpiFiltro: '' = sem filtro | 'comSaldo' | 'zerados' | 'negativos'.
+// Um só estado pros cards clicáveis e (futuro) o aviso de cadastro incompleto,
+// pra não brigarem — "Limpar filtro" (ou clicar no card ativo) zera tudo.
+let catKpiFiltro = '';
+const _CAT_KPI_FILTRO_LABEL = { comSaldo: 'com saldo', zerados: 'zerados', negativos: 'negativos' };
+
+// Toggle: clicar no card já ativo limpa o filtro; passar '' (ou repetir) também limpa.
+function catKpiFiltrar(modo) {
+  catKpiFiltro = (catKpiFiltro === modo) ? '' : (modo || '');
+  renderCatalogoProdutos();
+}
+
 function renderCatalogoProdutos() {
   const q = (document.getElementById('estoque-search')?.value || '').toLowerCase();
   const verInativos = !!document.getElementById('estoque-mostrar-inativos')?.checked;
   // Inativos só aparecem com o toggle ligado; o panorama (KPIs) sempre conta só ativos.
   const ativos = produtosCatalogo.filter(p => p.ativo !== false);
   const base = verInativos ? produtosCatalogo : ativos;
-  const filtered = base.filter(p =>
+  let filtered = base.filter(p =>
     !q || p.nome.toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q));
+  // Etapa 1: filtro por card de KPI (saldo). Aplica sobre a lista já filtrada por
+  // busca/inativos. Os KPIs continuam contando sobre `ativos` (panorama estável).
+  if      (catKpiFiltro === 'comSaldo')  filtered = filtered.filter(p => p.estoque > 0);
+  else if (catKpiFiltro === 'zerados')   filtered = filtered.filter(p => p.estoque === 0);
+  else if (catKpiFiltro === 'negativos') filtered = filtered.filter(p => p.estoque < 0);
 
   const cnt = document.getElementById('estoque-count');
-  if (cnt) cnt.textContent = `${filtered.length} produto${filtered.length !== 1 ? 's' : ''}`;
+  if (cnt) cnt.textContent = `${filtered.length} produto${filtered.length !== 1 ? 's' : ''}`
+    + (catKpiFiltro ? ` · filtrando: ${_CAT_KPI_FILTRO_LABEL[catKpiFiltro] || catKpiFiltro}` : '');
+  const limparBtn = document.getElementById('estoque-limpar-filtro');
+  if (limparBtn) limparBtn.style.display = catKpiFiltro ? '' : 'none';
 
   // KPIs de estoque — só ATIVOS (inativos ficam fora do panorama), estáveis ao filtro.
   const kpiEl = document.getElementById('estoque-kpis');
@@ -8228,11 +8250,14 @@ function renderCatalogoProdutos() {
     const valorCard = _isAdminUser()
       ? `<div class="kpi"><div class="kpi-label">Valor em estoque</div><div class="kpi-value gold">${fmt(valor)}</div><div class="kpi-change">${semCusto > 0 ? semCusto + ' c/ saldo sem custo (fora)' : 'custo × saldo'}</div></div>`
       : '';
+    // Cards clicáveis (Etapa 1): Com saldo / Zerados / Negativos viram filtro.
+    // `at(m)` marca o card ativo (kpi-ativo) conforme o estado compartilhado.
+    const at = m => catKpiFiltro === m ? ' kpi-ativo' : '';
     kpiEl.innerHTML =
         `<div class="kpi"><div class="kpi-label">Total de produtos</div><div class="kpi-value gold">${tot}</div></div>`
-      + `<div class="kpi"><div class="kpi-label">Com saldo</div><div class="kpi-value green">${comSaldo}</div></div>`
-      + `<div class="kpi"><div class="kpi-label">Zerados</div><div class="kpi-value">${zerados}</div></div>`
-      + `<div class="kpi"><div class="kpi-label">Negativos</div><div class="kpi-value ${negativos > 0 ? 'red' : ''}">${negativos}</div></div>`
+      + `<div class="kpi kpi-clickable${at('comSaldo')}" data-cat-kpi="comSaldo" onclick="catKpiFiltrar('comSaldo')" title="Mostrar só produtos com saldo"><div class="kpi-label">Com saldo</div><div class="kpi-value green">${comSaldo}</div></div>`
+      + `<div class="kpi kpi-clickable${at('zerados')}" data-cat-kpi="zerados" onclick="catKpiFiltrar('zerados')" title="Mostrar só produtos zerados"><div class="kpi-label">Zerados</div><div class="kpi-value">${zerados}</div></div>`
+      + `<div class="kpi kpi-clickable${at('negativos')}" data-cat-kpi="negativos" onclick="catKpiFiltrar('negativos')" title="Mostrar só produtos com saldo negativo"><div class="kpi-label">Negativos</div><div class="kpi-value ${negativos > 0 ? 'red' : ''}">${negativos}</div></div>`
       + `<div class="kpi"><div class="kpi-label">Unid. scooters</div><div class="kpi-value gold">${unidSc}</div></div>`
       + `<div class="kpi"><div class="kpi-label">Unid. acessórios</div><div class="kpi-value">${unidAc}</div></div>`
       + valorCard;
