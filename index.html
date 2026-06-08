@@ -2023,7 +2023,9 @@ select:not(.input-pro):not(.search-input){
     </div>
 
     <!-- KPIs de estoque (lê do nosso banco — produtos.estoque) -->
-    <div class="kpi-grid" id="estoque-kpis" style="margin-bottom:16px;"></div>
+    <div class="kpi-grid" id="estoque-kpis" style="margin-bottom:8px;"></div>
+    <!-- Etapa 2: mostra/esconde os 3 cards extras; lembra a escolha (localStorage) -->
+    <button id="estoque-kpi-vermais" onclick="catKpiToggleVerMais()" style="background:none;border:none;color:var(--text3);font-size:12px;font-weight:600;cursor:pointer;padding:2px 0;margin-bottom:16px;">+ ver mais (3)</button>
 
     <!-- Busca -->
     <div class="search-bar" style="margin-bottom:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
@@ -8044,6 +8046,16 @@ function catKpiFiltrar(modo) {
   renderCatalogoProdutos();
 }
 
+// ── Etapa 2: KPIs principais + "ver mais / ver menos" ──
+// Principais (Valor/Com saldo/Zerados/Negativos) sempre visíveis; os 3 extras
+// (Total/Unid. scooters/Unid. acessórios) ficam atrás do botão. Lembra a escolha.
+let catKpiVerMais = localStorage.getItem('catalogoKpiVerMais') === '1';
+function catKpiToggleVerMais() {
+  catKpiVerMais = !catKpiVerMais;
+  try { localStorage.setItem('catalogoKpiVerMais', catKpiVerMais ? '1' : '0'); } catch (e) {}
+  renderCatalogoProdutos();
+}
+
 function renderCatalogoProdutos() {
   const q = (document.getElementById('estoque-search')?.value || '').toLowerCase();
   const verInativos = !!document.getElementById('estoque-mostrar-inativos')?.checked;
@@ -8087,15 +8099,22 @@ function renderCatalogoProdutos() {
     // Cards clicáveis (Etapa 1): Com saldo / Zerados / Negativos viram filtro.
     // `at(m)` marca o card ativo (kpi-ativo) conforme o estado compartilhado.
     const at = m => catKpiFiltro === m ? ' kpi-ativo' : '';
-    kpiEl.innerHTML =
-        `<div class="kpi"><div class="kpi-label">Total de produtos</div><div class="kpi-value gold">${tot}</div></div>`
+    // Etapa 2: principais sempre visíveis (Valor admin + os 3 cards-filtro).
+    const principais =
+        valorCard
       + `<div class="kpi kpi-clickable${at('comSaldo')}" data-cat-kpi="comSaldo" onclick="catKpiFiltrar('comSaldo')" title="Mostrar só produtos com saldo"><div class="kpi-label">Com saldo</div><div class="kpi-value green">${comSaldo}</div></div>`
       + `<div class="kpi kpi-clickable${at('zerados')}" data-cat-kpi="zerados" onclick="catKpiFiltrar('zerados')" title="Mostrar só produtos zerados"><div class="kpi-label">Zerados</div><div class="kpi-value">${zerados}</div></div>`
-      + `<div class="kpi kpi-clickable${at('negativos')}" data-cat-kpi="negativos" onclick="catKpiFiltrar('negativos')" title="Mostrar só produtos com saldo negativo"><div class="kpi-label">Negativos</div><div class="kpi-value ${negativos > 0 ? 'red' : ''}">${negativos}</div></div>`
+      + `<div class="kpi kpi-clickable${at('negativos')}" data-cat-kpi="negativos" onclick="catKpiFiltrar('negativos')" title="Mostrar só produtos com saldo negativo"><div class="kpi-label">Negativos</div><div class="kpi-value ${negativos > 0 ? 'red' : ''}">${negativos}</div></div>`;
+    // Etapa 2: extras só aparecem com "ver mais" (Total/Unid. scooters/Unid. acessórios).
+    const extras = !catKpiVerMais ? '' :
+        `<div class="kpi"><div class="kpi-label">Total de produtos</div><div class="kpi-value gold">${tot}</div></div>`
       + `<div class="kpi"><div class="kpi-label">Unid. scooters</div><div class="kpi-value gold">${unidSc}</div></div>`
-      + `<div class="kpi"><div class="kpi-label">Unid. acessórios</div><div class="kpi-value">${unidAc}</div></div>`
-      + valorCard;
+      + `<div class="kpi"><div class="kpi-label">Unid. acessórios</div><div class="kpi-value">${unidAc}</div></div>`;
+    kpiEl.innerHTML = principais + extras;
   }
+  // Etapa 2: rótulo do botão "ver mais / ver menos" (3 cards extras).
+  const vmBtn = document.getElementById('estoque-kpi-vermais');
+  if (vmBtn) vmBtn.textContent = catKpiVerMais ? '− ver menos' : '+ ver mais (3)';
 
   const tbody = document.getElementById('estoque-table-body');
   if (!tbody) return;
