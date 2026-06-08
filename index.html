@@ -2036,6 +2036,9 @@ select:not(.input-pro):not(.search-input){
       <button class="btn" id="estoque-limpar-filtro" onclick="catKpiFiltrar('')" style="display:none;white-space:nowrap;"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Limpar filtro</button>
     </div>
 
+    <!-- Etapa 3: aviso de cadastro incompleto (clicável → filtra; reusa catKpiFiltro) -->
+    <div id="estoque-aviso-incompleto" onclick="catKpiFiltrar('incompletos')" style="display:none;cursor:pointer;font-size:12.5px;color:var(--orange);font-weight:600;margin-bottom:16px;padding:8px 12px;border-radius:8px;background:var(--surface2);border:1px solid transparent;"></div>
+
     <!-- Tabela -->
     <div class="card">
       <div class="card-header">
@@ -8038,7 +8041,16 @@ function _estoqueCell(n) {
 // Um só estado pros cards clicáveis e (futuro) o aviso de cadastro incompleto,
 // pra não brigarem — "Limpar filtro" (ou clicar no card ativo) zera tudo.
 let catKpiFiltro = '';
-const _CAT_KPI_FILTRO_LABEL = { comSaldo: 'com saldo', zerados: 'zerados', negativos: 'negativos' };
+const _CAT_KPI_FILTRO_LABEL = { comSaldo: 'com saldo', zerados: 'zerados', negativos: 'negativos', incompletos: 'cadastro incompleto' };
+
+// Etapa 3: produto ATIVO sem custo OU sem preço — mesma régua das colunas da tabela
+// ("Custo total" = ctReal; "Preço venda" = precoVenda). Inativos ficam fora.
+function _catIncompleto(p) {
+  if (p.ativo === false) return false;
+  const pp  = _matchProdutoPorNome(p.nome);
+  const ctr = pp ? ctReal(pp) : null;          // sem custo → coluna "Custo total" dá "—"
+  return ctr == null || !(p.precoVenda > 0);   // sem custo OU sem preço
+}
 
 // Toggle: clicar no card já ativo limpa o filtro; passar '' (ou repetir) também limpa.
 function catKpiFiltrar(modo) {
@@ -8066,9 +8078,10 @@ function renderCatalogoProdutos() {
     !q || p.nome.toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q));
   // Etapa 1: filtro por card de KPI (saldo). Aplica sobre a lista já filtrada por
   // busca/inativos. Os KPIs continuam contando sobre `ativos` (panorama estável).
-  if      (catKpiFiltro === 'comSaldo')  filtered = filtered.filter(p => p.estoque > 0);
-  else if (catKpiFiltro === 'zerados')   filtered = filtered.filter(p => p.estoque === 0);
-  else if (catKpiFiltro === 'negativos') filtered = filtered.filter(p => p.estoque < 0);
+  if      (catKpiFiltro === 'comSaldo')    filtered = filtered.filter(p => p.estoque > 0);
+  else if (catKpiFiltro === 'zerados')     filtered = filtered.filter(p => p.estoque === 0);
+  else if (catKpiFiltro === 'negativos')   filtered = filtered.filter(p => p.estoque < 0);
+  else if (catKpiFiltro === 'incompletos') filtered = filtered.filter(_catIncompleto);  // Etapa 3
 
   const cnt = document.getElementById('estoque-count');
   if (cnt) cnt.textContent = `${filtered.length} produto${filtered.length !== 1 ? 's' : ''}`
@@ -8115,6 +8128,23 @@ function renderCatalogoProdutos() {
   // Etapa 2: rótulo do botão "ver mais / ver menos" (3 cards extras).
   const vmBtn = document.getElementById('estoque-kpi-vermais');
   if (vmBtn) vmBtn.textContent = catKpiVerMais ? '− ver menos' : '+ ver mais (3)';
+
+  // Etapa 3: aviso de cadastro incompleto (só ativos). Clicável → reusa catKpiFiltro.
+  const avisoEl = document.getElementById('estoque-aviso-incompleto');
+  if (avisoEl) {
+    const nInc = ativos.filter(_catIncompleto).length;
+    if (nInc > 0) {
+      const on = catKpiFiltro === 'incompletos';
+      avisoEl.style.display = '';
+      avisoEl.style.borderColor = on ? 'var(--orange)' : 'transparent';
+      avisoEl.style.background  = on ? 'rgba(245,158,11,0.12)' : 'var(--surface2)';
+      avisoEl.innerHTML = `<svg class="ic ic-sm" style="vertical-align:-2px;"><use href="#ic-alert"/></svg> `
+        + `${nInc} produto${nInc !== 1 ? 's' : ''} ativo${nInc !== 1 ? 's' : ''} sem custo ou sem preço`
+        + ` · <span style="text-decoration:underline;">${on ? 'clique p/ limpar' : 'ver'}</span>`;
+    } else {
+      avisoEl.style.display = 'none';
+    }
+  }
 
   const tbody = document.getElementById('estoque-table-body');
   if (!tbody) return;
