@@ -2039,6 +2039,15 @@ select:not(.input-pro):not(.search-input){
     <!-- Etapa 3: aviso de cadastro incompleto (clicável → filtra; reusa catKpiFiltro) -->
     <div id="estoque-aviso-incompleto" onclick="catKpiFiltrar('incompletos')" style="display:none;cursor:pointer;font-size:12.5px;color:var(--orange);font-weight:600;margin-bottom:16px;padding:8px 12px;border-radius:8px;background:var(--surface2);border:1px solid transparent;"></div>
 
+    <!-- Commit 2: barra de ações em massa (aparece com itens marcados; toda gravação confirma antes) -->
+    <div id="estoque-bulk-bar" style="display:none;align-items:center;gap:12px;margin-bottom:16px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--gold);flex-wrap:wrap;">
+      <span id="estoque-bulk-count" style="font-weight:700;color:var(--text);"></span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;">
+        <button class="btn" onclick="catInativarLote()"><svg class="ic ic-sm"><use href="#ic-eye-off"/></svg> Inativar</button>
+        <button class="btn" onclick="catLimparSelecao()"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Limpar seleção</button>
+      </div>
+    </div>
+
     <!-- Tabela -->
     <div class="card">
       <div class="card-header">
@@ -8239,6 +8248,59 @@ function _catSyncHeaderCheck() {
   const marcados = catVisiveisIds.filter(id => catSelecionados.has(id)).length;
   cb.checked = n > 0 && marcados === n;
   cb.indeterminate = marcados > 0 && marcados < n;
+  _catSyncBarra();
+}
+// Commit 2: mostra/esconde a barra de ações conforme houver itens marcados.
+function _catSyncBarra() {
+  const bar = document.getElementById('estoque-bulk-bar');
+  if (!bar) return;
+  const total = catSelecionados.size;
+  bar.style.display = total > 0 ? 'flex' : 'none';
+  const lbl = document.getElementById('estoque-bulk-count');
+  if (lbl) lbl.textContent = `${total} selecionado${total !== 1 ? 's' : ''}`;
+}
+function catLimparSelecao() {
+  catSelecionados.clear();
+  renderCatalogoProdutos();
+}
+
+// ── Commit 2: Inativar em lote (GRAVA — só produtos.ativo=false, com confirmação) ──
+// Espelha o inativar individual (prodToggleAtivo), mas em lote via .in('id', ids).
+// Não toca estoque nem vendas; é soft-delete reversível.
+function _catNomesLista(ids, cap = 12) {
+  const nomes = ids.map(id => {
+    const p = produtosCatalogo.find(x => String(x.id) === String(id));
+    return p ? p.nome.trim() : id;
+  });
+  if (nomes.length <= cap) return nomes.map(n => '• ' + n).join('\n');
+  return nomes.slice(0, cap).map(n => '• ' + n).join('\n') + `\n…e mais ${nomes.length - cap}`;
+}
+async function catInativarLote() {
+  // Só faz sentido inativar quem está ATIVO (inativos já estão fora).
+  const alvo = [...catSelecionados].filter(id => {
+    const p = produtosCatalogo.find(x => String(x.id) === String(id));
+    return p && p.ativo !== false;
+  });
+  if (!alvo.length) { smAlert('Nenhum produto ativo selecionado para inativar.'); return; }
+  const ok = await smConfirm(
+    `Inativar ${alvo.length} produto${alvo.length !== 1 ? 's' : ''}?\n\n` +
+    _catNomesLista(alvo) +
+    `\n\nEles somem da lista do dia a dia e do PDV. O histórico fica intacto e dá pra reativar quando quiser.`);
+  if (!ok) return;
+  try {
+    const { error } = await sb.from('produtos')
+      .update({ ativo: false, atualizado_em: new Date().toISOString() })
+      .in('id', alvo);
+    if (error) throw new Error(error.message || 'erro ao inativar em lote');
+    // Memória + telas; zera seleção.
+    alvo.forEach(id => { const p = produtosCatalogo.find(x => String(x.id) === String(id)); if (p) p.ativo = false; });
+    catSelecionados.clear();
+    renderCatalogoProdutos();
+    renderDashboard();
+    smAlert(`${alvo.length} produto${alvo.length !== 1 ? 's' : ''} inativado${alvo.length !== 1 ? 's' : ''}.`);
+  } catch (err) {
+    smAlert('Erro ao inativar: ' + err.message);
+  }
 }
 
 // Ordenação da lista de produtos (só visual; nenhuma escrita).
