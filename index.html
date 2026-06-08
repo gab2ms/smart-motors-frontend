@@ -2499,7 +2499,7 @@ select:not(.input-pro):not(.search-input){
         <button class="btn-pro" onclick="_finDrePreset('mes-anterior')">Mês anterior</button>
         <button class="btn-pro" onclick="_finDrePreset('30d')">Últimos 30d</button>
         <button class="btn-pro btn-pro--primary" onclick="_finDreCarregar(false)"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Aplicar</button>
-        <button class="btn-pro" onclick="_finDreCarregar(true)" title="Ignora cache e busca no Tiny novamente"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>
+        <button class="btn-pro" onclick="_finDreCarregar(true)" title="Recarrega os dados do nosso banco"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>
         <div style="flex:1;"></div>
         <button class="btn-pro btn-pro--primary" onclick="_finDreBaixarExcel()"><svg class="ic ic-sm"><use href="#ic-download"/></svg> Baixar Excel</button>
       </div>
@@ -5604,7 +5604,7 @@ async function gerarFechamentoMes(iniArg, fimArg) {
       [],
       [{ v: 'Item', s: HEADER }, { v: 'Valor', s: HEADER }, { v: '% Receita', s: HEADER }],
       [
-        'Receita (faturamento Tiny)',
+        'Receita (faturamento)',
         { v: dre.receita, t: 'n', z: BRL, s: POS },
         { v: dre.receita > 0 ? 1 : 0, t: 'n', z: PCT }
       ],
@@ -5953,9 +5953,9 @@ function _finDreRenderResumo(dre) {
 
   el.innerHTML =
       `<div class="card">`
-    +   `<div class="card-header"><div><div class="card-title">DRE — Demonstrativo de Resultado</div><div class="card-sub">Receita Tiny − CPV real − Despesas operacionais − Empréstimos pagos = Resultado</div></div></div>`
+    +   `<div class="card-header"><div><div class="card-title">DRE — Demonstrativo de Resultado</div><div class="card-sub">Receita (nosso banco) − CPV real − Despesas operacionais − Empréstimos pagos = Resultado</div></div></div>`
     +   `<div style="padding:14px 18px;">`
-    +     linha('Receita (faturamento Tiny)', dre.receita, dre.receita > 0 ? 100 : 0, { pos: true })
+    +     linha('Receita (faturamento)', dre.receita, dre.receita > 0 ? 100 : 0, { pos: true })
     +     linha('(−) CPV — custo real dos produtos vendidos', -dre.cpv, -safePct(dre.cpv, dre.receita), { neg: true })
     +     margemHTML
     +     linha('(−) Despesas operacionais (real)', -dre.despReal, -safePct(dre.despReal, dre.receita), { neg: true })
@@ -6777,7 +6777,7 @@ async function renderDashDreMes() {
     const sep = '<div style="height:1px;background:var(--border);margin:6px 0;"></div>';
 
     det.innerHTML = `
-      ${linha('Receita (faturamento Tiny)', receita, { onclick: `_dashDreIrPedidos()` })}
+      ${linha('Receita (faturamento)', receita, { onclick: `_dashDreIrPedidos()` })}
       ${linha('(−) CPV — custo real dos produtos vendidos', cpv, {
         title: 'Custo de cada produto vendido: custo puro + montagem + comissão (exceto venda direta) por unidade + NF por pedido (não por unidade). Itens sem cadastro usam estimativa por MC% médio.'
       })}
