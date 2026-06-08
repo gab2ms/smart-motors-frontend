@@ -2048,6 +2048,7 @@ select:not(.input-pro):not(.search-input){
         <table>
           <thead>
             <tr id="estoque-thead">
+              <th style="width:34px;text-align:center;"><input type="checkbox" id="estoque-check-todos" onclick="catToggleTodos(this.checked)" title="Selecionar todos os visíveis"></th>
               <th onclick="catSort('nome')" style="cursor:pointer;user-select:none;">Produto <span id="catsort-nome" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('codigo')" style="cursor:pointer;user-select:none;">Código <span id="catsort-codigo" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('categoria')" style="cursor:pointer;user-select:none;">Categoria <span id="catsort-categoria" style="color:var(--text3);">↕</span></th>
@@ -2060,7 +2061,7 @@ select:not(.input-pro):not(.search-input){
             </tr>
           </thead>
           <tbody id="estoque-table-body">
-            <tr><td colspan="9" class="empty">Carregando produtos…</td></tr>
+            <tr><td colspan="10" class="empty">Carregando produtos…</td></tr>
           </tbody>
         </table>
       </div>
@@ -7997,6 +7998,7 @@ async function carregarProdutosCatalogo() {
     const { data, error } = await sb.from('produtos')
       .select('id,nome,codigo,preco_venda,custo,categoria,fabricante,cor,motor,descricao,estoque,ativo').order('nome');
     if (error) throw new Error(error.message || 'erro Supabase produtos');
+    catSelecionados.clear();   // Commit 1: recarga do banco zera a seleção (evita ids órfãos)
     produtosCatalogo = (data || []).map(p => ({
       id:         p.id,
       nome:       p.nome   || '',
@@ -8153,7 +8155,9 @@ function renderCatalogoProdutos() {
   const tbody = document.getElementById('estoque-table-body');
   if (!tbody) return;
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty">Nenhum produto encontrado</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">Nenhum produto encontrado</td></tr>';
+    catVisiveisIds = [];
+    _catSyncHeaderCheck();
     _catAtualizaSetas();
     return;
   }
@@ -8188,11 +8192,15 @@ function renderCatalogoProdutos() {
       return dir * (va - vb);
     });
   }
+  // Commit 1: ids visíveis (na ordem da tela) — base do "selecionar todos os visíveis".
+  catVisiveisIds = linhas.map(L => String(L.p.id));
   tbody.innerHTML = linhas.map(L => {
     const p = L.p;
     const inativo = p.ativo === false;
+    const sel = catSelecionados.has(String(p.id));
     const mcColor = L.mcp == null ? 'var(--text3)' : L.mcp >= 30 ? 'var(--gold)' : L.mcp >= 15 ? 'var(--orange)' : 'var(--red)';
     return `<tr onclick="prodOpenEdit('${p.id}')" style="cursor:pointer;${inativo ? 'opacity:0.5;' : ''}">
+      <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" ${sel ? 'checked' : ''} onclick="event.stopPropagation();catToggleSel('${p.id}',this.checked)"></td>
       <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}${inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">Inativo</span>' : ''}</td>
       <td><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
       <td>${_catBadgeProduto(L.categoria)}</td>
@@ -8205,6 +8213,32 @@ function renderCatalogoProdutos() {
     </tr>`;
   }).join('');
   _catAtualizaSetas();
+  _catSyncHeaderCheck();
+}
+
+// ── Commit 1: seleção múltipla (só UI/estado; nenhuma escrita) ──
+// catSelecionados guarda ids marcados; catVisiveisIds = ids na tela (pós busca/filtro),
+// base do "selecionar todos os visíveis". A seleção persiste entre filtros; as ações
+// em lote (Commits 2/3) sempre listam por nome o que será gravado antes de confirmar.
+let catSelecionados = new Set();
+let catVisiveisIds = [];
+function catToggleSel(id, on) {
+  if (on) catSelecionados.add(String(id)); else catSelecionados.delete(String(id));
+  _catSyncHeaderCheck();
+}
+function catToggleTodos(on) {
+  catVisiveisIds.forEach(id => { if (on) catSelecionados.add(id); else catSelecionados.delete(id); });
+  renderCatalogoProdutos();   // re-render reflete as marcações nas linhas
+}
+// Sincroniza o checkbox do cabeçalho: marcado se TODOS os visíveis estão selecionados,
+// indeterminado se só alguns, vazio se nenhum.
+function _catSyncHeaderCheck() {
+  const cb = document.getElementById('estoque-check-todos');
+  if (!cb) return;
+  const n = catVisiveisIds.length;
+  const marcados = catVisiveisIds.filter(id => catSelecionados.has(id)).length;
+  cb.checked = n > 0 && marcados === n;
+  cb.indeterminate = marcados > 0 && marcados < n;
 }
 
 // Ordenação da lista de produtos (só visual; nenhuma escrita).
