@@ -4976,6 +4976,10 @@ const _PRODUTO_PALAVRAS_RUIDO = ['elétrica', 'eletrica', 'elétrico', 'eletrico
 // o nome do produto for corrigido no Tiny.**
 const _PRODUTO_ALIASES = [
   { triggerTokens: ['pixel'], modeloAlvo: 'pixxel' },
+  // FELICIDUO (catálogo de produtos) ≡ "Felicie Duo" (catálogo de custos HAO):
+  // mesmo produto, grafia diverge (junto vs. com espaço), então o matcher não
+  // casava e custo/margem saíam vazios. Confirmado com o dono.
+  { triggerTokens: ['feliciduo'], modeloAlvo: 'felicie duo' },
 ];
 
 function _stripPrefixoTiny(low) {
