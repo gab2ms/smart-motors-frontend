@@ -2043,6 +2043,7 @@ select:not(.input-pro):not(.search-input){
     <div id="estoque-bulk-bar" style="display:none;align-items:center;gap:12px;margin-bottom:16px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--gold);flex-wrap:wrap;">
       <span id="estoque-bulk-count" style="font-weight:700;color:var(--text);"></span>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;">
+        <button class="btn" onclick="catPrecoLote()"><svg class="ic ic-sm"><use href="#ic-tag"/></svg> Atualizar preço</button>
         <button class="btn" onclick="catInativarLote()"><svg class="ic ic-sm"><use href="#ic-eye-off"/></svg> Inativar</button>
         <button class="btn" onclick="catLimparSelecao()"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Limpar seleção</button>
       </div>
@@ -8300,6 +8301,43 @@ async function catInativarLote() {
     smAlert(`${alvo.length} produto${alvo.length !== 1 ? 's' : ''} inativado${alvo.length !== 1 ? 's' : ''}.`);
   } catch (err) {
     smAlert('Erro ao inativar: ' + err.message);
+  }
+}
+
+// ── Commit 3: Atualizar preço de venda em lote (GRAVA — produtos.preco_venda) ──
+// Valor ABSOLUTO (define = R$ X). Fonte única de preço; depois invalida o cache do
+// índice Tiny pra Dashboard/DRE refletirem na hora. Confirma listando atual → novo.
+async function catPrecoLote() {
+  const alvo = [...catSelecionados].filter(id => produtosCatalogo.some(x => String(x.id) === String(id)));
+  if (!alvo.length) { smAlert('Nenhum produto selecionado.'); return; }
+  const raw = await smPrompt(`Novo preço de venda (R$) para ${alvo.length} produto${alvo.length !== 1 ? 's' : ''}:`, '');
+  if (raw == null) return;                                   // cancelou
+  const novo = Number(String(raw).trim().replace(',', '.'));
+  if (!(novo > 0)) { smAlert('Informe um valor numérico maior que zero.'); return; }
+  // Lista atual → novo (capada em 12; contagem sempre exata).
+  const cap = 12;
+  const linhas = alvo.map(id => {
+    const p = produtosCatalogo.find(x => String(x.id) === String(id));
+    return `• ${p ? p.nome.trim() : id} (${fmt(p ? p.precoVenda : 0)} → ${fmt(novo)})`;
+  });
+  const lista = linhas.length <= cap ? linhas.join('\n')
+    : linhas.slice(0, cap).join('\n') + `\n…e mais ${linhas.length - cap}`;
+  const ok = await smConfirm(
+    `Mudar o preço de ${alvo.length} produto${alvo.length !== 1 ? 's' : ''} para ${fmt(novo)}?\n\n${lista}`);
+  if (!ok) return;
+  try {
+    const { error } = await sb.from('produtos')
+      .update({ preco_venda: novo, atualizado_em: new Date().toISOString() })
+      .in('id', alvo);
+    if (error) throw new Error(error.message || 'erro ao atualizar preço em lote');
+    alvo.forEach(id => { const p = produtosCatalogo.find(x => String(x.id) === String(id)); if (p) p.precoVenda = novo; });
+    _TINY_PRECOS_CACHE = null;          // força rebuild do índice (Dashboard/DRE leem dele)
+    catSelecionados.clear();
+    renderCatalogoProdutos();
+    renderDashboard();
+    smAlert(`Preço de ${alvo.length} produto${alvo.length !== 1 ? 's' : ''} atualizado para ${fmt(novo)}.`);
+  } catch (err) {
+    smAlert('Erro ao atualizar preço: ' + err.message);
   }
 }
 
