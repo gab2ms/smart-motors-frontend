@@ -18,7 +18,7 @@
 
 /* Caso prefira não mexer no <head>, o @import abaixo já carrega as fontes.
    (Para máxima performance, use o <link> — ver instruções no rodapé.) */
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=Montserrat:ital,wght@1,600;1,700;1,800&display=swap');
 
 /* ─────────────────────────────────────────────────────────────
    1) TOKENS — redefine cores e fontes (cascata vence a base)
@@ -124,10 +124,19 @@
 
 /* Logo: para de pulsar e de "brilhar"; wordmark em dourado chapado */
 .logo-bolt svg, .boot-loader-logo svg{ animation: none !important; filter: none !important; }
+/* Wordmark na fonte da marca (Montserrat itálico), igual ao site:
+   "Smart" branco + "Motors" um tom mais suave. */
+.logo-name{
+  font-family: 'Montserrat', sans-serif !important;
+  font-style: italic !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.01em !important;
+}
 .logo-name span{
+  font-weight: 600 !important;
   background: none !important;
-  -webkit-text-fill-color: var(--gold) !important;
-  color: var(--gold) !important;
+  -webkit-text-fill-color: rgba(255,255,255,0.82) !important;
+  color: rgba(255,255,255,0.82) !important;
 }
 
 /* Sidebar: item ativo calmo (faixa dourada + fundo suave), sem glow/translate */
