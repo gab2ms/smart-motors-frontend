@@ -2042,6 +2042,9 @@ select:not(.input-pro):not(.search-input){
     <!-- Etapa 2: legenda + filtro da Curva ABC (chips A/B/C clicáveis; reusam catKpiFiltro) -->
     <div id="estoque-abc-legend" style="display:none;font-size:12.5px;margin-bottom:16px;gap:8px;align-items:center;flex-wrap:wrap;"></div>
 
+    <!-- Etapa 4: aviso de itens parados (clicável → filtra; reusa catKpiFiltro) -->
+    <div id="estoque-aviso-parados" onclick="catKpiFiltrar('parados')" style="display:none;cursor:pointer;font-size:12.5px;color:var(--red);font-weight:600;margin-bottom:16px;padding:8px 12px;border-radius:8px;background:var(--surface2);border:1px solid transparent;"></div>
+
     <!-- Commit 2: barra de ações em massa (aparece com itens marcados; toda gravação confirma antes) -->
     <div id="estoque-bulk-bar" style="display:none;align-items:center;gap:12px;margin-bottom:16px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--gold);flex-wrap:wrap;">
       <span id="estoque-bulk-count" style="font-weight:700;color:var(--text);"></span>
@@ -8064,7 +8067,7 @@ function _estoqueCell(n) {
 // Um só estado pros cards clicáveis e (futuro) o aviso de cadastro incompleto,
 // pra não brigarem — "Limpar filtro" (ou clicar no card ativo) zera tudo.
 let catKpiFiltro = '';
-const _CAT_KPI_FILTRO_LABEL = { comSaldo: 'com saldo', zerados: 'zerados', negativos: 'negativos', incompletos: 'cadastro incompleto', classeA: 'curva A', classeB: 'curva B', classeC: 'curva C' };
+const _CAT_KPI_FILTRO_LABEL = { comSaldo: 'com saldo', zerados: 'zerados', negativos: 'negativos', incompletos: 'cadastro incompleto', classeA: 'curva A', classeB: 'curva B', classeC: 'curva C', parados: 'parados' };
 
 // Etapa 3: produto ATIVO sem custo OU sem preço — mesma régua das colunas da tabela
 // ("Custo total" = ctReal; "Preço venda" = precoVenda). Inativos ficam fora.
@@ -8215,6 +8218,59 @@ function _giroCell(g) {
   return g == null ? '<span style="color:var(--text3);">—</span>' : `${g.toFixed(1)}×`;
 }
 
+// ── Etapa 4: Parados/encalhados (cadência relativa + corte de valor) ──
+// Marca itens de VALOR (ctReal > corte — pega scooter/e-bike/triciclo, exclui acessório
+// barato sem depender de categoria nem regex) que pararam de girar: sem vender há mais de
+// X× o intervalo médio de venda do PRÓPRIO produto; com <3 vendas usa o intervalo da loja
+// (quem nunca vendeu na janela usa o piso _PARADO_WIN como "dias sem vender").
+// Reaproveita o cache de 6m da curva ABC (_ABC_CACHE.info) — sem chamada RPC extra.
+const PARADO_VALOR_MIN = 1000;   // corte de capital (R$) — tunável
+const PARADO_X = 3;              // múltiplo do intervalo normal p/ considerar parado — tunável
+const _PARADO_WIN = 183;         // piso de "dias sem vender" p/ quem não vendeu na janela (≈6m)
+
+function _paradoDia(s) {
+  if (!s) return null;
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+// Intervalo mediano entre vendas da loja (produtos com ≥3 vendas), memoizado pela janela da ABC.
+let _intervaloLojaCache = { key: null, dias: _PARADO_WIN };
+function _intervaloLoja() {
+  if (_intervaloLojaCache.key === _ABC_CACHE.key) return _intervaloLojaCache.dias;
+  const ivs = [];
+  _ABC_CACHE.info.forEach(r => {
+    const n = r.n_pedidos || 0, pv = _paradoDia(r.primeira_venda), uv = _paradoDia(r.ultima_venda);
+    if (n >= 3 && pv && uv && uv > pv) ivs.push((uv - pv) / 86400000 / (n - 1));
+  });
+  ivs.sort((a, b) => a - b);
+  const dias = ivs.length ? ivs[Math.floor(ivs.length / 2)] : _PARADO_WIN;
+  _intervaloLojaCache = { key: _ABC_CACHE.key, dias };
+  return dias;
+}
+
+// Núcleo: recebe valores já resolvidos (estoque/ativo via p; ctr; categoria). Precisa do cache 6m.
+function _ehParadoCalc(p, ctr, categoria) {
+  if (p.ativo === false || categoria === 'servico') return false;
+  if (!(p.estoque > 0)) return false;
+  if (!(ctr > PARADO_VALOR_MIN)) return false;                 // só itens de valor (sem custo → não marca)
+  const r = _ABC_CACHE.info.get(String(p.id)) || {};
+  const n = r.n_pedidos || 0, uv = _paradoDia(r.ultima_venda), pv = _paradoDia(r.primeira_venda);
+  const diasSemVenda = uv ? (new Date() - uv) / 86400000 : _PARADO_WIN;   // nunca vendeu na janela → piso
+  const intervalo = (n >= 3 && pv && uv && uv > pv) ? (uv - pv) / 86400000 / (n - 1) : _intervaloLoja();
+  return intervalo > 0 && diasSemVenda > PARADO_X * intervalo;
+}
+// Wrapper p/ o filtro (resolve pp/ctr/categoria como _catIncompleto).
+function _ehParado(p) {
+  const pp = _matchProdutoPorNome(p.nome);
+  return _ehParadoCalc(p, pp ? ctReal(pp) : null, pp?.categoria || p.categoria || '');
+}
+function _paradoBadge(parado) {
+  return parado
+    ? ` <span class="badge" style="background:var(--red);color:#fff;font-weight:700;" title="Parado: item de valor sem giro há mais de ${PARADO_X}× o intervalo normal de venda">Parado</span>`
+    : '';
+}
+
 function renderCatalogoProdutos() {
   _ensureVendasABC();   // Etapa 2: dispara a carga da curva ABC (cacheada; re-render ao resolver)
   _ensureVendas90();    // Etapa 3: dispara a carga de vendas 90d (cobertura/giro)
@@ -8234,6 +8290,7 @@ function renderCatalogoProdutos() {
   else if (catKpiFiltro === 'classeA')     filtered = filtered.filter(p => _ABC_CACHE.classe.get(String(p.id)) === 'A');  // Etapa 2 (ABC)
   else if (catKpiFiltro === 'classeB')     filtered = filtered.filter(p => _ABC_CACHE.classe.get(String(p.id)) === 'B');
   else if (catKpiFiltro === 'classeC')     filtered = filtered.filter(p => _ABC_CACHE.classe.get(String(p.id)) === 'C');
+  else if (catKpiFiltro === 'parados')     filtered = filtered.filter(_ehParado);   // Etapa 4
 
   const cnt = document.getElementById('estoque-count');
   if (cnt) cnt.textContent = `${filtered.length} produto${filtered.length !== 1 ? 's' : ''}`
@@ -8322,6 +8379,23 @@ function renderCatalogoProdutos() {
     }
   }
 
+  // Etapa 4: aviso de itens parados (só ativos). Clicável → reusa catKpiFiltro.
+  const paradoEl = document.getElementById('estoque-aviso-parados');
+  if (paradoEl) {
+    const nPar = ativos.filter(_ehParado).length;
+    if (nPar > 0) {
+      const on = catKpiFiltro === 'parados';
+      paradoEl.style.display = '';
+      paradoEl.style.borderColor = on ? 'var(--red)' : 'transparent';
+      paradoEl.style.background  = on ? 'rgba(239,68,68,0.12)' : 'var(--surface2)';
+      paradoEl.innerHTML = `<svg class="ic ic-sm" style="vertical-align:-2px;"><use href="#ic-alert"/></svg> `
+        + `${nPar} ite${nPar !== 1 ? 'ns' : 'm'} parado${nPar !== 1 ? 's' : ''} (valor > R$ ${PARADO_VALOR_MIN.toLocaleString('pt-BR')}, sem giro há +${PARADO_X}× o normal)`
+        + ` · <span style="text-decoration:underline;">${on ? 'clique p/ limpar' : 'ver'}</span>`;
+    } else {
+      paradoEl.style.display = 'none';
+    }
+  }
+
   const tbody = document.getElementById('estoque-table-body');
   if (!tbody) return;
   if (!filtered.length) {
@@ -8345,7 +8419,8 @@ function renderCatalogoProdutos() {
     const u90  = _VG_CACHE.info.get(String(p.id))?.unidades || 0;
     const cob  = ehServico ? null : _coberturaDias(p.estoque, u90);
     const giro = ehServico ? null : _giro90(p.estoque, u90);
-    return { p, fornecedor: pp?.fornecedor || '', categoria, ctr, venda, mc, mcp, u90, cob, giro };
+    const parado = _ehParadoCalc(p, ctr, categoria);   // Etapa 4 (reusa ctr/categoria já resolvidos)
+    return { p, fornecedor: pp?.fornecedor || '', categoria, ctr, venda, mc, mcp, u90, cob, giro, parado };
   });
   // Ordenação por coluna (Nome alfabético; Custo/Preço/Estoque/MC numérico; nulos no fim).
   if (catSortCol) {
@@ -8381,7 +8456,7 @@ function renderCatalogoProdutos() {
     const mcColor = L.mcp == null ? 'var(--text3)' : L.mcp >= 30 ? 'var(--gold)' : L.mcp >= 15 ? 'var(--orange)' : 'var(--red)';
     return `<tr onclick="prodOpenEdit('${p.id}')" style="cursor:pointer;${inativo ? 'opacity:0.5;' : ''}">
       <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" ${sel ? 'checked' : ''} onclick="event.stopPropagation();catToggleSel('${p.id}',this.checked)"></td>
-      <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}${_abcBadge(_ABC_CACHE.classe.get(String(p.id)))}${inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">Inativo</span>' : ''}</td>
+      <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}${_abcBadge(_ABC_CACHE.classe.get(String(p.id)))}${_paradoBadge(L.parado)}${inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">Inativo</span>' : ''}</td>
       <td><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
       <td>${_catBadgeProduto(L.categoria)}</td>
       <td><span class="td-supplier">${escHtml(L.fornecedor) || '—'}</span></td>
