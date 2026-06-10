@@ -2039,6 +2039,9 @@ select:not(.input-pro):not(.search-input){
     <!-- Etapa 3: aviso de cadastro incompleto (clicável → filtra; reusa catKpiFiltro) -->
     <div id="estoque-aviso-incompleto" onclick="catKpiFiltrar('incompletos')" style="display:none;cursor:pointer;font-size:12.5px;color:var(--orange);font-weight:600;margin-bottom:16px;padding:8px 12px;border-radius:8px;background:var(--surface2);border:1px solid transparent;"></div>
 
+    <!-- Etapa 2: legenda + filtro da Curva ABC (chips A/B/C clicáveis; reusam catKpiFiltro) -->
+    <div id="estoque-abc-legend" style="display:none;font-size:12.5px;margin-bottom:16px;gap:8px;align-items:center;flex-wrap:wrap;"></div>
+
     <!-- Commit 2: barra de ações em massa (aparece com itens marcados; toda gravação confirma antes) -->
     <div id="estoque-bulk-bar" style="display:none;align-items:center;gap:12px;margin-bottom:16px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--gold);flex-wrap:wrap;">
       <span id="estoque-bulk-count" style="font-weight:700;color:var(--text);"></span>
@@ -8027,6 +8030,7 @@ async function carregarProdutosCatalogo() {
     const sync = document.getElementById('api-last-sync');
     if (sync) sync.textContent = 'Atualizado: ' + new Date().toLocaleString('pt-BR');
     renderCatalogoProdutos();
+    _ensureVendasABC(true);   // Etapa 2: sync manual também revalida a curva ABC
   } catch (err) {
     setApiStatus('erro', 'Erro: ' + err.message);
     const tb = document.getElementById('estoque-table-body');
@@ -8057,7 +8061,7 @@ function _estoqueCell(n) {
 // Um só estado pros cards clicáveis e (futuro) o aviso de cadastro incompleto,
 // pra não brigarem — "Limpar filtro" (ou clicar no card ativo) zera tudo.
 let catKpiFiltro = '';
-const _CAT_KPI_FILTRO_LABEL = { comSaldo: 'com saldo', zerados: 'zerados', negativos: 'negativos', incompletos: 'cadastro incompleto' };
+const _CAT_KPI_FILTRO_LABEL = { comSaldo: 'com saldo', zerados: 'zerados', negativos: 'negativos', incompletos: 'cadastro incompleto', classeA: 'curva A', classeB: 'curva B', classeC: 'curva C' };
 
 // Etapa 3: produto ATIVO sem custo OU sem preço — mesma régua das colunas da tabela
 // ("Custo total" = ctReal; "Preço venda" = precoVenda). Inativos ficam fora.
@@ -8084,7 +8088,76 @@ function catKpiToggleVerMais() {
   renderCatalogoProdutos();
 }
 
+// ── Etapa 2: Curva ABC (classificação por VALOR de venda, janela de 6 meses) ──
+// Fonte: RPC vendas_por_produto (a mesma da Etapa 1, STABLE/read-only). UMA chamada
+// por janela (cache em memória) — nunca uma query por linha. Classificação clássica
+// por receita acumulada decrescente: A = produtos cujo acumulado ANTES dele < 80%
+// (garante que o top-1 é sempre A); B até 95%; C o resto. Só entram na curva produtos
+// com valor>0 — nunca-vendidos e "vendidos com R$0" (brinde/garantia) ficam sem selo.
+const _ABC_CACHE = { key: '', classe: new Map(), info: new Map(), sums: null, loading: false, erro: false };
+
+// Janela rolando de 6 meses (hoje − 6 meses → hoje), em ISO 'YYYY-MM-DD'.
+function _abcJanela() {
+  const fim = new Date();
+  const ini = new Date(fim.getFullYear(), fim.getMonth() - 6, fim.getDate());
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { ini: iso(ini), fim: iso(fim) };
+}
+
+// Carrega+classifica uma vez por janela. `force` recarrega (usado no sync do catálogo).
+// Re-renderiza ao terminar pra os selos aparecerem. Sem loop: ao terminar a chave casa
+// e a chamada re-entrante (vinda do render) retorna logo no guard.
+async function _ensureVendasABC(force) {
+  const { ini, fim } = _abcJanela();
+  const key = ini + '_' + fim;
+  if (!force && (_ABC_CACHE.key === key || _ABC_CACHE.loading)) return;
+  _ABC_CACHE.loading = true; _ABC_CACHE.erro = false;
+  try {
+    const { data, error } = await sb.rpc('vendas_por_produto', { p_ini: ini, p_fim: fim });
+    if (error) throw new Error(error.message || 'erro RPC vendas_por_produto');
+    const info = new Map();
+    (data || []).forEach(r => info.set(String(r.produto_id), r));
+    // Só receita > 0 entra na curva; ordena decrescente por valor.
+    const vendidos = (data || []).filter(r => (Number(r.valor) || 0) > 0)
+                                 .sort((a, b) => b.valor - a.valor);
+    const total = vendidos.reduce((s, r) => s + Number(r.valor), 0);
+    const classe = new Map();
+    const sums = { A: 0, B: 0, C: 0, nA: 0, nB: 0, nC: 0, total };
+    let acc = 0;
+    vendidos.forEach(r => {
+      const antes = total > 0 ? acc / total : 0;          // fração acumulada ANTES deste produto
+      const cls = antes < 0.80 ? 'A' : antes < 0.95 ? 'B' : 'C';
+      classe.set(String(r.produto_id), cls);
+      sums[cls] += Number(r.valor); sums['n' + cls]++;
+      acc += Number(r.valor);
+    });
+    _ABC_CACHE.key = key; _ABC_CACHE.classe = classe; _ABC_CACHE.info = info; _ABC_CACHE.sums = sums;
+    // Sanity (plano): ΣA+B+C tem que fechar com o total da base de vendidos.
+    const somaABC = sums.A + sums.B + sums.C;
+    console.log(`[ABC ${ini}→${fim}] A=${sums.nA} B=${sums.nB} C=${sums.nC} | ΣA+B+C=${somaABC.toFixed(2)} vs total=${total.toFixed(2)} | fecha=${Math.abs(somaABC - total) < 0.01}`);
+  } catch (e) {
+    _ABC_CACHE.erro = true;
+    _ABC_CACHE.key = key;   // marca a janela como tentada — evita re-tentar em loop a cada render
+    console.error('[ABC] falhou:', e.message);
+  } finally {
+    _ABC_CACHE.loading = false;
+    renderCatalogoProdutos();   // re-render com os selos (ou com o aviso de erro)
+  }
+}
+
+// Pílula A/B/C pra célula "Produto". Sem classe (nunca-vendido/valor 0) → nada.
+function _abcBadge(cls) {
+  if (!cls) return '';
+  const sty = {
+    A: 'background:var(--green);color:#fff;',
+    B: 'background:var(--gold-dim);color:var(--gold);',
+    C: 'background:var(--surface3);color:var(--text3);',
+  }[cls] || '';
+  return ` <span class="badge" style="${sty}font-weight:800;" title="Curva ABC (receita 6 meses): classe ${cls}">${cls}</span>`;
+}
+
 function renderCatalogoProdutos() {
+  _ensureVendasABC();   // Etapa 2: dispara a carga da curva ABC (cacheada; re-render ao resolver)
   const q = (document.getElementById('estoque-search')?.value || '').toLowerCase();
   const verInativos = !!document.getElementById('estoque-mostrar-inativos')?.checked;
   // Inativos só aparecem com o toggle ligado; o panorama (KPIs) sempre conta só ativos.
@@ -8098,6 +8171,9 @@ function renderCatalogoProdutos() {
   else if (catKpiFiltro === 'zerados')     filtered = filtered.filter(p => p.estoque === 0);
   else if (catKpiFiltro === 'negativos')   filtered = filtered.filter(p => p.estoque < 0);
   else if (catKpiFiltro === 'incompletos') filtered = filtered.filter(_catIncompleto);  // Etapa 3
+  else if (catKpiFiltro === 'classeA')     filtered = filtered.filter(p => _ABC_CACHE.classe.get(String(p.id)) === 'A');  // Etapa 2 (ABC)
+  else if (catKpiFiltro === 'classeB')     filtered = filtered.filter(p => _ABC_CACHE.classe.get(String(p.id)) === 'B');
+  else if (catKpiFiltro === 'classeC')     filtered = filtered.filter(p => _ABC_CACHE.classe.get(String(p.id)) === 'C');
 
   const cnt = document.getElementById('estoque-count');
   if (cnt) cnt.textContent = `${filtered.length} produto${filtered.length !== 1 ? 's' : ''}`
@@ -8162,6 +8238,30 @@ function renderCatalogoProdutos() {
     }
   }
 
+  // Etapa 2: legenda/filtro da Curva ABC (chips clicáveis A/B/C — reusam catKpiFiltro).
+  const abcEl = document.getElementById('estoque-abc-legend');
+  if (abcEl) {
+    if (_ABC_CACHE.erro) {
+      abcEl.style.display = 'flex';
+      abcEl.innerHTML = '<span style="color:var(--red);">Curva ABC indisponível (erro ao carregar vendas)</span>';
+    } else if (!_ABC_CACHE.sums) {
+      abcEl.style.display = 'flex';
+      abcEl.innerHTML = '<span style="color:var(--text3);">Curva ABC: carregando vendas…</span>';
+    } else {
+      const s = _ABC_CACHE.sums;
+      const chip = (cls, n, hint) => {
+        const on  = catKpiFiltro === 'classe' + cls;
+        const col = { A: 'var(--green)', B: 'var(--gold)', C: 'var(--text3)' }[cls];
+        return `<span onclick="catKpiFiltrar('classe${cls}')" title="${hint}" style="cursor:pointer;padding:3px 11px;border-radius:8px;font-weight:700;background:${on ? 'var(--surface3)' : 'var(--surface2)'};border:1px solid ${on ? col : 'transparent'};"><span style="color:${col};">${cls}</span> · ${n}</span>`;
+      };
+      abcEl.style.display = 'flex';
+      abcEl.innerHTML = '<span style="color:var(--text2);font-weight:600;">Curva ABC (receita 6m):</span> '
+        + chip('A', s.nA, '≈80% da receita acumulada')
+        + ' ' + chip('B', s.nB, 'próximos ≈15%')
+        + ' ' + chip('C', s.nC, 'cauda (≈5% restante)');
+    }
+  }
+
   const tbody = document.getElementById('estoque-table-body');
   if (!tbody) return;
   if (!filtered.length) {
@@ -8211,7 +8311,7 @@ function renderCatalogoProdutos() {
     const mcColor = L.mcp == null ? 'var(--text3)' : L.mcp >= 30 ? 'var(--gold)' : L.mcp >= 15 ? 'var(--orange)' : 'var(--red)';
     return `<tr onclick="prodOpenEdit('${p.id}')" style="cursor:pointer;${inativo ? 'opacity:0.5;' : ''}">
       <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" ${sel ? 'checked' : ''} onclick="event.stopPropagation();catToggleSel('${p.id}',this.checked)"></td>
-      <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}${inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">Inativo</span>' : ''}</td>
+      <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}${_abcBadge(_ABC_CACHE.classe.get(String(p.id)))}${inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">Inativo</span>' : ''}</td>
       <td><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
       <td>${_catBadgeProduto(L.categoria)}</td>
       <td><span class="td-supplier">${escHtml(L.fornecedor) || '—'}</span></td>
