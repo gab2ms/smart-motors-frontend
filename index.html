@@ -2069,12 +2069,14 @@ select:not(.input-pro):not(.search-input){
               <th onclick="catSort('custo')" style="cursor:pointer;user-select:none;">Custo total <span id="catsort-custo" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('preco')" style="cursor:pointer;user-select:none;">Preço venda <span id="catsort-preco" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('estoque')" style="cursor:pointer;user-select:none;">Estoque <span id="catsort-estoque" style="color:var(--text3);">↕</span></th>
+              <th onclick="catSort('cob')" style="cursor:pointer;user-select:none;" title="Dias de estoque no ritmo de venda dos últimos 90 dias">Cobertura <span id="catsort-cob" style="color:var(--text3);">↕</span></th>
+              <th onclick="catSort('giro')" style="cursor:pointer;user-select:none;" title="Unidades vendidas em 90 dias por unidade em estoque">Giro <span id="catsort-giro" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('mc')" style="cursor:pointer;user-select:none;">MC R$ <span id="catsort-mc" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('mcp')" style="cursor:pointer;user-select:none;">MC % <span id="catsort-mcp" style="color:var(--text3);">↕</span></th>
             </tr>
           </thead>
           <tbody id="estoque-table-body">
-            <tr><td colspan="10" class="empty">Carregando produtos…</td></tr>
+            <tr><td colspan="12" class="empty">Carregando produtos…</td></tr>
           </tbody>
         </table>
       </div>
@@ -8031,10 +8033,11 @@ async function carregarProdutosCatalogo() {
     if (sync) sync.textContent = 'Atualizado: ' + new Date().toLocaleString('pt-BR');
     renderCatalogoProdutos();
     _ensureVendasABC(true);   // Etapa 2: sync manual também revalida a curva ABC
+    _ensureVendas90(true);    // Etapa 3: e as vendas 90d (cobertura/giro)
   } catch (err) {
     setApiStatus('erro', 'Erro: ' + err.message);
     const tb = document.getElementById('estoque-table-body');
-    if (tb) tb.innerHTML = `<tr><td colspan="9" class="empty" style="color:var(--red);">Erro ao carregar: ${escHtml(err.message)}</td></tr>`;
+    if (tb) tb.innerHTML = `<tr><td colspan="12" class="empty" style="color:var(--red);">Erro ao carregar: ${escHtml(err.message)}</td></tr>`;
   } finally {
     if (btn) { btn.textContent = 'Atualizar'; btn.disabled = false; }
   }
@@ -8156,8 +8159,65 @@ function _abcBadge(cls) {
   return ` <span class="badge" style="${sty}font-weight:800;" title="Curva ABC (receita 6 meses): classe ${cls}">${cls}</span>`;
 }
 
+// ── Etapa 3: Cobertura + Giro (janela de 90 dias, via vendas_por_produto) ──
+// Segunda chamada à RPC (90d), cacheada por janela como a ABC. Alimenta as colunas
+// Cobertura (dias de fôlego = estoque ÷ venda média diária) e Giro (unid. 90d ÷ estoque).
+const _VG_DIAS = 90;
+const _VG_CACHE = { key: '', info: new Map(), loading: false, erro: false };
+
+function _vgJanela() {
+  const fim = new Date();
+  const ini = new Date(fim.getFullYear(), fim.getMonth(), fim.getDate() - _VG_DIAS);
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { ini: iso(ini), fim: iso(fim) };
+}
+
+async function _ensureVendas90(force) {
+  const { ini, fim } = _vgJanela();
+  const key = ini + '_' + fim;
+  if (!force && (_VG_CACHE.key === key || _VG_CACHE.loading)) return;
+  _VG_CACHE.loading = true; _VG_CACHE.erro = false;
+  try {
+    const { data, error } = await sb.rpc('vendas_por_produto', { p_ini: ini, p_fim: fim });
+    if (error) throw new Error(error.message || 'erro RPC vendas_por_produto (90d)');
+    const info = new Map();
+    (data || []).forEach(r => info.set(String(r.produto_id), r));
+    _VG_CACHE.key = key; _VG_CACHE.info = info;
+  } catch (e) {
+    _VG_CACHE.erro = true; _VG_CACHE.key = key;   // marca tentada — evita loop a cada render
+    console.error('[Cobertura/Giro] falhou:', e.message);
+  } finally {
+    _VG_CACHE.loading = false;
+    renderCatalogoProdutos();
+  }
+}
+
+// Cobertura (dias) = estoque ÷ venda média diária (u90/90):
+//  estoque>0 + vendeu → N dias;  estoque>0 sem venda → ∞ (encalhado);
+//  esgotado (estoque=0) mas vendeu em 90d → 0 (repor já);  resto (0 sem venda / negativo) → —.
+function _coberturaDias(estoque, u90) {
+  if (estoque > 0) return u90 > 0 ? estoque * _VG_DIAS / u90 : Infinity;
+  if (estoque === 0 && u90 > 0) return 0;     // esgotado mas saindo → cobertura 0 = reposição urgente
+  return null;                                // estoque 0 sem venda, ou negativo (dado inconsistente)
+}
+// Giro v1 (90d): unidades vendidas ÷ estoque atual. estoque≤0 → n/a.
+function _giro90(estoque, u90) {
+  if (!(estoque > 0)) return null;
+  return u90 / estoque;
+}
+function _coberturaCell(cob) {
+  if (cob == null)    return '<span style="color:var(--text3);">—</span>';
+  if (!isFinite(cob)) return '<span style="color:var(--text3);" title="tem estoque, sem venda em 90 dias">∞</span>';
+  if (cob === 0)      return '<span style="color:var(--red);font-weight:700;" title="esgotado — vendeu em 90 dias com estoque zerado">esgotado</span>';
+  return `${Math.round(cob)} d`;
+}
+function _giroCell(g) {
+  return g == null ? '<span style="color:var(--text3);">—</span>' : `${g.toFixed(1)}×`;
+}
+
 function renderCatalogoProdutos() {
   _ensureVendasABC();   // Etapa 2: dispara a carga da curva ABC (cacheada; re-render ao resolver)
+  _ensureVendas90();    // Etapa 3: dispara a carga de vendas 90d (cobertura/giro)
   const q = (document.getElementById('estoque-search')?.value || '').toLowerCase();
   const verInativos = !!document.getElementById('estoque-mostrar-inativos')?.checked;
   // Inativos só aparecem com o toggle ligado; o panorama (KPIs) sempre conta só ativos.
@@ -8265,7 +8325,7 @@ function renderCatalogoProdutos() {
   const tbody = document.getElementById('estoque-table-body');
   if (!tbody) return;
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="empty">Nenhum produto encontrado</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="empty">Nenhum produto encontrado</td></tr>';
     catVisiveisIds = [];
     _catSyncHeaderCheck();
     _catAtualizaSetas();
@@ -8278,7 +8338,14 @@ function renderCatalogoProdutos() {
     const venda = p.precoVenda;
     const mc  = (ctr != null && venda > 0) ? venda - ctr : null;
     const mcp = (mc  != null && venda > 0) ? (mc / venda) * 100 : null;
-    return { p, fornecedor: pp?.fornecedor || '', categoria: pp?.categoria || p.categoria || '', ctr, venda, mc, mcp };
+    // Etapa 3: cobertura/giro a partir das unidades vendidas em 90d (RPC).
+    // Serviço não tem estoque físico → cobertura/giro não se aplicam ("—").
+    const categoria = pp?.categoria || p.categoria || '';
+    const ehServico = categoria === 'servico';
+    const u90  = _VG_CACHE.info.get(String(p.id))?.unidades || 0;
+    const cob  = ehServico ? null : _coberturaDias(p.estoque, u90);
+    const giro = ehServico ? null : _giro90(p.estoque, u90);
+    return { p, fornecedor: pp?.fornecedor || '', categoria, ctr, venda, mc, mcp, u90, cob, giro };
   });
   // Ordenação por coluna (Nome alfabético; Custo/Preço/Estoque/MC numérico; nulos no fim).
   if (catSortCol) {
@@ -8297,9 +8364,12 @@ function renderCatalogoProdutos() {
       else if (catSortCol === 'estoque') { va = a.p.estoque; vb = b.p.estoque; }
       else if (catSortCol === 'mc')      { va = a.mc; vb = b.mc; }
       else if (catSortCol === 'mcp')     { va = a.mcp; vb = b.mcp; }
+      else if (catSortCol === 'cob')     { va = a.cob; vb = b.cob; }    // Etapa 3 (∞ = mais fôlego)
+      else if (catSortCol === 'giro')    { va = a.giro; vb = b.giro; }
       const an = va == null, bn = vb == null;
       if (an && bn) return 0; if (an) return 1; if (bn) return -1;
-      return dir * (va - vb);
+      const d = va - vb;                          // ∞−∞ = NaN (cobertura): trata como empate
+      return dir * (isNaN(d) ? 0 : d);
     });
   }
   // Commit 1: ids visíveis (na ordem da tela) — base do "selecionar todos os visíveis".
@@ -8318,6 +8388,8 @@ function renderCatalogoProdutos() {
       <td class="td-mono" style="font-weight:700;">${L.ctr != null ? fmt(L.ctr) : '—'}</td>
       <td class="td-mono">${fmt(L.venda)}</td>
       <td class="td-mono">${_estoqueCell(p.estoque)}</td>
+      <td class="td-mono">${_coberturaCell(L.cob)}</td>
+      <td class="td-mono">${_giroCell(L.giro)}</td>
       <td class="td-mono" style="font-weight:700;color:${mcColor};">${L.mc != null ? fmt(L.mc) : '—'}</td>
       <td style="font-weight:700;color:${mcColor};">${L.mcp != null ? L.mcp.toFixed(1) + '%' : '—'}</td>
     </tr>`;
@@ -8448,7 +8520,7 @@ function catSort(col) {
   renderCatalogoProdutos();
 }
 function _catAtualizaSetas() {
-  ['nome','codigo','categoria','fornecedor','custo','preco','estoque','mc','mcp'].forEach(c => {
+  ['nome','codigo','categoria','fornecedor','custo','preco','estoque','cob','giro','mc','mcp'].forEach(c => {
     const el = document.getElementById('catsort-' + c);
     if (!el) return;
     el.textContent = c === catSortCol ? (catSortDir === 1 ? '↑' : '↓') : '↕';
