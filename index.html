@@ -2528,6 +2528,7 @@ select:not(.input-pro):not(.search-input){
 
     <!-- ════════ ABA: FLUXO DE CAIXA (projeção 12m + semáforo) — só admin ════════ -->
     <div class="fin-tab-content" id="fin-tab-fluxo" style="display:none;">
+      <div id="fin-fluxo-heroes" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;"></div>
       <div id="fin-fluxo-semaforo" style="margin-bottom:20px;"></div>
       <div style="margin-bottom:20px;">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:10px;">Indicadores do mês</div>
@@ -9808,6 +9809,8 @@ const FC_PROJECAO_MESES  = 12;
 const FC_VALE_MIN_FIXO   = 1.0;  // 🟡 se vale realista < (múltiplo × custo fixo)
 const FC_SERVICO_VERDE   = 0.30; // serviço da dívida ÷ caixa op. médio
 const FC_SERVICO_AMARELO = 0.40;
+const FC_FOLEGO_VERMELHO = 1.5;  // fôlego (meses): abaixo disso = vermelho
+const FC_FOLEGO_AMARELO  = 3.0;  // abaixo disso = amarelo; senão verde
 
 // Mapa categoria→balde (Etapa 1, aprovado pelo dono). Chaves normalizadas
 // em minúsculas com espaços colapsados — o banco tem "SÓCIOS" e "Sócios".
@@ -9895,39 +9898,95 @@ function fcMediasOperacao() {
   };
 }
 
-// Projeção 12m, dois cenários. Por mês: + entradas op. médias (× FC_PESSIMISTA_
-// PCT no pessimista) − custo fixo − variáveis médias − parcelas abertas que
-// vencem no mês (emprestimo_parcelas) − boletos de fornecedor abertos do mês.
-// Mês corrente entra pro-rata (dias restantes); vencidos em aberto caem nele.
-// Anti dupla-contagem: contas_pagar vinculadas a parcela são ignoradas (a
-// dívida vem só de emprestimo_parcelas); boletos de balde operação/neutro/sem
-// balde NÃO são descontados — já cobertos pelo custo fixo projetado. Premissa:
-// compra de estoque NOVA (além dos boletos já assumidos) fica fora.
-function fcProjecao() {
-  const hoje = new Date();
-  const hojeISO = hoje.toISOString().slice(0, 10);
+// Compromissos em aberto, agrupados por mês de vencimento (vencido cai no mês
+// corrente). Fonte única da projeção 12m e do Fôlego com compromissos.
+// `parcelas` = emprestimo_parcelas não pagas; `boletos` = contas_pagar abertas
+// de balde estoque/investimento/dívida (sem vínculo a parcela — anti dupla-
+// contagem); `semCat` = boletos abertos SEM categoria/balde (fora da projeção,
+// mas contam no fôlego — conservador, avisado nas premissas); `overlap` =
+// boletos operacionais/neutros, nunca descontados (já cobertos pelo fixo).
+function _fcCompromissosAbertos() {
+  const hojeISO = new Date().toISOString().slice(0, 10);
   const ymCorrente = hojeISO.slice(0, 7);
-  const saldo0 = (contas || []).reduce((s, c) => s + (c.saldo || 0), 0);
-  const medias = fcMediasOperacao();
-  const fixo = _despPlanejadoHistorico().media;
-
-  const parcelas = {}, boletos = {};
-  let boletosOverlap = 0, boletosOverlapN = 0;
+  const ymDe = v => (v || '') < hojeISO ? ymCorrente : (_fcYm(v) || ymCorrente);
+  const parcelas = {}, boletos = {}, semCat = {};
+  let semCatTot = 0, semCatN = 0, overlap = 0, overlapN = 0;
   for (const e of (emprestimos || [])) for (const p of (e.pagamentos || [])) {
     if (p.status === 'pago') continue;
-    const ym = (p.vencimento || '') < hojeISO ? ymCorrente : (_fcYm(p.vencimento) || ymCorrente);
+    const ym = ymDe(p.vencimento);
     parcelas[ym] = (parcelas[ym] || 0) + (p.valor || 0);
   }
   for (const c of (contasPagar || [])) {
     if (c.paga || c.pagaEm) continue;
     if (c.emprestimoParcelaId) continue;
     const b = fcBalde(c.categoria, 'saida');
-    if (b !== 'estoque' && b !== 'investimento' && b !== 'divida') {
-      boletosOverlap += (c.valor || 0); boletosOverlapN++; continue;
+    if (b === 'estoque' || b === 'investimento' || b === 'divida') {
+      const ym = ymDe(c.vencimento);
+      boletos[ym] = (boletos[ym] || 0) + (c.valor || 0);
+    } else if (b === null) {
+      const ym = ymDe(c.vencimento);
+      semCat[ym] = (semCat[ym] || 0) + (c.valor || 0);
+      semCatTot += (c.valor || 0); semCatN++;
+    } else {
+      overlap += (c.valor || 0); overlapN++;
     }
-    const ym = (c.vencimento || '') < hojeISO ? ymCorrente : (_fcYm(c.vencimento) || ymCorrente);
-    boletos[ym] = (boletos[ym] || 0) + (c.valor || 0);
   }
+  return { parcelas, boletos, semCat, semCatTot, semCatN, overlap, overlapN };
+}
+
+// Fôlego com compromissos: quantos meses o caixa aguenta com as VENDAS
+// PARADAS, pagando custo fixo + parcelas de empréstimo abertas + boletos de
+// fornecedor/investimento/dívida + boletos sem categoria, cada um no mês do
+// vencimento (não por média — boleto concentrado distorceria). Mês corrente:
+// fixo pro-rata (dias restantes), mesma convenção da projeção. Fixo perpétuo
+// → sempre zera; horizonte 120m é só guarda. Devolve null se fixo ≤ 0.
+function fcFolegoCompromissos() {
+  const fixo = _despPlanejadoHistorico().media;
+  if (!(fixo > 0)) return null;
+  const saldo0 = (contas || []).reduce((s, c) => s + (c.saldo || 0), 0);
+  const comp = _fcCompromissosAbertos();
+  const somaObj = o => Object.values(o).reduce((s, v) => s + v, 0);
+  const hoje = new Date();
+  const diasMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+  const fracaoRestante = Math.max(0, (diasMes - hoje.getDate()) / diasMes);
+  const base = { saldo0, fixo, totParcelas: somaObj(comp.parcelas),
+    totBoletos: somaObj(comp.boletos) + somaObj(comp.semCat),
+    semCatTot: comp.semCatTot, semCatN: comp.semCatN };
+  let saldo = saldo0, meses = 0;
+  for (let i = 0; i < 120; i++) {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
+    const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const fator = i === 0 ? fracaoRestante : 1;
+    const gasto = fixo * fator + (comp.parcelas[ym] || 0)
+      + (comp.boletos[ym] || 0) + (comp.semCat[ym] || 0);
+    if (saldo <= gasto) {
+      meses += gasto > 0 ? fator * (saldo / gasto) : 0;
+      const lbl = d.toLocaleString('pt-BR', { month: 'short' }).replace('.', '')
+        + '/' + String(d.getFullYear()).slice(2);
+      return { ...base, meses, zeraLbl: lbl };
+    }
+    saldo -= gasto; meses += fator;
+  }
+  return { ...base, meses, zeraLbl: null };
+}
+
+// Projeção 12m, dois cenários. Por mês: + entradas op. médias (× FC_PESSIMISTA_
+// PCT no pessimista) − custo fixo − variáveis médias − parcelas abertas que
+// vencem no mês (emprestimo_parcelas) − boletos de fornecedor abertos do mês.
+// Mês corrente entra pro-rata (dias restantes); vencidos em aberto caem nele.
+// Anti dupla-contagem: contas_pagar vinculadas a parcela são ignoradas (a
+// dívida vem só de emprestimo_parcelas); boletos de balde operação/neutro NÃO
+// são descontados — já cobertos pelo custo fixo projetado — e os sem categoria
+// ficam fora daqui (só entram no Fôlego com compromissos). Premissa: compra
+// de estoque NOVA (além dos boletos já assumidos) fica fora.
+function fcProjecao() {
+  const hoje = new Date();
+  const saldo0 = (contas || []).reduce((s, c) => s + (c.saldo || 0), 0);
+  const medias = fcMediasOperacao();
+  const fixo = _despPlanejadoHistorico().media;
+
+  const { parcelas, boletos, semCatTot, semCatN,
+    overlap: boletosOverlap, overlapN: boletosOverlapN } = _fcCompromissosAbertos();
 
   const diasMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
   const fracaoRestante = Math.max(0, (diasMes - hoje.getDate()) / diasMes);
@@ -9952,6 +10011,7 @@ function fcProjecao() {
     { saldo: saldo0, lbl: 'hoje' });
   return {
     linhas, saldo0, fixo, medias, boletosOverlap, boletosOverlapN,
+    boletosSemCat: semCatTot, boletosSemCatN: semCatN,
     valeR: vale('saldoR'), valeP: vale('saldoP'),
     zeraR: (linhas.find(l => l.saldoR <= 0) || {}).lbl || null,
     zeraP: (linhas.find(l => l.saldoP <= 0) || {}).lbl || null,
@@ -10170,6 +10230,37 @@ function renderFinFluxo() {
   const folego = fixo > 0 ? saldo0 / fixo : null;
   const cor = fcSemaforo(proj, servicoPct);
 
+  // ── Heróis: as duas respostas principais da tela, com vendas paradas ──
+  // A: quanto tempo o caixa paga só a operação. B: idem pagando também
+  // empréstimo + boletos do contas a pagar, mês a mês pelo vencimento.
+  const folegoCor = m => m == null ? 'var(--text2)'
+    : m < FC_FOLEGO_VERMELHO ? 'var(--red)'
+    : m < FC_FOLEGO_AMARELO ? 'var(--gold)' : 'var(--green)';
+  const mesesFmt = m => m == null ? '—' : m.toFixed(1).replace('.', ',') + ' meses';
+  const hero = (label, valor, corV, explica) =>
+    '<div class="card" style="border-left:4px solid ' + corV + ';flex:1;min-width:300px;">'
+    + '<div style="padding:18px 22px;">'
+    + '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px;">' + label + '</div>'
+    + '<div style="font-size:32px;font-weight:800;color:' + corV + ';line-height:1.15;margin-bottom:8px;">' + valor + '</div>'
+    + '<div style="font-size:12px;color:var(--text2);line-height:1.5;">' + explica + '</div>'
+    + '</div></div>';
+  const fcomp = fcFolegoCompromissos();
+  document.getElementById('fin-fluxo-heroes').innerHTML =
+    hero('Quanto tempo aguento — só operação', mesesFmt(folego), folegoCor(folego),
+      'Se as vendas parassem hoje, o caixa de <b>' + fmt(saldo0) + '</b> paga '
+      + (folego == null ? '—' : '<b>' + mesesFmt(folego) + '</b>') + ' do custo da operação (<b>'
+      + fmt(fixo) + '/mês</b>). Não inclui parcelas de empréstimo nem boletos de fornecedor.')
+    + hero('Quanto tempo aguento — com empréstimo + boletos',
+      fcomp == null ? '—' : mesesFmt(fcomp.meses)
+        + (fcomp.zeraLbl ? ' <span style="font-size:14px;font-weight:600;color:var(--text2);">· zera em ' + fcomp.zeraLbl + '</span>' : ''),
+      folegoCor(fcomp && fcomp.meses),
+      fcomp == null ? 'Sem custo fixo cadastrado — não dá pra calcular.'
+        : 'Mesmo cenário, pagando também as parcelas de empréstimo em aberto (<b>'
+        + fmt(fcomp.totParcelas) + '</b>) e os boletos a prazo do Contas a Pagar (<b>'
+        + fmt(fcomp.totBoletos) + '</b>), cada um no mês do vencimento.'
+        + (fcomp.semCatTot > 0 ? ' <span style="color:var(--gold);">Inclui ' + fmt(fcomp.semCatTot)
+          + ' em boletos sem categoria.</span>' : ''));
+
   // ── Semáforo com os números crus que justificam a cor ──
   const CORES = {
     verde:    { emoji: '🟢', css: 'var(--green)', titulo: 'Crédito: há folga' },
@@ -10228,8 +10319,6 @@ function renderFinFluxo() {
       caixaOpMes >= 0 ? 'var(--green)' : 'var(--red)')
     + kpi('Caixa operacional (média)', fmtSigned(medias.caixaOp), mesesTxt,
       medias.caixaOp >= 0 ? 'var(--green)' : 'var(--red)')
-    + kpi('Fôlego operacional', folego == null ? '—' : folego.toFixed(1).replace('.', ',') + ' meses',
-      'se as vendas parassem hoje — saldo ' + fmt(saldo0) + ' ÷ custo fixo ' + fmt(fixo))
     + kpi('Fôlego real (projeção)', zera ? 'NÃO SOBREVIVE ✗' : 'SOBREVIVE ✓', folegoRealExtra, folegoRealCor,
       { borda: folegoRealCor,
         title: 'Considera boletos a vencer + parcelas de empréstimo + média de gastos e receitas (projeção 12 meses).' })
@@ -10285,6 +10374,10 @@ function renderFinFluxo() {
       + ') não são descontados — já cobertos pelo custo fixo projetado.',
     '<b>Compra de estoque nova</b> (além dos boletos já assumidos) está fora da projeção.',
   ];
+  if (proj.boletosSemCat > 0) prem.push('<b style="color:var(--gold);">⚠ Boletos sem categoria:</b> '
+    + fmt(proj.boletosSemCat) + ' (' + proj.boletosSemCatN + ') em aberto no Contas a Pagar — contam no '
+    + '"Quanto tempo aguento — com empréstimo + boletos" (conservador), mas ficam FORA da projeção 12m. '
+    + 'Categorizar no Contas a Pagar pra entrarem no lugar certo.');
   if (semBalde > 0) prem.push('<b style="color:var(--gold);">⚠ Categorias sem balde:</b> '
     + fmt(semBalde) + ' em movimentos não classificados — revisar FC_BALDES.');
   document.getElementById('fin-fluxo-premissas').innerHTML =
