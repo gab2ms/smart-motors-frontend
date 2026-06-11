@@ -2404,6 +2404,7 @@ select:not(.input-pro):not(.search-input){
     <div class="fin-tabs">
       <button class="fin-tab-btn active" data-fintab="caixa"       onclick="switchFinTab('caixa')">Caixa Atual</button>
       <button class="fin-tab-btn"        data-fintab="dre"         onclick="switchFinTab('dre')" id="fin-tab-btn-dre" style="display:none;"><svg class="ic ic-sm"><use href="#ic-bar-chart"/></svg> DRE</button>
+      <button class="fin-tab-btn"        data-fintab="fluxo"       onclick="switchFinTab('fluxo')" id="fin-tab-btn-fluxo" style="display:none;"><svg class="ic ic-sm"><use href="#ic-trending-up"/></svg> Fluxo de Caixa</button>
       <button class="fin-tab-btn"        data-fintab="emprestimos" onclick="switchFinTab('emprestimos')">Empréstimos</button>
       <button class="fin-tab-btn"        data-fintab="ia"          onclick="switchFinTab('ia')">Análise IA</button>
     </div>
@@ -2523,6 +2524,29 @@ select:not(.input-pro):not(.search-input){
       <div id="fin-dre-vendedores"  style="margin-top:var(--sp-6);"></div>
       <div id="fin-dre-custos"      style="margin-top:var(--sp-6);"></div>
       <div id="fin-dre-lancamentos" style="margin-top:var(--sp-6);"></div>
+    </div>
+
+    <!-- ════════ ABA: FLUXO DE CAIXA (projeção 12m + semáforo) — só admin ════════ -->
+    <div class="fin-tab-content" id="fin-tab-fluxo" style="display:none;">
+      <div id="fin-fluxo-semaforo" style="margin-bottom:20px;"></div>
+      <div style="margin-bottom:20px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:10px;">Indicadores do mês</div>
+        <div class="kpi-grid" id="fin-fluxo-kpis"></div>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <div><div class="card-title">Projeção de caixa — próximos 12 meses</div>
+          <div class="card-sub" id="fin-fluxo-proj-sub">—</div></div>
+        </div>
+        <div style="padding:4px 20px 16px;overflow-x:auto;" id="fin-fluxo-proj"></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div><div class="card-title">Premissas da projeção</div>
+          <div class="card-sub">Médias dos meses completos + compromissos já assumidos</div></div>
+        </div>
+        <div style="padding:14px 20px;font-size:12px;color:var(--text2);display:flex;flex-direction:column;gap:6px;" id="fin-fluxo-premissas"></div>
+      </div>
     </div>
 
     <!-- ════════ ABA: EMPRÉSTIMOS ════════ -->
@@ -3893,6 +3917,7 @@ const BREADCRUMB_MAP = {
 const FIN_SUBTAB_META = {
   caixa:       { title: 'Caixa Atual', sub: 'Controle de caixa, contas e lançamentos', crumb: ['Financeiro', 'Caixa'] },
   dre:         { title: 'DRE',         sub: 'Fechamento do período — mesma fonte do Excel', crumb: ['Financeiro', 'DRE'] },
+  fluxo:       { title: 'Fluxo de Caixa', sub: 'Projeção 12 meses, semáforo de crédito e saúde do caixa', crumb: ['Financeiro', 'Fluxo de Caixa'] },
   emprestimos: { title: 'Empréstimos', sub: 'Controle de financiamentos e parcelas',   crumb: ['Financeiro', 'Empréstimos'] },
   ia:          { title: 'Análise IA',  sub: 'Insights automáticos sobre seu caixa',    crumb: ['Financeiro', 'Análise IA'] },
 };
@@ -9753,6 +9778,300 @@ function populateFinContaFilter() {
   sel.value = current;
 }
 
+// ════════════════════════════════════════════
+//  FLUXO DE CAIXA (sub-aba do Financeiro — só admin)
+//  Mapa categoria→balde + projeção 12m + semáforo de crédito.
+//  Régua travada com o dono (jun/2026): pessimista = entradas a 50%;
+//  amarelo se vale realista < 1× custo fixo; serviço da dívida ≤30%
+//  verde, 30–40% amarelo, >40% vermelho.
+// ════════════════════════════════════════════
+
+// ── Constantes tunáveis ──
+const FC_PESSIMISTA_PCT  = 0.50; // cenário pessimista: entradas a X% da média
+const FC_PROJECAO_MESES  = 12;
+const FC_VALE_MIN_FIXO   = 1.0;  // 🟡 se vale realista < (múltiplo × custo fixo)
+const FC_SERVICO_VERDE   = 0.30; // serviço da dívida ÷ caixa op. médio
+const FC_SERVICO_AMARELO = 0.40;
+
+// Mapa categoria→balde (Etapa 1, aprovado pelo dono). Chaves normalizadas
+// em minúsculas com espaços colapsados — o banco tem "SÓCIOS" e "Sócios".
+// Decisões: estorno = operação (caixa que saiu de verdade); sócios =
+// pró-labore = operação; aportes/investimentos(aplicação)/bloqueado/
+// transferência/acerto/rendimento = neutro (não é geração nem queima real).
+const FC_BALDES = {
+  'acessórios':'operacao', 'água, luz, internet':'operacao',
+  'aluguel e condomínio':'operacao', 'comissão de vendas':'operacao',
+  'comissão indicação':'operacao', 'compras gerais':'operacao',
+  'estorno':'operacao', 'eventos comerciais':'operacao',
+  'funcionários':'operacao', 'marketing':'operacao', 'montagem':'operacao',
+  'nota fiscal e imposto':'operacao', 'oficina - peças e serviços':'operacao',
+  'outros':'operacao', 'parcerias comerciais':'operacao',
+  'segurança':'operacao', 'seguro':'operacao',
+  'serviços terceirizados':'operacao', 'sistemas / ferramenta gestão':'operacao',
+  'sócios':'operacao', 'taxas':'operacao', 'telecomunicação, internet':'operacao',
+  'veículos, transportes':'operacao',
+  'fornecedores':'estoque', 'motonetas':'estoque',
+  'investimento em ponto':'investimento', 'obra loja nova':'investimento',
+  'empréstimos':'divida',
+  'acerto de caixa':'neutro', 'aportes':'neutro', 'bloqueado':'neutro',
+  'investimentos':'neutro', 'rendimento conta':'neutro', 'transferência':'neutro',
+};
+// Saídas operacionais que ficam FORA do custo fixo (_DRE_CATEGORIAS_FORA_
+// DESPESA) mas saem do caixa todo mês — a projeção desconta a média delas.
+const FC_VARIAVEIS = ['comissão de vendas', 'nota fiscal e imposto', 'montagem', 'estorno'];
+
+const _fcNorm = c => (c || '').toLowerCase().replace(/\s+/g, ' ').trim();
+const _fcYm   = d => (d || '').slice(0, 7);
+
+// Balde de um movimento. 'Motonetas' depende do tipo: entrada = venda
+// (operação), saída = compra de moto pra revenda (estoque).
+function fcBalde(categoria, tipo) {
+  const n = _fcNorm(categoria);
+  if (n === 'motonetas') return tipo === 'entrada' ? 'operacao' : 'estoque';
+  return FC_BALDES[n] || null;   // null = não classificado (avisado nas premissas)
+}
+
+// Fluxo mês × balde. Fonte: lançamentos (sem transferências internas) +
+// supplement de contas_pagar PAGAS sem lançamento espelho — dedup por
+// valor+mês+categoria, case-insensitive (há pagamentos que só existem no
+// contas a pagar, ex. Veloster / Empréstimo Henrique).
+function fcFluxoPorMes() {
+  const meses = {};
+  const slot = ym => (meses[ym] ??= {
+    operacao:{ent:0,sai:0}, estoque:{ent:0,sai:0}, investimento:{ent:0,sai:0},
+    divida:{ent:0,sai:0}, neutro:{ent:0,sai:0}, semBalde:{ent:0,sai:0} });
+  const chavesLanc = new Set();
+  for (const l of (lancamentos || [])) {
+    if (l.transferenciaId) continue;
+    const ym = _fcYm(l.data); if (!ym) continue;
+    const b = fcBalde(l.categoria, l.tipo) || 'semBalde';
+    slot(ym)[b][l.tipo === 'entrada' ? 'ent' : 'sai'] += (l.valor || 0);
+    if (l.tipo === 'saida')
+      chavesLanc.add(ym + '|' + _fcNorm(l.categoria) + '|' + Math.round(l.valor || 0));
+  }
+  for (const c of (contasPagar || [])) {
+    if (!c.paga && !c.pagaEm) continue;
+    const ym = _fcYm(c.pagaEm || c.vencimento); if (!ym) continue;
+    if (chavesLanc.has(ym + '|' + _fcNorm(c.categoria) + '|' + Math.round(c.valor || 0))) continue;
+    slot(ym)[fcBalde(c.categoria, 'saida') || 'semBalde'].sai += (c.valor || 0);
+  }
+  return meses;
+}
+
+// Médias dos meses COMPLETOS (≤3, mesma convenção do _despPlanejadoHistorico).
+function fcMediasOperacao() {
+  const fluxo = fcFluxoPorMes();
+  const mesCorrente = new Date().toISOString().slice(0, 7);
+  const completos = Object.keys(fluxo).filter(m => m < mesCorrente).sort().reverse().slice(0, 3);
+  const n = completos.length || 1;
+  const soma = f => completos.reduce((s, m) => s + f(fluxo[m]), 0);
+  let variaveis = 0;
+  for (const l of (lancamentos || [])) {
+    if (l.transferenciaId || l.tipo !== 'saida') continue;
+    if (!FC_VARIAVEIS.includes(_fcNorm(l.categoria))) continue;
+    if (completos.includes(_fcYm(l.data))) variaveis += (l.valor || 0);
+  }
+  return {
+    fluxo, nMeses: completos.length, mesesUsados: completos.slice().sort(),
+    entradasOp: soma(f => f.operacao.ent) / n,
+    caixaOp:    soma(f => f.operacao.ent - f.operacao.sai) / n,
+    variaveis:  variaveis / n,
+  };
+}
+
+// Projeção 12m, dois cenários. Por mês: + entradas op. médias (× FC_PESSIMISTA_
+// PCT no pessimista) − custo fixo − variáveis médias − parcelas abertas que
+// vencem no mês (emprestimo_parcelas) − boletos de fornecedor abertos do mês.
+// Mês corrente entra pro-rata (dias restantes); vencidos em aberto caem nele.
+// Anti dupla-contagem: contas_pagar vinculadas a parcela são ignoradas (a
+// dívida vem só de emprestimo_parcelas); boletos de balde operação/neutro/sem
+// balde NÃO são descontados — já cobertos pelo custo fixo projetado. Premissa:
+// compra de estoque NOVA (além dos boletos já assumidos) fica fora.
+function fcProjecao() {
+  const hoje = new Date();
+  const hojeISO = hoje.toISOString().slice(0, 10);
+  const ymCorrente = hojeISO.slice(0, 7);
+  const saldo0 = (contas || []).reduce((s, c) => s + (c.saldo || 0), 0);
+  const medias = fcMediasOperacao();
+  const fixo = _despPlanejadoHistorico().media;
+
+  const parcelas = {}, boletos = {};
+  let boletosOverlap = 0, boletosOverlapN = 0;
+  for (const e of (emprestimos || [])) for (const p of (e.pagamentos || [])) {
+    if (p.status === 'pago') continue;
+    const ym = (p.vencimento || '') < hojeISO ? ymCorrente : (_fcYm(p.vencimento) || ymCorrente);
+    parcelas[ym] = (parcelas[ym] || 0) + (p.valor || 0);
+  }
+  for (const c of (contasPagar || [])) {
+    if (c.paga || c.pagaEm) continue;
+    if (c.emprestimoParcelaId) continue;
+    const b = fcBalde(c.categoria, 'saida');
+    if (b !== 'estoque' && b !== 'investimento' && b !== 'divida') {
+      boletosOverlap += (c.valor || 0); boletosOverlapN++; continue;
+    }
+    const ym = (c.vencimento || '') < hojeISO ? ymCorrente : (_fcYm(c.vencimento) || ymCorrente);
+    boletos[ym] = (boletos[ym] || 0) + (c.valor || 0);
+  }
+
+  const diasMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+  const fracaoRestante = Math.max(0, (diasMes - hoje.getDate()) / diasMes);
+  const baseR = medias.entradasOp - fixo - medias.variaveis;
+  const baseP = medias.entradasOp * FC_PESSIMISTA_PCT - fixo - medias.variaveis;
+
+  const linhas = [];
+  let saldoR = saldo0, saldoP = saldo0;
+  for (let i = 0; i < FC_PROJECAO_MESES; i++) {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
+    const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const fator = i === 0 ? fracaoRestante : 1;
+    const compr = (parcelas[ym] || 0) + (boletos[ym] || 0);
+    const fluxoR = baseR * fator - compr, fluxoP = baseP * fator - compr;
+    saldoR += fluxoR; saldoP += fluxoP;
+    const lbl = d.toLocaleString('pt-BR', { month: 'short' }).replace('.', '')
+      + '/' + String(d.getFullYear()).slice(2) + (i === 0 ? ' (resto)' : '');
+    linhas.push({ ym, lbl, parcelas: parcelas[ym] || 0, boletos: boletos[ym] || 0,
+      fluxoR, saldoR, fluxoP, saldoP });
+  }
+  const vale = k => linhas.reduce((v, l) => l[k] < v.saldo ? { saldo: l[k], lbl: l.lbl } : v,
+    { saldo: saldo0, lbl: 'hoje' });
+  return {
+    linhas, saldo0, fixo, medias, boletosOverlap, boletosOverlapN,
+    valeR: vale('saldoR'), valeP: vale('saldoP'),
+    zeraR: (linhas.find(l => l.saldoR <= 0) || {}).lbl || null,
+    zeraP: (linhas.find(l => l.saldoP <= 0) || {}).lbl || null,
+  };
+}
+
+// Parcelas DEVIDAS no mês corrente (pagas + abertas) — serviço da dívida.
+function fcServicoDividaMes() {
+  const ym = new Date().toISOString().slice(0, 7);
+  let total = 0;
+  for (const e of (emprestimos || [])) for (const p of (e.pagamentos || []))
+    if (_fcYm(p.vencimento) === ym) total += (p.valor || 0);
+  return total;
+}
+
+// Cor do semáforo de crédito a partir da projeção + serviço da dívida.
+function fcSemaforo(proj, servicoPct) {
+  if (proj.zeraR || (servicoPct != null && servicoPct > FC_SERVICO_AMARELO)) return 'vermelho';
+  if (proj.valeR.saldo < proj.fixo * FC_VALE_MIN_FIXO || proj.zeraP ||
+      (servicoPct != null && servicoPct > FC_SERVICO_VERDE)) return 'amarelo';
+  return 'verde';
+}
+
+function renderFinFluxo() {
+  if (!_isAdminUser()) return;
+  const proj = fcProjecao();
+  const { medias, fixo, saldo0 } = proj;
+  const ymCorrente = new Date().toISOString().slice(0, 7);
+  const fMes = medias.fluxo[ymCorrente];
+  const caixaOpMes = fMes ? (fMes.operacao.ent - fMes.operacao.sai) : 0;
+  const servico = fcServicoDividaMes();
+  const servicoPct = medias.caixaOp > 0 ? servico / medias.caixaOp : null;
+  const cobertura = servico > 0 ? medias.caixaOp / servico : null;
+  const folego = fixo > 0 ? saldo0 / fixo : null;
+  const cor = fcSemaforo(proj, servicoPct);
+
+  // ── Semáforo com os números crus que justificam a cor ──
+  const CORES = {
+    verde:    { emoji: '🟢', css: 'var(--green)', titulo: 'Crédito: há folga' },
+    amarelo:  { emoji: '🟡', css: 'var(--gold)',  titulo: 'Crédito: cautela' },
+    vermelho: { emoji: '🔴', css: 'var(--red)',   titulo: 'Crédito: não pegar dívida nova' },
+  };
+  const c = CORES[cor];
+  const chk = ok => ok
+    ? '<span style="color:var(--green);font-weight:700;">✓</span>'
+    : '<span style="color:var(--red);font-weight:700;">✗</span>';
+  const pct1 = v => (v * 100).toFixed(1).replace('.', ',') + '%';
+  const crit = [];
+  crit.push(chk(proj.valeR.saldo >= fixo * FC_VALE_MIN_FIXO) + ' Vale do caixa (realista): <b>'
+    + fmtSigned(proj.valeR.saldo) + '</b> em ' + proj.valeR.lbl
+    + ' — mínimo p/ verde: ' + fmt(fixo * FC_VALE_MIN_FIXO) + ' (' + FC_VALE_MIN_FIXO + '× custo fixo)'
+    + (proj.zeraR ? ' · <b style="color:var(--red);">zera em ' + proj.zeraR + '</b>' : ''));
+  crit.push(chk(!proj.zeraP) + ' Cenário pessimista (entradas a ' + Math.round(FC_PESSIMISTA_PCT * 100)
+    + '%): vale <b>' + fmtSigned(proj.valeP.saldo) + '</b> em ' + proj.valeP.lbl
+    + (proj.zeraP ? ' · <b style="color:var(--red);">zera em ' + proj.zeraP + '</b>' : ' — não zera em ' + FC_PROJECAO_MESES + 'm'));
+  crit.push((servicoPct == null ? chk(false) + ' Serviço da dívida: caixa op. médio ≤ 0 — sem base p/ %'
+    : chk(servicoPct <= FC_SERVICO_VERDE) + ' Serviço da dívida: <b>' + fmt(servico) + '/mês = '
+    + pct1(servicoPct) + '</b> do caixa op. médio (verde ≤' + Math.round(FC_SERVICO_VERDE * 100)
+    + '%, amarelo ≤' + Math.round(FC_SERVICO_AMARELO * 100) + '%)'));
+  document.getElementById('fin-fluxo-semaforo').innerHTML =
+    '<div class="card" style="border-left:4px solid ' + c.css + ';">'
+    + '<div style="padding:16px 20px;display:flex;gap:16px;align-items:flex-start;">'
+    + '<div style="font-size:34px;line-height:1;">' + c.emoji + '</div>'
+    + '<div style="flex:1;">'
+    + '<div style="font-size:15px;font-weight:800;margin-bottom:8px;">' + c.titulo + '</div>'
+    + '<div style="display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--text2);">'
+    + crit.map(x => '<div>' + x + '</div>').join('') + '</div></div></div></div>';
+
+  // ── KPIs ──
+  const kpi = (label, valor, extra, corV) =>
+    '<div class="kpi"><div class="kpi-label">' + label + '</div>'
+    + '<div class="kpi-value" style="' + (corV ? 'color:' + corV + ';' : '') + '">' + valor + '</div>'
+    + '<div class="kpi-change">' + extra + '</div></div>';
+  const mesesTxt = 'média ' + medias.nMeses + 'm completos (' + medias.mesesUsados.join(', ') + ')';
+  document.getElementById('fin-fluxo-kpis').innerHTML =
+    kpi('Caixa operacional (mês)', fmtSigned(caixaOpMes), 'parcial até hoje · entradas − saídas da operação',
+      caixaOpMes >= 0 ? 'var(--green)' : 'var(--red)')
+    + kpi('Caixa operacional (média)', fmtSigned(medias.caixaOp), mesesTxt,
+      medias.caixaOp >= 0 ? 'var(--green)' : 'var(--red)')
+    + kpi('Fôlego operacional', folego == null ? '—' : folego.toFixed(1).replace('.', ',') + ' meses',
+      'saldo ' + fmt(saldo0) + ' ÷ custo fixo ' + fmt(fixo))
+    + kpi('Serviço da dívida (mês)', fmt(servico),
+      servicoPct == null ? 'sem caixa op. médio positivo' : pct1(servicoPct) + ' do caixa op. médio')
+    + kpi('Cobertura das parcelas', cobertura == null ? '—' : cobertura.toFixed(1).replace('.', ',') + '×',
+      'caixa op. médio ÷ parcelas do mês');
+
+  // ── Tabela de projeção 12m ──
+  const cel = (v, bold) => '<td style="padding:6px 10px;text-align:right;font-family:\'JetBrains Mono\',monospace;'
+    + 'font-size:11px;' + (bold ? 'font-weight:700;' : '') + (v < 0 ? 'color:var(--red);' : '') + '">'
+    + (v === 0 ? '—' : fmtSigned(v)) + '</td>';
+  const th = t => '<th style="padding:6px 10px;text-align:right;font-size:10px;text-transform:uppercase;'
+    + 'letter-spacing:0.8px;color:var(--text3);white-space:nowrap;">' + t + '</th>';
+  const minR = Math.min(...proj.linhas.map(l => l.saldoR));
+  const minP = Math.min(...proj.linhas.map(l => l.saldoP));
+  const valeTag = ' <span style="font-size:9px;background:var(--gold);color:#000;border-radius:3px;'
+    + 'padding:1px 4px;font-weight:700;vertical-align:middle;">VALE</span>';
+  document.getElementById('fin-fluxo-proj').innerHTML =
+    '<table style="width:100%;border-collapse:collapse;">'
+    + '<thead><tr><th style="padding:6px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);">Mês</th>'
+    + th('− Parcelas') + th('− Boletos forn.') + th('Fluxo realista') + th('Saldo realista')
+    + th('Fluxo pess.') + th('Saldo pess.') + '</tr></thead><tbody>'
+    + proj.linhas.map(l =>
+      '<tr style="border-top:1px solid var(--border);">'
+      + '<td style="padding:6px 10px;font-size:11px;white-space:nowrap;">' + l.lbl + '</td>'
+      + cel(-l.parcelas) + cel(-l.boletos) + cel(l.fluxoR)
+      + '<td style="padding:6px 10px;text-align:right;font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;'
+      + (l.saldoR < 0 ? 'color:var(--red);' : '') + '">' + fmtSigned(l.saldoR)
+      + (l.saldoR === minR && minR < proj.saldo0 ? valeTag : '') + '</td>'
+      + cel(l.fluxoP)
+      + '<td style="padding:6px 10px;text-align:right;font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;'
+      + (l.saldoP < 0 ? 'color:var(--red);' : '') + '">' + fmtSigned(l.saldoP)
+      + (l.saldoP === minP ? valeTag : '') + '</td></tr>').join('')
+    + '</tbody></table>';
+  document.getElementById('fin-fluxo-proj-sub').textContent =
+    'Saldo hoje ' + fmt(saldo0) + ' · vale realista ' + fmtSigned(proj.valeR.saldo) + ' (' + proj.valeR.lbl
+    + ') · vale pessimista ' + fmtSigned(proj.valeP.saldo) + ' (' + proj.valeP.lbl + ')';
+
+  // ── Premissas ──
+  const fluxoTot = Object.values(medias.fluxo);
+  const semBalde = fluxoTot.reduce((s, f) => s + f.semBalde.ent + f.semBalde.sai, 0);
+  const prem = [
+    '<b>Entradas operacionais:</b> ' + fmt(medias.entradasOp) + '/mês — ' + mesesTxt
+      + ' · pessimista usa ' + Math.round(FC_PESSIMISTA_PCT * 100) + '% disso.',
+    '<b>Custo fixo:</b> ' + fmt(fixo) + '/mês (média das despesas planejadas — mesma régua da aba Custos).',
+    '<b>Custos variáveis:</b> ' + fmt(medias.variaveis) + '/mês (comissão, NF/imposto, montagem, estorno — fora do fixo).',
+    '<b>Dívida:</b> só de emprestimo_parcelas; contas a pagar vinculadas a parcela são ignoradas (sem dupla contagem).',
+    '<b>Boletos operacionais em aberto:</b> ' + fmt(proj.boletosOverlap) + ' (' + proj.boletosOverlapN
+      + ') não são descontados — já cobertos pelo custo fixo projetado.',
+    '<b>Compra de estoque nova</b> (além dos boletos já assumidos) está fora da projeção.',
+  ];
+  if (semBalde > 0) prem.push('<b style="color:var(--gold);">⚠ Categorias sem balde:</b> '
+    + fmt(semBalde) + ' em movimentos não classificados — revisar FC_BALDES.');
+  document.getElementById('fin-fluxo-premissas').innerHTML =
+    prem.map(p => '<div>' + p + '</div>').join('');
+}
+
 async function initFinanceiro() {
   // Sem filtro de data por padrão — campos ficam vazios.
   populateFinCatFilter();
@@ -9764,22 +10083,25 @@ async function initFinanceiro() {
   renderEmprestimoFin();
   // Tenta usar cache de IA se ainda válido (não dispara chamada)
   hidratarAnaliseFinanceiraCacheada();
-  // Mostra a sub-aba DRE só pra admin
+  // Mostra as sub-abas DRE e Fluxo de Caixa só pra admin
   const btnDre = document.getElementById('fin-tab-btn-dre');
   if (btnDre) btnDre.style.display = _isAdminUser() ? '' : 'none';
-  // Restaura aba salva (default: caixa). Se non-admin tinha 'dre' salva, cai pra caixa.
+  const btnFluxo = document.getElementById('fin-tab-btn-fluxo');
+  if (btnFluxo) btnFluxo.style.display = _isAdminUser() ? '' : 'none';
+  // Restaura aba salva (default: caixa). Se non-admin tinha aba admin salva, cai pra caixa.
   let savedTab = localStorage.getItem('sm_fin_tab') || 'caixa';
-  if (savedTab === 'dre' && !_isAdminUser()) savedTab = 'caixa';
+  if ((savedTab === 'dre' || savedTab === 'fluxo') && !_isAdminUser()) savedTab = 'caixa';
   switchFinTab(savedTab);
 }
 
 // Troca a aba ativa do módulo Financeiro
 function switchFinTab(tabId) {
-  const tabs   = ['caixa', 'dre', 'emprestimos', 'ia'];
+  const tabs   = ['caixa', 'dre', 'fluxo', 'emprestimos', 'ia'];
   if (!tabs.includes(tabId)) tabId = 'caixa';
-  // DRE é só admin — protege contra acesso direto (console/localStorage stale).
-  if (tabId === 'dre' && !_isAdminUser()) {
-    smAlert('A aba DRE é restrita ao admin.');
+  // DRE e Fluxo de Caixa são só admin — protege contra acesso direto
+  // (console/localStorage stale).
+  if ((tabId === 'dre' || tabId === 'fluxo') && !_isAdminUser()) {
+    smAlert('Esta aba é restrita ao admin.');
     tabId = 'caixa';
   }
   tabs.forEach(t => {
@@ -9814,6 +10136,10 @@ function switchFinTab(tabId) {
   // Lazy-init da aba DRE quando o usuário entra nela pela primeira vez.
   if (tabId === 'dre') {
     try { initFinDre(); } catch(e) { console.warn('[fin-dre] init falhou:', e.message); }
+  }
+  // Fluxo de Caixa recalcula a cada entrada — tudo em memória, barato.
+  if (tabId === 'fluxo') {
+    try { renderFinFluxo(); } catch(e) { console.warn('[fin-fluxo] render falhou:', e.message); }
   }
 }
 
