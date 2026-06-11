@@ -2535,6 +2535,13 @@ select:not(.input-pro):not(.search-input){
       </div>
       <div class="card" style="margin-bottom:20px;">
         <div class="card-header">
+          <div><div class="card-title">Fluxo mensal por balde + saldo</div>
+          <div class="card-sub" id="fin-fluxo-graf-sub">—</div></div>
+        </div>
+        <div style="padding:10px 20px 14px;" id="fin-fluxo-grafico"></div>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
           <div><div class="card-title">Projeção de caixa — próximos 12 meses</div>
           <div class="card-sub" id="fin-fluxo-proj-sub">—</div></div>
         </div>
@@ -9942,6 +9949,104 @@ function fcProjecao() {
   };
 }
 
+// Série mensal pro gráfico: net (entradas − saídas) por balde + saldo no fim
+// de cada mês. Não há histórico de saldo bancário no banco — a linha é
+// reconstituída de trás pra frente a partir do saldo real de hoje, descontando
+// o net total de cada mês (todos os baldes, incluindo neutro/sem balde: aporte
+// e rendimento mexem no caixa mesmo ficando fora das barras).
+function fcGraficoData() {
+  const fluxo = fcFluxoPorMes();
+  const meses = Object.keys(fluxo).sort();
+  const net = f => f.ent - f.sai;
+  const serie = meses.map(ym => {
+    const f = fluxo[ym];
+    const d = new Date(+ym.slice(0, 4), +ym.slice(5, 7) - 1, 1);
+    return {
+      ym, lbl: d.toLocaleString('pt-BR', { month: 'short' }).replace('.', '') + '/' + ym.slice(2, 4),
+      operacao: net(f.operacao), estoque: net(f.estoque),
+      investimento: net(f.investimento), divida: net(f.divida),
+      total: net(f.operacao) + net(f.estoque) + net(f.investimento)
+           + net(f.divida) + net(f.neutro) + net(f.semBalde),
+    };
+  });
+  let saldo = (contas || []).reduce((s, c) => s + (c.saldo || 0), 0);
+  for (let i = serie.length - 1; i >= 0; i--) { serie[i].saldoFim = saldo; saldo -= serie[i].total; }
+  return serie;
+}
+
+// Gráfico SVG na mão (sem lib): 4 barras por mês (uma por balde, net acima/
+// abaixo do eixo zero) + linha de saldo no fim do mês. Escala única em R$.
+function renderFcGrafico() {
+  const wrap = document.getElementById('fin-fluxo-grafico');
+  const sub  = document.getElementById('fin-fluxo-graf-sub');
+  if (!wrap) return;
+  const serie = fcGraficoData();
+  if (!serie.length) { wrap.innerHTML = '<div style="color:var(--text3);font-size:12px;">Sem movimentos.</div>'; return; }
+  if (sub) sub.textContent = serie.length + ' meses · barras = entradas − saídas do balde · linha = saldo no fim do mês'
+    + ' (mês corrente: saldo de hoje)';
+
+  const BALDES = [
+    { k: 'operacao',     nome: 'Operação',     cor: 'var(--green)'  },
+    { k: 'estoque',      nome: 'Estoque',      cor: 'var(--blue)'   },
+    { k: 'investimento', nome: 'Investimento', cor: 'var(--orange)' },
+    { k: 'divida',       nome: 'Dívida',       cor: 'var(--red)'    },
+  ];
+  const W = 900, H = 280, L = 64, R = 16, T = 14, B = 28;
+  const plotW = W - L - R, plotH = H - T - B;
+  const vals = serie.flatMap(s => [s.operacao, s.estoque, s.investimento, s.divida, s.saldoFim]);
+  let minV = Math.min(0, ...vals), maxV = Math.max(0, ...vals);
+  const span = (maxV - minV) || 1;
+  minV -= span * 0.05; maxV += span * 0.05;
+  const y = v => T + plotH * (maxV - v) / (maxV - minV);
+  const cf = v => (v < 0 ? '−' : '') + 'R$ ' + (Math.abs(v) >= 1000
+    ? Math.round(Math.abs(v) / 1000) + 'k' : Math.round(Math.abs(v)));
+
+  let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;">';
+  // gridlines + eixo Y
+  for (let i = 0; i <= 4; i++) {
+    const v = minV + (maxV - minV) * i / 4, yy = y(v);
+    svg += '<line x1="' + L + '" y1="' + yy + '" x2="' + (W - R) + '" y2="' + yy
+      + '" stroke="var(--border)" stroke-width="1"/>'
+      + '<text x="' + (L - 8) + '" y="' + (yy + 3) + '" text-anchor="end" font-size="10" fill="var(--text3)">'
+      + cf(v) + '</text>';
+  }
+  // eixo zero destacado
+  svg += '<line x1="' + L + '" y1="' + y(0) + '" x2="' + (W - R) + '" y2="' + y(0)
+    + '" stroke="var(--text3)" stroke-width="1.2"/>';
+  // barras
+  const gw = plotW / serie.length;
+  const bw = Math.min(22, gw * 0.16);
+  serie.forEach((s, i) => {
+    const cx = L + gw * (i + 0.5);
+    BALDES.forEach((b, j) => {
+      const v = s[b.k];
+      if (Math.round(v) === 0) return;
+      const x = cx + (j - BALDES.length / 2) * bw + bw * 0.06;
+      const y0 = y(0), y1 = y(v);
+      svg += '<rect x="' + x + '" y="' + Math.min(y0, y1) + '" width="' + (bw * 0.88)
+        + '" height="' + Math.max(1, Math.abs(y1 - y0)) + '" rx="1.5" fill="' + b.cor + '" opacity="0.85">'
+        + '<title>' + s.lbl + ' · ' + b.nome + ': ' + fmtSigned(v) + '</title></rect>';
+    });
+    svg += '<text x="' + cx + '" y="' + (H - 8) + '" text-anchor="middle" font-size="10" fill="var(--text2)">'
+      + s.lbl + '</text>';
+  });
+  // linha de saldo
+  const pts = serie.map((s, i) => (L + gw * (i + 0.5)) + ',' + y(s.saldoFim)).join(' ');
+  svg += '<polyline points="' + pts + '" fill="none" stroke="var(--gold)" stroke-width="2"/>';
+  serie.forEach((s, i) => {
+    svg += '<circle cx="' + (L + gw * (i + 0.5)) + '" cy="' + y(s.saldoFim) + '" r="3.5" fill="var(--gold)">'
+      + '<title>' + s.lbl + ' · saldo: ' + fmtSigned(s.saldoFim)
+      + (i === serie.length - 1 ? ' (hoje)' : ' (fim do mês)') + '</title></circle>';
+  });
+  svg += '</svg>';
+
+  const leg = BALDES.map(b => '<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);">'
+    + '<div style="width:10px;height:10px;border-radius:2px;background:' + b.cor + ';"></div>' + b.nome + '</div>').join('')
+    + '<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);">'
+    + '<div style="width:14px;height:2px;background:var(--gold);"></div>Saldo (fim do mês)</div>';
+  wrap.innerHTML = '<div style="display:flex;gap:14px;margin-bottom:10px;flex-wrap:wrap;">' + leg + '</div>' + svg;
+}
+
 // Parcelas DEVIDAS no mês corrente (pagas + abertas) — serviço da dívida.
 function fcServicoDividaMes() {
   const ym = new Date().toISOString().slice(0, 7);
@@ -10021,6 +10126,9 @@ function renderFinFluxo() {
       servicoPct == null ? 'sem caixa op. médio positivo' : pct1(servicoPct) + ' do caixa op. médio')
     + kpi('Cobertura das parcelas', cobertura == null ? '—' : cobertura.toFixed(1).replace('.', ',') + '×',
       'caixa op. médio ÷ parcelas do mês');
+
+  // ── Gráfico mensal por balde + linha de saldo ──
+  renderFcGrafico();
 
   // ── Tabela de projeção 12m ──
   const cel = (v, bold) => '<td style="padding:6px 10px;text-align:right;font-family:\'JetBrains Mono\',monospace;'
