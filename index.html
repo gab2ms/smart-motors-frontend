@@ -10203,18 +10203,36 @@ function renderFinFluxo() {
     + crit.map(x => '<div>' + x + '</div>').join('') + '</div></div></div></div>';
 
   // ── KPIs ──
-  const kpi = (label, valor, extra, corV) =>
-    '<div class="kpi"><div class="kpi-label">' + label + '</div>'
+  const kpi = (label, valor, extra, corV, opts) =>
+    '<div class="kpi"' + (opts && opts.title ? ' title="' + opts.title + '"' : '')
+    + (opts && opts.borda ? ' style="border-left:3px solid ' + opts.borda + ';"' : '') + '>'
+    + '<div class="kpi-label">' + label + '</div>'
     + '<div class="kpi-value" style="' + (corV ? 'color:' + corV + ';' : '') + '">' + valor + '</div>'
     + '<div class="kpi-change">' + extra + '</div></div>';
   const mesesTxt = 'média ' + medias.nMeses + 'm completos (' + medias.mesesUsados.join(', ') + ')';
+  // Fôlego real: veredito da projeção 12m (reuso de proj — sem cálculo novo).
+  // Cor pela régua do semáforo: vermelho se algum cenário zera; amarelo se
+  // algum vale fica abaixo de 1× fixo; verde se os dois ficam acima.
+  const mult = v => (v == null ? '—' : v.toFixed(1).replace('.', ',') + '×');
+  const zera = !!(proj.zeraR || proj.zeraP);
+  const folegoRealCor = zera ? 'var(--red)'
+    : (Math.min(proj.valeR.saldo, proj.valeP.saldo) < fixo * FC_VALE_MIN_FIXO) ? 'var(--gold)' : 'var(--green)';
+  const folegoRealExtra =
+    'realista: vale ' + fmtSigned(proj.valeR.saldo) + ' (' + proj.valeR.lbl + ') = '
+      + mult(fixo > 0 ? proj.valeR.saldo / fixo : null) + ' o fixo'
+    + '<br>pessimista: vale ' + fmtSigned(proj.valeP.saldo) + ' (' + proj.valeP.lbl + ') = '
+      + mult(fixo > 0 ? proj.valeP.saldo / fixo : null) + ' o fixo'
+    + (zera ? '<br><b>zera em ' + (proj.zeraR || proj.zeraP) + '</b>' : '');
   document.getElementById('fin-fluxo-kpis').innerHTML =
     kpi('Caixa operacional (mês)', fmtSigned(caixaOpMes), 'parcial até hoje · entradas − saídas da operação',
       caixaOpMes >= 0 ? 'var(--green)' : 'var(--red)')
     + kpi('Caixa operacional (média)', fmtSigned(medias.caixaOp), mesesTxt,
       medias.caixaOp >= 0 ? 'var(--green)' : 'var(--red)')
     + kpi('Fôlego operacional', folego == null ? '—' : folego.toFixed(1).replace('.', ',') + ' meses',
-      'saldo ' + fmt(saldo0) + ' ÷ custo fixo ' + fmt(fixo))
+      'se as vendas parassem hoje — saldo ' + fmt(saldo0) + ' ÷ custo fixo ' + fmt(fixo))
+    + kpi('Fôlego real (projeção)', zera ? 'NÃO SOBREVIVE ✗' : 'SOBREVIVE ✓', folegoRealExtra, folegoRealCor,
+      { borda: folegoRealCor,
+        title: 'Considera boletos a vencer + parcelas de empréstimo + média de gastos e receitas (projeção 12 meses).' })
     + kpi('Serviço da dívida (mês)', fmt(servico),
       servicoPct == null ? 'sem caixa op. médio positivo' : pct1(servicoPct) + ' do caixa op. médio')
     + kpi('Cobertura das parcelas', cobertura == null ? '—' : cobertura.toFixed(1).replace('.', ',') + '×',
