@@ -2547,6 +2547,15 @@ select:not(.input-pro):not(.search-input){
         </div>
         <div style="padding:4px 20px 16px;overflow-x:auto;" id="fin-fluxo-proj"></div>
       </div>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <div><div class="card-title">Fechamento do mês — DRE × Caixa</div>
+          <div class="card-sub">Competência (DRE) lado a lado com o caixa que entrou e saiu</div></div>
+          <input type="month" id="fin-fluxo-fech-mes" class="input-pro" style="max-width:170px;"
+            onchange="if(this.value) fcCarregarFechamento(this.value)">
+        </div>
+        <div style="padding:14px 20px;" id="fin-fluxo-fech"></div>
+      </div>
       <div class="card">
         <div class="card-header">
           <div><div class="card-title">Premissas da projeção</div>
@@ -10047,6 +10056,90 @@ function renderFcGrafico() {
   wrap.innerHTML = '<div style="display:flex;gap:14px;margin-bottom:10px;flex-wrap:wrap;">' + leg + '</div>' + svg;
 }
 
+// ── Fechamento de mês: DRE (competência) × caixa (entrou−saiu) ──
+// DRE vem do calcularDRE (mesma fonte da sub-aba DRE/Excel); caixa vem do
+// fcFluxoPorMes (lançamentos + supplement). Os dois NÃO devem bater: a DRE
+// é competência com CPV por venda; o caixa carrega compra de estoque,
+// investimento e movimentos neutros. A ponte entre eles é mostrada na tela.
+let _fcFechMes = null;   // mês carregado/em carga — também invalida await antigo
+
+function _fcMesAnterior() {
+  const h = new Date(), d = new Date(h.getFullYear(), h.getMonth() - 1, 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+async function fcCarregarFechamento(ym) {
+  const el = document.getElementById('fin-fluxo-fech');
+  if (!el || !/^\d{4}-\d{2}$/.test(ym || '')) return;
+  _fcFechMes = ym;
+  el.innerHTML = '<div style="color:var(--text3);font-size:12px;">Calculando fechamento…</div>';
+  const [y, m] = ym.split('-').map(Number);
+  const fimISO = ym + '-' + String(new Date(y, m, 0).getDate()).padStart(2, '0');
+  let dre;
+  try { dre = await calcularDRE(ym + '-01', fimISO); }
+  catch (e) {
+    el.innerHTML = '<div style="color:var(--red);font-size:12px;">Falha ao calcular a DRE: ' + e.message + '</div>';
+    return;
+  }
+  if (_fcFechMes !== ym) return;   // usuário trocou o mês durante o await
+
+  const f = fcFluxoPorMes()[ym];
+  const baldes = f ? ['operacao', 'estoque', 'investimento', 'divida', 'neutro', 'semBalde']
+    .map(k => ({ k, net: f[k].ent - f[k].sai })) : [];
+  const ent = f ? ['operacao','estoque','investimento','divida','neutro','semBalde'].reduce((s,k)=>s+f[k].ent,0) : 0;
+  const sai = f ? ['operacao','estoque','investimento','divida','neutro','semBalde'].reduce((s,k)=>s+f[k].sai,0) : 0;
+  const net = ent - sai;
+  const grafPonto = fcGraficoData().find(s => s.ym === ym);
+  const ymCorrente = new Date().toISOString().slice(0, 7);
+  const parcial = ym === ymCorrente;
+
+  const pctTxt = v => (v).toFixed(1).replace('.', ',') + '%';
+  const linha = (lbl, val, opts) => {
+    const o = opts || {};
+    return '<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:12px;'
+      + (o.total ? 'border-top:1px solid var(--border);margin-top:5px;padding-top:7px;' : '') + '">'
+      + '<span style="color:var(--text2);' + (o.total ? 'font-weight:700;' : '') + '">' + lbl + '</span>'
+      + '<span style="font-family:\'JetBrains Mono\',monospace;white-space:nowrap;'
+      + (o.cor ? 'color:' + o.cor + ';' : '') + (o.total ? 'font-weight:700;' : '') + '">' + val
+      + (o.extra ? ' <span style="color:var(--text3);font-weight:400;">(' + o.extra + ')</span>' : '')
+      + '</span></div>';
+  };
+  const bloco = (titulo, corpo) =>
+    '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;'
+    + 'color:var(--text3);margin-bottom:8px;">' + titulo + '</div>' + corpo + '</div>';
+  const corRes = v => v >= 0 ? 'var(--green)' : 'var(--red)';
+
+  const blDre = bloco('Competência (DRE)',
+    linha('Receita', fmt(dre.receita), { extra: dre.pedidos.length + ' pedidos' })
+    + linha('CPV', '− ' + fmt(dre.cpv))
+    + linha('Lucro bruto', fmtSigned(dre.lucroBruto), { extra: pctTxt(dre.pctLB) })
+    + linha('Despesas operacionais', '− ' + fmt(dre.despReal), { extra: dre.despCount + ' lanç.' })
+    + linha('Parcelas de empréstimo pagas', '− ' + fmt(dre.empValor))
+    + linha('Resultado', fmtSigned(dre.resultado), { total: true, cor: corRes(dre.resultado), extra: pctTxt(dre.pctRes) }));
+  const blCaixa = bloco('Caixa (entrou − saiu)',
+    linha('Entrou', fmt(ent))
+    + linha('Saiu', '− ' + fmt(sai))
+    + linha('Caixa do mês', fmtSigned(net), { total: true, cor: corRes(net) })
+    + linha(parcial ? 'Saldo hoje' : 'Saldo no fim do mês',
+        grafPonto ? fmt(grafPonto.saldoFim) : '—'));
+  const NOMES = { operacao: 'Operação', estoque: 'Estoque', investimento: 'Investimento',
+    divida: 'Dívida', neutro: 'Neutro', semBalde: 'Sem balde' };
+  const blBaldes = bloco('Pra onde foi o caixa',
+    baldes.filter(b => Math.round(b.net) !== 0 || ['operacao','estoque','divida'].includes(b.k))
+      .map(b => linha(NOMES[b.k], fmtSigned(b.net), { cor: corRes(b.net) })).join('')
+    || '<div style="color:var(--text3);font-size:12px;">Sem movimentos no mês.</div>');
+
+  const delta = dre.resultado - net;
+  el.innerHTML =
+    (parcial ? '<div style="font-size:11px;color:var(--gold);margin-bottom:10px;">⚠ Mês em andamento — números parciais até hoje.</div>' : '')
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:24px;">'
+    + blDre + blCaixa + blBaldes + '</div>'
+    + '<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);">'
+    + 'Resultado (DRE) − caixa do mês = <b style="color:var(--text2);">' + fmtSigned(delta) + '</b>. '
+    + 'Diferença esperada: a DRE é competência (CPV calculado por venda); o caixa carrega compra de estoque, '
+    + 'investimento e movimentos neutros no mês em que o dinheiro de fato se move.</div>';
+}
+
 // Parcelas DEVIDAS no mês corrente (pagas + abertas) — serviço da dívida.
 function fcServicoDividaMes() {
   const ym = new Date().toISOString().slice(0, 7);
@@ -10178,6 +10271,13 @@ function renderFinFluxo() {
     + fmt(semBalde) + ' em movimentos não classificados — revisar FC_BALDES.');
   document.getElementById('fin-fluxo-premissas').innerHTML =
     prem.map(p => '<div>' + p + '</div>').join('');
+
+  // ── Fechamento de mês (async; default = mês anterior; não recarrega à toa) ──
+  const mesEl = document.getElementById('fin-fluxo-fech-mes');
+  if (mesEl) {
+    if (!mesEl.value) mesEl.value = _fcMesAnterior();
+    if (mesEl.value !== _fcFechMes) fcCarregarFechamento(mesEl.value);
+  }
 }
 
 async function initFinanceiro() {
