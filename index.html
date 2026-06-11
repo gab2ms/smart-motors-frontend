@@ -10309,23 +10309,34 @@ function renderFinFluxo() {
   const folegoRealCor = zera ? 'var(--red)'
     : (Math.min(proj.valeR.saldo, proj.valeP.saldo) < fixo * FC_VALE_MIN_FIXO) ? 'var(--gold)' : 'var(--green)';
   const folegoRealExtra =
-    'realista: vale ' + fmtSigned(proj.valeR.saldo) + ' (' + proj.valeR.lbl + ') = '
+    'mantendo as vendas como estão, o caixa atravessa os próximos 12 meses?'
+    + '<br>realista: vale ' + fmtSigned(proj.valeR.saldo) + ' (' + proj.valeR.lbl + ') = '
       + mult(fixo > 0 ? proj.valeR.saldo / fixo : null) + ' o fixo'
     + '<br>pessimista: vale ' + fmtSigned(proj.valeP.saldo) + ' (' + proj.valeP.lbl + ') = '
       + mult(fixo > 0 ? proj.valeP.saldo / fixo : null) + ' o fixo'
     + (zera ? '<br><b>zera em ' + (proj.zeraR || proj.zeraP) + '</b>' : '');
   document.getElementById('fin-fluxo-kpis').innerHTML =
-    kpi('Caixa operacional (mês)', fmtSigned(caixaOpMes), 'parcial até hoje · entradas − saídas da operação',
-      caixaOpMes >= 0 ? 'var(--green)' : 'var(--red)')
-    + kpi('Caixa operacional (média)', fmtSigned(medias.caixaOp), mesesTxt,
-      medias.caixaOp >= 0 ? 'var(--green)' : 'var(--red)')
+    kpi('Caixa operacional (mês)', fmtSigned(caixaOpMes),
+      'o que a operação gerou de dinheiro neste mês, até hoje — vendas menos gastos do dia a dia',
+      caixaOpMes >= 0 ? 'var(--green)' : 'var(--red)',
+      { title: 'Entradas − saídas do balde Operação no mês corrente (parcial). Não inclui compra de estoque, empréstimo nem investimento.' })
+    + kpi('Caixa operacional (média)', fmtSigned(medias.caixaOp),
+      'quanto a operação gera num mês típico · ' + mesesTxt,
+      medias.caixaOp >= 0 ? 'var(--green)' : 'var(--red)',
+      { title: 'Média de (entradas − saídas) da operação nos meses completos indicados.' })
     + kpi('Fôlego real (projeção)', zera ? 'NÃO SOBREVIVE ✗' : 'SOBREVIVE ✓', folegoRealExtra, folegoRealCor,
       { borda: folegoRealCor,
-        title: 'Considera boletos a vencer + parcelas de empréstimo + média de gastos e receitas (projeção 12 meses).' })
+        title: 'Projeção 12 meses: saldo de hoje + entradas médias − custo fixo − variáveis − parcelas de empréstimo − boletos de fornecedor, mês a mês. Vale = pior saldo do período. Pessimista = entradas a ' + Math.round(FC_PESSIMISTA_PCT * 100) + '%.' })
     + kpi('Serviço da dívida (mês)', fmt(servico),
-      servicoPct == null ? 'sem caixa op. médio positivo' : pct1(servicoPct) + ' do caixa op. médio')
+      'o que sai neste mês só pra pagar parcelas de empréstimo'
+        + (servicoPct == null ? ' · sem caixa op. médio positivo p/ comparar'
+           : ' — come ' + pct1(servicoPct) + ' do que a operação gera'),
+      null,
+      { title: 'Soma das parcelas de empréstimo com vencimento no mês corrente (pagas + em aberto). O % divide pelo caixa operacional médio.' })
     + kpi('Cobertura das parcelas', cobertura == null ? '—' : cobertura.toFixed(1).replace('.', ',') + '×',
-      'caixa op. médio ÷ parcelas do mês');
+      'quantas vezes o caixa que a operação gera cabe nas parcelas do mês — acima de 1×, a operação paga a dívida sozinha',
+      null,
+      { title: 'Caixa operacional médio ÷ parcelas de empréstimo do mês corrente.' });
 
   // ── Gráfico mensal por balde + linha de saldo ──
   renderFcGrafico();
