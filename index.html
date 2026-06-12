@@ -8695,14 +8695,51 @@ async function catCustoLote() {
     }
   }
 
+  // Produto sem linha de custo: "definir custo" = INSERT em produtos_precos
+  // com modelo = NOME COMPLETO (trim) — casa exato/startsWith só neste produto,
+  // zero spillover (mesmo precedente do modal individual de produto). Categoria
+  // herdada (acessório → ctReal sem comissão/NF); venda = preço atual.
+  let criadosN = 0;
+  for (const p of semCusto) {
+    const nome = p.nome.trim();
+    const cat = p.categoria === 'acessorio' ? 'acessorio' : 'scooter';
+    const raw = await smPrompt(
+      `"${nome}" não tem custo cadastrado.\nCusto puro pra CRIAR (vale só pra este produto):`, '');
+    if (raw == null) { puladosN++; continue; }
+    const novo = Number(String(raw).trim().replace(',', '.'));
+    if (!(novo > 0)) { smAlert(`Valor inválido — "${nome}" pulado.`); puladosN++; continue; }
+    const ctNovo = ctReal({ categoria: cat, custoPuro: novo, montagem: 0, comissao: 0 });
+    const ok = await smConfirm(
+      `Criar custo novo pra "${nome}"?\n\n`
+      + `Este produto não tem custo cadastrado. Será criada uma linha NOVA em `
+      + `Custos de Produtos com o nome completo — vale SÓ pra este produto `
+      + `(nenhuma outra variante é afetada).\n\n`
+      + `Custo puro:          — → ${fmt(novo)}\n`
+      + `Custo total (real):  — → ${fmt(ctNovo)}`
+      + (cat === 'acessorio' ? ' (acessório: sem comissão/NF)' : ` (inclui NF ${fmt(CONFIG_CUSTOS.nf_pedido || 0)})`));
+    if (!ok) { puladosN++; continue; }
+    try {
+      const { data, error } = await sb.from('produtos_precos').insert({
+        modelo: nome, fornecedor: p.fabricante || '—', categoria: cat,
+        custo_puro: novo, montagem: 0, comissao: 0, venda: p.precoVenda || 0, ativo: true,
+      }).select();
+      if (error || !data || !data[0]) throw new Error((error && error.message) || 'erro ao criar custo');
+      products.push({ id: data[0].id, modelo: nome, fornecedor: p.fabricante || '—', categoria: cat,
+        custoPuro: novo, montagem: 0, comissao: 0, venda: p.precoVenda || 0, ativo: true });
+      criadosN++;
+    } catch (err) {
+      smAlert(`Erro ao criar custo de "${nome}": ${err.message}`); puladosN++;
+    }
+  }
+
   _TINY_PRECOS_CACHE = null;             // mesmo padrão do preço em lote
   catSelecionados.clear();
   renderCatalogoProdutos();
   renderDashboard();
   const partes = [];
   if (okN)            partes.push(`${okN} modelo${okN !== 1 ? 's' : ''} com custo atualizado`);
+  if (criadosN)       partes.push(`${criadosN} custo${criadosN !== 1 ? 's' : ''} novo${criadosN !== 1 ? 's' : ''} criado${criadosN !== 1 ? 's' : ''}`);
   if (puladosN)       partes.push(`${puladosN} pulado${puladosN !== 1 ? 's' : ''}`);
-  if (semCusto.length) partes.push(`${semCusto.length} sem custo cadastrado (use o produto individual por enquanto)`);
   if (servicos.length) partes.push(`${servicos.length} serviço${servicos.length !== 1 ? 's' : ''} fora do fluxo`);
   smAlert(partes.length ? partes.join(' · ') + '.' : 'Nada alterado.');
 }
