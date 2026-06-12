@@ -99,12 +99,28 @@ body{font-family:var(--font-primary);background:var(--bg);color:var(--text);min-
   color:var(--text3);
   opacity:0.6;
   flex-shrink:0;
+  transition:transform .15s ease;
 }
 .nav-group:hover .nav-group-arrow{color:var(--gold);opacity:1;}
 .nav-group.has-active > .nav-group-header{
   box-shadow:inset 2px 0 0 var(--gold);
 }
 .nav-group.has-active .nav-group-arrow{color:var(--gold);opacity:1;}
+/* TOUCH/MOBILE: o painel de hover é display:none nesses aparelhos (regras
+   mais abaixo), então o submenu vira ACORDEÃO inline — _navToggleGrupo põe
+   .aberto no grupo clicado e os filhos (já no DOM) aparecem dentro da
+   coluna. Vence o display:none !important global por especificidade.
+   Desktop com hover real nunca recebe .aberto — comportamento intocado. */
+@media (hover: none), (max-width:768px){
+  .nav-group.aberto > .nav-group-children{
+    display:block !important;
+    padding-left:14px;
+  }
+  .nav-group.aberto > .nav-group-header .nav-group-arrow{
+    transform:rotate(90deg);
+    color:var(--gold);opacity:1;
+  }
+}
 
 /* ── HOVER PANEL — abre à direita da sidebar (estados colapsado E expandido) ── */
 .nav-hover-panel{
@@ -7949,11 +7965,21 @@ function renderSidebar() {
 }
 
 function _navToggleGrupo(label) {
-  // Subitens NÃO abrem inline mais — sempre via painel flutuante (no hover).
-  // Em dispositivos sem hover (touch), o click no header abre o painel
-  // manualmente; o painel fecha sozinho com o leave.
   const el = document.querySelector('#sidebar-nav .nav-group[data-group="' + label.replace(/"/g, '\\"') + '"]');
-  if (el) _navAbrirHoverPanel(el);
+  if (!el) return;
+  // Touch e/ou tela ≤768px: o painel flutuante é display:none no CSS (e não
+  // teria mouseleave pra fechar) — o clique alterna o ACORDEÃO inline,
+  // fechando os irmãos. Cobre também desktop estreito (≤768px), onde a
+  // sidebar vira drawer e o painel também é desligado.
+  // Desktop normal: clique abre o painel (atalho do hover), como antes.
+  const semHover = window.matchMedia && window.matchMedia('(hover: none)').matches;
+  if (semHover || window.innerWidth <= 768) {
+    const abrir = !el.classList.contains('aberto');
+    document.querySelectorAll('#sidebar-nav .nav-group.aberto').forEach(g => g.classList.remove('aberto'));
+    if (abrir) el.classList.add('aberto');
+    return;
+  }
+  _navAbrirHoverPanel(el);
 }
 
 function _navAbrirHoverPanel(groupEl) {
