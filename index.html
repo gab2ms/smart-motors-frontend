@@ -566,7 +566,12 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 @media(max-width:768px){
   #dash-mid-grid{grid-template-columns:1fr!important;}
   #fin-charts-row{grid-template-columns:1fr!important;}
-  #cp-lista > div{grid-template-columns:1fr 1fr!important;font-size:11px;}
+  /* Pagar/Receber no celular: linha vira 2 colunas — Descrição na linha
+     cheia, depois Valor+Vencimento e Status+Ações (Categoria some via
+     .hide-mobile). A regra antiga #cp-lista > div mirava o elemento errado
+     (o grid é neto da lista, dentro de .cp-row) e estava morta. */
+  .cp-row > div, .cr-row > div{grid-template-columns:1fr 1fr!important;font-size:12px;row-gap:8px;}
+  .cp-row > div > div:first-child, .cr-row > div > div:first-child{grid-column:1 / -1;}
   .sidebar{display:none;position:fixed;left:0;top:0;height:100vh;z-index:200;width:240px;}
   .sidebar.open{display:flex;}
   .backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:150;}
@@ -10880,10 +10885,13 @@ function renderFinFluxo() {
   renderFcGrafico();
 
   // ── Tabela de projeção 12m ──
-  const cel = (v, bold) => '<td style="padding:6px 10px;text-align:right;font-family:\'JetBrains Mono\',monospace;'
-    + 'font-size:11px;' + (bold ? 'font-weight:700;' : '') + (v < 0 ? 'color:var(--red);' : '') + '">'
+  // cls='hide-mobile' esconde a coluna no ≤768px (mobile fica Mês + saldos).
+  const cel = (v, cls) => '<td' + (cls ? ' class="' + cls + '"' : '')
+    + ' style="padding:6px 10px;text-align:right;font-family:\'JetBrains Mono\',monospace;'
+    + 'font-size:11px;' + (v < 0 ? 'color:var(--red);' : '') + '">'
     + (v === 0 ? '—' : fmtSigned(v)) + '</td>';
-  const th = t => '<th style="padding:6px 10px;text-align:right;font-size:10px;text-transform:uppercase;'
+  const th = (t, cls) => '<th' + (cls ? ' class="' + cls + '"' : '')
+    + ' style="padding:6px 10px;text-align:right;font-size:10px;text-transform:uppercase;'
     + 'letter-spacing:0.8px;color:var(--text3);white-space:nowrap;">' + t + '</th>';
   const minR = Math.min(...proj.linhas.map(l => l.saldoR));
   const minP = Math.min(...proj.linhas.map(l => l.saldoP));
@@ -10892,16 +10900,17 @@ function renderFinFluxo() {
   document.getElementById('fin-fluxo-proj').innerHTML =
     '<table style="width:100%;border-collapse:collapse;">'
     + '<thead><tr><th style="padding:6px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);">Mês</th>'
-    + th('− Parcelas') + th('− Boletos forn.') + th('Fluxo realista') + th('Saldo realista')
-    + th('Fluxo pess.') + th('Saldo pess.') + '</tr></thead><tbody>'
+    + th('− Parcelas', 'hide-mobile') + th('− Boletos forn.', 'hide-mobile')
+    + th('Fluxo realista', 'hide-mobile') + th('Saldo realista')
+    + th('Fluxo pess.', 'hide-mobile') + th('Saldo pess.') + '</tr></thead><tbody>'
     + proj.linhas.map(l =>
       '<tr style="border-top:1px solid var(--border);">'
       + '<td style="padding:6px 10px;font-size:11px;white-space:nowrap;">' + l.lbl + '</td>'
-      + cel(-l.parcelas) + cel(-l.boletos) + cel(l.fluxoR)
+      + cel(-l.parcelas, 'hide-mobile') + cel(-l.boletos, 'hide-mobile') + cel(l.fluxoR, 'hide-mobile')
       + '<td style="padding:6px 10px;text-align:right;font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;'
       + (l.saldoR < 0 ? 'color:var(--red);' : '') + '">' + fmtSigned(l.saldoR)
       + (l.saldoR === minR && minR < proj.saldo0 ? valeTag : '') + '</td>'
-      + cel(l.fluxoP)
+      + cel(l.fluxoP, 'hide-mobile')
       + '<td style="padding:6px 10px;text-align:right;font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;'
       + (l.saldoP < 0 ? 'color:var(--red);' : '') + '">' + fmtSigned(l.saldoP)
       + (l.saldoP === minP ? valeTag : '') + '</td></tr>').join('')
@@ -13193,7 +13202,7 @@ function renderContasPagar() {
       <div class="cp-row" style="border-bottom:1px solid var(--border);">
         <div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1fr minmax(150px, auto);gap:12px;align-items:center;padding:13px 20px;font-size:13px;">
           <div style="font-weight:700;color:${stColors[st]};min-width:0;overflow:hidden;text-overflow:ellipsis;">${empBadge}${escHtml(c.nome)}${empIcone}${obsIcone}</div>
-          <div style="font-size:11px;color:var(--text3);min-width:0;">${escHtml(c.categoria)||'—'} · ${escHtml(periodoLabel[c.periodicidade]||c.periodicidade)}</div>
+          <div class="hide-mobile" style="font-size:11px;color:var(--text3);min-width:0;">${escHtml(c.categoria)||'—'} · ${escHtml(periodoLabel[c.periodicidade]||c.periodicidade)}</div>
           <div class="td-mono" style="font-weight:700;text-align:right;">${fmt(c.valor)}</div>
           <div>
             <div class="td-mono" style="font-size:12px;">${_vencComDia(c.vencimento)}</div>
@@ -13859,7 +13868,7 @@ function renderContasReceber() {
             ${escHtml(c.descricao)}${obsIcone}
             ${cliente ? `<div style="font-size:10px;color:var(--text3);font-weight:400;">${escHtml(cliente)}</div>` : ''}
           </div>
-          <div style="font-size:11px;color:var(--text3);min-width:0;">${escHtml(c.categoria) || '—'}</div>
+          <div class="hide-mobile" style="font-size:11px;color:var(--text3);min-width:0;">${escHtml(c.categoria) || '—'}</div>
           <div class="td-mono" style="font-weight:700;text-align:right;">${fmt(c.valor)}</div>
           <div>
             <div class="td-mono" style="font-size:12px;">${_vencComDia(c.vencimento)}</div>
