@@ -2041,6 +2041,7 @@ select:not(.input-pro):not(.search-input){
     <div id="estoque-inv-bar" style="display:none;align-items:center;gap:12px;margin-bottom:16px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--blue);flex-wrap:wrap;">
       <span id="estoque-inv-status" style="font-weight:700;"></span>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;">
+        <button class="btn btn-gold" id="estoque-inv-aplicar" onclick="invAplicar()"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Aplicar inventário</button>
         <button class="btn" onclick="invLimpar()"><svg class="ic ic-sm"><use href="#ic-trash"/></svg> Limpar contagens</button>
         <button class="btn" onclick="invToggle()"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Sair da conferência</button>
       </div>
@@ -8846,6 +8847,12 @@ function invAtualizaBar() {
   el.innerHTML = `Conferência de estoque — ${n} contado${n !== 1 ? 's' : ''} · `
     + (div ? `<span style="color:var(--gold);">${div} divergência${div !== 1 ? 's' : ''}</span>` : 'sem divergências')
     + ` <span style="color:var(--text3);font-weight:400;">· rascunho de ${dataTxt}, salvo neste navegador</span>`;
+  const btn = document.getElementById('estoque-inv-aplicar');
+  if (btn) {
+    btn.disabled = div === 0;
+    btn.style.opacity = div === 0 ? '0.5' : '';
+    btn.innerHTML = `<svg class="ic ic-sm"><use href="#ic-check"/></svg> Aplicar inventário${div ? ` (${div})` : ''}`;
+  }
 }
 
 async function invLimpar() {
@@ -8857,6 +8864,64 @@ async function invLimpar() {
   _invSalvarDraft();
   renderCatalogoProdutos();
   invAtualizaBar();
+}
+
+// ── Aplicar inventário: divergências → registrar_movimento('ajuste') ──
+// Texto da confirmação aprovado no Gate B. Um RPC por divergência:
+// p_quantidade = saldo CONTADO (a função calcula o delta e trava o produto
+// com FOR UPDATE), p_origem='inventario' (não-apagável no histórico — o 🗑
+// só permite origem 'manual'), p_motivo='Inventário DD/MM/AAAA'.
+// Contagem que bate com o sistema não gera movimento. Erro em um item não
+// trava os demais: sucesso sai do rascunho, falha FICA pra reaplicar.
+const _invNum = v => (v < 0 ? '−' : '') + Math.abs(Number(v) || 0);
+async function invAplicar() {
+  const divs = _invDivergencias();
+  if (!divs.length) { smAlert('Nenhuma divergência pra aplicar.'); return; }
+  const hojeBR = new Date().toLocaleDateString('pt-BR');
+  const cap = 15;
+  const linhas = divs.map(d => {
+    const delta = d.contado - (d.p.estoque || 0);
+    return `• ${d.p.nome.trim()}: ${_invNum(d.p.estoque || 0)} → ${d.contado} (${delta > 0 ? '+' : '−'}${Math.abs(delta)})`;
+  });
+  const lista = linhas.length <= cap ? linhas.join('\n')
+    : linhas.slice(0, cap).join('\n') + `\n…e mais ${linhas.length - cap}`;
+  const semDiv = Object.keys(invContagens).length - divs.length;
+  const ok = await smConfirm(
+    `Aplicar inventário — ${hojeBR}?\n\n`
+    + `${divs.length} produto${divs.length !== 1 ? 's' : ''} com divergência (contado ≠ sistema):\n${lista}\n\n`
+    + (semDiv > 0 ? `${semDiv} produto${semDiv !== 1 ? 's' : ''} contado${semDiv !== 1 ? 's' : ''} sem divergência não ${semDiv !== 1 ? 'geram' : 'gera'} movimento.\n\n` : '')
+    + `Cada divergência vira um movimento 'ajuste' (origem: inventario) no\n`
+    + `histórico do produto — NÃO dá pra apagar depois, só corrigir com um\n`
+    + `novo ajuste. O saldo do sistema passa a ser o contado.`);
+  if (!ok) return;
+
+  let okN = 0; const erros = [];
+  for (const d of divs) {
+    try {
+      const { data, error } = await sb.rpc('registrar_movimento', {
+        p_produto_id: d.p.id, p_tipo: 'ajuste', p_quantidade: d.contado,
+        p_motivo: 'Inventário ' + hojeBR, p_origem: 'inventario', p_ref_id: null,
+      });
+      if (error) throw new Error(error.message);
+      const mov = Array.isArray(data) ? data[0] : data;
+      d.p.estoque = Number(mov.saldo_apos);
+      delete invContagens[String(d.p.id)];   // aplicado → sai do rascunho
+      okN++;
+    } catch (err) {
+      erros.push(`${d.p.nome.trim()}: ${err.message}`);   // falha → contagem fica pra reaplicar
+    }
+  }
+  // Contagens sem divergência também saem (conferidas, nada a gravar).
+  for (const id of Object.keys(invContagens)) {
+    const p = produtosCatalogo.find(x => String(x.id) === id);
+    if (!p || p.ativo === false || invContagens[id] === (p.estoque || 0)) delete invContagens[id];
+  }
+  _invSalvarDraft();
+  if (!erros.length && invModo) invToggle();     // tudo certo → sai do modo
+  else { renderCatalogoProdutos(); invAtualizaBar(); }  // com erro fica no modo pra reaplicar
+  smAlert(`Inventário aplicado: ${okN} ajuste${okN !== 1 ? 's' : ''}.`
+    + (erros.length ? `\n\n${erros.length} erro${erros.length !== 1 ? 's' : ''} (contagens mantidas pra reaplicar):\n`
+      + erros.slice(0, 8).join('\n') : ''));
 }
 
 // Ordenação da lista de produtos (só visual; nenhuma escrita).
