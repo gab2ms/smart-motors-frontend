@@ -572,6 +572,18 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
      (o grid é neto da lista, dentro de .cp-row) e estava morta. */
   .cp-row > div, .cr-row > div{grid-template-columns:1fr 1fr!important;font-size:12px;row-gap:8px;}
   .cp-row > div > div:first-child, .cr-row > div > div:first-child{grid-column:1 / -1;}
+  /* Alvos de toque ≥44px (Etapa 3). min-height/width valem mesmo com padding
+     inline menor nos botões; flex centraliza o conteúdo. Desktop intocado. */
+  .action-btn, .btn{
+    min-height:44px;min-width:44px;
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  }
+  input[type="checkbox"]{width:20px;height:20px;}
+  .search-input, select.search-input, .input-pro, input[type="date"], input[type="month"]{min-height:44px;}
+  /* Abas do Financeiro/Contas a Receber: 5 abas não cabem em 360px —
+     scroll horizontal em vez de quebrar/empilhar. */
+  .fin-tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;}
+  .fin-tab-btn{white-space:nowrap;flex-shrink:0;}
   .sidebar{display:none;position:fixed;left:0;top:0;height:100vh;z-index:200;width:240px;}
   .sidebar.open{display:flex;}
   .backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:150;}
