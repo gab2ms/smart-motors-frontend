@@ -2033,7 +2033,17 @@ select:not(.input-pro):not(.search-input){
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);white-space:nowrap;cursor:pointer;user-select:none;">
         <input type="checkbox" id="estoque-mostrar-inativos" onchange="renderCatalogoProdutos()"> Mostrar inativos
       </label>
+      <button class="btn" id="estoque-inv-btn" onclick="invToggle()" style="white-space:nowrap;"><svg class="ic ic-sm"><use href="#ic-clipboard"/></svg> Conferência</button>
       <button class="btn" id="estoque-limpar-filtro" onclick="catKpiFiltrar('')" style="display:none;white-space:nowrap;"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Limpar filtro</button>
+    </div>
+
+    <!-- Inventário (Etapa 2): barra do modo conferência — contagem física, rascunho local, nada gravado -->
+    <div id="estoque-inv-bar" style="display:none;align-items:center;gap:12px;margin-bottom:16px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--blue);flex-wrap:wrap;">
+      <span id="estoque-inv-status" style="font-weight:700;"></span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;">
+        <button class="btn" onclick="invLimpar()"><svg class="ic ic-sm"><use href="#ic-trash"/></svg> Limpar contagens</button>
+        <button class="btn" onclick="invToggle()"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Sair da conferência</button>
+      </div>
     </div>
 
     <!-- Etapa 3: aviso de cadastro incompleto (clicável → filtra; reusa catKpiFiltro) -->
@@ -2073,6 +2083,7 @@ select:not(.input-pro):not(.search-input){
               <th onclick="catSort('custo')" style="cursor:pointer;user-select:none;">Custo total <span id="catsort-custo" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('preco')" style="cursor:pointer;user-select:none;">Preço venda <span id="catsort-preco" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('estoque')" style="cursor:pointer;user-select:none;">Estoque <span id="catsort-estoque" style="color:var(--text3);">↕</span></th>
+              <th id="estoque-th-contado" style="display:none;">Contado</th>
               <th onclick="catSort('cob')" style="cursor:pointer;user-select:none;" title="Dias de estoque no ritmo de venda dos últimos 90 dias">Cobertura <span id="catsort-cob" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('giro')" style="cursor:pointer;user-select:none;" title="Unidades vendidas em 90 dias por unidade em estoque">Giro <span id="catsort-giro" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('mc')" style="cursor:pointer;user-select:none;">MC R$ <span id="catsort-mc" style="color:var(--text3);">↕</span></th>
@@ -8442,7 +8453,7 @@ function renderCatalogoProdutos() {
   const tbody = document.getElementById('estoque-table-body');
   if (!tbody) return;
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="12" class="empty">Nenhum produto encontrado</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="${invModo ? 13 : 12}" class="empty">Nenhum produto encontrado</td></tr>`;
     catVisiveisIds = [];
     _catSyncHeaderCheck();
     _catAtualizaSetas();
@@ -8506,6 +8517,13 @@ function renderCatalogoProdutos() {
       <td class="td-mono" style="font-weight:700;">${L.ctr != null ? fmt(L.ctr) : '—'}</td>
       <td class="td-mono">${fmt(L.venda)}</td>
       <td class="td-mono">${_estoqueCell(p.estoque)}</td>
+      ${!invModo ? '' : (L.categoria === 'servico' || inativo
+        ? '<td class="td-mono" style="color:var(--text3);">—</td>'
+        : `<td onclick="event.stopPropagation()" style="white-space:nowrap;">`
+          + `<input type="number" min="0" step="1" value="${invContagens[String(p.id)] ?? ''}" placeholder="—"`
+          + ` oninput="invSetContagem('${p.id}',this.value)"`
+          + ` style="width:64px;padding:4px 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px;">`
+          + ` <span id="inv-delta-${p.id}" style="font-size:11px;font-weight:700;">${_invDeltaHtml(p.id)}</span></td>`)}
       <td class="td-mono">${_coberturaCell(L.cob)}</td>
       <td class="td-mono">${_giroCell(L.giro)}</td>
       <td class="td-mono" style="font-weight:700;color:${mcColor};">${L.mc != null ? fmt(L.mc) : '—'}</td>
@@ -8742,6 +8760,103 @@ async function catCustoLote() {
   if (puladosN)       partes.push(`${puladosN} pulado${puladosN !== 1 ? 's' : ''}`);
   if (servicos.length) partes.push(`${servicos.length} serviço${servicos.length !== 1 ? 's' : ''} fora do fluxo`);
   smAlert(partes.length ? partes.join(' · ') + '.' : 'Nada alterado.');
+}
+
+// ── Inventário (Etapa 2): modo conferência — contagem física por produto ──
+// Liga a coluna "Contado" (editável) ao lado do Estoque, com delta ao vivo.
+// O rascunho fica em localStorage (sobrevive a reload/troca de tela; um por
+// navegador). Neste modo NADA é gravado no banco — a aplicação das
+// divergências (ajuste em lote via registrar_movimento) é etapa separada.
+// Serviços e inativos ficam fora da contagem ("—").
+let invModo = false;
+let invContagens = {};            // produtoId → contagem (inteiro ≥ 0)
+let invDraftData = null;          // data ISO de quando o rascunho começou
+const INV_DRAFT_KEY = 'sm_inv_draft';
+
+function _invSalvarDraft() {
+  try {
+    if (Object.keys(invContagens).length)
+      localStorage.setItem(INV_DRAFT_KEY, JSON.stringify({ data: invDraftData, contagens: invContagens }));
+    else localStorage.removeItem(INV_DRAFT_KEY);
+  } catch (e) {}
+}
+function _invCarregarDraft() {
+  try {
+    const d = JSON.parse(localStorage.getItem(INV_DRAFT_KEY) || 'null');
+    if (d && d.contagens && Object.keys(d.contagens).length) {
+      invContagens = d.contagens; invDraftData = d.data || null; return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function invToggle() {
+  invModo = !invModo;
+  if (invModo) {
+    _invCarregarDraft();
+    if (!invDraftData) invDraftData = new Date().toLocaleDateString('en-CA');
+  }
+  const bar = document.getElementById('estoque-inv-bar');
+  if (bar) bar.style.display = invModo ? 'flex' : 'none';
+  const th = document.getElementById('estoque-th-contado');
+  if (th) th.style.display = invModo ? '' : 'none';
+  const btn = document.getElementById('estoque-inv-btn');
+  if (btn) { btn.style.borderColor = invModo ? 'var(--blue)' : ''; btn.style.color = invModo ? 'var(--blue)' : ''; }
+  renderCatalogoProdutos();
+  invAtualizaBar();
+}
+
+function invSetContagem(id, raw) {
+  id = String(id);
+  const v = Math.round(Number(raw));
+  if (raw === '' || raw == null || isNaN(v) || v < 0) delete invContagens[id];
+  else invContagens[id] = v;
+  _invSalvarDraft();
+  const span = document.getElementById('inv-delta-' + id);
+  if (span) span.innerHTML = _invDeltaHtml(id);
+  invAtualizaBar();
+}
+
+function _invDeltaHtml(id) {
+  const v = invContagens[String(id)];
+  if (v === undefined) return '';
+  const p = produtosCatalogo.find(x => String(x.id) === String(id));
+  if (!p) return '';
+  const d = v - (p.estoque || 0);
+  if (d === 0) return '<span style="color:var(--green);">✓ bate</span>';
+  return `<span style="color:${d > 0 ? 'var(--green)' : 'var(--red)'};">${d > 0 ? '+' : '−'}${Math.abs(d)}</span>`;
+}
+
+// Contagens que diferem do saldo do sistema (só produtos ativos ainda existentes).
+function _invDivergencias() {
+  const out = [];
+  for (const [id, v] of Object.entries(invContagens)) {
+    const p = produtosCatalogo.find(x => String(x.id) === id);
+    if (p && p.ativo !== false && v !== (p.estoque || 0)) out.push({ p, contado: v });
+  }
+  return out;
+}
+
+function invAtualizaBar() {
+  const el = document.getElementById('estoque-inv-status');
+  if (!el || !invModo) return;
+  const n = Object.keys(invContagens).length;
+  const div = _invDivergencias().length;
+  const dataTxt = invDraftData ? invDraftData.split('-').reverse().join('/') : '';
+  el.innerHTML = `Conferência de estoque — ${n} contado${n !== 1 ? 's' : ''} · `
+    + (div ? `<span style="color:var(--gold);">${div} divergência${div !== 1 ? 's' : ''}</span>` : 'sem divergências')
+    + ` <span style="color:var(--text3);font-weight:400;">· rascunho de ${dataTxt}, salvo neste navegador</span>`;
+}
+
+async function invLimpar() {
+  const n = Object.keys(invContagens).length;
+  if (!n) { smAlert('Nenhuma contagem pra limpar.'); return; }
+  const ok = await smConfirm(`Apagar as ${n} contagen${n !== 1 ? 's' : 'm'} deste rascunho?\n\nNada foi gravado no banco — isso limpa só a digitação.`);
+  if (!ok) return;
+  invContagens = {}; invDraftData = new Date().toLocaleDateString('en-CA');
+  _invSalvarDraft();
+  renderCatalogoProdutos();
+  invAtualizaBar();
 }
 
 // Ordenação da lista de produtos (só visual; nenhuma escrita).
