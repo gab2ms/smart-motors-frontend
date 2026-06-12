@@ -2049,6 +2049,7 @@ select:not(.input-pro):not(.search-input){
     <div id="estoque-bulk-bar" style="display:none;align-items:center;gap:12px;margin-bottom:16px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--gold);flex-wrap:wrap;">
       <span id="estoque-bulk-count" style="font-weight:700;color:var(--text);"></span>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;">
+        <button class="btn" onclick="catCustoLote()"><svg class="ic ic-sm"><use href="#ic-dollar"/></svg> Atualizar custo</button>
         <button class="btn" onclick="catPrecoLote()"><svg class="ic ic-sm"><use href="#ic-tag"/></svg> Atualizar preço</button>
         <button class="btn" onclick="catInativarLote()"><svg class="ic ic-sm"><use href="#ic-eye-off"/></svg> Inativar</button>
         <button class="btn" onclick="catLimparSelecao()"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Limpar seleção</button>
@@ -8628,6 +8629,82 @@ async function catPrecoLote() {
   } catch (err) {
     smAlert('Erro ao atualizar preço: ' + err.message);
   }
+}
+
+// ── Atualizar custo em lote (GRAVA — produtos_precos.custo_puro, POR MODELO) ──
+// O custo NÃO é por produto: vive em produtos_precos por MODELO (casado por
+// nome via _matchProdutoPorNome), e várias cores compartilham a mesma linha —
+// editar o custo de uma cor muda TODAS as variantes do modelo, selecionadas
+// ou não. Por isso o fluxo agrupa a seleção por modelo e confirma UM MODELO
+// POR VEZ mostrando o raio completo (todas as variantes ativas afetadas, com
+// antes→depois de custo puro e custo total). Cancelar (prompt ou confirm)
+// pula só aquele modelo. Só custo_puro muda — montagem/comissão/NF intactos.
+// Serviços ficam fora (serviço não tem custo de produto).
+async function catCustoLote() {
+  const alvo = [...catSelecionados]
+    .map(id => produtosCatalogo.find(x => String(x.id) === String(id)))
+    .filter(Boolean);
+  if (!alvo.length) { smAlert('Nenhum produto selecionado.'); return; }
+
+  // Agrupa a seleção pela linha de custo (modelo). Sem match = sem custo.
+  const grupos = new Map();                  // pp.id → { pp, sel: [produtos] }
+  const semCusto = [], servicos = [];
+  for (const p of alvo) {
+    if ((p.categoria || '') === 'servico') { servicos.push(p); continue; }
+    const pp = _matchProdutoPorNome(p.nome);
+    if (!pp) { semCusto.push(p); continue; }
+    const g = grupos.get(pp.id) || { pp, sel: [] };
+    g.sel.push(p); grupos.set(pp.id, g);
+  }
+
+  let okN = 0, puladosN = 0;
+  for (const { pp, sel } of grupos.values()) {
+    const atual = pp.custoPuro || 0;
+    const raw = await smPrompt(`Novo custo puro do modelo "${pp.modelo}" (atual ${fmt(atual)}):`, '');
+    if (raw == null) { puladosN++; continue; }
+    const novo = Number(String(raw).trim().replace(',', '.'));
+    if (!(novo > 0)) { smAlert(`Valor inválido — modelo "${pp.modelo}" pulado.`); puladosN++; continue; }
+
+    // Raio completo: TODAS as variantes ativas que casam nessa linha de custo,
+    // marcadas ou não — é isso que o update vai atingir de fato.
+    const selIds = new Set(sel.map(p => String(p.id)));
+    const raio = produtosCatalogo.filter(p => p.ativo && (p.categoria || '') !== 'servico'
+      && _matchProdutoPorNome(p.nome) === pp);
+    const extras = (pp.categoria || 'scooter') === 'acessorio'
+      ? `(montagem ${fmt(pp.montagem || 0)} não muda; acessório não tem comissão/NF)`
+      : `(montagem ${fmt(pp.montagem || 0)} + comissão ${fmt(pp.comissao || 0)} + NF ${fmt(CONFIG_CUSTOS.nf_pedido || 0)} não mudam)`;
+    const lista = raio.map(p => selIds.has(String(p.id))
+      ? `✓ ${p.nome.trim()} (selecionada)`
+      : `• ${p.nome.trim()} (não selecionada)`).join('\n');
+    const ok = await smConfirm(
+      `Atualizar custo do modelo "${pp.modelo}"?\n\n`
+      + `Custo puro:          ${fmt(atual)} → ${fmt(novo)}\n`
+      + `Custo total (real):  ${fmt(ctReal(pp))} → ${fmt(ctReal({ ...pp, custoPuro: novo }))}\n`
+      + `${extras}\n\n`
+      + `⚠ Custo é por MODELO — muda pra ${raio.length === 1 ? 'esta variante' : 'TODAS as ' + raio.length + ' variantes'}:\n${lista}`);
+    if (!ok) { puladosN++; continue; }
+    try {
+      const { error } = await sb.from('produtos_precos')
+        .update({ custo_puro: novo, atualizado_em: new Date().toISOString() })
+        .eq('id', pp.id);
+      if (error) throw new Error(error.message || 'erro ao gravar custo');
+      pp.custoPuro = novo;   // products[] em memória — ctReal recalcula em Dashboard/DRE/Parado
+      okN++;
+    } catch (err) {
+      smAlert(`Erro no modelo "${pp.modelo}": ${err.message}`); puladosN++;
+    }
+  }
+
+  _TINY_PRECOS_CACHE = null;             // mesmo padrão do preço em lote
+  catSelecionados.clear();
+  renderCatalogoProdutos();
+  renderDashboard();
+  const partes = [];
+  if (okN)            partes.push(`${okN} modelo${okN !== 1 ? 's' : ''} com custo atualizado`);
+  if (puladosN)       partes.push(`${puladosN} pulado${puladosN !== 1 ? 's' : ''}`);
+  if (semCusto.length) partes.push(`${semCusto.length} sem custo cadastrado (use o produto individual por enquanto)`);
+  if (servicos.length) partes.push(`${servicos.length} serviço${servicos.length !== 1 ? 's' : ''} fora do fluxo`);
+  smAlert(partes.length ? partes.join(' · ') + '.' : 'Nada alterado.');
 }
 
 // Ordenação da lista de produtos (só visual; nenhuma escrita).
