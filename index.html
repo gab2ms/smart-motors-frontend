@@ -2034,6 +2034,7 @@ select:not(.input-pro):not(.search-input){
         <input type="checkbox" id="estoque-mostrar-inativos" onchange="renderCatalogoProdutos()"> Mostrar inativos
       </label>
       <button class="btn" id="estoque-inv-btn" onclick="invToggle()" style="white-space:nowrap;"><svg class="ic ic-sm"><use href="#ic-clipboard"/></svg> Conferência</button>
+      <button class="btn" onclick="invImprimirFolha()" title="Folha A4 pra contagem à mão — respeita a busca/filtro atuais" style="white-space:nowrap;"><svg class="ic ic-sm"><use href="#ic-printer"/></svg> Folha de contagem</button>
       <button class="btn" id="estoque-limpar-filtro" onclick="catKpiFiltrar('')" style="display:none;white-space:nowrap;"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Limpar filtro</button>
     </div>
 
@@ -8326,18 +8327,17 @@ function _paradoBadge(parado) {
     : '';
 }
 
-function renderCatalogoProdutos() {
-  _ensureVendasABC();   // Etapa 2: dispara a carga da curva ABC (cacheada; re-render ao resolver)
-  _ensureVendas90();    // Etapa 3: dispara a carga de vendas 90d (cobertura/giro)
+// Lista filtrada da tela (busca + toggle de inativos + filtro de KPI/ABC/
+// parados). Fonte única da render da tabela E da folha de contagem.
+// Inativos só aparecem com o toggle ligado; KPIs sempre contam só ativos.
+function _catListaFiltrada() {
   const q = (document.getElementById('estoque-search')?.value || '').toLowerCase();
   const verInativos = !!document.getElementById('estoque-mostrar-inativos')?.checked;
-  // Inativos só aparecem com o toggle ligado; o panorama (KPIs) sempre conta só ativos.
   const ativos = produtosCatalogo.filter(p => p.ativo !== false);
   const base = verInativos ? produtosCatalogo : ativos;
   let filtered = base.filter(p =>
     !q || p.nome.toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q));
-  // Etapa 1: filtro por card de KPI (saldo). Aplica sobre a lista já filtrada por
-  // busca/inativos. Os KPIs continuam contando sobre `ativos` (panorama estável).
+  // Filtro por card de KPI (saldo) sobre a lista já filtrada por busca/inativos.
   if      (catKpiFiltro === 'comSaldo')    filtered = filtered.filter(p => p.estoque > 0);
   else if (catKpiFiltro === 'zerados')     filtered = filtered.filter(p => p.estoque === 0);
   else if (catKpiFiltro === 'negativos')   filtered = filtered.filter(p => p.estoque < 0);
@@ -8346,6 +8346,13 @@ function renderCatalogoProdutos() {
   else if (catKpiFiltro === 'classeB')     filtered = filtered.filter(p => _ABC_CACHE.classe.get(String(p.id)) === 'B');
   else if (catKpiFiltro === 'classeC')     filtered = filtered.filter(p => _ABC_CACHE.classe.get(String(p.id)) === 'C');
   else if (catKpiFiltro === 'parados')     filtered = filtered.filter(_ehParado);   // Etapa 4
+  return { ativos, filtered };
+}
+
+function renderCatalogoProdutos() {
+  _ensureVendasABC();   // Etapa 2: dispara a carga da curva ABC (cacheada; re-render ao resolver)
+  _ensureVendas90();    // Etapa 3: dispara a carga de vendas 90d (cobertura/giro)
+  const { ativos, filtered } = _catListaFiltrada();
 
   const cnt = document.getElementById('estoque-count');
   if (cnt) cnt.textContent = `${filtered.length} produto${filtered.length !== 1 ? 's' : ''}`
@@ -8922,6 +8929,88 @@ async function invAplicar() {
   smAlert(`Inventário aplicado: ${okN} ajuste${okN !== 1 ? 's' : ''}.`
     + (erros.length ? `\n\n${erros.length} erro${erros.length !== 1 ? 's' : ''} (contagens mantidas pra reaplicar):\n`
       + erros.slice(0, 8).join('\n') : ''));
+}
+
+// ── Folha de contagem imprimível (Inventário Etapa 1) ──
+// A4 via window.open + window.print, padrão da casa (modelado no ofImprimir).
+// Lista os produtos ATIVOS da tela atual (respeita busca/filtro; serviços
+// fora) em ordem alfabética, com espaço pra anotar contagem e obs à mão.
+// Default = ÀS CEGAS (sem saldo do sistema — quem conta não vê o esperado);
+// OK na pergunta imprime com o saldo visível. Nenhuma escrita.
+async function invImprimirFolha() {
+  const itens = _catListaFiltrada().filtered
+    .filter(p => p.ativo !== false && (p.categoria || '') !== 'servico')
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  if (!itens.length) { smAlert('Nenhum produto ativo na lista atual.'); return; }
+  const comSaldo = await smConfirm(
+    `Folha de contagem — ${itens.length} produto${itens.length !== 1 ? 's' : ''}.\n\n`
+    + `Incluir o saldo do sistema na folha?\n`
+    + `OK = com saldo · Cancelar = às cegas (padrão recomendado: quem conta não vê o esperado)`);
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const agora = new Date();
+  const impressoEm = agora.toLocaleDateString('pt-BR') + ' '
+    + agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const q = (document.getElementById('estoque-search')?.value || '').trim();
+  const filtroTxt = [q ? `busca: "${q}"` : '',
+    catKpiFiltro ? `filtro: ${_CAT_KPI_FILTRO_LABEL[catKpiFiltro] || catKpiFiltro}` : '']
+    .filter(Boolean).join(' · ') || 'todos os ativos';
+  const linhas = itens.map((p, i) =>
+    `<tr><td class="num">${i + 1}</td><td>${esc(p.nome.trim())}</td><td class="cod">${esc(p.codigo) || '—'}</td>`
+    + (comSaldo ? `<td class="num">${Number(p.estoque) || 0}</td>` : '')
+    + `<td></td><td></td></tr>`).join('');
+  const html = `<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<title>Folha de contagem — Smart Motors</title>
+<style>
+  @page { size: A4 portrait; margin: 14mm; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:#fff; color:#111; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 10pt; line-height: 1.35; }
+  .header { display:flex; justify-content:space-between; align-items:baseline; gap:12px; border-bottom:2px solid #111; padding-bottom:6px; margin-bottom:8px; }
+  h1 { font-size:13pt; margin:0; }
+  .meta { font-size:9pt; color:#444; }
+  table { width:100%; border-collapse:collapse; }
+  thead { display:table-header-group; }
+  th { text-align:left; font-size:8pt; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1.5px solid #111; padding:4px 6px; }
+  th.num, td.num { text-align:right; }
+  td { border-bottom:1px solid #bbb; padding:7px 6px; vertical-align:bottom; }
+  td.num { font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.cod { color:#444; white-space:nowrap; }
+  tr { page-break-inside:avoid; }
+  .footer { margin-top:22px; display:flex; gap:40px; font-size:10pt; }
+  .sign { flex:1; border-top:1px solid #111; padding-top:4px; text-align:center; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style></head>
+<body>
+  <div class="header">
+    <h1>SMART MOTORS — Folha de Contagem de Estoque</h1>
+    <div class="meta">${esc(impressoEm)}</div>
+  </div>
+  <div class="meta" style="margin-bottom:8px;">${itens.length} produto${itens.length !== 1 ? 's' : ''} · ${esc(filtroTxt)}${comSaldo ? '' : ' · contagem às cegas (sem saldo do sistema)'}</div>
+  <table>
+    <thead><tr>
+      <th class="num" style="width:30px;">#</th><th>Produto</th><th>Código</th>
+      ${comSaldo ? '<th class="num" style="width:64px;">Sistema</th>' : ''}
+      <th style="width:84px;">Contagem</th><th style="width:30%;">Obs.</th>
+    </tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>
+  <div class="footer">
+    <div class="sign">Contado por</div>
+    <div class="sign">Conferido por</div>
+    <div class="sign">Data</div>
+  </div>
+  <script>
+    window.addEventListener('load', function(){
+      setTimeout(function(){ try { window.focus(); window.print(); } catch(e){} }, 250);
+    });
+  <\/script>
+</body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { smAlert('Permita pop-ups para imprimir a folha.'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
 }
 
 // Ordenação da lista de produtos (só visual; nenhuma escrita).
