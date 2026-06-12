@@ -2106,6 +2106,9 @@ select:not(.input-pro):not(.search-input){
       </div>
       <div class="search-bar" style="margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
         <input type="text" class="search-input" placeholder="Buscar produto por nome ou código..." id="inv-search" oninput="renderInventario()" style="flex:1;min-width:200px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);white-space:nowrap;cursor:pointer;user-select:none;">
+          <input type="checkbox" id="inv-mostrar-sku" onchange="invToggleSku(this.checked)"> Mostrar código/SKU
+        </label>
         <div style="display:flex;gap:6px;">
           <button class="btn" data-inv-tipo="" onclick="invFiltroTipo('')">Todos</button>
           <button class="btn" data-inv-tipo="scooter" onclick="invFiltroTipo('scooter')">Scooters</button>
@@ -2125,7 +2128,7 @@ select:not(.input-pro):not(.search-input){
           <table>
             <thead><tr>
               <th onclick="invSort('nome')" style="cursor:pointer;user-select:none;">Produto <span id="invsort-nome" style="color:var(--text3);">↕</span></th>
-              <th onclick="invSort('codigo')" style="cursor:pointer;user-select:none;">Código <span id="invsort-codigo" style="color:var(--text3);">↕</span></th>
+              <th id="inv-th-codigo" onclick="invSort('codigo')" style="cursor:pointer;user-select:none;display:none;">Código <span id="invsort-codigo" style="color:var(--text3);">↕</span></th>
               <th onclick="invSort('sistema')" style="cursor:pointer;user-select:none;">Sistema <span id="invsort-sistema" style="color:var(--text3);">↕</span></th>
               <th onclick="invSort('contado')" style="cursor:pointer;user-select:none;">Contado <span id="invsort-contado" style="color:var(--text3);">↕</span></th>
               <th onclick="invSort('delta')" style="cursor:pointer;user-select:none;">Δ <span id="invsort-delta" style="color:var(--text3);">↕</span></th>
@@ -8813,6 +8816,18 @@ let invDraftData = null;          // data ISO de quando o rascunho começou
 const INV_DRAFT_KEY = 'sm_inv_draft';
 let invTipo = '', invSaldo = '';  // chips de filtro da tela
 let invSortCol = 'nome', invSortDir = 1;
+// SKU oculto por default (preferência lembrada por navegador) — vale pra
+// coluna Código da tela E pra folha impressa.
+const INV_SKU_KEY = 'sm_inv_sku';
+let invMostrarSku = false;
+try { invMostrarSku = localStorage.getItem(INV_SKU_KEY) === '1'; } catch (e) {}
+
+function invToggleSku(on) {
+  invMostrarSku = !!on;
+  try { localStorage.setItem(INV_SKU_KEY, invMostrarSku ? '1' : '0'); } catch (e) {}
+  if (!invMostrarSku && invSortCol === 'codigo') { invSortCol = 'nome'; invSortDir = 1; }
+  renderInventario();
+}
 
 function _invSalvarDraft() {
   try {
@@ -8836,6 +8851,8 @@ function invAbrir() {
   if (!invDraftData) invDraftData = new Date().toLocaleDateString('en-CA');
   document.getElementById('estoque-view-main').style.display = 'none';
   document.getElementById('estoque-view-inv').style.display = '';
+  const sku = document.getElementById('inv-mostrar-sku');
+  if (sku) sku.checked = invMostrarSku;
   renderInventario();
 }
 function invFechar() {
@@ -8891,6 +8908,8 @@ function renderInventario() {
     const el = document.getElementById('invsort-' + c);
     if (el) el.textContent = invSortCol === c ? (invSortDir === 1 ? '↑' : '↓') : '↕';
   });
+  const thCod = document.getElementById('inv-th-codigo');
+  if (thCod) thCod.style.display = invMostrarSku ? '' : 'none';
   document.querySelectorAll('[data-inv-tipo]').forEach(b => {
     const on = b.dataset.invTipo === invTipo;
     b.style.borderColor = on ? 'var(--gold)' : ''; b.style.color = on ? 'var(--gold)' : '';
@@ -8903,7 +8922,7 @@ function renderInventario() {
   if (cnt) cnt.textContent = `${lista.length} produto${lista.length !== 1 ? 's' : ''} na lista`;
   tbody.innerHTML = lista.length ? lista.map(p => `<tr>
       <td class="td-model" style="max-width:320px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}</td>
-      <td><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
+      ${invMostrarSku ? `<td><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>` : ''}
       <td class="td-mono">${_estoqueCell(p.estoque)}</td>
       <td style="white-space:nowrap;">
         <input type="number" min="0" step="1" value="${invContagens[String(p.id)] ?? ''}" placeholder="—"
@@ -8911,7 +8930,7 @@ function renderInventario() {
           style="width:72px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12.5px;">
       </td>
       <td class="td-mono" style="font-weight:700;"><span id="inv-delta-${p.id}">${_invDeltaHtml(p.id)}</span></td>
-    </tr>`).join('') : '<tr><td colspan="5" class="empty">Nenhum produto encontrado</td></tr>';
+    </tr>`).join('') : `<tr><td colspan="${invMostrarSku ? 5 : 4}" class="empty">Nenhum produto encontrado</td></tr>`;
   invStatusAtualiza();
 }
 
@@ -9054,7 +9073,8 @@ async function invImprimirFolha() {
     { comSaldo: 'com saldo', zerados: 'zerados', negativos: 'negativos' }[invSaldo] || '']
     .filter(Boolean).join(' · ') || 'todos os ativos';
   const linhas = itens.map((p, i) =>
-    `<tr><td class="num">${i + 1}</td><td>${esc(p.nome.trim())}</td><td class="cod">${esc(p.codigo) || '—'}</td>`
+    `<tr><td class="num">${i + 1}</td><td>${esc(p.nome.trim())}</td>`
+    + (invMostrarSku ? `<td class="cod">${esc(p.codigo) || '—'}</td>` : '')
     + (comSaldo ? `<td class="num">${Number(p.estoque) || 0}</td>` : '')
     + `<td></td><td></td></tr>`).join('');
   const html = `<!doctype html>
@@ -9088,7 +9108,8 @@ async function invImprimirFolha() {
   <div class="meta" style="margin-bottom:8px;">${itens.length} produto${itens.length !== 1 ? 's' : ''} · ${esc(filtroTxt)}${comSaldo ? '' : ' · contagem às cegas (sem saldo do sistema)'}</div>
   <table>
     <thead><tr>
-      <th class="num" style="width:30px;">#</th><th>Produto</th><th>Código</th>
+      <th class="num" style="width:30px;">#</th><th>Produto</th>
+      ${invMostrarSku ? '<th>Código</th>' : ''}
       ${comSaldo ? '<th class="num" style="width:64px;">Sistema</th>' : ''}
       <th style="width:84px;">Contagem</th><th style="width:30%;">Obs.</th>
     </tr></thead>
