@@ -2092,7 +2092,7 @@ select:not(.input-pro):not(.search-input){
         <table>
           <thead>
             <tr id="estoque-thead">
-              <th style="width:34px;text-align:center;"><input type="checkbox" id="estoque-check-todos" onclick="catToggleTodos(this.checked)" title="Selecionar todos os visíveis"></th>
+              <th class="hide-mobile" style="width:34px;text-align:center;"><input type="checkbox" id="estoque-check-todos" onclick="catToggleTodos(this.checked)" title="Selecionar todos os visíveis"></th>
               <th onclick="catSort('nome')" style="cursor:pointer;user-select:none;">Produto <span id="catsort-nome" style="color:var(--text3);">↕</span></th>
               <th class="hide-mobile" onclick="catSort('codigo')" style="cursor:pointer;user-select:none;">Código <span id="catsort-codigo" style="color:var(--text3);">↕</span></th>
               <th class="hide-mobile" onclick="catSort('categoria')" style="cursor:pointer;user-select:none;">Categoria <span id="catsort-categoria" style="color:var(--text3);">↕</span></th>
@@ -8591,7 +8591,7 @@ function renderCatalogoProdutos() {
     const sel = catSelecionados.has(String(p.id));
     const mcColor = L.mcp == null ? 'var(--text3)' : L.mcp >= 30 ? 'var(--gold)' : L.mcp >= 15 ? 'var(--orange)' : 'var(--red)';
     return `<tr onclick="prodOpenEdit('${p.id}')" style="cursor:pointer;${inativo ? 'opacity:0.5;' : ''}">
-      <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" ${sel ? 'checked' : ''} onclick="event.stopPropagation();catToggleSel('${p.id}',this.checked)"></td>
+      <td class="hide-mobile" style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" ${sel ? 'checked' : ''} onclick="event.stopPropagation();catToggleSel('${p.id}',this.checked)"></td>
       <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}${_abcBadge(_ABC_CACHE.classe.get(String(p.id)))}${_paradoBadge(L.parado)}${inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">Inativo</span>' : ''}</td>
       <td class="hide-mobile"><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
       <td class="hide-mobile">${_catBadgeProduto(L.categoria)}</td>
