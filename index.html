@@ -374,6 +374,9 @@ a.nav-item:where(:link,:visited){color:var(--text2);}
 
 /* TABLE */
 .table-wrap{overflow-x:auto;}
+/* Mobile (Etapa 2): colunas secundárias somem ≤768px — mantém as de decisão
+   (escolha do dono por tela). Desktop intocado. */
+@media (max-width:768px){ .hide-mobile{ display:none !important; } }
 table{width:100%;border-collapse:collapse;}
 thead th{
   text-align:left;font-size:10px;text-transform:uppercase;
@@ -2086,16 +2089,16 @@ select:not(.input-pro):not(.search-input){
             <tr id="estoque-thead">
               <th style="width:34px;text-align:center;"><input type="checkbox" id="estoque-check-todos" onclick="catToggleTodos(this.checked)" title="Selecionar todos os visíveis"></th>
               <th onclick="catSort('nome')" style="cursor:pointer;user-select:none;">Produto <span id="catsort-nome" style="color:var(--text3);">↕</span></th>
-              <th onclick="catSort('codigo')" style="cursor:pointer;user-select:none;">Código <span id="catsort-codigo" style="color:var(--text3);">↕</span></th>
-              <th onclick="catSort('categoria')" style="cursor:pointer;user-select:none;">Categoria <span id="catsort-categoria" style="color:var(--text3);">↕</span></th>
-              <th onclick="catSort('fornecedor')" style="cursor:pointer;user-select:none;">Fornecedor <span id="catsort-fornecedor" style="color:var(--text3);">↕</span></th>
+              <th class="hide-mobile" onclick="catSort('codigo')" style="cursor:pointer;user-select:none;">Código <span id="catsort-codigo" style="color:var(--text3);">↕</span></th>
+              <th class="hide-mobile" onclick="catSort('categoria')" style="cursor:pointer;user-select:none;">Categoria <span id="catsort-categoria" style="color:var(--text3);">↕</span></th>
+              <th class="hide-mobile" onclick="catSort('fornecedor')" style="cursor:pointer;user-select:none;">Fornecedor <span id="catsort-fornecedor" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('custo')" style="cursor:pointer;user-select:none;">Custo total <span id="catsort-custo" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('preco')" style="cursor:pointer;user-select:none;">Preço venda <span id="catsort-preco" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('estoque')" style="cursor:pointer;user-select:none;">Estoque <span id="catsort-estoque" style="color:var(--text3);">↕</span></th>
-              <th onclick="catSort('cob')" style="cursor:pointer;user-select:none;" title="Dias de estoque no ritmo de venda dos últimos 90 dias">Cobertura <span id="catsort-cob" style="color:var(--text3);">↕</span></th>
-              <th onclick="catSort('giro')" style="cursor:pointer;user-select:none;" title="Unidades vendidas em 90 dias por unidade em estoque">Giro <span id="catsort-giro" style="color:var(--text3);">↕</span></th>
-              <th onclick="catSort('mc')" style="cursor:pointer;user-select:none;">MC R$ <span id="catsort-mc" style="color:var(--text3);">↕</span></th>
-              <th onclick="catSort('mcp')" style="cursor:pointer;user-select:none;">MC % <span id="catsort-mcp" style="color:var(--text3);">↕</span></th>
+              <th class="hide-mobile" onclick="catSort('cob')" style="cursor:pointer;user-select:none;" title="Dias de estoque no ritmo de venda dos últimos 90 dias">Cobertura <span id="catsort-cob" style="color:var(--text3);">↕</span></th>
+              <th class="hide-mobile" onclick="catSort('giro')" style="cursor:pointer;user-select:none;" title="Unidades vendidas em 90 dias por unidade em estoque">Giro <span id="catsort-giro" style="color:var(--text3);">↕</span></th>
+              <th class="hide-mobile" onclick="catSort('mc')" style="cursor:pointer;user-select:none;">MC R$ <span id="catsort-mc" style="color:var(--text3);">↕</span></th>
+              <th class="hide-mobile" onclick="catSort('mcp')" style="cursor:pointer;user-select:none;">MC % <span id="catsort-mcp" style="color:var(--text3);">↕</span></th>
             </tr>
           </thead>
           <tbody id="estoque-table-body">
@@ -8585,16 +8588,16 @@ function renderCatalogoProdutos() {
     return `<tr onclick="prodOpenEdit('${p.id}')" style="cursor:pointer;${inativo ? 'opacity:0.5;' : ''}">
       <td style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" ${sel ? 'checked' : ''} onclick="event.stopPropagation();catToggleSel('${p.id}',this.checked)"></td>
       <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}${_abcBadge(_ABC_CACHE.classe.get(String(p.id)))}${_paradoBadge(L.parado)}${inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">Inativo</span>' : ''}</td>
-      <td><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
-      <td>${_catBadgeProduto(L.categoria)}</td>
-      <td><span class="td-supplier">${escHtml(L.fornecedor) || '—'}</span></td>
+      <td class="hide-mobile"><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
+      <td class="hide-mobile">${_catBadgeProduto(L.categoria)}</td>
+      <td class="hide-mobile"><span class="td-supplier">${escHtml(L.fornecedor) || '—'}</span></td>
       <td class="td-mono" style="font-weight:700;">${L.ctr != null ? fmt(L.ctr) : '—'}</td>
       <td class="td-mono">${fmt(L.venda)}</td>
       <td class="td-mono">${_estoqueCell(p.estoque)}</td>
-      <td class="td-mono">${_coberturaCell(L.cob)}</td>
-      <td class="td-mono">${_giroCell(L.giro)}</td>
-      <td class="td-mono" style="font-weight:700;color:${mcColor};">${L.mc != null ? fmt(L.mc) : '—'}</td>
-      <td style="font-weight:700;color:${mcColor};">${L.mcp != null ? L.mcp.toFixed(1) + '%' : '—'}</td>
+      <td class="td-mono hide-mobile">${_coberturaCell(L.cob)}</td>
+      <td class="td-mono hide-mobile">${_giroCell(L.giro)}</td>
+      <td class="td-mono hide-mobile" style="font-weight:700;color:${mcColor};">${L.mc != null ? fmt(L.mc) : '—'}</td>
+      <td class="hide-mobile" style="font-weight:700;color:${mcColor};">${L.mcp != null ? L.mcp.toFixed(1) + '%' : '—'}</td>
     </tr>`;
   }).join('');
   _catAtualizaSetas();
