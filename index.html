@@ -2007,6 +2007,8 @@ select:not(.input-pro):not(.search-input){
 
   <!-- ══════════════ ESTOQUE / TINY ERP ══════════════ -->
   <div class="page content" id="page-estoque">
+    <!-- View principal (catálogo) — "Fazer inventário" troca pra sub-view dedicada -->
+    <div id="estoque-view-main">
     <!-- Header -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
       <div>
@@ -2018,6 +2020,7 @@ select:not(.input-pro):not(.search-input){
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn" onclick="prodSugerirCategorias()">Sugerir categorias</button>
+        <button class="btn" onclick="invAbrir()"><svg class="ic ic-sm"><use href="#ic-clipboard"/></svg> Fazer inventário</button>
         <button class="btn btn-gold" onclick="carregarProdutosCatalogo()" id="btn-sync"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Atualizar</button>
       </div>
     </div>
@@ -2033,19 +2036,7 @@ select:not(.input-pro):not(.search-input){
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);white-space:nowrap;cursor:pointer;user-select:none;">
         <input type="checkbox" id="estoque-mostrar-inativos" onchange="renderCatalogoProdutos()"> Mostrar inativos
       </label>
-      <button class="btn" id="estoque-inv-btn" onclick="invToggle()" style="white-space:nowrap;"><svg class="ic ic-sm"><use href="#ic-clipboard"/></svg> Conferência</button>
-      <button class="btn" onclick="invImprimirFolha()" title="Folha A4 pra contagem à mão — respeita a busca/filtro atuais" style="white-space:nowrap;"><svg class="ic ic-sm"><use href="#ic-printer"/></svg> Folha de contagem</button>
       <button class="btn" id="estoque-limpar-filtro" onclick="catKpiFiltrar('')" style="display:none;white-space:nowrap;"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Limpar filtro</button>
-    </div>
-
-    <!-- Inventário (Etapa 2): barra do modo conferência — contagem física, rascunho local, nada gravado -->
-    <div id="estoque-inv-bar" style="display:none;align-items:center;gap:12px;margin-bottom:16px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--blue);flex-wrap:wrap;">
-      <span id="estoque-inv-status" style="font-weight:700;"></span>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;">
-        <button class="btn btn-gold" id="estoque-inv-aplicar" onclick="invAplicar()"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Aplicar inventário</button>
-        <button class="btn" onclick="invLimpar()"><svg class="ic ic-sm"><use href="#ic-trash"/></svg> Limpar contagens</button>
-        <button class="btn" onclick="invToggle()"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Sair da conferência</button>
-      </div>
     </div>
 
     <!-- Etapa 3: aviso de cadastro incompleto (clicável → filtra; reusa catKpiFiltro) -->
@@ -2085,7 +2076,6 @@ select:not(.input-pro):not(.search-input){
               <th onclick="catSort('custo')" style="cursor:pointer;user-select:none;">Custo total <span id="catsort-custo" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('preco')" style="cursor:pointer;user-select:none;">Preço venda <span id="catsort-preco" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('estoque')" style="cursor:pointer;user-select:none;">Estoque <span id="catsort-estoque" style="color:var(--text3);">↕</span></th>
-              <th id="estoque-th-contado" style="display:none;">Contado</th>
               <th onclick="catSort('cob')" style="cursor:pointer;user-select:none;" title="Dias de estoque no ritmo de venda dos últimos 90 dias">Cobertura <span id="catsort-cob" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('giro')" style="cursor:pointer;user-select:none;" title="Unidades vendidas em 90 dias por unidade em estoque">Giro <span id="catsort-giro" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('mc')" style="cursor:pointer;user-select:none;">MC R$ <span id="catsort-mc" style="color:var(--text3);">↕</span></th>
@@ -2096,6 +2086,53 @@ select:not(.input-pro):not(.search-input){
             <tr><td colspan="12" class="empty">Carregando produtos…</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+    </div><!-- /estoque-view-main -->
+
+    <!-- ══ Sub-view: Inventário — contagem física (tela cheia dedicada) ══ -->
+    <div id="estoque-view-inv" style="display:none;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:16px;font-weight:800;">Inventário — contagem física</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:3px;" id="estoque-inv-status">—</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn" onclick="invFechar()">← Voltar aos produtos</button>
+          <button class="btn" onclick="invImprimirFolha()" title="Folha A4 pra contagem à mão — respeita os filtros desta tela"><svg class="ic ic-sm"><use href="#ic-printer"/></svg> Folha de contagem</button>
+          <button class="btn" onclick="invLimpar()"><svg class="ic ic-sm"><use href="#ic-trash"/></svg> Limpar contagens</button>
+          <button class="btn btn-gold" id="estoque-inv-aplicar" onclick="invAplicar()"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Aplicar inventário</button>
+        </div>
+      </div>
+      <div class="search-bar" style="margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <input type="text" class="search-input" placeholder="Buscar produto por nome ou código..." id="inv-search" oninput="renderInventario()" style="flex:1;min-width:200px;">
+        <div style="display:flex;gap:6px;">
+          <button class="btn" data-inv-tipo="" onclick="invFiltroTipo('')">Todos</button>
+          <button class="btn" data-inv-tipo="scooter" onclick="invFiltroTipo('scooter')">Scooters</button>
+          <button class="btn" data-inv-tipo="acessorio" onclick="invFiltroTipo('acessorio')">Acessórios</button>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn" data-inv-saldo="comSaldo" onclick="invFiltroSaldo('comSaldo')">Com saldo</button>
+          <button class="btn" data-inv-saldo="zerados" onclick="invFiltroSaldo('zerados')">Zerados</button>
+          <button class="btn" data-inv-saldo="negativos" onclick="invFiltroSaldo('negativos')">Negativos</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div><div class="card-title">Contagem</div><div class="card-sub" id="inv-count">—</div></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th onclick="invSort('nome')" style="cursor:pointer;user-select:none;">Produto <span id="invsort-nome" style="color:var(--text3);">↕</span></th>
+              <th onclick="invSort('codigo')" style="cursor:pointer;user-select:none;">Código <span id="invsort-codigo" style="color:var(--text3);">↕</span></th>
+              <th onclick="invSort('sistema')" style="cursor:pointer;user-select:none;">Sistema <span id="invsort-sistema" style="color:var(--text3);">↕</span></th>
+              <th onclick="invSort('contado')" style="cursor:pointer;user-select:none;">Contado <span id="invsort-contado" style="color:var(--text3);">↕</span></th>
+              <th onclick="invSort('delta')" style="cursor:pointer;user-select:none;">Δ <span id="invsort-delta" style="color:var(--text3);">↕</span></th>
+            </tr></thead>
+            <tbody id="inv-table-body"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -8461,7 +8498,7 @@ function renderCatalogoProdutos() {
   const tbody = document.getElementById('estoque-table-body');
   if (!tbody) return;
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="${invModo ? 13 : 12}" class="empty">Nenhum produto encontrado</td></tr>`;
+    tbody.innerHTML = '<tr><td colspan="12" class="empty">Nenhum produto encontrado</td></tr>';
     catVisiveisIds = [];
     _catSyncHeaderCheck();
     _catAtualizaSetas();
@@ -8525,13 +8562,6 @@ function renderCatalogoProdutos() {
       <td class="td-mono" style="font-weight:700;">${L.ctr != null ? fmt(L.ctr) : '—'}</td>
       <td class="td-mono">${fmt(L.venda)}</td>
       <td class="td-mono">${_estoqueCell(p.estoque)}</td>
-      ${!invModo ? '' : (L.categoria === 'servico' || inativo
-        ? '<td class="td-mono" style="color:var(--text3);">—</td>'
-        : `<td onclick="event.stopPropagation()" style="white-space:nowrap;">`
-          + `<input type="number" min="0" step="1" value="${invContagens[String(p.id)] ?? ''}" placeholder="—"`
-          + ` oninput="invSetContagem('${p.id}',this.value)"`
-          + ` style="width:64px;padding:4px 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px;">`
-          + ` <span id="inv-delta-${p.id}" style="font-size:11px;font-weight:700;">${_invDeltaHtml(p.id)}</span></td>`)}
       <td class="td-mono">${_coberturaCell(L.cob)}</td>
       <td class="td-mono">${_giroCell(L.giro)}</td>
       <td class="td-mono" style="font-weight:700;color:${mcColor};">${L.mc != null ? fmt(L.mc) : '—'}</td>
@@ -8770,16 +8800,19 @@ async function catCustoLote() {
   smAlert(partes.length ? partes.join(' · ') + '.' : 'Nada alterado.');
 }
 
-// ── Inventário (Etapa 2): modo conferência — contagem física por produto ──
-// Liga a coluna "Contado" (editável) ao lado do Estoque, com delta ao vivo.
-// O rascunho fica em localStorage (sobrevive a reload/troca de tela; um por
-// navegador). Neste modo NADA é gravado no banco — a aplicação das
-// divergências (ajuste em lote via registrar_movimento) é etapa separada.
-// Serviços e inativos ficam fora da contagem ("—").
-let invModo = false;
+// ── Inventário: tela dedicada de contagem física (sub-view de Produtos) ──
+// "Fazer inventário" esconde a view principal e abre a tela de contagem:
+// todos os produtos ativos não-serviço, saldo do sistema visível + coluna
+// Contado editável com delta ao vivo, filtros próprios (busca, tipo via
+// SCOOTER_RE, saldo) e ordenação própria. Rascunho em localStorage
+// (sobrevive a reload/troca de tela; um por navegador). A aplicação
+// (registrar_movimento 'ajuste', origem 'inventario') é a do Gate B —
+// após aplicar, PERMANECE na tela com os saldos novos.
 let invContagens = {};            // produtoId → contagem (inteiro ≥ 0)
 let invDraftData = null;          // data ISO de quando o rascunho começou
 const INV_DRAFT_KEY = 'sm_inv_draft';
+let invTipo = '', invSaldo = '';  // chips de filtro da tela
+let invSortCol = 'nome', invSortDir = 1;
 
 function _invSalvarDraft() {
   try {
@@ -8798,20 +8831,88 @@ function _invCarregarDraft() {
   return false;
 }
 
-function invToggle() {
-  invModo = !invModo;
-  if (invModo) {
-    _invCarregarDraft();
-    if (!invDraftData) invDraftData = new Date().toLocaleDateString('en-CA');
-  }
-  const bar = document.getElementById('estoque-inv-bar');
-  if (bar) bar.style.display = invModo ? 'flex' : 'none';
-  const th = document.getElementById('estoque-th-contado');
-  if (th) th.style.display = invModo ? '' : 'none';
-  const btn = document.getElementById('estoque-inv-btn');
-  if (btn) { btn.style.borderColor = invModo ? 'var(--blue)' : ''; btn.style.color = invModo ? 'var(--blue)' : ''; }
-  renderCatalogoProdutos();
-  invAtualizaBar();
+function invAbrir() {
+  _invCarregarDraft();
+  if (!invDraftData) invDraftData = new Date().toLocaleDateString('en-CA');
+  document.getElementById('estoque-view-main').style.display = 'none';
+  document.getElementById('estoque-view-inv').style.display = '';
+  renderInventario();
+}
+function invFechar() {
+  document.getElementById('estoque-view-inv').style.display = 'none';
+  document.getElementById('estoque-view-main').style.display = '';
+  renderCatalogoProdutos();   // ajustes aplicados refletem no catálogo/KPIs
+}
+function invFiltroTipo(t)  { invTipo  = invTipo  === t ? '' : t; renderInventario(); }
+function invFiltroSaldo(s) { invSaldo = invSaldo === s ? '' : s; renderInventario(); }
+function invSort(col) {
+  if (invSortCol === col) invSortDir *= -1; else { invSortCol = col; invSortDir = 1; }
+  renderInventario();
+}
+
+// Base da tela: ativos não-serviço. Chip "Scooters" usa SCOOTER_RE no nome
+// (decisão do dono) — atenção: "ECO BIKE" não casa na regex e cai em
+// "Acessórios"; o chip "Todos" cobre tudo.
+function _invListaFiltrada() {
+  const q = (document.getElementById('inv-search')?.value || '').toLowerCase();
+  let lista = produtosCatalogo.filter(p => p.ativo !== false && (p.categoria || '') !== 'servico');
+  if (q) lista = lista.filter(p => p.nome.toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q));
+  if      (invTipo === 'scooter')   lista = lista.filter(p => SCOOTER_RE.test(p.nome));
+  else if (invTipo === 'acessorio') lista = lista.filter(p => !SCOOTER_RE.test(p.nome));
+  if      (invSaldo === 'comSaldo')  lista = lista.filter(p => p.estoque > 0);
+  else if (invSaldo === 'zerados')   lista = lista.filter(p => p.estoque === 0);
+  else if (invSaldo === 'negativos') lista = lista.filter(p => p.estoque < 0);
+  return lista;
+}
+
+function renderInventario() {
+  const tbody = document.getElementById('inv-table-body');
+  if (!tbody) return;
+  const lista = _invListaFiltrada();
+  const val = p => {
+    if (invSortCol === 'codigo')  return p.codigo || '';
+    if (invSortCol === 'sistema') return Number(p.estoque) || 0;
+    if (invSortCol === 'contado') return invContagens[String(p.id)] ?? null;
+    if (invSortCol === 'delta') {
+      const v = invContagens[String(p.id)];
+      return v === undefined ? null : v - (p.estoque || 0);
+    }
+    return p.nome;
+  };
+  lista.sort((a, b) => {
+    const va = val(a), vb = val(b);
+    if (typeof va === 'string' || typeof vb === 'string')
+      return invSortDir * String(va).localeCompare(String(vb), 'pt-BR');
+    const an = va == null, bn = vb == null;
+    if (an && bn) return 0; if (an) return 1; if (bn) return -1;   // nulos no fim
+    return invSortDir * (va - vb);
+  });
+  ['nome', 'codigo', 'sistema', 'contado', 'delta'].forEach(c => {
+    const el = document.getElementById('invsort-' + c);
+    if (el) el.textContent = invSortCol === c ? (invSortDir === 1 ? '↑' : '↓') : '↕';
+  });
+  document.querySelectorAll('[data-inv-tipo]').forEach(b => {
+    const on = b.dataset.invTipo === invTipo;
+    b.style.borderColor = on ? 'var(--gold)' : ''; b.style.color = on ? 'var(--gold)' : '';
+  });
+  document.querySelectorAll('[data-inv-saldo]').forEach(b => {
+    const on = b.dataset.invSaldo === invSaldo;
+    b.style.borderColor = on ? 'var(--gold)' : ''; b.style.color = on ? 'var(--gold)' : '';
+  });
+  const cnt = document.getElementById('inv-count');
+  if (cnt) cnt.textContent = `${lista.length} produto${lista.length !== 1 ? 's' : ''} na lista`;
+  tbody.innerHTML = lista.length ? lista.map(p => `<tr>
+      <td class="td-model" style="max-width:320px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}</td>
+      <td><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
+      <td class="td-mono">${_estoqueCell(p.estoque)}</td>
+      <td style="white-space:nowrap;">
+        <input type="number" min="0" step="1" value="${invContagens[String(p.id)] ?? ''}" placeholder="—"
+          oninput="invSetContagem('${p.id}',this.value)"
+          style="width:72px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12.5px;">
+      </td>
+      <td class="td-mono" style="font-weight:700;"><span id="inv-delta-${p.id}">${_invDeltaHtml(p.id)}</span></td>
+    </tr>`).join('') : '<tr><td colspan="5" class="empty">Nenhum produto encontrado</td></tr>';
+  invStatusAtualiza();
 }
 
 function invSetContagem(id, raw) {
@@ -8822,7 +8923,7 @@ function invSetContagem(id, raw) {
   _invSalvarDraft();
   const span = document.getElementById('inv-delta-' + id);
   if (span) span.innerHTML = _invDeltaHtml(id);
-  invAtualizaBar();
+  invStatusAtualiza();
 }
 
 function _invDeltaHtml(id) {
@@ -8845,15 +8946,15 @@ function _invDivergencias() {
   return out;
 }
 
-function invAtualizaBar() {
+function invStatusAtualiza() {
   const el = document.getElementById('estoque-inv-status');
-  if (!el || !invModo) return;
+  if (!el) return;
   const n = Object.keys(invContagens).length;
   const div = _invDivergencias().length;
   const dataTxt = invDraftData ? invDraftData.split('-').reverse().join('/') : '';
-  el.innerHTML = `Conferência de estoque — ${n} contado${n !== 1 ? 's' : ''} · `
+  el.innerHTML = `${n} contado${n !== 1 ? 's' : ''} · `
     + (div ? `<span style="color:var(--gold);">${div} divergência${div !== 1 ? 's' : ''}</span>` : 'sem divergências')
-    + ` <span style="color:var(--text3);font-weight:400;">· rascunho de ${dataTxt}, salvo neste navegador</span>`;
+    + ` · rascunho de ${dataTxt}, salvo neste navegador`;
   const btn = document.getElementById('estoque-inv-aplicar');
   if (btn) {
     btn.disabled = div === 0;
@@ -8869,8 +8970,7 @@ async function invLimpar() {
   if (!ok) return;
   invContagens = {}; invDraftData = new Date().toLocaleDateString('en-CA');
   _invSalvarDraft();
-  renderCatalogoProdutos();
-  invAtualizaBar();
+  renderInventario();
 }
 
 // ── Aplicar inventário: divergências → registrar_movimento('ajuste') ──
@@ -8924,22 +9024,20 @@ async function invAplicar() {
     if (!p || p.ativo === false || invContagens[id] === (p.estoque || 0)) delete invContagens[id];
   }
   _invSalvarDraft();
-  if (!erros.length && invModo) invToggle();     // tudo certo → sai do modo
-  else { renderCatalogoProdutos(); invAtualizaBar(); }  // com erro fica no modo pra reaplicar
+  renderInventario();   // permanece na tela — saldos novos na hora; sair é o "← Voltar"
   smAlert(`Inventário aplicado: ${okN} ajuste${okN !== 1 ? 's' : ''}.`
     + (erros.length ? `\n\n${erros.length} erro${erros.length !== 1 ? 's' : ''} (contagens mantidas pra reaplicar):\n`
       + erros.slice(0, 8).join('\n') : ''));
 }
 
-// ── Folha de contagem imprimível (Inventário Etapa 1) ──
+// ── Folha de contagem imprimível ──
 // A4 via window.open + window.print, padrão da casa (modelado no ofImprimir).
-// Lista os produtos ATIVOS da tela atual (respeita busca/filtro; serviços
-// fora) em ordem alfabética, com espaço pra anotar contagem e obs à mão.
-// Default = ÀS CEGAS (sem saldo do sistema — quem conta não vê o esperado);
-// OK na pergunta imprime com o saldo visível. Nenhuma escrita.
+// Lista o que os FILTROS DA TELA DE INVENTÁRIO mostram (busca + tipo +
+// saldo; ativos não-serviço) em ordem alfabética, com espaço pra anotar
+// contagem e obs à mão. Default = ÀS CEGAS (sem saldo do sistema — quem
+// conta não vê o esperado); OK na pergunta imprime com o saldo visível.
 async function invImprimirFolha() {
-  const itens = _catListaFiltrada().filtered
-    .filter(p => p.ativo !== false && (p.categoria || '') !== 'servico')
+  const itens = _invListaFiltrada().slice()
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   if (!itens.length) { smAlert('Nenhum produto ativo na lista atual.'); return; }
   const comSaldo = await smConfirm(
@@ -8950,9 +9048,10 @@ async function invImprimirFolha() {
   const agora = new Date();
   const impressoEm = agora.toLocaleDateString('pt-BR') + ' '
     + agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  const q = (document.getElementById('estoque-search')?.value || '').trim();
+  const q = (document.getElementById('inv-search')?.value || '').trim();
   const filtroTxt = [q ? `busca: "${q}"` : '',
-    catKpiFiltro ? `filtro: ${_CAT_KPI_FILTRO_LABEL[catKpiFiltro] || catKpiFiltro}` : '']
+    { scooter: 'só scooters', acessorio: 'só acessórios' }[invTipo] || '',
+    { comSaldo: 'com saldo', zerados: 'zerados', negativos: 'negativos' }[invSaldo] || '']
     .filter(Boolean).join(' · ') || 'todos os ativos';
   const linhas = itens.map((p, i) =>
     `<tr><td class="num">${i + 1}</td><td>${esc(p.nome.trim())}</td><td class="cod">${esc(p.codigo) || '—'}</td>`
@@ -9459,6 +9558,12 @@ async function prodExcluir(){
 document.getElementById('prod-modal')?.addEventListener('click', function(e){ if(e.target===this) prodCloseModal(); });
 
 function initEstoque() {
+  // Entrar na página sempre mostra a view principal (se saiu no meio de um
+  // inventário, o rascunho persiste — "Fazer inventário" retoma de onde parou).
+  const vi = document.getElementById('estoque-view-inv');
+  const vm = document.getElementById('estoque-view-main');
+  if (vi) vi.style.display = 'none';
+  if (vm) vm.style.display = '';
   // Lista do nosso banco (tabela produtos). Já carregado? só re-renderiza;
   // senão busca. (Fase 1c, Etapa 1 — não usa mais produtosTiny/Tiny ao vivo.)
   if (produtosCatalogo.length > 0) renderCatalogoProdutos();
