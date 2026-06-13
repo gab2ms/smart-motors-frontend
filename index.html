@@ -12654,10 +12654,14 @@ async function deletarLancamento(id) {
   if (!l) return;
   if (l.transferenciaId) return _deletarTransferencia(l);
   if (!(await smConfirm(`Remover "${l.descricao}"?`))) return;
-  // Reverte saldo
+  // Persiste o delete ANTES de mexer na tela (sem await, a query lazy do
+  // supabase-js nunca era enviada — bug do "some mas volta no F5"). Se falha,
+  // alerta e não toca em nada: estado da tela fica consistente com o banco.
+  const { error } = await sb.from('lancamentos').delete().eq('id', id);
+  if (error) { smAlert('Erro ao excluir lançamento: ' + error.message); return; }
+  // Só após o delete confirmado: reverte saldo + remove do array local.
   const ct = contas.find(c=>c.nome===l.conta);
   if (ct) ct.saldo += l.tipo==='entrada'?-l.valor:l.valor;
-  sb.from('lancamentos').delete().eq('id', id);
   lancamentos = lancamentos.filter(l=>l.id!==id);
   populateFinCatFilter();
   populateFinContaFilter();
