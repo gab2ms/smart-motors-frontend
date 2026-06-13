@@ -3273,6 +3273,25 @@ select:not(.input-pro):not(.search-input){
     </div>
   </div>
 
+  <!-- MODAL: vender moto no parceiro/local (Localização — Lado A) -->
+  <div class="modal-overlay" id="loc-venda-modal">
+    <div class="modal" style="width:460px;max-width:96vw;">
+      <div class="modal-title">Vender <span>moto</span></div>
+      <input type="hidden" id="loc-venda-id">
+      <div id="loc-venda-info" style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6;"></div>
+      <div class="form-grid">
+        <div class="form-group"><label>Valor da venda ao parceiro (B2B)</label><input class="form-input" id="loc-venda-valor" type="number" min="0" step="0.01" placeholder="0,00" oninput="_locVendaPreview()"></div>
+        <div class="form-group"><label>Data da venda</label><input class="form-input" id="loc-venda-data" type="date"></div>
+        <div class="form-group full" id="loc-venda-lucro-box" style="padding:10px 12px;background:var(--surface3);border-radius:8px;font-size:12px;color:var(--text2);">Lucro da loja (B2B − custo): <strong id="loc-venda-lucro" style="font-size:14px;">—</strong></div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px;">A moto vira dívida do parceiro (recebível). O caixa só entra quando o parceiro pagar.</div>
+      <div class="modal-actions">
+        <button class="btn" type="button" onclick="document.getElementById('loc-venda-modal').classList.remove('open');">Cancelar</button>
+        <button class="btn btn-gold" type="button" id="loc-venda-btn" onclick="_locConfirmarVenda()">Confirmar venda</button>
+      </div>
+    </div>
+  </div>
+
     <!-- ══════════════ LOCALIZAÇÃO ══════════════ -->
   <div class="page content" id="page-localizacao">
     <!-- Header -->
@@ -17091,6 +17110,7 @@ let estoqueUnidades     = [];   // overlay de deslocamento — motos na posse de
 let _locParceiros       = [];   // todos os parceiros (mapeia nome p/ unidade; ativos vão no select)
 let _locProdutos        = [];   // produtos ativos {id,nome,estoque,categoria,custo,cor} — saldo da matriz + pré-preenchimento do envio
 let _locProdutoSel      = null; // produto escolhido no modal de registro (item de produtosTiny)
+let _locVendaId         = null; // id da unidade no modal de venda
 let _locAbertos = (() => { try { return new Set(JSON.parse(localStorage.getItem('sm_loc_abertos') || '[]')); } catch (e) { return new Set(); } })(); // blocos expandidos (acordeão); default tudo fechado
 let _pdvUsuariosCache   = null; // [{id,nome,email,perfil}] — alimenta o select do modal
 // Sets de IDs que têm pedidos vinculados — usados pra esconder o botão
@@ -17604,6 +17624,7 @@ function _locUnidadeRow(u) {
         <div>lucro <strong style="color:${lcor};">${_fmtBRMoney(lucro)}</strong></div>
       </div>
       <div style="display:flex;gap:5px;">
+        <button class="action-btn" onclick="_locAbrirVenda('${u.id}')" title="Vender" style="color:var(--green);font-size:14px;">💰</button>
         <button class="action-btn edit-btn" onclick="abrirRegistroMotoModal('${u.id}')" title="Editar"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
         <button class="action-btn del-btn" onclick="_excluirUnidade('${u.id}')" title="Cancelar envio (estoque volta)"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>
       </div>
@@ -17974,6 +17995,69 @@ async function _excluirUnidade(id) {
   const { error } = await sb.from('estoque_unidades').delete().eq('id', id);
   if (error) { smAlert('Erro ao cancelar: ' + error.message); return; }
   await initLocalizacao();
+}
+
+// Data de hoje YYYY-MM-DD em horário local (TZ-safe, sem toISOString/UTC).
+function _locHojeISO() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// ── Vender uma moto no parceiro/local (1.4c) ────────────────
+// Marca vendida + data_venda; estoque NÃO mexe (já baixou no envio). A moto
+// vira recebível do parceiro (saldo devedor aparece no cabeçalho na 1.4e).
+// O caixa só entra no pagamento (1.4e) — aqui não há lançamento financeiro.
+function _locAbrirVenda(id) {
+  const u = estoqueUnidades.find(x => x.id === id);
+  if (!u) return;
+  _locVendaId = id;
+  document.getElementById('loc-venda-id').value = id;
+  const local = u.parceiroId
+    ? ((_locParceiros.find(p => p.id === u.parceiroId) || {}).nome || 'parceiro')
+    : (u.localProprio ? (u.localProprio.charAt(0).toUpperCase() + u.localProprio.slice(1)) : 'matriz');
+  document.getElementById('loc-venda-info').innerHTML =
+    `<strong>${escHtml(u.produtoNome || '—')}</strong>${u.cor ? ' · ' + escHtml(u.cor) : ''}${u.chassi ? ' · chassi ' + escHtml(u.chassi) : ''}<br>em ${escHtml(local)} · custo ${_fmtBRMoney(u.custo)}`;
+  document.getElementById('loc-venda-valor').value = u.precoVenda ?? '';
+  document.getElementById('loc-venda-data').value  = _locHojeISO();
+  _locVendaPreview();
+  document.getElementById('loc-venda-modal').classList.add('open');
+}
+
+function _locVendaPreview() {
+  const u = estoqueUnidades.find(x => x.id === _locVendaId) || {};
+  const valor = Number(document.getElementById('loc-venda-valor')?.value || 0);
+  const lucro = valor - (Number(u.custo) || 0);
+  const el  = document.getElementById('loc-venda-lucro');
+  const box = document.getElementById('loc-venda-lucro-box');
+  if (el)  el.textContent = _fmtBRMoney(lucro);
+  if (box) box.style.color = lucro < 0 ? 'var(--red)' : (lucro > 0 ? 'var(--green)' : 'var(--text2)');
+}
+
+async function _locConfirmarVenda() {
+  const btn = document.getElementById('loc-venda-btn');
+  if (btn?.disabled) return;
+  const id    = document.getElementById('loc-venda-id').value || '';
+  const valor = Number(document.getElementById('loc-venda-valor').value || 0);
+  const data  = document.getElementById('loc-venda-data').value || '';
+  if (!id) return;
+  if (!(valor > 0)) { smAlert('Informe o valor da venda ao parceiro (B2B).'); return; }
+  if (!data)        { smAlert('Informe a data da venda.'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    // Estoque NÃO mexe (já baixou no envio). Só marca vendida + grava o valor
+    // real (preco_venda) e a data. Vira recebível do parceiro (pago=false).
+    const { error } = await sb.from('estoque_unidades').update({
+      status: 'vendida', data_venda: data, preco_venda: valor,
+    }).eq('id', id);
+    if (error) throw error;
+    document.getElementById('loc-venda-modal').classList.remove('open');
+    await initLocalizacao();
+  } catch (e) {
+    smAlert('Erro ao registrar venda: ' + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar venda'; }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
