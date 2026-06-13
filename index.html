@@ -3292,6 +3292,23 @@ select:not(.input-pro):not(.search-input){
     </div>
   </div>
 
+  <!-- MODAL: marcar pagamento de uma moto vendida (Localização — Lado A) -->
+  <div class="modal-overlay" id="loc-pagar-modal">
+    <div class="modal" style="width:440px;max-width:96vw;">
+      <div class="modal-title">Marcar <span>pago</span></div>
+      <input type="hidden" id="loc-pagar-id">
+      <div id="loc-pagar-info" style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6;"></div>
+      <div class="form-grid">
+        <div class="form-group"><label>Valor recebido</label><input class="form-input" id="loc-pagar-valor" type="number" min="0" step="0.01" placeholder="0,00"></div>
+        <div class="form-group"><label>Data do pagamento</label><input class="form-input" id="loc-pagar-data" type="date"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" type="button" onclick="document.getElementById('loc-pagar-modal').classList.remove('open');">Cancelar</button>
+        <button class="btn btn-gold" type="button" id="loc-pagar-btn" onclick="_locConfirmarPagar()">Confirmar pagamento</button>
+      </div>
+    </div>
+  </div>
+
     <!-- ══════════════ LOCALIZAÇÃO ══════════════ -->
   <div class="page content" id="page-localizacao">
     <!-- Header -->
@@ -17109,11 +17126,12 @@ let pdvVendedores       = [];
 let pdvLocais           = [];
 let parceiros           = [];   // consignação que a loja DÁ (Localização — Lado A)
 let _parceirosComMoto   = new Set(); // ids com moto 'no_parceiro' vinculada — esconde "Excluir"
-let estoqueUnidades     = [];   // overlay de deslocamento — motos na posse de um local (status no_parceiro)
+let estoqueUnidades     = [];   // overlay de deslocamento — motos na posse (no_parceiro) + vendidas a receber
 let _locParceiros       = [];   // todos os parceiros (mapeia nome p/ unidade; ativos vão no select)
 let _locProdutos        = [];   // produtos ativos {id,nome,estoque,categoria,custo,cor} — saldo da matriz + pré-preenchimento do envio
 let _locProdutoSel      = null; // produto escolhido no modal de registro (item de produtosTiny)
 let _locVendaId         = null; // id da unidade no modal de venda
+let _locPagarId         = null; // id da unidade no modal de pagamento
 let _locAbertos = (() => { try { return new Set(JSON.parse(localStorage.getItem('sm_loc_abertos') || '[]')); } catch (e) { return new Set(); } })(); // blocos expandidos (acordeão); default tudo fechado
 let _pdvUsuariosCache   = null; // [{id,nome,email,perfil}] — alimenta o select do modal
 // Sets de IDs que têm pedidos vinculados — usados pra esconder o botão
@@ -17598,7 +17616,7 @@ async function _excluirParceiro(parceiroId) {
 async function initLocalizacao() {
   await _pdvGarantirProdutos(); // catálogo p/ a busca de produto (produtosTiny)
   const [uRes, pRes, prRes] = await Promise.all([
-    sb.from('estoque_unidades').select('*').eq('status', 'no_parceiro').order('created_at', { ascending: false }),
+    sb.from('estoque_unidades').select('*').in('status', ['no_parceiro', 'vendida']).order('created_at', { ascending: false }),
     sb.from('parceiros').select('*').order('ordem').order('nome'),
     sb.from('produtos').select('id,nome,estoque,categoria,custo,cor,ativo').eq('ativo', true),
   ]);
@@ -17635,9 +17653,30 @@ function _locUnidadeRow(u) {
     </div>`;
 }
 
+// Linha de moto vendida ainda não paga (seção "A receber" do bloco do local).
+function _locReceberRow(u) {
+  const lucro = (Number(u.precoVenda) || 0) - (Number(u.custo) || 0);
+  const lcor  = lucro < 0 ? 'var(--red)' : 'var(--green)';
+  const busca = escHtml(((u.produtoNome || '') + ' ' + (u.cor || '') + ' ' + (u.chassi || '')).toLowerCase()).replace(/"/g, '&quot;');
+  const dv = u.dataVenda ? (' · vendida ' + u.dataVenda.split('-').reverse().join('/')) : '';
+  return `<div data-busca="${busca}" style="display:grid;grid-template-columns:1fr auto auto;gap:16px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);">
+      <div style="min-width:0;">
+        <div style="font-weight:700;font-size:13px;">${escHtml(u.produtoNome || '—')}${u.cor ? ` <span style="color:var(--text3);font-weight:400;">· ${escHtml(u.cor)}</span>` : ''}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:3px;">${u.chassi ? 'chassi <span style="font-family:var(--mono,monospace);">' + escHtml(u.chassi) + '</span>' : ''}${dv}</div>
+      </div>
+      <div style="text-align:right;font-size:11px;color:var(--text2);line-height:1.6;white-space:nowrap;">
+        <div>B2B <strong>${_fmtBRMoney(u.precoVenda)}</strong></div>
+        <div>lucro <strong style="color:${lcor};">${_fmtBRMoney(lucro)}</strong></div>
+      </div>
+      <div style="display:flex;gap:5px;">
+        <button class="btn btn-gold" onclick="_locAbrirPagar('${u.id}')" style="font-size:10px;padding:5px 11px;white-space:nowrap;">Marcar pago</button>
+      </div>
+    </div>`;
+}
+
 // Card-acordeão de um local. Fechado por default; estado em sm_loc_abertos.
 // Cabeçalho fechado mostra "X scooters · Y acessórios". Corpo tem busca interna.
-function _locCardAcordeao(key, titulo, totS, totA, bodyInner, topoHtml) {
+function _locCardAcordeao(key, titulo, totS, totA, bodyInner, topoHtml, extraHeader) {
   const aberto = _locAbertos.has(key);
   return `<div class="card" style="margin-bottom:14px;">
     <div class="card-header" style="cursor:pointer;" onclick="_locToggle('${key}')">
@@ -17645,7 +17684,7 @@ function _locCardAcordeao(key, titulo, totS, totA, bodyInner, topoHtml) {
         <span id="loc-chev-${key}" style="font-size:11px;color:var(--text3);width:12px;flex-shrink:0;">${aberto ? '▾' : '▸'}</span>
         <div class="card-title">${titulo}</div>
       </div>
-      <div style="font-weight:700;font-size:12px;color:var(--text2);white-space:nowrap;">${totS} scooter${totS === 1 ? '' : 's'} · ${totA} acessório${totA === 1 ? '' : 's'}</div>
+      <div style="font-weight:700;font-size:12px;color:var(--text2);white-space:nowrap;">${totS} scooter${totS === 1 ? '' : 's'} · ${totA} acessório${totA === 1 ? '' : 's'}${extraHeader || ''}</div>
     </div>
     <div id="loc-body-${key}" style="display:${aberto ? '' : 'none'};">
       ${topoHtml || ''}
@@ -17691,9 +17730,9 @@ function _locFiltraLocal(key) {
   });
 }
 
-// Visão por local em acordeão. Matriz CALCULADA (estoque − deslocadas), com
-// seções Motos e Acessórios; demais locais = unidades registradas (só motos
-// hoje). A soma sempre fecha. Não toca financeiro.
+// Visão por local em acordeão. Matriz = estoque atual (o envio já baixou as
+// motos que saíram). Cada local mostra "Na posse" (no_parceiro) e "A receber"
+// (vendidas não pagas) + saldo no cabeçalho. Não toca financeiro nesta etapa.
 function renderLocalizacao() {
   const cont = document.getElementById('loc-lista');
   const sub  = document.getElementById('loc-sub');
@@ -17741,6 +17780,26 @@ function renderLocalizacao() {
     return { s, a };
   };
 
+  // Na posse (no_parceiro) vs a receber (vendida não paga) — por local.
+  const naPosse  = us.filter(u => u.status === 'no_parceiro');
+  const aReceber = us.filter(u => u.status === 'vendida' && !u.pago);
+
+  // Corpo de um local: seção "Na posse" + (se houver) "A receber (vendidas)".
+  const innerLocal = (naPosseL, aReceberL) => {
+    let h = secaoTit('Na posse')
+      + (naPosseL.length ? naPosseL.map(_locUnidadeRow).join('') : vazio('Nenhuma moto neste local.'));
+    if (aReceberL.length) {
+      h += secaoTit('A receber (vendidas)') + aReceberL.map(_locReceberRow).join('');
+    }
+    return h;
+  };
+  // "deve R$" (parceiro) / "a receber R$" (local próprio) no cabeçalho.
+  const extraReceber = (aReceberL, ehParceiro) => {
+    if (!aReceberL.length) return '';
+    const soma = aReceberL.reduce((s, u) => s + (Number(u.precoVenda) || 0), 0);
+    return ` · <span style="color:var(--orange);">${ehParceiro ? 'deve' : 'a receber'} ${_fmtBRMoney(soma)}</span>`;
+  };
+
   const blocos = [];
   blocos.push(_locCardAcordeao('matriz', '📍 Matriz', totMoto, totAcess, matrizInner));
 
@@ -17748,25 +17807,25 @@ function renderLocalizacao() {
   const ownVals = new Set(['quiosque']);
   us.forEach(u => { if (u.localProprio) ownVals.add(u.localProprio); });
   [...ownVals].forEach(val => {
-    const lista  = us.filter(u => !u.parceiroId && (u.localProprio || '') === val);
+    const naPosseL  = naPosse.filter(u => !u.parceiroId && (u.localProprio || '') === val);
+    const aReceberL = aReceber.filter(u => !u.parceiroId && (u.localProprio || '') === val);
     const titulo = '📍 ' + escHtml(val.charAt(0).toUpperCase() + val.slice(1)) + ' <span style="font-size:10px;color:var(--text3);font-weight:400;">(loja)</span>';
-    const { s, a } = contaCat(lista);
-    const inner = lista.length ? lista.map(_locUnidadeRow).join('') : vazio('Nenhuma moto neste local.');
-    blocos.push(_locCardAcordeao('own_' + val, titulo, s, a, inner));
+    const { s, a } = contaCat(naPosseL);
+    blocos.push(_locCardAcordeao('own_' + val, titulo, s, a, innerLocal(naPosseL, aReceberL), '', extraReceber(aReceberL, false)));
   });
 
   // Parceiros (ativos ∪ referenciados por alguma moto).
   const refParc = new Set(us.filter(u => u.parceiroId).map(u => u.parceiroId));
   _locParceiros.filter(p => p.ativo !== false || refParc.has(p.id)).forEach(p => {
-    const lista   = us.filter(u => u.parceiroId === p.id);
+    const naPosseL  = naPosse.filter(u => u.parceiroId === p.id);
+    const aReceberL = aReceber.filter(u => u.parceiroId === p.id);
     const titInat = p.ativo === false ? ' <span style="font-size:10px;color:var(--text3);font-weight:400;">(inativo)</span>' : '';
     const titulo  = '🤝 ' + escHtml(p.nome) + titInat;
-    const { s, a } = contaCat(lista);
-    const inner = lista.length ? lista.map(_locUnidadeRow).join('') : vazio('Nenhuma moto neste local.');
-    blocos.push(_locCardAcordeao('parc_' + p.id, titulo, s, a, inner, _locParceiroInfo(p)));
+    const { s, a } = contaCat(naPosseL);
+    blocos.push(_locCardAcordeao('parc_' + p.id, titulo, s, a, innerLocal(naPosseL, aReceberL), _locParceiroInfo(p), extraReceber(aReceberL, true)));
   });
 
-  if (sub) sub.textContent = `${us.length} moto${us.length === 1 ? '' : 's'} fora da matriz`;
+  if (sub) sub.textContent = `${naPosse.length} na posse · ${aReceber.length} a receber`;
   cont.innerHTML = blocos.join('');
 }
 
@@ -18089,6 +18148,50 @@ async function _locDevolver(id) {
   }).eq('id', id);
   if (error) { smAlert('Erro ao registrar devolução: ' + error.message); return; }
   await initLocalizacao();
+}
+
+// ── Marcar pagamento de uma moto vendida (1.4e-1) ───────────
+// Grava pago/data_pagamento/valor_pago. A data é editável (pode cair em mês
+// anterior). Estoque/caixa não mexem aqui — o pedido PDV + lançamento vêm na
+// 1.4e-2. A data informada será a do pedido/lançamento gerados lá.
+function _locAbrirPagar(id) {
+  const u = estoqueUnidades.find(x => x.id === id);
+  if (!u) return;
+  _locPagarId = id;
+  document.getElementById('loc-pagar-id').value = id;
+  const local = u.parceiroId
+    ? ((_locParceiros.find(p => p.id === u.parceiroId) || {}).nome || 'parceiro')
+    : (u.localProprio ? (u.localProprio.charAt(0).toUpperCase() + u.localProprio.slice(1)) : 'loja');
+  document.getElementById('loc-pagar-info').innerHTML =
+    `<strong>${escHtml(u.produtoNome || '—')}</strong>${u.cor ? ' · ' + escHtml(u.cor) : ''}<br>em ${escHtml(local)} · B2B ${_fmtBRMoney(u.precoVenda)}`;
+  document.getElementById('loc-pagar-valor').value = u.precoVenda ?? '';
+  document.getElementById('loc-pagar-data').value  = _locHojeISO();
+  document.getElementById('loc-pagar-modal').classList.add('open');
+}
+
+async function _locConfirmarPagar() {
+  const btn = document.getElementById('loc-pagar-btn');
+  if (btn?.disabled) return;
+  const id    = document.getElementById('loc-pagar-id').value || '';
+  const valor = Number(document.getElementById('loc-pagar-valor').value || 0);
+  const data  = document.getElementById('loc-pagar-data').value || '';
+  if (!id) return;
+  if (!(valor > 0)) { smAlert('Informe o valor recebido.'); return; }
+  if (!data)        { smAlert('Informe a data do pagamento.'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    const { error } = await sb.from('estoque_unidades').update({
+      pago: true, data_pagamento: data, valor_pago: valor,
+    }).eq('id', id);
+    if (error) throw error;
+    document.getElementById('loc-pagar-modal').classList.remove('open');
+    await initLocalizacao();
+  } catch (e) {
+    smAlert('Erro ao registrar pagamento: ' + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar pagamento'; }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
