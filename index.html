@@ -3245,6 +3245,52 @@ select:not(.input-pro):not(.search-input){
     </div>
   </div>
 
+  <!-- MODAL: registrar/editar moto fora da matriz (Localização — Lado A) -->
+  <div class="modal-overlay" id="loc-modal">
+    <div class="modal" style="width:560px;max-width:96vw;">
+      <div class="modal-title" id="loc-modal-title">Registrar <span>moto</span></div>
+      <input type="hidden" id="loc-edit-id">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Produto</label>
+          <div style="position:relative;">
+            <input class="form-input" id="loc-busca-prod" type="text" autocomplete="off" placeholder="Buscar produto por nome ou código..." oninput="_locFiltraProdutos()" onfocus="_locFiltraProdutos()" onblur="setTimeout(()=>{const el=document.getElementById('loc-prod-dropdown');if(el)el.style.display='none';},200);">
+            <div id="loc-prod-dropdown" style="display:none;position:absolute;top:calc(100% + 2px);left:0;right:0;z-index:30;background:var(--surface2);border:1px solid var(--border);border-radius:8px;max-height:260px;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,0.35);"></div>
+          </div>
+          <div id="loc-prod-sel" style="display:none;margin-top:8px;font-size:12px;"></div>
+        </div>
+        <div class="form-group"><label>Cor <span style="color:var(--text3);font-weight:400;">(opcional)</span></label><input class="form-input" id="loc-cor" type="text" placeholder="Ex: Preta"></div>
+        <div class="form-group"><label>Chassi <span style="color:var(--text3);font-weight:400;">(opcional)</span></label><input class="form-input" id="loc-chassi" type="text" placeholder="Ex: 9C2KC..." style="text-transform:uppercase;font-family:var(--mono,monospace);"></div>
+        <div class="form-group full"><label>Onde está</label><select class="form-input" id="loc-destino"></select></div>
+        <div class="form-group"><label>Custo da moto</label><input class="form-input" id="loc-custo" type="number" min="0" step="0.01" placeholder="0,00" oninput="_locMargemPreview()"></div>
+        <div class="form-group"><label>Comissão do parceiro</label><input class="form-input" id="loc-comissao" type="number" min="0" step="0.01" value="0" oninput="_locMargemPreview()"></div>
+        <div class="form-group"><label>Preço de venda</label><input class="form-input" id="loc-preco" type="number" min="0" step="0.01" placeholder="0,00" oninput="_locMargemPreview()"></div>
+        <div class="form-group full" id="loc-margem-box" style="padding:10px 12px;background:var(--surface3);border-radius:8px;font-size:12px;color:var(--text2);">Margem esperada (preço − custo − comissão): <strong id="loc-margem-val" style="font-size:14px;">—</strong></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" type="button" onclick="document.getElementById('loc-modal').classList.remove('open');">Cancelar</button>
+        <button class="btn btn-gold" type="button" id="loc-btn-salvar" onclick="_salvarRegistroMoto()">Cadastrar</button>
+      </div>
+    </div>
+  </div>
+
+    <!-- ══════════════ LOCALIZAÇÃO ══════════════ -->
+  <div class="page content" id="page-localizacao">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;">Motos fora da matriz</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="loc-sub">—</div>
+      </div>
+      <button class="btn btn-gold" onclick="abrirRegistroMotoModal()">+ Registrar moto</button>
+    </div>
+    <div class="card">
+      <div id="loc-lista">
+        <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+      </div>
+    </div>
+  </div>
+
     <!-- ══════════════ CONTAS A RECEBER ══════════════ -->
   <div class="page content" id="page-contas-receber">
 
@@ -3999,6 +4045,7 @@ const pageMeta={
   precos:['Preços & Margens','Gerencie preços e veja margens de contribuição'],
   vendas:['Vendas do Mês','Importe o relatório do Tiny ERP e veja a margem líquida real'],
   estoque:['Produtos & Estoque','Produtos e estoque — controle próprio'],
+  localizacao:['Localização','Onde está cada moto — matriz, quiosque e parceiros'],
   pedidos:['Pedidos','Lista unificada de pedidos — Tiny e PDV no mesmo lugar'],
   oficina:['Oficina','Ordens de serviço e cadastro de clientes'],
   sac:['SAC','Atendimento pós-venda, garantias e contatos com fornecedores'],
@@ -4021,6 +4068,7 @@ const BREADCRUMB_MAP = {
   pedidos:         ['Vendas', 'Pedidos'],
   vendas:          ['Vendas', 'Vendas do Mês'],
   estoque:         ['Produtos', 'Produtos & Estoque'],
+  localizacao:     ['Produtos', 'Localização'],
   precos:          ['Produtos', 'Preços & Margens'],
   oficina:         ['Operação', 'Oficina'],
   sac:             ['Operação', 'SAC'],
@@ -4118,6 +4166,7 @@ function showPage(id, opts){
   if(id==='precos')renderPrecos();
   if(id==='vendas'){popularSeletorPeriodo();carregarVendasDoMes();}
   if(id==='estoque')initEstoque();
+  if(id==='localizacao')initLocalizacao();
   if(id==='pedidos')initPedidosUnif();
   if(id==='admin')renderAdmin();
   if(id==='financeiro')initFinanceiro();
@@ -7840,8 +7889,9 @@ const NAV_TREE = [
       { id:'contratos',       label:'Contrato',       icon:'ic-file-text'    },
   ]},
   { kind:'group', label:'Produtos',   icon:'ic-store', children:[
-      { id:'estoque',         label:'Produtos & Estoque', icon:'ic-store' },
-      { id:'custos-produtos', label:'Custos de Produtos', icon:'ic-tag'   },
+      { id:'estoque',         label:'Produtos & Estoque', icon:'ic-store'   },
+      { id:'localizacao',     label:'Localização',        icon:'ic-package' },
+      { id:'custos-produtos', label:'Custos de Produtos', icon:'ic-tag'     },
   ]},
   { kind:'group', label:'Operação',   icon:'ic-wrench', children:[
       { id:'oficina',   label:'Oficina',   icon:'ic-wrench' },
@@ -9866,6 +9916,7 @@ const TODOS_MODULOS = [
   { id: 'precos',       nome: 'Preços & Margens' },
   { id: 'vendas',       nome: 'Vendas' },
   { id: 'estoque',      nome: 'Produtos & Estoque' },
+  { id: 'localizacao',  nome: 'Localização' },
   { id: 'pedidos',      nome: 'Pedidos' },
   { id: 'oficina',      nome: 'Oficina' },
   { id: 'sac',          nome: 'SAC' },
@@ -9884,7 +9935,7 @@ const TODOS_MODULOS = [
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
   vendedor:    ['dashboard', 'vendas', 'estoque', 'pedidos', 'oficina', 'sac', 'calendario', 'montagens', 'clientes', 'contratos', 'pdv'],
-  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'vendas', 'pedidos', 'oficina', 'sac', 'calendario', 'montagens', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv'],
+  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'localizacao', 'vendas', 'pedidos', 'oficina', 'sac', 'calendario', 'montagens', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv'],
   customizado: null, // usa user.modulosPermitidos
 };
 function modulosPermitidos(user) {
@@ -17039,6 +17090,9 @@ let pdvVendedores       = [];
 let pdvLocais           = [];
 let parceiros           = [];   // consignação que a loja DÁ (Localização — Lado A)
 let _parceirosComMoto   = new Set(); // ids com moto 'em_estoque' vinculada — esconde "Excluir"
+let estoqueUnidades     = [];   // overlay de deslocamento — só motos fora da matriz (status em_estoque)
+let _locParceiros       = [];   // todos os parceiros (mapeia nome p/ unidade; ativos vão no select)
+let _locProdutoSel      = null; // produto escolhido no modal de registro (item de produtosTiny)
 let _pdvUsuariosCache   = null; // [{id,nome,email,perfil}] — alimenta o select do modal
 // Sets de IDs que têm pedidos vinculados — usados pra esconder o botão
 // "Excluir" quando o registro está referenciado. Recarregam a cada init.
@@ -17510,6 +17564,236 @@ async function _excluirParceiro(parceiroId) {
   const { error } = await sb.from('parceiros').delete().eq('id', parceiroId);
   if (error) { smAlert('Erro ao excluir: ' + error.message); return; }
   await initParceiros();
+}
+
+// ═══════════════════════════════════════════════════════════
+// LOCALIZAÇÃO — overlay de deslocamento (Etapa 1.2)
+// Modelo Opção C: produtos.estoque continua a verdade pra quantidade/
+// capital. Aqui registramos só a moto que SAI da matriz (parceiro ou
+// quiosque). Nenhum cálculo financeiro é tocado — só exibição de margem.
+// A baixa de estoque na venda continua pelo fluxo normal (PDV/Tiny).
+// ═══════════════════════════════════════════════════════════
+async function initLocalizacao() {
+  await _pdvGarantirProdutos(); // catálogo p/ a busca de produto (produtosTiny)
+  const [uRes, pRes] = await Promise.all([
+    sb.from('estoque_unidades').select('*').eq('status', 'em_estoque').order('created_at', { ascending: false }),
+    sb.from('parceiros').select('*').order('ordem').order('nome'),
+  ]);
+  if (uRes.error) console.warn('[localizacao] unidades:', uRes.error.message);
+  if (pRes.error) console.warn('[localizacao] parceiros:', pRes.error.message);
+  estoqueUnidades = (!uRes.error && uRes.data) ? toCamelArr(uRes.data) : [];
+  _locParceiros   = (!pRes.error && pRes.data) ? toCamelArr(pRes.data) : [];
+  renderLocalizacao();
+}
+
+// Nome legível do local de uma unidade. Sem parceiro nem local próprio = matriz
+// (não deveria ocorrer no overlay, mas é tolerado).
+function _locNomeLocal(u) {
+  if (u.parceiroId) {
+    const p = _locParceiros.find(x => x.id === u.parceiroId);
+    return p ? p.nome : 'Parceiro removido';
+  }
+  if (u.localProprio) return u.localProprio.charAt(0).toUpperCase() + u.localProprio.slice(1);
+  return 'Matriz';
+}
+
+function renderLocalizacao() {
+  const el  = document.getElementById('loc-lista');
+  const sub = document.getElementById('loc-sub');
+  if (!el) return;
+  const us = estoqueUnidades;
+  if (sub) sub.textContent = `${us.length} moto${us.length === 1 ? '' : 's'} fora da matriz`;
+  if (!us.length) {
+    el.innerHTML = '<div class="empty" style="padding:32px;">Nenhuma moto registrada fora da matriz. Clique em "+ Registrar moto" pra começar.</div>';
+    return;
+  }
+  el.innerHTML = us.map(u => {
+    const margem = (Number(u.precoVenda) || 0) - (Number(u.custo) || 0) - (Number(u.comissaoParceiro) || 0);
+    const mcor   = margem < 0 ? 'var(--red)' : 'var(--green)';
+    const local  = _locNomeLocal(u);
+    return `<div style="display:grid;grid-template-columns:1fr auto auto;gap:16px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);">
+      <div style="min-width:0;">
+        <div style="font-weight:700;font-size:13px;">${escHtml(u.produtoNome || '—')}${u.cor ? ` <span style="color:var(--text3);font-weight:400;">· ${escHtml(u.cor)}</span>` : ''}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:3px;">📍 ${escHtml(local)}${u.chassi ? ` · chassi <span style="font-family:var(--mono,monospace);">${escHtml(u.chassi)}</span>` : ''}</div>
+      </div>
+      <div style="text-align:right;font-size:11px;color:var(--text2);line-height:1.6;white-space:nowrap;">
+        <div>custo <strong>${_fmtBRMoney(u.custo)}</strong> · com. <strong>${_fmtBRMoney(u.comissaoParceiro)}</strong></div>
+        <div>preço <strong>${_fmtBRMoney(u.precoVenda)}</strong> · margem <strong style="color:${mcor};">${_fmtBRMoney(margem)}</strong></div>
+      </div>
+      <div style="display:flex;gap:5px;">
+        <button class="action-btn edit-btn" onclick="abrirRegistroMotoModal('${u.id}')" title="Editar"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
+        <button class="action-btn del-btn" onclick="_excluirUnidade('${u.id}')" title="Remover da localização"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function abrirRegistroMotoModal(unidadeId) {
+  _locProdutoSel = null;
+  const u = unidadeId ? estoqueUnidades.find(x => x.id === unidadeId) : null;
+  const isEdit = !!u;
+  document.getElementById('loc-edit-id').value = isEdit ? unidadeId : '';
+  document.getElementById('loc-modal-title').innerHTML = isEdit ? 'Editar <span>moto</span>' : 'Registrar <span>moto</span>';
+  const btn = document.getElementById('loc-btn-salvar');
+  if (btn) btn.textContent = isEdit ? 'Salvar alterações' : 'Cadastrar';
+
+  // Select de destino: Quiosque (loja) + parceiros ativos. Matriz é o default
+  // (não tem registro). Se a loja ganhar outro local próprio físico, some aqui.
+  const sel = document.getElementById('loc-destino');
+  const ativos = _locParceiros.filter(p => p.ativo !== false);
+  sel.innerHTML = '<option value="quiosque">Quiosque (loja)</option>'
+    + ativos.map(p => `<option value="p:${p.id}">${escHtml(p.nome)}</option>`).join('');
+
+  const busca = document.getElementById('loc-busca-prod');
+  const drop  = document.getElementById('loc-prod-dropdown');
+  const psel  = document.getElementById('loc-prod-sel');
+  busca.value = '';
+  drop.style.display = 'none';
+
+  if (isEdit) {
+    // Produto não muda na edição — reconstrói só o necessário p/ salvar.
+    _locProdutoSel = { produtoId: u.produtoId, nome: u.produtoNome, preco: u.precoVenda };
+    busca.style.display = 'none';
+    _locMostraProdutoSel(u.produtoNome, true);
+    document.getElementById('loc-cor').value      = u.cor || '';
+    document.getElementById('loc-chassi').value   = u.chassi || '';
+    sel.value = u.parceiroId ? ('p:' + u.parceiroId) : 'quiosque';
+    document.getElementById('loc-custo').value    = u.custo ?? '';
+    document.getElementById('loc-comissao').value = u.comissaoParceiro ?? 0;
+    document.getElementById('loc-preco').value    = u.precoVenda ?? '';
+  } else {
+    busca.style.display = '';
+    psel.style.display = 'none';
+    document.getElementById('loc-cor').value      = '';
+    document.getElementById('loc-chassi').value   = '';
+    sel.value = 'quiosque';
+    document.getElementById('loc-custo').value    = '';
+    document.getElementById('loc-comissao').value = '0';
+    document.getElementById('loc-preco').value    = '';
+  }
+  _locMargemPreview();
+  document.getElementById('loc-modal').classList.add('open');
+}
+
+function _locFiltraProdutos() {
+  const q  = (document.getElementById('loc-busca-prod')?.value || '').trim().toLowerCase();
+  const dd = document.getElementById('loc-prod-dropdown');
+  if (!dd) return;
+  if (!q || !produtosTiny.length) { dd.style.display = 'none'; return; }
+  const matches = produtosTiny
+    .map((p, i) => ({ p, i }))
+    .filter(({p}) => (p.nome || '').toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q))
+    .slice(0, 10);
+  if (!matches.length) {
+    dd.innerHTML = '<div style="padding:14px;color:var(--text3);font-size:12px;">Nenhum produto encontrado.</div>';
+    dd.style.display = 'block';
+    return;
+  }
+  dd.innerHTML = matches.map(({p, i}) => `<div onmousedown="_locSelProduto(${i})" style="padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;" onmouseenter="this.style.background='var(--surface3)'" onmouseleave="this.style.background='transparent'">
+      <div style="font-weight:700;font-size:13px;">${escHtml(p.nome || '')}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px;">${escHtml(p.codigo || 'sem código')} · ${Number(p.estoque || 0)} em estoque · ${_fmtBRMoney(p.preco)}</div>
+    </div>`).join('');
+  dd.style.display = 'block';
+}
+
+function _locSelProduto(idx) {
+  const p = produtosTiny[idx];
+  if (!p) return;
+  _locProdutoSel = p;
+  _locMostraProdutoSel(p.nome, false);
+  const precoInp = document.getElementById('loc-preco');
+  if (precoInp && !precoInp.value) precoInp.value = Number(p.preco) || '';
+  document.getElementById('loc-busca-prod').value = '';
+  document.getElementById('loc-prod-dropdown').style.display = 'none';
+  _locMargemPreview();
+}
+
+function _locMostraProdutoSel(nome, travado) {
+  const box = document.getElementById('loc-prod-sel');
+  if (!box) return;
+  box.style.display = '';
+  box.innerHTML = `✅ <strong>${escHtml(nome || '')}</strong>`
+    + (travado
+        ? ' <span style="color:var(--text3);">(produto não muda na edição)</span>'
+        : ' <button class="btn" type="button" style="font-size:10px;padding:2px 8px;margin-left:8px;" onclick="_locTrocaProduto()">trocar</button>');
+}
+
+function _locTrocaProduto() {
+  _locProdutoSel = null;
+  document.getElementById('loc-prod-sel').style.display = 'none';
+  const inp = document.getElementById('loc-busca-prod');
+  if (inp) { inp.style.display = ''; inp.focus(); }
+}
+
+function _locMargemPreview() {
+  const custo = Number(document.getElementById('loc-custo')?.value || 0);
+  const com   = Number(document.getElementById('loc-comissao')?.value || 0);
+  const preco = Number(document.getElementById('loc-preco')?.value || 0);
+  const m = preco - custo - com;
+  const val = document.getElementById('loc-margem-val');
+  const box = document.getElementById('loc-margem-box');
+  if (val) val.textContent = _fmtBRMoney(m);
+  if (box) box.style.color = m < 0 ? 'var(--red)' : (m > 0 ? 'var(--green)' : 'var(--text2)');
+}
+
+async function _salvarRegistroMoto() {
+  const btn = document.getElementById('loc-btn-salvar');
+  if (btn?.disabled) return;
+  const editId = document.getElementById('loc-edit-id').value || '';
+  const isEdit = !!editId;
+
+  if (!_locProdutoSel) { smAlert('Escolha o produto.'); return; }
+  const cor     = (document.getElementById('loc-cor').value || '').trim();
+  const chassi  = (document.getElementById('loc-chassi').value || '').trim().toUpperCase() || null;
+  const destino = document.getElementById('loc-destino').value || '';
+  const custo   = Number(document.getElementById('loc-custo').value || 0);
+  const com     = Number(document.getElementById('loc-comissao').value || 0);
+  const preco   = Number(document.getElementById('loc-preco').value || 0);
+
+  if (!destino)     { smAlert('Escolha onde a moto está.'); return; }
+  if (!(preco > 0)) { smAlert('Informe o preço de venda.'); return; }
+  if (!(custo > 0)) { smAlert('Informe o custo da moto.'); return; }
+
+  const parceiroId   = destino.startsWith('p:') ? destino.slice(2) : null;
+  const localProprio = destino === 'quiosque' ? 'quiosque' : null;
+  const payload = {
+    produto_id: _locProdutoSel.produtoId,
+    produto_nome: _locProdutoSel.nome,
+    chassi, cor: cor || null, dono: 'loja',
+    parceiro_id: parceiroId, local_proprio: localProprio,
+    custo, comissao_parceiro: com, preco_venda: preco,
+    status: 'em_estoque',
+  };
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    if (isEdit) {
+      const { error } = await sb.from('estoque_unidades').update(payload).eq('id', editId);
+      if (error) throw error;
+    } else {
+      const { error } = await sb.from('estoque_unidades').insert(payload);
+      if (error) throw error;
+    }
+    document.getElementById('loc-modal').classList.remove('open');
+    await initLocalizacao();
+  } catch (e) {
+    const msg = e.code === '23505'
+      ? `Chassi ${chassi} já está registrado em outra moto em estoque.`
+      : 'Erro ao salvar: ' + (e.message || e);
+    smAlert(msg);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = isEdit ? 'Salvar alterações' : 'Cadastrar'; }
+  }
+}
+
+async function _excluirUnidade(id) {
+  const u = estoqueUnidades.find(x => x.id === id);
+  if (!u) return;
+  const ok = await smConfirm(`Remover "${u.produtoNome || 'moto'}" da localização?\n\nA moto volta a contar como se estivesse na matriz — o estoque do produto não muda.`);
+  if (!ok) return;
+  const { error } = await sb.from('estoque_unidades').delete().eq('id', id);
+  if (error) { smAlert('Erro ao excluir: ' + error.message); return; }
+  await initLocalizacao();
 }
 
 // ═══════════════════════════════════════════════════════════
