@@ -6763,7 +6763,10 @@ async function calcularDRE(iniISO, fimISO) {
   // avgMCpct — evita margem fictícia de 100% nesses itens.
   let cpv = 0;
   for (const ped of pedidos) {
-    const vendaDireta = (ped.vendedor && ped.vendedor.nome) === 'Venda Direta Smart Motors';
+    // Venda direta da loja (sem comissão de vendedor no CPV). Aceita o nome do
+    // Tiny ('Venda Direta Smart Motors', arquivo) e o do PDV ('Smart Motors').
+    const _nomeVend = (ped.vendedor && ped.vendedor.nome) || '';
+    const vendaDireta = _nomeVend === 'Venda Direta Smart Motors' || _nomeVend === 'Smart Motors';
     for (const it of (ped.itens || [])) {
       const qtd  = it.quantidade || 0;
       const prod = _matchProdutoPorNome((it.produto || it.nome || '').trim());
