@@ -17089,7 +17089,7 @@ let parceiros           = [];   // consignação que a loja DÁ (Localização �
 let _parceirosComMoto   = new Set(); // ids com moto 'no_parceiro' vinculada — esconde "Excluir"
 let estoqueUnidades     = [];   // overlay de deslocamento — motos na posse de um local (status no_parceiro)
 let _locParceiros       = [];   // todos os parceiros (mapeia nome p/ unidade; ativos vão no select)
-let _locProdutos        = [];   // produtos ativos {id,nome,estoque,categoria} — p/ o saldo da matriz
+let _locProdutos        = [];   // produtos ativos {id,nome,estoque,categoria,custo,cor} — saldo da matriz + pré-preenchimento do envio
 let _locProdutoSel      = null; // produto escolhido no modal de registro (item de produtosTiny)
 let _locAbertos = (() => { try { return new Set(JSON.parse(localStorage.getItem('sm_loc_abertos') || '[]')); } catch (e) { return new Set(); } })(); // blocos expandidos (acordeão); default tudo fechado
 let _pdvUsuariosCache   = null; // [{id,nome,email,perfil}] — alimenta o select do modal
@@ -17577,7 +17577,7 @@ async function initLocalizacao() {
   const [uRes, pRes, prRes] = await Promise.all([
     sb.from('estoque_unidades').select('*').eq('status', 'no_parceiro').order('created_at', { ascending: false }),
     sb.from('parceiros').select('*').order('ordem').order('nome'),
-    sb.from('produtos').select('id,nome,estoque,categoria,ativo').eq('ativo', true),
+    sb.from('produtos').select('id,nome,estoque,categoria,custo,cor,ativo').eq('ativo', true),
   ]);
   if (uRes.error)  console.warn('[localizacao] unidades:', uRes.error.message);
   if (pRes.error)  console.warn('[localizacao] parceiros:', pRes.error.message);
@@ -17806,8 +17806,13 @@ function _locSelProduto(idx) {
   if (!p) return;
   _locProdutoSel = p;
   _locMostraProdutoSel(p.nome, false);
-  const precoInp = document.getElementById('loc-preco');
-  if (precoInp && !precoInp.value) precoInp.value = Number(p.preco) || '';
+  // Pré-preenche custo e cor do cadastro (produtos), editáveis — sobrescreve
+  // ao trocar de produto. Preço B2B fica em branco de propósito (varejo ≠ B2B).
+  const cad = _locProdutos.find(x => x.id === p.produtoId) || {};
+  const custoInp = document.getElementById('loc-custo');
+  const corInp   = document.getElementById('loc-cor');
+  if (custoInp) custoInp.value = (cad.custo != null) ? (Number(cad.custo) || '') : '';
+  if (corInp)   corInp.value   = cad.cor || '';
   document.getElementById('loc-busca-prod').value = '';
   document.getElementById('loc-prod-dropdown').style.display = 'none';
   _locMargemPreview();
