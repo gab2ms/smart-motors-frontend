@@ -3245,10 +3245,10 @@ select:not(.input-pro):not(.search-input){
     </div>
   </div>
 
-  <!-- MODAL: registrar/editar moto fora da matriz (Localização — Lado A) -->
+  <!-- MODAL: enviar/editar moto no parceiro/local (Localização — Lado A) -->
   <div class="modal-overlay" id="loc-modal">
     <div class="modal" style="width:560px;max-width:96vw;">
-      <div class="modal-title" id="loc-modal-title">Registrar <span>moto</span></div>
+      <div class="modal-title" id="loc-modal-title">Enviar <span>moto</span></div>
       <input type="hidden" id="loc-edit-id">
       <div class="form-grid">
         <div class="form-group full">
@@ -3263,9 +3263,8 @@ select:not(.input-pro):not(.search-input){
         <div class="form-group"><label>Chassi <span style="color:var(--text3);font-weight:400;">(opcional)</span></label><input class="form-input" id="loc-chassi" type="text" placeholder="Ex: 9C2KC..." style="text-transform:uppercase;font-family:var(--mono,monospace);"></div>
         <div class="form-group full"><label>Onde está</label><select class="form-input" id="loc-destino"></select></div>
         <div class="form-group"><label>Custo da moto</label><input class="form-input" id="loc-custo" type="number" min="0" step="0.01" placeholder="0,00" oninput="_locMargemPreview()"></div>
-        <div class="form-group"><label>Comissão do parceiro</label><input class="form-input" id="loc-comissao" type="number" min="0" step="0.01" value="0" oninput="_locMargemPreview()"></div>
-        <div class="form-group"><label>Preço de venda</label><input class="form-input" id="loc-preco" type="number" min="0" step="0.01" placeholder="0,00" oninput="_locMargemPreview()"></div>
-        <div class="form-group full" id="loc-margem-box" style="padding:10px 12px;background:var(--surface3);border-radius:8px;font-size:12px;color:var(--text2);">Margem esperada (preço − custo − comissão): <strong id="loc-margem-val" style="font-size:14px;">—</strong></div>
+        <div class="form-group"><label>Preço de venda ao parceiro (B2B)</label><input class="form-input" id="loc-preco" type="number" min="0" step="0.01" placeholder="0,00" oninput="_locMargemPreview()"></div>
+        <div class="form-group full" id="loc-margem-box" style="padding:10px 12px;background:var(--surface3);border-radius:8px;font-size:12px;color:var(--text2);">Lucro da loja (B2B − custo): <strong id="loc-margem-val" style="font-size:14px;">—</strong></div>
       </div>
       <div class="modal-actions">
         <button class="btn" type="button" onclick="document.getElementById('loc-modal').classList.remove('open');">Cancelar</button>
@@ -3282,7 +3281,7 @@ select:not(.input-pro):not(.search-input){
         <div style="font-size:13px;font-weight:700;">Estoque por local</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="loc-sub">—</div>
       </div>
-      <button class="btn btn-gold" onclick="abrirRegistroMotoModal()">+ Registrar moto</button>
+      <button class="btn btn-gold" onclick="abrirRegistroMotoModal()">+ Enviar moto</button>
     </div>
     <div id="loc-lista">
       <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
@@ -17087,8 +17086,8 @@ async function _alternarStatusMontador(montadorId, novoAtivo) {
 let pdvVendedores       = [];
 let pdvLocais           = [];
 let parceiros           = [];   // consignação que a loja DÁ (Localização — Lado A)
-let _parceirosComMoto   = new Set(); // ids com moto 'em_estoque' vinculada — esconde "Excluir"
-let estoqueUnidades     = [];   // overlay de deslocamento — só motos fora da matriz (status em_estoque)
+let _parceirosComMoto   = new Set(); // ids com moto 'no_parceiro' vinculada — esconde "Excluir"
+let estoqueUnidades     = [];   // overlay de deslocamento — motos na posse de um local (status no_parceiro)
 let _locParceiros       = [];   // todos os parceiros (mapeia nome p/ unidade; ativos vão no select)
 let _locProdutos        = [];   // produtos ativos {id,nome,estoque,categoria} — p/ o saldo da matriz
 let _locProdutoSel      = null; // produto escolhido no modal de registro (item de produtosTiny)
@@ -17418,11 +17417,11 @@ async function _excluirLocal(localId) {
 // Molde do CRUD de Locais de Venda. Parceiro guarda nome/contato/observação.
 // A FK estoque_unidades.parceiro_id é ON DELETE SET NULL (não gera 23503),
 // então a proteção contra excluir parceiro com moto vinculada é manual,
-// via _parceirosComMoto (motos ainda 'em_estoque').
+// via _parceirosComMoto (motos ainda 'no_parceiro').
 async function initParceiros() {
   const [pRes, uRes] = await Promise.all([
     sb.from('parceiros').select('*').order('ordem').order('nome'),
-    sb.from('estoque_unidades').select('parceiro_id').eq('status', 'em_estoque').not('parceiro_id', 'is', null),
+    sb.from('estoque_unidades').select('parceiro_id').eq('status', 'no_parceiro').not('parceiro_id', 'is', null),
   ]);
   if (pRes.error) console.warn('[parceiros] load:', pRes.error.message);
   parceiros = (!pRes.error && pRes.data) ? toCamelArr(pRes.data) : [];
@@ -17553,7 +17552,7 @@ async function _excluirParceiro(parceiroId) {
   if (!p) return;
   // Defesa contra race: a FK é SET NULL, então recheca no banco antes de excluir.
   const { data: motoData, error: motoErr } = await sb.from('estoque_unidades')
-    .select('id').eq('parceiro_id', parceiroId).eq('status', 'em_estoque').limit(1);
+    .select('id').eq('parceiro_id', parceiroId).eq('status', 'no_parceiro').limit(1);
   if (!motoErr && motoData && motoData.length) {
     smAlert(`Não é possível excluir "${p.nome}" — existem motos vinculadas a este parceiro. Desative em vez disso.`);
     await initParceiros();
@@ -17576,7 +17575,7 @@ async function _excluirParceiro(parceiroId) {
 async function initLocalizacao() {
   await _pdvGarantirProdutos(); // catálogo p/ a busca de produto (produtosTiny)
   const [uRes, pRes, prRes] = await Promise.all([
-    sb.from('estoque_unidades').select('*').eq('status', 'em_estoque').order('created_at', { ascending: false }),
+    sb.from('estoque_unidades').select('*').eq('status', 'no_parceiro').order('created_at', { ascending: false }),
     sb.from('parceiros').select('*').order('ordem').order('nome'),
     sb.from('produtos').select('id,nome,estoque,categoria,ativo').eq('ativo', true),
   ]);
@@ -17592,21 +17591,21 @@ async function initLocalizacao() {
 // Uma linha de unidade deslocada (Quiosque / Parceiro). data-busca alimenta a
 // busca interna do bloco. O local não aparece na linha — vem no cabeçalho.
 function _locUnidadeRow(u) {
-  const margem = (Number(u.precoVenda) || 0) - (Number(u.custo) || 0) - (Number(u.comissaoParceiro) || 0);
-  const mcor   = margem < 0 ? 'var(--red)' : 'var(--green)';
-  const busca  = escHtml(((u.produtoNome || '') + ' ' + (u.cor || '') + ' ' + (u.chassi || '')).toLowerCase()).replace(/"/g, '&quot;');
+  const lucro = (Number(u.precoVenda) || 0) - (Number(u.custo) || 0); // B2B − custo (sem comissão)
+  const lcor  = lucro < 0 ? 'var(--red)' : 'var(--green)';
+  const busca = escHtml(((u.produtoNome || '') + ' ' + (u.cor || '') + ' ' + (u.chassi || '')).toLowerCase()).replace(/"/g, '&quot;');
   return `<div data-busca="${busca}" style="display:grid;grid-template-columns:1fr auto auto;gap:16px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);">
       <div style="min-width:0;">
         <div style="font-weight:700;font-size:13px;">${escHtml(u.produtoNome || '—')}${u.cor ? ` <span style="color:var(--text3);font-weight:400;">· ${escHtml(u.cor)}</span>` : ''}</div>
         ${u.chassi ? `<div style="font-size:11px;color:var(--text3);margin-top:3px;">chassi <span style="font-family:var(--mono,monospace);">${escHtml(u.chassi)}</span></div>` : ''}
       </div>
       <div style="text-align:right;font-size:11px;color:var(--text2);line-height:1.6;white-space:nowrap;">
-        <div>custo <strong>${_fmtBRMoney(u.custo)}</strong> · com. <strong>${_fmtBRMoney(u.comissaoParceiro)}</strong></div>
-        <div>preço <strong>${_fmtBRMoney(u.precoVenda)}</strong> · margem <strong style="color:${mcor};">${_fmtBRMoney(margem)}</strong></div>
+        <div>custo <strong>${_fmtBRMoney(u.custo)}</strong> · B2B <strong>${_fmtBRMoney(u.precoVenda)}</strong></div>
+        <div>lucro <strong style="color:${lcor};">${_fmtBRMoney(lucro)}</strong></div>
       </div>
       <div style="display:flex;gap:5px;">
         <button class="action-btn edit-btn" onclick="abrirRegistroMotoModal('${u.id}')" title="Editar"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
-        <button class="action-btn del-btn" onclick="_excluirUnidade('${u.id}')" title="Remover da localização"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>
+        <button class="action-btn del-btn" onclick="_excluirUnidade('${u.id}')" title="Cancelar envio (estoque volta)"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>
       </div>
     </div>`;
 }
@@ -17664,39 +17663,22 @@ function renderLocalizacao() {
   const cont = document.getElementById('loc-lista');
   const sub  = document.getElementById('loc-sub');
   if (!cont) return;
-  const us = estoqueUnidades;
+  const us = estoqueUnidades; // motos no_parceiro (já saíram do estoque no envio)
 
-  // Deslocadas por produto + snapshot de nome (fallback p/ produto removido).
-  const deslocPorProduto = {};
-  const snapNome = {};
-  us.forEach(u => {
-    // FUTURO acessório-por-local: somar (u.quantidade || 1) no lugar de 1.
-    deslocPorProduto[u.produtoId] = (deslocPorProduto[u.produtoId] || 0) + 1;
-    if (!snapNome[u.produtoId]) snapNome[u.produtoId] = u.produtoNome;
-  });
   const prodById = {};
   _locProdutos.forEach(p => { prodById[p.id] = p; });
-  const nomeDe = id => (prodById[id] && prodById[id].nome) || snapNome[id] || '—';
 
-  // ── MATRIZ (calculada): seções Motos (scooter) e Acessórios (acessorio).
-  // Considera scooters ∪ acessórios ∪ qualquer produto com deslocada.
-  const idsMatriz = new Set();
-  _locProdutos.forEach(p => {
-    const c = p.categoria || '';
-    if (c === 'scooter' || c === 'acessorio') idsMatriz.add(p.id);
-  });
-  Object.keys(deslocPorProduto).forEach(id => idsMatriz.add(id));
-  const motoRows = [], acessRows = [], inconsist = [];
+  // ── MATRIZ = estoque atual do produto. O envio JÁ baixou as motos que saíram,
+  // então NÃO se subtrai as deslocadas (senão contaria 2×). Seções Motos/Acess.
+  const motoRows = [], acessRows = [];
   let totMoto = 0, totAcess = 0;
-  [...idsMatriz].forEach(id => {
-    const estoque = prodById[id] ? (Number(prodById[id].estoque) || 0) : 0;
-    const desloc  = deslocPorProduto[id] || 0;
-    const saldo   = estoque - desloc;
-    if (saldo < 0) { inconsist.push({ nome: nomeDe(id), estoque, desloc }); return; }
+  _locProdutos.forEach(p => {
+    const cat = p.categoria || '';
+    if (cat !== 'scooter' && cat !== 'acessorio') return;
+    const saldo = Number(p.estoque) || 0;
     if (saldo <= 0) return;
-    const cat = (prodById[id] || {}).categoria || 'scooter';
-    if (cat === 'acessorio') { acessRows.push({ nome: nomeDe(id), qtd: saldo }); totAcess += saldo; }
-    else                     { motoRows.push({ nome: nomeDe(id), qtd: saldo }); totMoto  += saldo; }
+    if (cat === 'acessorio') { acessRows.push({ nome: p.nome, qtd: saldo }); totAcess += saldo; }
+    else                     { motoRows.push({ nome: p.nome, qtd: saldo }); totMoto  += saldo; }
   });
   motoRows.sort((a, b) => a.nome.localeCompare(b.nome));
   acessRows.sort((a, b) => a.nome.localeCompare(b.nome));
@@ -17711,11 +17693,7 @@ function renderLocalizacao() {
   const secaoTit = t => `<div style="padding:8px 18px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);background:var(--surface3);">${t}</div>`;
   const vazio    = t => `<div class="empty" style="padding:18px;font-size:11px;">${t}</div>`;
 
-  let matrizInner = inconsist.map(i => {
-    const busca = escHtml(i.nome.toLowerCase()).replace(/"/g, '&quot;');
-    return `<div data-busca="${busca}" style="padding:10px 18px;border-bottom:1px solid var(--border);font-size:11px;color:var(--red);">⚠️ ${escHtml(i.nome)}: ${i.desloc} deslocada(s) mas só ${i.estoque} em estoque — confira o cadastro.</div>`;
-  }).join('');
-  matrizInner += secaoTit('Motos')      + (motoRows.length  ? motoRows.map(mrow).join('')  : vazio('Nenhuma moto na matriz.'));
+  let matrizInner = secaoTit('Motos')   + (motoRows.length  ? motoRows.map(mrow).join('')  : vazio('Nenhuma moto na matriz.'));
   matrizInner += secaoTit('Acessórios') + (acessRows.length ? acessRows.map(mrow).join('') : vazio('Nenhum acessório na matriz.'));
 
   // Contagem por categoria (FUTURO acessório-por-local: += quantidade no lugar de 1).
@@ -17762,9 +17740,9 @@ function abrirRegistroMotoModal(unidadeId) {
   const u = unidadeId ? estoqueUnidades.find(x => x.id === unidadeId) : null;
   const isEdit = !!u;
   document.getElementById('loc-edit-id').value = isEdit ? unidadeId : '';
-  document.getElementById('loc-modal-title').innerHTML = isEdit ? 'Editar <span>moto</span>' : 'Registrar <span>moto</span>';
+  document.getElementById('loc-modal-title').innerHTML = isEdit ? 'Editar <span>moto</span>' : 'Enviar <span>moto</span>';
   const btn = document.getElementById('loc-btn-salvar');
-  if (btn) btn.textContent = isEdit ? 'Salvar alterações' : 'Cadastrar';
+  if (btn) btn.textContent = isEdit ? 'Salvar alterações' : 'Enviar';
 
   // Select de destino: Quiosque (loja) + parceiros ativos. Matriz é o default
   // (não tem registro). Se a loja ganhar outro local próprio físico, some aqui.
@@ -17788,7 +17766,6 @@ function abrirRegistroMotoModal(unidadeId) {
     document.getElementById('loc-chassi').value   = u.chassi || '';
     sel.value = u.parceiroId ? ('p:' + u.parceiroId) : 'quiosque';
     document.getElementById('loc-custo').value    = u.custo ?? '';
-    document.getElementById('loc-comissao').value = u.comissaoParceiro ?? 0;
     document.getElementById('loc-preco').value    = u.precoVenda ?? '';
   } else {
     busca.style.display = '';
@@ -17797,7 +17774,6 @@ function abrirRegistroMotoModal(unidadeId) {
     document.getElementById('loc-chassi').value   = '';
     sel.value = 'quiosque';
     document.getElementById('loc-custo').value    = '';
-    document.getElementById('loc-comissao').value = '0';
     document.getElementById('loc-preco').value    = '';
   }
   _locMargemPreview();
@@ -17856,9 +17832,8 @@ function _locTrocaProduto() {
 
 function _locMargemPreview() {
   const custo = Number(document.getElementById('loc-custo')?.value || 0);
-  const com   = Number(document.getElementById('loc-comissao')?.value || 0);
   const preco = Number(document.getElementById('loc-preco')?.value || 0);
-  const m = preco - custo - com;
+  const m = preco - custo; // lucro da loja = B2B − custo
   const val = document.getElementById('loc-margem-val');
   const box = document.getElementById('loc-margem-box');
   if (val) val.textContent = _fmtBRMoney(m);
@@ -17876,52 +17851,113 @@ async function _salvarRegistroMoto() {
   const chassi  = (document.getElementById('loc-chassi').value || '').trim().toUpperCase() || null;
   const destino = document.getElementById('loc-destino').value || '';
   const custo   = Number(document.getElementById('loc-custo').value || 0);
-  const com     = Number(document.getElementById('loc-comissao').value || 0);
   const preco   = Number(document.getElementById('loc-preco').value || 0);
 
   if (!destino)     { smAlert('Escolha onde a moto está.'); return; }
-  if (!(preco > 0)) { smAlert('Informe o preço de venda.'); return; }
+  if (!(preco > 0)) { smAlert('Informe o preço de venda ao parceiro (B2B).'); return; }
   if (!(custo > 0)) { smAlert('Informe o custo da moto.'); return; }
 
   const parceiroId   = destino.startsWith('p:') ? destino.slice(2) : null;
   const localProprio = destino === 'quiosque' ? 'quiosque' : null;
+  const nomeDestino  = parceiroId
+    ? ((_locParceiros.find(p => p.id === parceiroId) || {}).nome || 'parceiro')
+    : 'Quiosque';
+
+  // Edição NÃO mexe em estoque (a moto já foi enviada; só ajusta dados).
+  if (isEdit) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+    try {
+      const { error } = await sb.from('estoque_unidades').update({
+        chassi, cor: cor || null, parceiro_id: parceiroId, local_proprio: localProprio,
+        custo, preco_venda: preco,
+      }).eq('id', editId);
+      if (error) throw error;
+      document.getElementById('loc-modal').classList.remove('open');
+      await initLocalizacao();
+    } catch (e) {
+      smAlert(e.code === '23505' ? `Chassi ${chassi} já está numa moto no parceiro.` : 'Erro ao salvar: ' + (e.message || e));
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Salvar alterações'; }
+    }
+    return;
+  }
+
+  // ── ENVIO (novo): baixa o estoque em 1. Aviso se o produto já está sem saldo.
+  const estoqueAtual = Number(_locProdutoSel.estoque || 0);
+  if (estoqueAtual < 1) {
+    const ok = await smConfirm(`⚠️ "${_locProdutoSel.nome}" está com estoque ${estoqueAtual}. Enviar mesmo assim? (o estoque vai ficar negativo)`);
+    if (!ok) return;
+  }
+
   const payload = {
     produto_id: _locProdutoSel.produtoId,
     produto_nome: _locProdutoSel.nome,
     chassi, cor: cor || null, dono: 'loja',
     parceiro_id: parceiroId, local_proprio: localProprio,
-    custo, comissao_parceiro: com, preco_venda: preco,
-    status: 'em_estoque',
+    custo, preco_venda: preco,
+    status: 'no_parceiro',
   };
 
-  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+  let novaUnidadeId = null;
   try {
-    if (isEdit) {
-      const { error } = await sb.from('estoque_unidades').update(payload).eq('id', editId);
-      if (error) throw error;
-    } else {
-      const { error } = await sb.from('estoque_unidades').insert(payload);
-      if (error) throw error;
+    // 1) Cria a unidade.
+    const { data: ins, error: insErr } = await sb.from('estoque_unidades').insert(payload).select('id').single();
+    if (insErr) throw insErr;
+    novaUnidadeId = ins.id;
+
+    // 2) Baixa o estoque em 1 (mexe só em estoque, não em financeiro). Se falhar,
+    //    desfaz a unidade pra não deixar registro sem baixa (consistência).
+    const { data: mov, error: movErr } = await sb.rpc('registrar_movimento', {
+      p_produto_id: _locProdutoSel.produtoId,
+      p_tipo: 'saida',
+      p_quantidade: 1,
+      p_motivo: 'Envio ao ' + nomeDestino,
+      p_origem: 'envio_parceiro',
+      p_ref_id: novaUnidadeId,
+    });
+    if (movErr) {
+      await sb.from('estoque_unidades').delete().eq('id', novaUnidadeId);
+      throw new Error('Falha ao baixar o estoque — envio cancelado. ' + movErr.message);
     }
+    // Atualiza o saldo em memória p/ o aviso "sem estoque" valer em envios seguintes.
+    const movRow = Array.isArray(mov) ? mov[0] : mov;
+    if (movRow && movRow.saldo_apos != null) {
+      const pt = produtosTiny.find(p => p.produtoId === _locProdutoSel.produtoId);
+      if (pt) pt.estoque = Number(movRow.saldo_apos);
+    }
+
     document.getElementById('loc-modal').classList.remove('open');
     await initLocalizacao();
   } catch (e) {
     const msg = e.code === '23505'
-      ? `Chassi ${chassi} já está registrado em outra moto em estoque.`
-      : 'Erro ao salvar: ' + (e.message || e);
+      ? `Chassi ${chassi} já está numa moto no parceiro.`
+      : 'Erro ao enviar: ' + (e.message || e);
     smAlert(msg);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = isEdit ? 'Salvar alterações' : 'Cadastrar'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Enviar'; }
   }
 }
 
 async function _excluirUnidade(id) {
   const u = estoqueUnidades.find(x => x.id === id);
   if (!u) return;
-  const ok = await smConfirm(`Remover "${u.produtoNome || 'moto'}" da localização?\n\nA moto volta a contar como se estivesse na matriz — o estoque do produto não muda.`);
+  const ok = await smConfirm(`Cancelar o envio de "${u.produtoNome || 'moto'}"?\n\nO estoque do produto VOLTA +1 (a moto retorna à matriz). Use isto pra corrigir um envio feito por engano.`);
   if (!ok) return;
+  // O envio baixou o estoque; cancelar tem que devolver +1 antes de apagar.
+  if (u.produtoId) {
+    const { error: movErr } = await sb.rpc('registrar_movimento', {
+      p_produto_id: u.produtoId,
+      p_tipo: 'entrada',
+      p_quantidade: 1,
+      p_motivo: 'Cancelamento de envio',
+      p_origem: 'estorno_envio',
+      p_ref_id: id,
+    });
+    if (movErr) { smAlert('Erro ao devolver o estoque: ' + movErr.message); return; }
+  }
   const { error } = await sb.from('estoque_unidades').delete().eq('id', id);
-  if (error) { smAlert('Erro ao excluir: ' + error.message); return; }
+  if (error) { smAlert('Erro ao cancelar: ' + error.message); return; }
   await initLocalizacao();
 }
 
