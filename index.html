@@ -2474,6 +2474,22 @@ select:not(.input-pro):not(.search-input){
         </div>
       </div>
     </div>
+
+    <!-- Parceiros (consignação que a loja DÁ) -->
+    <div class="section-gap">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Parceiros</div>
+            <div class="card-sub" id="parc-sub">—</div>
+          </div>
+          <button class="btn btn-gold" onclick="abrirParceiroModal()" style="font-size:11px;padding:6px 12px;">+ Novo parceiro</button>
+        </div>
+        <div id="parc-lista">
+          <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+        </div>
+      </div>
+    </div>
   </div>
 
     <!-- ══════════════ FINANCEIRO ══════════════ -->
@@ -14321,6 +14337,9 @@ async function renderAdmin() {
   // Locais de Venda (cadastro — vive dentro do Admin)
   try { await initPdvLocais(); }
   catch(e) { console.warn('[renderAdmin] pdv-locais falhou:', e.message); }
+
+  try { await initParceiros(); }
+  catch(e) { console.warn('[renderAdmin] parceiros falhou:', e.message); }
   const users    = await getUsers();
   const pendente = users.filter(u=>u.status==='pendente');
   const ativo    = users.filter(u=>u.status==='aprovado');
@@ -17018,6 +17037,8 @@ async function _alternarStatusMontador(montadorId, novoAtivo) {
 // ═══════════════════════════════════════════════════════════
 let pdvVendedores       = [];
 let pdvLocais           = [];
+let parceiros           = [];   // consignação que a loja DÁ (Localização — Lado A)
+let _parceirosComMoto   = new Set(); // ids com moto 'em_estoque' vinculada — esconde "Excluir"
 let _pdvUsuariosCache   = null; // [{id,nome,email,perfil}] — alimenta o select do modal
 // Sets de IDs que têm pedidos vinculados — usados pra esconder o botão
 // "Excluir" quando o registro está referenciado. Recarregam a cada init.
@@ -17337,6 +17358,158 @@ async function _excluirLocal(localId) {
     return;
   }
   await initPdvLocais();
+}
+
+// ─── Parceiros (Localização — Lado A) ───────────────────────
+// Molde do CRUD de Locais de Venda. Parceiro guarda nome/contato/observação.
+// A FK estoque_unidades.parceiro_id é ON DELETE SET NULL (não gera 23503),
+// então a proteção contra excluir parceiro com moto vinculada é manual,
+// via _parceirosComMoto (motos ainda 'em_estoque').
+async function initParceiros() {
+  const [pRes, uRes] = await Promise.all([
+    sb.from('parceiros').select('*').order('ordem').order('nome'),
+    sb.from('estoque_unidades').select('parceiro_id').eq('status', 'em_estoque').not('parceiro_id', 'is', null),
+  ]);
+  if (pRes.error) console.warn('[parceiros] load:', pRes.error.message);
+  parceiros = (!pRes.error && pRes.data) ? toCamelArr(pRes.data) : [];
+  _parceirosComMoto = new Set((!uRes.error && uRes.data ? uRes.data : []).map(r => r.parceiro_id).filter(Boolean));
+  renderParceiros();
+}
+
+function renderParceiros() {
+  const el  = document.getElementById('parc-lista');
+  const sub = document.getElementById('parc-sub');
+  if (!el) return;
+  const ordenados = parceiros.slice().sort((a, b) => {
+    const aInat = a.ativo === false, bInat = b.ativo === false;
+    if (aInat !== bInat) return aInat ? 1 : -1;
+    const ordA = Number(a.ordem ?? 0), ordB = Number(b.ordem ?? 0);
+    if (ordA !== ordB) return ordA - ordB;
+    return (a.nome || '').localeCompare(b.nome || '');
+  });
+  const ativos = parceiros.filter(p => p.ativo !== false).length;
+  if (sub) sub.textContent = `${ativos} ativo${ativos===1?'':'s'} · ${parceiros.length} no total`;
+  el.innerHTML = ordenados.length
+    ? ordenados.map(p => {
+        const inativo = p.ativo === false;
+        const inativoBadge = inativo
+          ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">inativo</span>' : '';
+        const contato = p.contato ? escHtml(p.contato) : '—';
+        return `<div style="display:grid;grid-template-columns:auto 1fr auto auto;gap:14px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);${inativo ? 'opacity:0.55;' : ''}">
+          <div style="font-size:22px;">🤝</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;">${escHtml(p.nome)}${inativoBadge}</div>
+            <div style="font-size:10px;color:var(--text3);margin-top:2px;">contato: ${contato}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;">Ordem</div>
+            <div style="font-size:14px;font-weight:800;">${Number(p.ordem ?? 0)}</div>
+          </div>
+          <div style="display:flex;gap:5px;">
+            <button class="action-btn edit-btn" onclick="abrirParceiroModal('${p.id}')" title="Editar"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
+            ${inativo
+              ? `<button class="action-btn" onclick="_alternarStatusParceiro('${p.id}', true)" title="Reativar" style="color:var(--green);"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
+              : `<button class="action-btn del-btn" onclick="_alternarStatusParceiro('${p.id}', false)" title="Desativar"><svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`}
+            ${_parceirosComMoto.has(p.id) ? '' :
+              `<button class="action-btn" onclick="_excluirParceiro('${p.id}')" title="Excluir permanentemente" style="color:var(--red);"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>`}
+          </div>
+        </div>`;
+      }).join('')
+    : '<div class="empty" style="padding:32px;">Nenhum parceiro cadastrado. Clique em "+ Novo parceiro" pra começar.</div>';
+}
+
+function abrirParceiroModal(parceiroId) {
+  const old = document.getElementById('parc-modal');
+  if (old) old.remove();
+  const p = parceiroId ? parceiros.find(x => x.id === parceiroId) : null;
+  const isEdit = !!p;
+  const titulo = isEdit ? `Editar <span>parceiro</span>` : `Novo <span>parceiro</span>`;
+  const proxOrdem = isEdit ? p.ordem : (parceiros.reduce((m, x) => Math.max(m, Number(x.ordem) || 0), 0) + 1);
+
+  const shell = document.createElement('div');
+  shell.id = 'parc-modal';
+  shell.className = 'modal-overlay open';
+  shell.dataset.parceiroId = isEdit ? parceiroId : '';
+  shell.innerHTML =
+      `<div class="modal" style="width:460px;max-width:96vw;">`
+    +   `<div class="modal-title">${titulo}</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group full"><label>Nome</label><input class="form-input" id="parc-nome" type="text" value="${escHtml(p?.nome || '').replace(/"/g,'&quot;')}" placeholder="Ex: João Motos"></div>`
+    +     `<div class="form-group full"><label>Contato <span style="color:var(--text3);font-weight:400;">(opcional)</span></label><input class="form-input" id="parc-contato" type="text" value="${escHtml(p?.contato || '').replace(/"/g,'&quot;')}" placeholder="(21) 99999-9999"></div>`
+    +     `<div class="form-group full"><label>Observação <span style="color:var(--text3);font-weight:400;">(opcional)</span></label><input class="form-input" id="parc-obs" type="text" value="${escHtml(p?.observacao || '').replace(/"/g,'&quot;')}" placeholder="Anotações sobre o parceiro"></div>`
+    +     `<div class="form-group"><label>Ordem</label><input class="form-input" id="parc-ordem" type="number" min="0" step="1" value="${Number(proxOrdem)}"></div>`
+    +     `<div class="form-group full" style="font-size:12px;">`
+    +       `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="parc-ativo"${p?.ativo !== false ? ' checked' : ''}> Ativo</label>`
+    +     `</div>`
+    +   `</div>`
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('parc-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="parc-btn-salvar" onclick="_salvarParceiro()">${isEdit ? 'Salvar alterações' : 'Cadastrar'}</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _salvarParceiro() {
+  const btn = document.getElementById('parc-btn-salvar');
+  if (btn?.disabled) return;
+  const parceiroId = document.getElementById('parc-modal')?.dataset.parceiroId || '';
+  const isEdit = !!parceiroId;
+
+  const nome    = (document.getElementById('parc-nome')?.value    || '').trim();
+  const contato = (document.getElementById('parc-contato')?.value || '').trim();
+  const obs     = (document.getElementById('parc-obs')?.value     || '').trim();
+  const ordem   = parseInt(document.getElementById('parc-ordem')?.value || '0', 10);
+  const ativo   = !!document.getElementById('parc-ativo')?.checked;
+
+  if (!nome) { smAlert('Informe o nome do parceiro.'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    const payload = { nome, contato: contato || null, observacao: obs || null, ordem: isNaN(ordem) ? 0 : ordem, ativo };
+    if (isEdit) {
+      const { error } = await sb.from('parceiros').update(payload).eq('id', parceiroId);
+      if (error) throw new Error('Erro ao atualizar: ' + error.message);
+    } else {
+      const { error } = await sb.from('parceiros').insert(payload);
+      if (error) throw new Error('Erro ao cadastrar: ' + error.message);
+    }
+    document.getElementById('parc-modal')?.remove();
+    await initParceiros();
+  } catch (e) {
+    smAlert(e.message || 'Erro desconhecido.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = isEdit ? 'Salvar alterações' : 'Cadastrar'; }
+  }
+}
+
+async function _alternarStatusParceiro(parceiroId, novoAtivo) {
+  const p = parceiros.find(x => x.id === parceiroId);
+  if (!p) return;
+  const ok = await smConfirm(`${novoAtivo ? 'Reativar' : 'Desativar'} o parceiro "${p.nome}"?` + (novoAtivo ? '' : '\n\nParceiros inativos não aparecem ao registrar uma moto.'));
+  if (!ok) return;
+  const { error } = await sb.from('parceiros').update({ ativo: novoAtivo }).eq('id', parceiroId);
+  if (error) { smAlert('Erro: ' + error.message); return; }
+  await initParceiros();
+}
+
+async function _excluirParceiro(parceiroId) {
+  const p = parceiros.find(x => x.id === parceiroId);
+  if (!p) return;
+  // Defesa contra race: a FK é SET NULL, então recheca no banco antes de excluir.
+  const { data: motoData, error: motoErr } = await sb.from('estoque_unidades')
+    .select('id').eq('parceiro_id', parceiroId).eq('status', 'em_estoque').limit(1);
+  if (!motoErr && motoData && motoData.length) {
+    smAlert(`Não é possível excluir "${p.nome}" — existem motos vinculadas a este parceiro. Desative em vez disso.`);
+    await initParceiros();
+    return;
+  }
+  const ok = await smConfirm(`Excluir permanentemente o parceiro "${p.nome}"? Esta ação não pode ser desfeita.`);
+  if (!ok) return;
+  const { error } = await sb.from('parceiros').delete().eq('id', parceiroId);
+  if (error) { smAlert('Erro ao excluir: ' + error.message); return; }
+  await initParceiros();
 }
 
 // ═══════════════════════════════════════════════════════════
