@@ -3284,10 +3284,8 @@ select:not(.input-pro):not(.search-input){
       </div>
       <button class="btn btn-gold" onclick="abrirRegistroMotoModal()">+ Registrar moto</button>
     </div>
-    <div class="card">
-      <div id="loc-lista">
-        <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
-      </div>
+    <div id="loc-lista">
+      <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
     </div>
   </div>
 
@@ -17092,6 +17090,7 @@ let parceiros           = [];   // consignação que a loja DÁ (Localização �
 let _parceirosComMoto   = new Set(); // ids com moto 'em_estoque' vinculada — esconde "Excluir"
 let estoqueUnidades     = [];   // overlay de deslocamento — só motos fora da matriz (status em_estoque)
 let _locParceiros       = [];   // todos os parceiros (mapeia nome p/ unidade; ativos vão no select)
+let _locProdutos        = [];   // produtos ativos {id,nome,estoque,categoria} — p/ o saldo da matriz
 let _locProdutoSel      = null; // produto escolhido no modal de registro (item de produtosTiny)
 let _pdvUsuariosCache   = null; // [{id,nome,email,perfil}] — alimenta o select do modal
 // Sets de IDs que têm pedidos vinculados — usados pra esconder o botão
@@ -17575,46 +17574,29 @@ async function _excluirParceiro(parceiroId) {
 // ═══════════════════════════════════════════════════════════
 async function initLocalizacao() {
   await _pdvGarantirProdutos(); // catálogo p/ a busca de produto (produtosTiny)
-  const [uRes, pRes] = await Promise.all([
+  const [uRes, pRes, prRes] = await Promise.all([
     sb.from('estoque_unidades').select('*').eq('status', 'em_estoque').order('created_at', { ascending: false }),
     sb.from('parceiros').select('*').order('ordem').order('nome'),
+    sb.from('produtos').select('id,nome,estoque,categoria,ativo').eq('ativo', true),
   ]);
-  if (uRes.error) console.warn('[localizacao] unidades:', uRes.error.message);
-  if (pRes.error) console.warn('[localizacao] parceiros:', pRes.error.message);
+  if (uRes.error)  console.warn('[localizacao] unidades:', uRes.error.message);
+  if (pRes.error)  console.warn('[localizacao] parceiros:', pRes.error.message);
+  if (prRes.error) console.warn('[localizacao] produtos:', prRes.error.message);
   estoqueUnidades = (!uRes.error && uRes.data) ? toCamelArr(uRes.data) : [];
   _locParceiros   = (!pRes.error && pRes.data) ? toCamelArr(pRes.data) : [];
+  _locProdutos    = (!prRes.error && prRes.data) ? prRes.data : [];
   renderLocalizacao();
 }
 
-// Nome legível do local de uma unidade. Sem parceiro nem local próprio = matriz
-// (não deveria ocorrer no overlay, mas é tolerado).
-function _locNomeLocal(u) {
-  if (u.parceiroId) {
-    const p = _locParceiros.find(x => x.id === u.parceiroId);
-    return p ? p.nome : 'Parceiro removido';
-  }
-  if (u.localProprio) return u.localProprio.charAt(0).toUpperCase() + u.localProprio.slice(1);
-  return 'Matriz';
-}
-
-function renderLocalizacao() {
-  const el  = document.getElementById('loc-lista');
-  const sub = document.getElementById('loc-sub');
-  if (!el) return;
-  const us = estoqueUnidades;
-  if (sub) sub.textContent = `${us.length} moto${us.length === 1 ? '' : 's'} fora da matriz`;
-  if (!us.length) {
-    el.innerHTML = '<div class="empty" style="padding:32px;">Nenhuma moto registrada fora da matriz. Clique em "+ Registrar moto" pra começar.</div>';
-    return;
-  }
-  el.innerHTML = us.map(u => {
-    const margem = (Number(u.precoVenda) || 0) - (Number(u.custo) || 0) - (Number(u.comissaoParceiro) || 0);
-    const mcor   = margem < 0 ? 'var(--red)' : 'var(--green)';
-    const local  = _locNomeLocal(u);
-    return `<div style="display:grid;grid-template-columns:1fr auto auto;gap:16px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);">
+// Uma linha de unidade deslocada (usada nos blocos de Quiosque e Parceiros).
+// O local não aparece na linha — o cabeçalho do bloco já o identifica.
+function _locUnidadeRow(u) {
+  const margem = (Number(u.precoVenda) || 0) - (Number(u.custo) || 0) - (Number(u.comissaoParceiro) || 0);
+  const mcor   = margem < 0 ? 'var(--red)' : 'var(--green)';
+  return `<div style="display:grid;grid-template-columns:1fr auto auto;gap:16px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);">
       <div style="min-width:0;">
         <div style="font-weight:700;font-size:13px;">${escHtml(u.produtoNome || '—')}${u.cor ? ` <span style="color:var(--text3);font-weight:400;">· ${escHtml(u.cor)}</span>` : ''}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:3px;">📍 ${escHtml(local)}${u.chassi ? ` · chassi <span style="font-family:var(--mono,monospace);">${escHtml(u.chassi)}</span>` : ''}</div>
+        ${u.chassi ? `<div style="font-size:11px;color:var(--text3);margin-top:3px;">chassi <span style="font-family:var(--mono,monospace);">${escHtml(u.chassi)}</span></div>` : ''}
       </div>
       <div style="text-align:right;font-size:11px;color:var(--text2);line-height:1.6;white-space:nowrap;">
         <div>custo <strong>${_fmtBRMoney(u.custo)}</strong> · com. <strong>${_fmtBRMoney(u.comissaoParceiro)}</strong></div>
@@ -17625,7 +17607,90 @@ function renderLocalizacao() {
         <button class="action-btn del-btn" onclick="_excluirUnidade('${u.id}')" title="Remover da localização"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>
       </div>
     </div>`;
-  }).join('');
+}
+
+// Card de um local com lista de unidades (Quiosque / Parceiro).
+function _locBloco(titulo, lista) {
+  const body = lista.length
+    ? lista.map(_locUnidadeRow).join('')
+    : '<div class="empty" style="padding:24px;font-size:11px;">Nenhuma moto neste local.</div>';
+  return `<div class="card" style="margin-bottom:14px;">
+    <div class="card-header"><div><div class="card-title">${titulo}</div></div><div style="font-weight:800;font-size:13px;">${lista.length} moto${lista.length === 1 ? '' : 's'}</div></div>
+    ${body}
+  </div>`;
+}
+
+// Visão agrupada por local. Matriz é CALCULADA (estoque − deslocadas por
+// produto); os demais locais são as unidades registradas. A soma sempre fecha.
+function renderLocalizacao() {
+  const cont = document.getElementById('loc-lista');
+  const sub  = document.getElementById('loc-sub');
+  if (!cont) return;
+  const us = estoqueUnidades;
+
+  // Deslocadas por produto + snapshot de nome (fallback p/ produto removido).
+  const deslocPorProduto = {};
+  const snapNome = {};
+  us.forEach(u => {
+    deslocPorProduto[u.produtoId] = (deslocPorProduto[u.produtoId] || 0) + 1;
+    if (!snapNome[u.produtoId]) snapNome[u.produtoId] = u.produtoNome;
+  });
+  const prodById = {};
+  _locProdutos.forEach(p => { prodById[p.id] = p; });
+  const nomeDe = id => (prodById[id] && prodById[id].nome) || snapNome[id] || '—';
+
+  // ── MATRIZ (calculada): motos (categoria 'scooter') ∪ produtos com deslocada.
+  const idsMatriz = new Set();
+  _locProdutos.forEach(p => { if ((p.categoria || '') === 'scooter') idsMatriz.add(p.id); });
+  Object.keys(deslocPorProduto).forEach(id => idsMatriz.add(id));
+  const matrizRows = [];
+  const inconsist  = [];
+  let matrizTotal = 0;
+  [...idsMatriz].forEach(id => {
+    const estoque = prodById[id] ? (Number(prodById[id].estoque) || 0) : 0;
+    const desloc  = deslocPorProduto[id] || 0;
+    const saldo   = estoque - desloc;
+    if (saldo < 0) inconsist.push({ nome: nomeDe(id), estoque, desloc });
+    if (saldo > 0) { matrizRows.push({ nome: nomeDe(id), qtd: saldo }); matrizTotal += saldo; }
+  });
+  matrizRows.sort((a, b) => a.nome.localeCompare(b.nome));
+
+  const blocos = [];
+
+  // Bloco Matriz
+  let matrizBody = inconsist.map(i =>
+    `<div style="padding:10px 18px;border-bottom:1px solid var(--border);font-size:11px;color:var(--red);">⚠️ ${escHtml(i.nome)}: ${i.desloc} deslocada(s) mas só ${i.estoque} em estoque — confira o cadastro.</div>`
+  ).join('');
+  matrizBody += matrizRows.length
+    ? matrizRows.map(r => `<div style="display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--border);">
+        <div style="font-weight:600;font-size:13px;">${escHtml(r.nome)}</div>
+        <div style="font-weight:800;font-size:14px;">${r.qtd}</div>
+      </div>`).join('')
+    : (inconsist.length ? '' : '<div class="empty" style="padding:24px;font-size:11px;">Nenhuma moto na matriz.</div>');
+  blocos.push(`<div class="card" style="margin-bottom:14px;">
+    <div class="card-header"><div><div class="card-title">📍 Matriz</div><div class="card-sub">esperado = estoque − deslocadas</div></div><div style="font-weight:800;font-size:13px;">${matrizTotal} moto${matrizTotal === 1 ? '' : 's'}</div></div>
+    ${matrizBody}
+  </div>`);
+
+  // Blocos de locais próprios (Quiosque + quaisquer outros local_proprio presentes)
+  const ownVals = new Set(['quiosque']);
+  us.forEach(u => { if (u.localProprio) ownVals.add(u.localProprio); });
+  [...ownVals].forEach(val => {
+    const lista = us.filter(u => !u.parceiroId && (u.localProprio || '') === val);
+    const titulo = val.charAt(0).toUpperCase() + val.slice(1);
+    blocos.push(_locBloco('📍 ' + escHtml(titulo) + ' <span style="font-size:10px;color:var(--text3);">(loja)</span>', lista));
+  });
+
+  // Blocos de parceiros (ativos ∪ referenciados por alguma moto)
+  const refParc = new Set(us.filter(u => u.parceiroId).map(u => u.parceiroId));
+  _locParceiros.filter(p => p.ativo !== false || refParc.has(p.id)).forEach(p => {
+    const lista = us.filter(u => u.parceiroId === p.id);
+    const titInat = p.ativo === false ? ' <span style="font-size:10px;color:var(--text3);">(inativo)</span>' : '';
+    blocos.push(_locBloco('🤝 ' + escHtml(p.nome) + titInat, lista));
+  });
+
+  if (sub) sub.textContent = `${us.length} moto${us.length === 1 ? '' : 's'} fora da matriz · matriz com ${matrizTotal}`;
+  cont.innerHTML = blocos.join('');
 }
 
 function abrirRegistroMotoModal(unidadeId) {
