@@ -17628,6 +17628,7 @@ function _locUnidadeRow(u) {
       </div>
       <div style="display:flex;gap:5px;">
         <button class="action-btn" onclick="_locAbrirVenda('${u.id}')" title="Vender" style="color:var(--green);font-size:14px;">💰</button>
+        <button class="action-btn" onclick="_locDevolver('${u.id}')" title="Devolver (não vendeu — estoque volta)" style="color:var(--orange);font-size:14px;">↩️</button>
         <button class="action-btn edit-btn" onclick="abrirRegistroMotoModal('${u.id}')" title="Editar"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
         <button class="action-btn del-btn" onclick="_excluirUnidade('${u.id}')" title="Cancelar envio (estoque volta)"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>
       </div>
@@ -18061,6 +18062,33 @@ async function _locConfirmarVenda() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Confirmar venda'; }
   }
+}
+
+// ── Devolver uma moto (parceiro não vendeu) (1.4d) ──────────
+// Diferente do "Cancelar envio" (lixeira, que APAGA por erro de cadastro):
+// devolver guarda o histórico (status='devolvida') e devolve o estoque +1.
+async function _locDevolver(id) {
+  const u = estoqueUnidades.find(x => x.id === id);
+  if (!u) return;
+  const ok = await smConfirm(`Devolver "${u.produtoNome || 'moto'}"?\n\nA moto voltou do parceiro SEM vender. O estoque do produto VOLTA +1 e ela fica registrada como devolvida (histórico).`);
+  if (!ok) return;
+  // Estoque volta +1 (a moto retorna fisicamente à loja).
+  if (u.produtoId) {
+    const { error: movErr } = await sb.rpc('registrar_movimento', {
+      p_produto_id: u.produtoId,
+      p_tipo: 'entrada',
+      p_quantidade: 1,
+      p_motivo: 'Devolução do parceiro',
+      p_origem: 'devolucao_parceiro',
+      p_ref_id: id,
+    });
+    if (movErr) { smAlert('Erro ao devolver o estoque: ' + movErr.message); return; }
+  }
+  const { error } = await sb.from('estoque_unidades').update({
+    status: 'devolvida', data_devolucao: _locHojeISO(),
+  }).eq('id', id);
+  if (error) { smAlert('Erro ao registrar devolução: ' + error.message); return; }
+  await initLocalizacao();
 }
 
 // ═══════════════════════════════════════════════════════════
