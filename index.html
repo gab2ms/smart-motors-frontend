@@ -3279,7 +3279,7 @@ select:not(.input-pro):not(.search-input){
     <!-- Header -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
       <div>
-        <div style="font-size:13px;font-weight:700;">Motos fora da matriz</div>
+        <div style="font-size:13px;font-weight:700;">Estoque por local</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="loc-sub">—</div>
       </div>
       <button class="btn btn-gold" onclick="abrirRegistroMotoModal()">+ Registrar moto</button>
@@ -4043,7 +4043,7 @@ const pageMeta={
   precos:['Preços & Margens','Gerencie preços e veja margens de contribuição'],
   vendas:['Vendas do Mês','Importe o relatório do Tiny ERP e veja a margem líquida real'],
   estoque:['Produtos & Estoque','Produtos e estoque — controle próprio'],
-  localizacao:['Localização','Onde está cada moto — matriz, quiosque e parceiros'],
+  localizacao:['Estoque por Local','Onde está cada moto — matriz, quiosque e parceiros'],
   pedidos:['Pedidos','Lista unificada de pedidos — Tiny e PDV no mesmo lugar'],
   oficina:['Oficina','Ordens de serviço e cadastro de clientes'],
   sac:['SAC','Atendimento pós-venda, garantias e contatos com fornecedores'],
@@ -4066,7 +4066,7 @@ const BREADCRUMB_MAP = {
   pedidos:         ['Vendas', 'Pedidos'],
   vendas:          ['Vendas', 'Vendas do Mês'],
   estoque:         ['Produtos', 'Produtos & Estoque'],
-  localizacao:     ['Produtos', 'Localização'],
+  localizacao:     ['Produtos', 'Estoque por Local'],
   precos:          ['Produtos', 'Preços & Margens'],
   oficina:         ['Operação', 'Oficina'],
   sac:             ['Operação', 'SAC'],
@@ -7888,7 +7888,7 @@ const NAV_TREE = [
   ]},
   { kind:'group', label:'Produtos',   icon:'ic-store', children:[
       { id:'estoque',         label:'Produtos & Estoque', icon:'ic-store'   },
-      { id:'localizacao',     label:'Localização',        icon:'ic-package' },
+      { id:'localizacao',     label:'Estoque por Local',  icon:'ic-package' },
       { id:'custos-produtos', label:'Custos de Produtos', icon:'ic-tag'     },
   ]},
   { kind:'group', label:'Operação',   icon:'ic-wrench', children:[
@@ -9914,7 +9914,7 @@ const TODOS_MODULOS = [
   { id: 'precos',       nome: 'Preços & Margens' },
   { id: 'vendas',       nome: 'Vendas' },
   { id: 'estoque',      nome: 'Produtos & Estoque' },
-  { id: 'localizacao',  nome: 'Localização' },
+  { id: 'localizacao',  nome: 'Estoque por Local' },
   { id: 'pedidos',      nome: 'Pedidos' },
   { id: 'oficina',      nome: 'Oficina' },
   { id: 'sac',          nome: 'SAC' },
@@ -17092,6 +17092,7 @@ let estoqueUnidades     = [];   // overlay de deslocamento — só motos fora da
 let _locParceiros       = [];   // todos os parceiros (mapeia nome p/ unidade; ativos vão no select)
 let _locProdutos        = [];   // produtos ativos {id,nome,estoque,categoria} — p/ o saldo da matriz
 let _locProdutoSel      = null; // produto escolhido no modal de registro (item de produtosTiny)
+let _locAbertos = (() => { try { return new Set(JSON.parse(localStorage.getItem('sm_loc_abertos') || '[]')); } catch (e) { return new Set(); } })(); // blocos expandidos (acordeão); default tudo fechado
 let _pdvUsuariosCache   = null; // [{id,nome,email,perfil}] — alimenta o select do modal
 // Sets de IDs que têm pedidos vinculados — usados pra esconder o botão
 // "Excluir" quando o registro está referenciado. Recarregam a cada init.
@@ -17588,12 +17589,13 @@ async function initLocalizacao() {
   renderLocalizacao();
 }
 
-// Uma linha de unidade deslocada (usada nos blocos de Quiosque e Parceiros).
-// O local não aparece na linha — o cabeçalho do bloco já o identifica.
+// Uma linha de unidade deslocada (Quiosque / Parceiro). data-busca alimenta a
+// busca interna do bloco. O local não aparece na linha — vem no cabeçalho.
 function _locUnidadeRow(u) {
   const margem = (Number(u.precoVenda) || 0) - (Number(u.custo) || 0) - (Number(u.comissaoParceiro) || 0);
   const mcor   = margem < 0 ? 'var(--red)' : 'var(--green)';
-  return `<div style="display:grid;grid-template-columns:1fr auto auto;gap:16px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);">
+  const busca  = escHtml(((u.produtoNome || '') + ' ' + (u.cor || '') + ' ' + (u.chassi || '')).toLowerCase()).replace(/"/g, '&quot;');
+  return `<div data-busca="${busca}" style="display:grid;grid-template-columns:1fr auto auto;gap:16px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);">
       <div style="min-width:0;">
         <div style="font-weight:700;font-size:13px;">${escHtml(u.produtoNome || '—')}${u.cor ? ` <span style="color:var(--text3);font-weight:400;">· ${escHtml(u.cor)}</span>` : ''}</div>
         ${u.chassi ? `<div style="font-size:11px;color:var(--text3);margin-top:3px;">chassi <span style="font-family:var(--mono,monospace);">${escHtml(u.chassi)}</span></div>` : ''}
@@ -17609,19 +17611,55 @@ function _locUnidadeRow(u) {
     </div>`;
 }
 
-// Card de um local com lista de unidades (Quiosque / Parceiro).
-function _locBloco(titulo, lista) {
-  const body = lista.length
-    ? lista.map(_locUnidadeRow).join('')
-    : '<div class="empty" style="padding:24px;font-size:11px;">Nenhuma moto neste local.</div>';
+// Card-acordeão de um local. Fechado por default; estado em sm_loc_abertos.
+// Cabeçalho fechado mostra "X scooters · Y acessórios". Corpo tem busca interna.
+function _locCardAcordeao(key, titulo, totS, totA, bodyInner) {
+  const aberto = _locAbertos.has(key);
   return `<div class="card" style="margin-bottom:14px;">
-    <div class="card-header"><div><div class="card-title">${titulo}</div></div><div style="font-weight:800;font-size:13px;">${lista.length} moto${lista.length === 1 ? '' : 's'}</div></div>
-    ${body}
+    <div class="card-header" style="cursor:pointer;" onclick="_locToggle('${key}')">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+        <span id="loc-chev-${key}" style="font-size:11px;color:var(--text3);width:12px;flex-shrink:0;">${aberto ? '▾' : '▸'}</span>
+        <div class="card-title">${titulo}</div>
+      </div>
+      <div style="font-weight:700;font-size:12px;color:var(--text2);white-space:nowrap;">${totS} scooter${totS === 1 ? '' : 's'} · ${totA} acessório${totA === 1 ? '' : 's'}</div>
+    </div>
+    <div id="loc-body-${key}" style="display:${aberto ? '' : 'none'};">
+      <div style="padding:10px 18px;border-bottom:1px solid var(--border);">
+        <input class="search-input" id="loc-q-${key}" placeholder="Buscar neste local..." oninput="_locFiltraLocal('${key}')" style="width:100%;font-size:12px;">
+      </div>
+      ${bodyInner}
+    </div>
   </div>`;
 }
 
-// Visão agrupada por local. Matriz é CALCULADA (estoque − deslocadas por
-// produto); os demais locais são as unidades registradas. A soma sempre fecha.
+// Expande/recolhe um bloco sem re-render (preserva busca digitada em outros
+// blocos) e persiste o conjunto de abertos em sm_loc_abertos.
+function _locToggle(key) {
+  const body = document.getElementById('loc-body-' + key);
+  const chev = document.getElementById('loc-chev-' + key);
+  if (!body) return;
+  const abrir = body.style.display === 'none';
+  body.style.display = abrir ? '' : 'none';
+  if (chev) chev.textContent = abrir ? '▾' : '▸';
+  if (abrir) _locAbertos.add(key); else _locAbertos.delete(key);
+  try { localStorage.setItem('sm_loc_abertos', JSON.stringify([..._locAbertos])); } catch (e) {}
+  if (abrir) { const inp = document.getElementById('loc-q-' + key); if (inp) inp.focus(); }
+}
+
+// Busca interna ao bloco — filtra as linhas via data-busca (efêmera).
+function _locFiltraLocal(key) {
+  const inp  = document.getElementById('loc-q-' + key);
+  const body = document.getElementById('loc-body-' + key);
+  if (!inp || !body) return;
+  const q = (inp.value || '').trim().toLowerCase();
+  body.querySelectorAll('[data-busca]').forEach(row => {
+    row.style.display = (!q || row.getAttribute('data-busca').indexOf(q) !== -1) ? '' : 'none';
+  });
+}
+
+// Visão por local em acordeão. Matriz CALCULADA (estoque − deslocadas), com
+// seções Motos e Acessórios; demais locais = unidades registradas (só motos
+// hoje). A soma sempre fecha. Não toca financeiro.
 function renderLocalizacao() {
   const cont = document.getElementById('loc-lista');
   const sub  = document.getElementById('loc-sub');
@@ -17632,6 +17670,7 @@ function renderLocalizacao() {
   const deslocPorProduto = {};
   const snapNome = {};
   us.forEach(u => {
+    // FUTURO acessório-por-local: somar (u.quantidade || 1) no lugar de 1.
     deslocPorProduto[u.produtoId] = (deslocPorProduto[u.produtoId] || 0) + 1;
     if (!snapNome[u.produtoId]) snapNome[u.produtoId] = u.produtoNome;
   });
@@ -17639,57 +17678,82 @@ function renderLocalizacao() {
   _locProdutos.forEach(p => { prodById[p.id] = p; });
   const nomeDe = id => (prodById[id] && prodById[id].nome) || snapNome[id] || '—';
 
-  // ── MATRIZ (calculada): motos (categoria 'scooter') ∪ produtos com deslocada.
+  // ── MATRIZ (calculada): seções Motos (scooter) e Acessórios (acessorio).
+  // Considera scooters ∪ acessórios ∪ qualquer produto com deslocada.
   const idsMatriz = new Set();
-  _locProdutos.forEach(p => { if ((p.categoria || '') === 'scooter') idsMatriz.add(p.id); });
+  _locProdutos.forEach(p => {
+    const c = p.categoria || '';
+    if (c === 'scooter' || c === 'acessorio') idsMatriz.add(p.id);
+  });
   Object.keys(deslocPorProduto).forEach(id => idsMatriz.add(id));
-  const matrizRows = [];
-  const inconsist  = [];
-  let matrizTotal = 0;
+  const motoRows = [], acessRows = [], inconsist = [];
+  let totMoto = 0, totAcess = 0;
   [...idsMatriz].forEach(id => {
     const estoque = prodById[id] ? (Number(prodById[id].estoque) || 0) : 0;
     const desloc  = deslocPorProduto[id] || 0;
     const saldo   = estoque - desloc;
-    if (saldo < 0) inconsist.push({ nome: nomeDe(id), estoque, desloc });
-    if (saldo > 0) { matrizRows.push({ nome: nomeDe(id), qtd: saldo }); matrizTotal += saldo; }
+    if (saldo < 0) { inconsist.push({ nome: nomeDe(id), estoque, desloc }); return; }
+    if (saldo <= 0) return;
+    const cat = (prodById[id] || {}).categoria || 'scooter';
+    if (cat === 'acessorio') { acessRows.push({ nome: nomeDe(id), qtd: saldo }); totAcess += saldo; }
+    else                     { motoRows.push({ nome: nomeDe(id), qtd: saldo }); totMoto  += saldo; }
   });
-  matrizRows.sort((a, b) => a.nome.localeCompare(b.nome));
+  motoRows.sort((a, b) => a.nome.localeCompare(b.nome));
+  acessRows.sort((a, b) => a.nome.localeCompare(b.nome));
+
+  const mrow = r => {
+    const busca = escHtml(r.nome.toLowerCase()).replace(/"/g, '&quot;');
+    return `<div data-busca="${busca}" style="display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--border);">
+      <div style="font-weight:600;font-size:13px;">${escHtml(r.nome)}</div>
+      <div style="font-weight:800;font-size:14px;">${r.qtd}</div>
+    </div>`;
+  };
+  const secaoTit = t => `<div style="padding:8px 18px;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);background:var(--surface3);">${t}</div>`;
+  const vazio    = t => `<div class="empty" style="padding:18px;font-size:11px;">${t}</div>`;
+
+  let matrizInner = inconsist.map(i => {
+    const busca = escHtml(i.nome.toLowerCase()).replace(/"/g, '&quot;');
+    return `<div data-busca="${busca}" style="padding:10px 18px;border-bottom:1px solid var(--border);font-size:11px;color:var(--red);">⚠️ ${escHtml(i.nome)}: ${i.desloc} deslocada(s) mas só ${i.estoque} em estoque — confira o cadastro.</div>`;
+  }).join('');
+  matrizInner += secaoTit('Motos')      + (motoRows.length  ? motoRows.map(mrow).join('')  : vazio('Nenhuma moto na matriz.'));
+  matrizInner += secaoTit('Acessórios') + (acessRows.length ? acessRows.map(mrow).join('') : vazio('Nenhum acessório na matriz.'));
+
+  // Contagem por categoria (FUTURO acessório-por-local: += quantidade no lugar de 1).
+  const contaCat = lista => {
+    let s = 0, a = 0;
+    lista.forEach(u => {
+      const cat = (prodById[u.produtoId] || {}).categoria || 'scooter';
+      if (cat === 'acessorio') a++; else s++;
+    });
+    return { s, a };
+  };
 
   const blocos = [];
+  blocos.push(_locCardAcordeao('matriz', '📍 Matriz', totMoto, totAcess, matrizInner));
 
-  // Bloco Matriz
-  let matrizBody = inconsist.map(i =>
-    `<div style="padding:10px 18px;border-bottom:1px solid var(--border);font-size:11px;color:var(--red);">⚠️ ${escHtml(i.nome)}: ${i.desloc} deslocada(s) mas só ${i.estoque} em estoque — confira o cadastro.</div>`
-  ).join('');
-  matrizBody += matrizRows.length
-    ? matrizRows.map(r => `<div style="display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--border);">
-        <div style="font-weight:600;font-size:13px;">${escHtml(r.nome)}</div>
-        <div style="font-weight:800;font-size:14px;">${r.qtd}</div>
-      </div>`).join('')
-    : (inconsist.length ? '' : '<div class="empty" style="padding:24px;font-size:11px;">Nenhuma moto na matriz.</div>');
-  blocos.push(`<div class="card" style="margin-bottom:14px;">
-    <div class="card-header"><div><div class="card-title">📍 Matriz</div><div class="card-sub">esperado = estoque − deslocadas</div></div><div style="font-weight:800;font-size:13px;">${matrizTotal} moto${matrizTotal === 1 ? '' : 's'}</div></div>
-    ${matrizBody}
-  </div>`);
-
-  // Blocos de locais próprios (Quiosque + quaisquer outros local_proprio presentes)
+  // Locais próprios (Quiosque + quaisquer outros local_proprio presentes).
   const ownVals = new Set(['quiosque']);
   us.forEach(u => { if (u.localProprio) ownVals.add(u.localProprio); });
   [...ownVals].forEach(val => {
-    const lista = us.filter(u => !u.parceiroId && (u.localProprio || '') === val);
-    const titulo = val.charAt(0).toUpperCase() + val.slice(1);
-    blocos.push(_locBloco('📍 ' + escHtml(titulo) + ' <span style="font-size:10px;color:var(--text3);">(loja)</span>', lista));
+    const lista  = us.filter(u => !u.parceiroId && (u.localProprio || '') === val);
+    const titulo = '📍 ' + escHtml(val.charAt(0).toUpperCase() + val.slice(1)) + ' <span style="font-size:10px;color:var(--text3);font-weight:400;">(loja)</span>';
+    const { s, a } = contaCat(lista);
+    const inner = lista.length ? lista.map(_locUnidadeRow).join('') : vazio('Nenhuma moto neste local.');
+    blocos.push(_locCardAcordeao('own_' + val, titulo, s, a, inner));
   });
 
-  // Blocos de parceiros (ativos ∪ referenciados por alguma moto)
+  // Parceiros (ativos ∪ referenciados por alguma moto).
   const refParc = new Set(us.filter(u => u.parceiroId).map(u => u.parceiroId));
   _locParceiros.filter(p => p.ativo !== false || refParc.has(p.id)).forEach(p => {
-    const lista = us.filter(u => u.parceiroId === p.id);
-    const titInat = p.ativo === false ? ' <span style="font-size:10px;color:var(--text3);">(inativo)</span>' : '';
-    blocos.push(_locBloco('🤝 ' + escHtml(p.nome) + titInat, lista));
+    const lista   = us.filter(u => u.parceiroId === p.id);
+    const titInat = p.ativo === false ? ' <span style="font-size:10px;color:var(--text3);font-weight:400;">(inativo)</span>' : '';
+    const titulo  = '🤝 ' + escHtml(p.nome) + titInat;
+    const { s, a } = contaCat(lista);
+    const inner = lista.length ? lista.map(_locUnidadeRow).join('') : vazio('Nenhuma moto neste local.');
+    blocos.push(_locCardAcordeao('parc_' + p.id, titulo, s, a, inner));
   });
 
-  if (sub) sub.textContent = `${us.length} moto${us.length === 1 ? '' : 's'} fora da matriz · matriz com ${matrizTotal}`;
+  if (sub) sub.textContent = `${us.length} moto${us.length === 1 ? '' : 's'} fora da matriz`;
   cont.innerHTML = blocos.join('');
 }
 
