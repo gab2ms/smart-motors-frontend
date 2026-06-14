@@ -18098,18 +18098,46 @@ function _locFiltraProdutos() {
   dd.style.display = 'block';
 }
 
+// Cores conhecidas p/ extrair a cor do NOME (a cor vive no nome, ex.: "Skylo
+// Branca"). Varre de trás pra frente pra pegar compostos ("Azul Camaleão").
+// Não altera o cadastro — extração só no modal.
+const _LOC_CORES = new Set([
+  'branca','branco','preta','preto','azul','vermelha','vermelho','verde','cinza',
+  'amarela','amarelo','laranja','rosa','prata','dourada','dourado','marrom',
+  'roxa','roxo','bege','vinho','grafite','chumbo','titanio','champagne','nude',
+  // modificadores de cor composta:
+  'camaleao','fosco','fosca','metalico','metalica','perolizado','perolizada',
+  'claro','clara','escuro','escura','neon',
+]);
+const _locCorNorm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+function _locExtrairCor(nome) {
+  const toks = (nome || '').trim().split(/\s+/);
+  const out = [];
+  for (let i = toks.length - 1; i >= 0; i--) {
+    if (_LOC_CORES.has(_locCorNorm(toks[i]))) out.unshift(toks[i]); else break;
+  }
+  return out.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
+
 function _locSelProduto(idx) {
   const p = produtosTiny[idx];
   if (!p) return;
   _locProdutoSel = p;
   _locMostraProdutoSel(p.nome, false);
-  // Pré-preenche custo e cor do cadastro (produtos), editáveis — sobrescreve
-  // ao trocar de produto. Preço B2B fica em branco de propósito (varejo ≠ B2B).
+  // Sobrescreve custo e cor ao escolher/trocar de produto. Preço B2B fica em
+  // branco de propósito (varejo ≠ B2B).
   const cad = _locProdutos.find(x => x.id === p.produtoId) || {};
+  // Custo da consignação = SEM comissão de vendedor (venda direta): custoPuro +
+  // montagem + NF (= ctReal − comissão). Fallback: produtos.custo (pode ter comissão).
+  const pp = (typeof _matchProdutoPorNome === 'function') ? _matchProdutoPorNome(p.nome) : null;
+  const custoSemComissao = pp
+    ? (ctReal(pp) - (Number(pp.comissao) || 0))
+    : (cad.custo != null ? Number(cad.custo) : null);
   const custoInp = document.getElementById('loc-custo');
   const corInp   = document.getElementById('loc-cor');
-  if (custoInp) custoInp.value = (cad.custo != null) ? (Number(cad.custo) || '') : '';
-  if (corInp)   corInp.value   = cad.cor || '';
+  if (custoInp) custoInp.value = (custoSemComissao != null) ? (Math.round(custoSemComissao * 100) / 100 || '') : '';
+  // Cor: usa produtos.cor se houver; senão extrai do nome (compostos inclusos).
+  if (corInp) corInp.value = (cad.cor && cad.cor.trim()) ? cad.cor : _locExtrairCor(p.nome);
   document.getElementById('loc-busca-prod').value = '';
   document.getElementById('loc-prod-dropdown').style.display = 'none';
   _locMargemPreview();
