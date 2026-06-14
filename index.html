@@ -3330,7 +3330,7 @@ select:not(.input-pro):not(.search-input){
     <!-- Header -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
       <div>
-        <div style="font-size:13px;font-weight:700;">Estoque por local</div>
+        <div style="font-size:13px;font-weight:700;">Consignação &amp; Estoque</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="loc-sub">—</div>
       </div>
       <button class="btn btn-gold" onclick="abrirRegistroMotoModal()">+ Enviar moto</button>
@@ -4095,7 +4095,7 @@ const pageMeta={
   precos:['Preços & Margens','Gerencie preços e veja margens de contribuição'],
   vendas:['Vendas do Mês','Importe o relatório do Tiny ERP e veja a margem líquida real'],
   estoque:['Produtos & Estoque','Produtos e estoque — controle próprio'],
-  localizacao:['Estoque por Local','Onde está cada moto — matriz, quiosque e parceiros'],
+  localizacao:['Consignação & Estoque','Onde está cada moto — matriz, quiosque e parceiros'],
   pedidos:['Pedidos','Lista unificada de pedidos — Tiny e PDV no mesmo lugar'],
   oficina:['Oficina','Ordens de serviço e cadastro de clientes'],
   sac:['SAC','Atendimento pós-venda, garantias e contatos com fornecedores'],
@@ -4118,7 +4118,7 @@ const BREADCRUMB_MAP = {
   pedidos:         ['Vendas', 'Pedidos'],
   vendas:          ['Vendas', 'Vendas do Mês'],
   estoque:         ['Produtos', 'Produtos & Estoque'],
-  localizacao:     ['Produtos', 'Estoque por Local'],
+  localizacao:     ['Produtos', 'Consignação & Estoque'],
   precos:          ['Produtos', 'Preços & Margens'],
   oficina:         ['Operação', 'Oficina'],
   sac:             ['Operação', 'SAC'],
@@ -7948,7 +7948,7 @@ const NAV_TREE = [
   ]},
   { kind:'group', label:'Produtos',   icon:'ic-store', children:[
       { id:'estoque',         label:'Produtos & Estoque', icon:'ic-store'   },
-      { id:'localizacao',     label:'Estoque por Local',  icon:'ic-package' },
+      { id:'localizacao',     label:'Consignação & Estoque', icon:'ic-package' },
       { id:'custos-produtos', label:'Custos de Produtos', icon:'ic-tag'     },
   ]},
   { kind:'group', label:'Operação',   icon:'ic-wrench', children:[
@@ -9974,7 +9974,7 @@ const TODOS_MODULOS = [
   { id: 'precos',       nome: 'Preços & Margens' },
   { id: 'vendas',       nome: 'Vendas' },
   { id: 'estoque',      nome: 'Produtos & Estoque' },
-  { id: 'localizacao',  nome: 'Estoque por Local' },
+  { id: 'localizacao',  nome: 'Consignação & Estoque' },
   { id: 'pedidos',      nome: 'Pedidos' },
   { id: 'oficina',      nome: 'Oficina' },
   { id: 'sac',          nome: 'SAC' },
@@ -17689,7 +17689,7 @@ function abrirNovidadeModal(novidadeId) {
       `<div class="modal" style="width:520px;max-width:96vw;">`
     +   `<div class="modal-title">${titulo}</div>`
     +   `<div class="form-grid">`
-    +     `<div class="form-group full"><label>Título</label><input class="form-input" id="nov-titulo" type="text" value="${escHtml(n?.titulo || '').replace(/"/g,'&quot;')}" placeholder="Ex: Nova tela: Estoque por Local"></div>`
+    +     `<div class="form-group full"><label>Título</label><input class="form-input" id="nov-titulo" type="text" value="${escHtml(n?.titulo || '').replace(/"/g,'&quot;')}" placeholder="Ex: Nova tela: Consignação & Estoque"></div>`
     +     `<div class="form-group full"><label>Descrição <span style="color:var(--text3);font-weight:400;">(linguagem simples)</span></label><textarea class="form-input" id="nov-descricao" rows="3" placeholder="Ex: Agora dá pra ver onde está cada moto e controlar as que estão em parceiros.">${escHtml(n?.descricao || '')}</textarea></div>`
     +     `<div class="form-group"><label>Data</label><input class="form-input" id="nov-data" type="date" value="${dataVal}"></div>`
     +     `<div class="form-group full" style="font-size:12px;display:flex;gap:18px;align-items:center;">`
