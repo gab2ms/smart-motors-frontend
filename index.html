@@ -10483,6 +10483,7 @@ const FC_BALDES = {
   'funcionários':'operacao', 'marketing':'operacao', 'montagem':'operacao',
   'nota fiscal e imposto':'operacao', 'oficina - peças e serviços':'operacao',
   'outros':'operacao', 'parcerias comerciais':'operacao',
+  'recebimento consignação':'operacao',
   'segurança':'operacao', 'seguro':'operacao',
   'serviços terceirizados':'operacao', 'sistemas / ferramenta gestão':'operacao',
   'sócios':'operacao', 'taxas':'operacao', 'telecomunicação, internet':'operacao',
@@ -18178,20 +18179,85 @@ async function _locConfirmarPagar() {
   if (!id) return;
   if (!(valor > 0)) { smAlert('Informe o valor recebido.'); return; }
   if (!data)        { smAlert('Informe a data do pagamento.'); return; }
+  const u = estoqueUnidades.find(x => x.id === id);
+  if (!u) return;
+
+  const nomeParceiro = u.parceiroId
+    ? ((_locParceiros.find(p => p.id === u.parceiroId) || {}).nome || 'parceiro')
+    : (u.localProprio ? (u.localProprio.charAt(0).toUpperCase() + u.localProprio.slice(1)) : 'loja');
+  const criadoEm = data + 'T12:00:00-03:00'; // meio-dia BRT → cai no mês da data informada
 
   if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  let pedidoId = u.pedidoId || null;
   try {
+    // 1) Gera o pedido PDV (1 por moto — anti-dup via pedido_id). Sem baixa de
+    //    estoque (já baixou no envio). Conta no Dashboard/DRE no mês de criado_em.
+    if (!pedidoId) {
+      const { data: ped, error: pedErr } = await sb.from('pdv_pedidos').insert({
+        vendedor_id: 'a2e4d378-d537-49c3-83ef-6dfd5c2133d3', // Smart Motors → zera comissão no CPV
+        local_venda_id: null,
+        cliente_dados: { nome: 'Consignação · ' + nomeParceiro },
+        forma_pagamento: { desconto: 0, metodos: [{ tipo: 'dinheiro', valor: valor }] },
+        desconto: 0,
+        total: valor,
+        observacao: 'Consignação ' + nomeParceiro + ' — estoque já baixado no envio. NÃO editar pelo PDV.',
+        sincronizado_tiny: false,
+        venda_local: true,
+        status: 'entregue',
+        origem: 'consignacao',
+        criado_em: criadoEm,
+        data_entrega_real: criadoEm,
+      }).select('id').single();
+      if (pedErr) throw new Error('Falha ao gerar o pedido: ' + pedErr.message);
+      pedidoId = ped.id;
+
+      const { error: itErr } = await sb.from('pdv_itens_pedido').insert({
+        pedido_id: pedidoId,
+        produto_modelo: u.produtoNome || null,
+        produto_nome_tiny: u.produtoNome || '', // casa SCOOTER_RE → conta como scooter
+        tiny_produto_id: null,
+        produto_id: u.produtoId || null,
+        quantidade: 1,
+        valor_unitario: valor,
+        valor_total: valor,
+        chassi: u.chassi || null,
+        ordem: 0,
+      });
+      if (itErr) {
+        await sb.from('pdv_pedidos').delete().eq('id', pedidoId); // rollback do pedido órfão
+        throw new Error('Falha ao gerar o item do pedido: ' + itErr.message);
+      }
+      // NÃO chama _pdvBaixarEstoqueLocal — o estoque já baixou no envio.
+    }
+
+    // 2) Grava o pagamento + vínculo do pedido (só APÓS o pedido ok — se o
+    //    pedido falha, nada grava e a moto continua em "A receber").
     const { error } = await sb.from('estoque_unidades').update({
-      pago: true, data_pagamento: data, valor_pago: valor,
+      pago: true, data_pagamento: data, valor_pago: valor, pedido_id: pedidoId,
     }).eq('id', id);
     if (error) throw error;
+
     document.getElementById('loc-pagar-modal').classList.remove('open');
+    // 3) Atalho: abre o lançamento de caixa pré-preenchido (o dono confirma).
+    _locAbrirLancamentoConsignacao(valor, data, nomeParceiro, u.produtoNome || 'moto');
     await initLocalizacao();
   } catch (e) {
     smAlert('Erro ao registrar pagamento: ' + (e.message || e));
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Confirmar pagamento'; }
   }
+}
+
+// Abre o modal de lançamento do Financeiro pré-preenchido (entrada de caixa do
+// recebimento de consignação). Reusa openLanModal + popularLanCategorias.
+function _locAbrirLancamentoConsignacao(valor, data, nomeParceiro, motoNome) {
+  if (typeof openLanModal !== 'function') return;
+  openLanModal('entrada');
+  const setV = (elId, v) => { const el = document.getElementById(elId); if (el) el.value = v; };
+  setV('lan-valor', valor);
+  setV('lan-data', data);
+  setV('lan-descricao', 'Recebimento consignação · ' + nomeParceiro + ' · ' + motoNome);
+  if (typeof popularLanCategorias === 'function') popularLanCategorias('entrada', 'Recebimento Consignação', true);
 }
 
 // ═══════════════════════════════════════════════════════════
