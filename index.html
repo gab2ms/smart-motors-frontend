@@ -2317,14 +2317,17 @@ select:not(.input-pro):not(.search-input){
   <div class="page content" id="page-admin">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
       <div>
-        <div style="font-size:13px;font-weight:700;">Administração de usuários</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px;">Aprove ou rejeite solicitações de acesso</div>
+        <div style="font-size:13px;font-weight:700;">Administração</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">Usuários, equipe, pontos, financeiro e comunicação</div>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn" onclick="renderAdmin()"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Atualizar</button>
         <button class="btn btn-gold" onclick="alterarCodigo()">Alterar código</button>
       </div>
     </div>
+
+    <!-- ─── Grupo: Acesso & Usuários ─── -->
+    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin:8px 0 12px;">🔐 Acesso &amp; Usuários</div>
 
     <!-- Código de acesso atual -->
     <div class="card" style="padding:18px 20px;margin-bottom:20px;">
@@ -2386,62 +2389,8 @@ select:not(.input-pro):not(.search-input){
       </div>
     </div>
 
-    <!-- Mapeamento de vendedores -->
-    <div class="section-gap">
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <div class="card-title">Mapeamento de vendedores</div>
-            <div class="card-sub">Agrupe múltiplos nomes do Tiny sob um único nome real (ex: "Rafael Quiosque" + "Rafael Matriz" → "Rafael")</div>
-          </div>
-          <button class="btn btn-gold" onclick="abrirVendMapModal()" style="font-size:11px;padding:6px 12px;">+ Adicionar mapeamento</button>
-        </div>
-        <div id="admin-vend-map-list">
-          <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Notificações WhatsApp -->
-    <div class="section-gap">
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <div class="card-title">Notificações WhatsApp</div>
-            <div class="card-sub">Resumos executivos automáticos enviados aos sócios (manhã 8h e noite 20h)</div>
-          </div>
-          <button class="btn btn-gold" onclick="abrirWhatsappDestModal()" style="font-size:11px;padding:6px 12px;">+ Adicionar destinatário</button>
-        </div>
-        <div id="whatsapp-dest-list">
-          <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
-        </div>
-        <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-          <span style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.6px;">Disparo de resumo</span>
-          <select id="wa-resumo-periodo" class="search-input" style="max-width:230px;">
-            <option value="manha">Manhã — planejamento do dia</option>
-            <option value="noite">Noite — fechamento do dia</option>
-          </select>
-          <button class="btn" type="button" onclick="abrirPreviewResumo()">Gerar prévia</button>
-          <button class="btn btn-gold" type="button" onclick="dispararResumoAgora()">Disparar agora</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Categorias de Lançamento -->
-    <div class="section-gap">
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <div class="card-title">Categorias de Lançamento</div>
-            <div class="card-sub">Categorias do modal de lançamento, agrupadas por tipo · contador de lançamentos vinculados</div>
-          </div>
-          <button class="btn btn-gold" onclick="abrirCategoriaModal()" style="font-size:11px;padding:6px 12px;">+ Nova categoria</button>
-        </div>
-        <div id="categorias-lanc-list">
-          <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
-        </div>
-      </div>
-    </div>
+    <!-- ─── Grupo: Equipe de Vendas ─── -->
+    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin:28px 0 12px;">👥 Equipe de Vendas</div>
 
     <!-- Vendedores PDV -->
     <div class="section-gap">
@@ -2458,6 +2407,25 @@ select:not(.input-pro):not(.search-input){
         </div>
       </div>
     </div>
+
+    <!-- Mapeamento de vendedores -->
+    <div class="section-gap">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Mapeamento de vendedores</div>
+            <div class="card-sub">Agrupe múltiplos nomes do Tiny sob um único nome real (ex: "Rafael Quiosque" + "Rafael Matriz" → "Rafael")</div>
+          </div>
+          <button class="btn btn-gold" onclick="abrirVendMapModal()" style="font-size:11px;padding:6px 12px;">+ Adicionar mapeamento</button>
+        </div>
+        <div id="admin-vend-map-list">
+          <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Grupo: Pontos & Parceiros ─── -->
+    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin:28px 0 12px;">📍 Pontos &amp; Parceiros</div>
 
     <!-- Locais de Venda -->
     <div class="section-gap">
@@ -2491,6 +2459,28 @@ select:not(.input-pro):not(.search-input){
       </div>
     </div>
 
+    <!-- ─── Grupo: Financeiro ─── -->
+    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin:28px 0 12px;">💰 Financeiro</div>
+
+    <!-- Categorias de Lançamento -->
+    <div class="section-gap">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Categorias de Lançamento</div>
+            <div class="card-sub">Categorias do modal de lançamento, agrupadas por tipo · contador de lançamentos vinculados</div>
+          </div>
+          <button class="btn btn-gold" onclick="abrirCategoriaModal()" style="font-size:11px;padding:6px 12px;">+ Nova categoria</button>
+        </div>
+        <div id="categorias-lanc-list">
+          <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Grupo: Comunicação ─── -->
+    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin:28px 0 12px;">📣 Comunicação</div>
+
     <!-- Mural de Novidades (changelog simples p/ a equipe) -->
     <div class="section-gap">
       <div class="card">
@@ -2503,6 +2493,31 @@ select:not(.input-pro):not(.search-input){
         </div>
         <div id="nov-lista">
           <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notificações WhatsApp -->
+    <div class="section-gap">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Notificações WhatsApp</div>
+            <div class="card-sub">Resumos executivos automáticos enviados aos sócios (manhã 8h e noite 20h)</div>
+          </div>
+          <button class="btn btn-gold" onclick="abrirWhatsappDestModal()" style="font-size:11px;padding:6px 12px;">+ Adicionar destinatário</button>
+        </div>
+        <div id="whatsapp-dest-list">
+          <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+        </div>
+        <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:0.6px;">Disparo de resumo</span>
+          <select id="wa-resumo-periodo" class="search-input" style="max-width:230px;">
+            <option value="manha">Manhã — planejamento do dia</option>
+            <option value="noite">Noite — fechamento do dia</option>
+          </select>
+          <button class="btn" type="button" onclick="abrirPreviewResumo()">Gerar prévia</button>
+          <button class="btn btn-gold" type="button" onclick="dispararResumoAgora()">Disparar agora</button>
         </div>
       </div>
     </div>
