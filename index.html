@@ -17847,15 +17847,30 @@ async function initLocalizacao() {
   renderLocalizacao();
 }
 
+// Dias parados no parceiro: hoje − data_entrada (data do envio). Acima de
+// LOC_DIAS_ALERTA, a moto ganha destaque "acompanhar/cobrar". Só exibição.
+const LOC_DIAS_ALERTA = 30; // limite p/ o alerta (fácil de ajustar)
+function _locDiasParado(u) {
+  if (!u || !u.dataEntrada) return null;
+  const ms = Date.parse(_locHojeISO()) - Date.parse(u.dataEntrada);
+  return isNaN(ms) ? null : Math.floor(ms / 86400000);
+}
+
 // Uma linha de unidade deslocada (Quiosque / Parceiro). data-busca alimenta a
 // busca interna do bloco. O local não aparece na linha — vem no cabeçalho.
 function _locUnidadeRow(u) {
   const lucro = (Number(u.precoVenda) || 0) - (Number(u.custo) || 0); // B2B − custo (sem comissão)
   const lcor  = lucro < 0 ? 'var(--red)' : 'var(--green)';
   const busca = escHtml(((u.produtoNome || '') + ' ' + (u.cor || '') + ' ' + (u.chassi || '')).toLowerCase()).replace(/"/g, '&quot;');
+  const dias  = _locDiasParado(u);
+  let diasBadge = '';
+  if (dias != null) {
+    const alerta = dias >= LOC_DIAS_ALERTA;
+    diasBadge = ` <span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:9px;white-space:nowrap;${alerta ? 'background:var(--orange);color:#1a1a1a;' : 'background:var(--surface3);color:var(--text3);'}">${alerta ? '⚠️ ' : ''}há ${dias} dia${dias === 1 ? '' : 's'}</span>`;
+  }
   return `<div data-busca="${busca}" style="display:grid;grid-template-columns:1fr auto auto;gap:16px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);">
       <div style="min-width:0;">
-        <div style="font-weight:700;font-size:13px;">${escHtml(u.produtoNome || '—')}${u.cor ? ` <span style="color:var(--text3);font-weight:400;">· ${escHtml(u.cor)}</span>` : ''}</div>
+        <div style="font-weight:700;font-size:13px;">${escHtml(u.produtoNome || '—')}${u.cor ? ` <span style="color:var(--text3);font-weight:400;">· ${escHtml(u.cor)}</span>` : ''}${diasBadge}</div>
         ${u.chassi ? `<div style="font-size:11px;color:var(--text3);margin-top:3px;">chassi <span style="font-family:var(--mono,monospace);">${escHtml(u.chassi)}</span></div>` : ''}
       </div>
       <div style="text-align:right;font-size:11px;color:var(--text2);line-height:1.6;white-space:nowrap;">
@@ -18017,6 +18032,11 @@ function renderLocalizacao() {
     const soma = aReceberL.reduce((s, u) => s + (Number(u.precoVenda) || 0), 0);
     return ` · <span style="color:var(--orange);">${ehParceiro ? 'deve' : 'a receber'} ${_fmtBRMoney(soma)}</span>`;
   };
+  // "⚠️ N há +Xd" no cabeçalho — motos na posse paradas além do limite.
+  const extraAlerta = (naPosseL) => {
+    const n = naPosseL.filter(u => { const d = _locDiasParado(u); return d != null && d >= LOC_DIAS_ALERTA; }).length;
+    return n ? ` · <span style="color:var(--orange);">⚠️ ${n} há +${LOC_DIAS_ALERTA}d</span>` : '';
+  };
 
   const blocos = [];
   blocos.push(_locCardAcordeao('matriz', '📍 Matriz', totMoto, totAcess, matrizInner));
@@ -18029,7 +18049,7 @@ function renderLocalizacao() {
     const aReceberL = aReceber.filter(u => !u.parceiroId && (u.localProprio || '') === val);
     const titulo = '📍 ' + escHtml(val.charAt(0).toUpperCase() + val.slice(1)) + ' <span style="font-size:10px;color:var(--text3);font-weight:400;">(loja)</span>';
     const { s, a } = contaCat(naPosseL);
-    blocos.push(_locCardAcordeao('own_' + val, titulo, s, a, innerLocal(naPosseL, aReceberL), '', extraReceber(aReceberL, false)));
+    blocos.push(_locCardAcordeao('own_' + val, titulo, s, a, innerLocal(naPosseL, aReceberL), '', extraReceber(aReceberL, false) + extraAlerta(naPosseL)));
   });
 
   // Parceiros (ativos ∪ referenciados por alguma moto).
@@ -18040,7 +18060,7 @@ function renderLocalizacao() {
     const titInat = p.ativo === false ? ' <span style="font-size:10px;color:var(--text3);font-weight:400;">(inativo)</span>' : '';
     const titulo  = '🤝 ' + escHtml(p.nome) + titInat;
     const { s, a } = contaCat(naPosseL);
-    blocos.push(_locCardAcordeao('parc_' + p.id, titulo, s, a, innerLocal(naPosseL, aReceberL), _locParceiroInfo(p), extraReceber(aReceberL, true)));
+    blocos.push(_locCardAcordeao('parc_' + p.id, titulo, s, a, innerLocal(naPosseL, aReceberL), _locParceiroInfo(p), extraReceber(aReceberL, true) + extraAlerta(naPosseL)));
   });
 
   if (sub) sub.textContent = `${naPosse.length} na posse · ${aReceber.length} a receber`;
