@@ -6792,7 +6792,7 @@ let dashDreMesExpandido = false;
 // empréstimo (linha própria, vinda de emprestimo_parcelas) e
 // movimentações não-operacionais. Ver triggers/README.md.
 const _DRE_CATEGORIAS_FORA_DESPESA = [
-  'Empréstimos', 'Fornecedores', 'Motonetas',
+  'Empréstimos', 'Fornecedores', 'Venda Scooter',
   'Montagem', 'Nota Fiscal e Imposto',
   'Acerto de Caixa', 'Estorno', 'Transferência',
   // Comissão de Vendas — já contada no CPV (componente comissao do ctReal).
@@ -7096,7 +7096,7 @@ async function renderDashDreMes() {
       <div style="height:8px;"></div>
       ${linha('(−) Despesas operacionais', despReal, {
         onclick: `_dashDreIrDespesas('${mesAtual}')`,
-        title: 'Lançamentos de saída do mês, exceto: custo de produto já no CPV (Fornecedores, Motonetas, Montagem, NF), empréstimos (linha própria) e não-operacionais (Acerto de Caixa, Estorno, transferências).'
+        title: 'Lançamentos de saída do mês, exceto: custo de produto já no CPV (Fornecedores, Venda Scooter, Montagem, NF), empréstimos (linha própria) e não-operacionais (Acerto de Caixa, Estorno, transferências).'
       })}
       ${sublinha(`real do mês (${despCount} lançamento${despCount!==1?'s':''})`)}
       ${sublinha(`Custo Fixo Planejado: ${fmt(planejado)}`
@@ -10545,7 +10545,7 @@ const FC_BALDES = {
   'serviços terceirizados':'operacao', 'sistemas / ferramenta gestão':'operacao',
   'sócios':'operacao', 'taxas':'operacao', 'telecomunicação, internet':'operacao',
   'veículos, transportes':'operacao',
-  'fornecedores':'estoque', 'motonetas':'estoque',
+  'fornecedores':'estoque', 'venda scooter':'estoque',
   'investimento em ponto':'investimento', 'obra loja nova':'investimento',
   'empréstimos':'divida',
   'acerto de caixa':'neutro', 'aportes':'neutro', 'bloqueado':'neutro',
@@ -10558,11 +10558,11 @@ const FC_VARIAVEIS = ['comissão de vendas', 'nota fiscal e imposto', 'montagem'
 const _fcNorm = c => (c || '').toLowerCase().replace(/\s+/g, ' ').trim();
 const _fcYm   = d => (d || '').slice(0, 7);
 
-// Balde de um movimento. 'Motonetas' depende do tipo: entrada = venda
+// Balde de um movimento. 'Venda Scooter' depende do tipo: entrada = venda
 // (operação), saída = compra de moto pra revenda (estoque).
 function fcBalde(categoria, tipo) {
   const n = _fcNorm(categoria);
-  if (n === 'motonetas') return tipo === 'entrada' ? 'operacao' : 'estoque';
+  if (n === 'venda scooter') return tipo === 'entrada' ? 'operacao' : 'estoque';
   return FC_BALDES[n] || null;   // null = não classificado (avisado nas premissas)
 }
 
@@ -12914,7 +12914,7 @@ async function openContaModal() {
 //  IA — CATEGORIZAÇÃO AUTOMÁTICA
 // ══════════════════════════════════════════
 const CATEGORIAS_SMART = [
-  'Motonetas','Acessórios','Rendimento Conta','Estorno','Aportes','Comissão Indicação',
+  'Venda Scooter','Acessórios','Rendimento Conta','Estorno','Aportes','Comissão Indicação',
   'Aluguel e Condomínio','Funcionários','Sócios','Empréstimos','Marketing',
   'Sistemas / Ferramenta Gestão','Seguro','Segurança','Telecomunicação, Internet',
   'Água, Luz, Internet','Veículos, transportes','Fornecedores','Parcerias Comerciais',
@@ -21969,7 +21969,7 @@ function _coletarDadosManha() {
   const lotesPendentes = lotes.filter(l => l.statusPagamento !== 'pago');
 
   const lanc = Array.isArray(lancamentos) ? lancamentos : [];
-  const vendasOntem = lanc.filter(l => l.tipo === 'entrada' && l.categoria === 'Motonetas' && l.data === ontem);
+  const vendasOntem = lanc.filter(l => l.tipo === 'entrada' && l.categoria === 'Venda Scooter' && l.data === ontem);
 
   return {
     hoje, contasHoje, contasAtrasadas, contasProx, receberPend,
@@ -21990,8 +21990,8 @@ function _coletarDadosNoite() {
   const lanc  = Array.isArray(lancamentos) ? lancamentos : [];
   const opera = l => l.tipo !== 'transferencia' && !l.transferenciaId; // ignora transferências
   const lancHoje       = lanc.filter(l => l.data === hoje && opera(l));
-  const vendasHoje     = lancHoje.filter(l => l.tipo === 'entrada' && l.categoria === 'Motonetas');
-  const outrasEntradas = lancHoje.filter(l => l.tipo === 'entrada' && l.categoria !== 'Motonetas');
+  const vendasHoje     = lancHoje.filter(l => l.tipo === 'entrada' && l.categoria === 'Venda Scooter');
+  const outrasEntradas = lancHoje.filter(l => l.tipo === 'entrada' && l.categoria !== 'Venda Scooter');
   const saidasHoje     = lancHoje.filter(l => l.tipo === 'saida');
   const lancMes     = lanc.filter(l => l.data && l.data.slice(0, 7) === mesPrefix && opera(l));
   const entradasMes = lancMes.filter(l => l.tipo === 'entrada');
@@ -22061,7 +22061,7 @@ function _formatarResumoNoite(d) {
   L.push(`📅 ${_fmtBR(d.hoje)} (${_diaSemanaCurto(d.hoje)})`);
   L.push('');
   L.push('💰 *Vendas do dia*');
-  L.push(`• Motonetas: ${d.vendasHoje.length} · ${fmt(d.totalVendasHoje)}`);
+  L.push(`• Scooters: ${d.vendasHoje.length} · ${fmt(d.totalVendasHoje)}`);
   if (d.totalOutrasEntradas > 0) L.push(`• Outras entradas: ${fmt(d.totalOutrasEntradas)}`);
   L.push(`• Saídas do dia: ${fmt(d.totalSaidasHoje)}`);
   L.push(`• Saldo do dia: ${fmtSigned(d.saldoDia)}`);
