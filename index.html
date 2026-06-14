@@ -2326,8 +2326,17 @@ select:not(.input-pro):not(.search-input){
       </div>
     </div>
 
-    <!-- ─── Grupo: Acesso & Usuários ─── -->
-    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin:8px 0 12px;">🔐 Acesso &amp; Usuários</div>
+    <!-- ─── Barra de abas (ETAPA 2) ─── -->
+    <div class="fin-tabs" style="margin-bottom:20px;">
+      <button class="fin-tab-btn active" data-admintab="acesso"      onclick="switchAdminTab('acesso')">🔐 Acesso &amp; Usuários</button>
+      <button class="fin-tab-btn"        data-admintab="vendas"      onclick="switchAdminTab('vendas')">👥 Equipe de Vendas</button>
+      <button class="fin-tab-btn"        data-admintab="pontos"      onclick="switchAdminTab('pontos')">📍 Pontos &amp; Parceiros</button>
+      <button class="fin-tab-btn"        data-admintab="financeiro"  onclick="switchAdminTab('financeiro')">💰 Financeiro</button>
+      <button class="fin-tab-btn"        data-admintab="comunicacao" onclick="switchAdminTab('comunicacao')">📣 Comunicação</button>
+    </div>
+
+    <!-- ═══ Aba: Acesso & Usuários ═══ -->
+    <div class="admin-tab-content" id="admin-tab-acesso" data-admintab="acesso">
 
     <!-- Código de acesso atual -->
     <div class="card" style="padding:18px 20px;margin-bottom:20px;">
@@ -2389,8 +2398,10 @@ select:not(.input-pro):not(.search-input){
       </div>
     </div>
 
-    <!-- ─── Grupo: Equipe de Vendas ─── -->
-    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin:28px 0 12px;">👥 Equipe de Vendas</div>
+    </div><!-- /admin-tab-acesso -->
+
+    <!-- ═══ Aba: Equipe de Vendas ═══ -->
+    <div class="admin-tab-content" id="admin-tab-vendas" data-admintab="vendas" style="display:none;">
 
     <!-- Vendedores PDV -->
     <div class="section-gap">
@@ -2424,8 +2435,10 @@ select:not(.input-pro):not(.search-input){
       </div>
     </div>
 
-    <!-- ─── Grupo: Pontos & Parceiros ─── -->
-    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin:28px 0 12px;">📍 Pontos &amp; Parceiros</div>
+    </div><!-- /admin-tab-vendas -->
+
+    <!-- ═══ Aba: Pontos & Parceiros ═══ -->
+    <div class="admin-tab-content" id="admin-tab-pontos" data-admintab="pontos" style="display:none;">
 
     <!-- Locais de Venda -->
     <div class="section-gap">
@@ -2459,8 +2472,10 @@ select:not(.input-pro):not(.search-input){
       </div>
     </div>
 
-    <!-- ─── Grupo: Financeiro ─── -->
-    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin:28px 0 12px;">💰 Financeiro</div>
+    </div><!-- /admin-tab-pontos -->
+
+    <!-- ═══ Aba: Financeiro ═══ -->
+    <div class="admin-tab-content" id="admin-tab-financeiro" data-admintab="financeiro" style="display:none;">
 
     <!-- Categorias de Lançamento -->
     <div class="section-gap">
@@ -2478,8 +2493,10 @@ select:not(.input-pro):not(.search-input){
       </div>
     </div>
 
-    <!-- ─── Grupo: Comunicação ─── -->
-    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin:28px 0 12px;">📣 Comunicação</div>
+    </div><!-- /admin-tab-financeiro -->
+
+    <!-- ═══ Aba: Comunicação ═══ -->
+    <div class="admin-tab-content" id="admin-tab-comunicacao" data-admintab="comunicacao" style="display:none;">
 
     <!-- Mural de Novidades (changelog simples p/ a equipe) -->
     <div class="section-gap">
@@ -2521,6 +2538,7 @@ select:not(.input-pro):not(.search-input){
         </div>
       </div>
     </div>
+    </div><!-- /admin-tab-comunicacao -->
   </div>
 
     <!-- ══════════════ FINANCEIRO ══════════════ -->
@@ -4233,7 +4251,7 @@ function showPage(id, opts){
   if(id==='estoque')initEstoque();
   if(id==='localizacao')initLocalizacao();
   if(id==='pedidos')initPedidosUnif();
-  if(id==='admin')renderAdmin();
+  if(id==='admin'){renderAdmin();try{switchAdminTab(localStorage.getItem('sm_admin_tab'));}catch(e){switchAdminTab('acesso');}}
   if(id==='financeiro')initFinanceiro();
   if(id==='contas-pagar')initContasPagar();
   if(id==='contas-receber')initContasReceber();
@@ -11124,6 +11142,20 @@ async function initFinanceiro() {
   let savedTab = localStorage.getItem('sm_fin_tab') || 'caixa';
   if ((savedTab === 'dre' || savedTab === 'fluxo') && !_isAdminUser()) savedTab = 'caixa';
   switchFinTab(savedTab);
+}
+
+// Troca a aba ativa do Admin (ETAPA 2) — espelha switchFinTab
+function switchAdminTab(tabId) {
+  const tabs = ['acesso', 'vendas', 'pontos', 'financeiro', 'comunicacao'];
+  if (!tabs.includes(tabId)) tabId = 'acesso';
+  tabs.forEach(t => {
+    const c = document.getElementById('admin-tab-' + t);
+    if (c) c.style.display = (t === tabId) ? '' : 'none';
+  });
+  document.querySelectorAll('#page-admin .fin-tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.admintab === tabId);
+  });
+  try { localStorage.setItem('sm_admin_tab', tabId); } catch(e) {}
 }
 
 // Troca a aba ativa do módulo Financeiro
