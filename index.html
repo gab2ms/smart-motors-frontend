@@ -2353,47 +2353,35 @@ select:not(.input-pro):not(.search-input){
       </div>
     </div>
 
-    <!-- Pendentes -->
+    <!-- Usuários (3 status consolidados num card — ETAPA 3) -->
     <div class="section-gap">
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-title">Aguardando aprovação</div>
-            <div class="card-sub" id="admin-pending-count">—</div>
+            <div class="card-title">Usuários</div>
+            <div class="card-sub">Solicitações, contas ativas e acessos bloqueados</div>
+          </div>
+          <button class="btn btn-gold" onclick="abrirCriarAcesso()" style="font-size:11px;padding:6px 12px;">+ Criar acesso</button>
+        </div>
+        <div class="fin-tabs" style="padding:0 20px;margin-bottom:0;">
+          <button class="fin-tab-btn active" data-adminusertab="pendentes"  onclick="switchAdminUserTab('pendentes')">Pendentes (<span id="admin-pending-count">0</span>)</button>
+          <button class="fin-tab-btn"        data-adminusertab="ativos"     onclick="switchAdminUserTab('ativos')">Ativos (<span id="admin-active-count">0</span>)</button>
+          <button class="fin-tab-btn"        data-adminusertab="rejeitados" onclick="switchAdminUserTab('rejeitados')">Rejeitados (<span id="admin-rejected-count">0</span>)</button>
+        </div>
+        <div class="fin-tab-content" id="admin-users-pane-pendentes">
+          <div id="admin-pending-list">
+            <div class="empty">Nenhuma solicitação pendente</div>
           </div>
         </div>
-        <div id="admin-pending-list">
-          <div class="empty">Nenhuma solicitação pendente</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Ativos -->
-    <div class="section-gap">
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <div class="card-title">Usuários ativos</div>
-            <div class="card-sub" id="admin-active-count">—</div>
+        <div class="fin-tab-content" id="admin-users-pane-ativos" style="display:none;">
+          <div id="admin-active-list">
+            <div class="empty">Nenhum usuário ativo</div>
           </div>
         </div>
-        <div id="admin-active-list">
-          <div class="empty">Nenhum usuário ativo</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Rejeitados -->
-    <div class="section-gap">
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <div class="card-title">Acessos rejeitados / bloqueados</div>
-            <div class="card-sub" id="admin-rejected-count">—</div>
+        <div class="fin-tab-content" id="admin-users-pane-rejeitados" style="display:none;">
+          <div id="admin-rejected-list">
+            <div class="empty">Nenhum usuário rejeitado</div>
           </div>
-        </div>
-        <div id="admin-rejected-list">
-          <div class="empty">Nenhum usuário rejeitado</div>
         </div>
       </div>
     </div>
@@ -11152,10 +11140,25 @@ function switchAdminTab(tabId) {
     const c = document.getElementById('admin-tab-' + t);
     if (c) c.style.display = (t === tabId) ? '' : 'none';
   });
-  document.querySelectorAll('#page-admin .fin-tab-btn').forEach(b => {
+  document.querySelectorAll('#page-admin .fin-tab-btn[data-admintab]').forEach(b => {
     b.classList.toggle('active', b.dataset.admintab === tabId);
   });
   try { localStorage.setItem('sm_admin_tab', tabId); } catch(e) {}
+}
+
+// Sub-abas de status do card Usuários (ETAPA 3) — só apresentação, sem
+// persistência: reabre sempre em "pendentes". Scopado ao #page-admin pra
+// não colidir com as abas-mãe do Admin nem com o financeiro.
+function switchAdminUserTab(status) {
+  const panes = ['pendentes', 'ativos', 'rejeitados'];
+  if (!panes.includes(status)) status = 'pendentes';
+  panes.forEach(p => {
+    const c = document.getElementById('admin-users-pane-' + p);
+    if (c) c.style.display = (p === status) ? '' : 'none';
+  });
+  document.querySelectorAll('#page-admin .fin-tab-btn[data-adminusertab]').forEach(b => {
+    b.classList.toggle('active', b.dataset.adminusertab === status);
+  });
 }
 
 // Troca a aba ativa do módulo Financeiro
@@ -14512,12 +14515,9 @@ async function renderAdmin() {
     + ' | rejeitados=' + rejeit.length);
   if (pendente.length) console.log('[renderAdmin] pendentes:', pendente.map(u => u.email));
 
-  document.getElementById('admin-pending-count').textContent =
-    `${pendente.length} solicitação${pendente.length!==1?'ões':''} pendente${pendente.length!==1?'s':''}`;
-  document.getElementById('admin-active-count').textContent =
-    `${ativo.length} usuário${ativo.length!==1?'s':''} ativo${ativo.length!==1?'s':''}`;
-  document.getElementById('admin-rejected-count').textContent =
-    `${rejeit.length} usuário${rejeit.length!==1?'s':''} bloqueado${rejeit.length!==1?'s':''}`;
+  document.getElementById('admin-pending-count').textContent = pendente.length;
+  document.getElementById('admin-active-count').textContent = ativo.length;
+  document.getElementById('admin-rejected-count').textContent = rejeit.length;
 
   const perfilBadge = (u) => {
     const efetivo = (u.role === 'admin' ? 'admin' : (u.perfil || 'sem perfil'));
@@ -14550,8 +14550,7 @@ async function renderAdmin() {
       `)).join('')
     : '<div class="empty" style="padding:24px;">Nenhuma solicitação pendente</div>';
 
-  // Ativos
-  const criarBtn = '<button class="btn btn-gold" onclick="abrirCriarAcesso()" style="font-size:12px;padding:8px 16px;margin:14px 20px;">+ Criar acesso</button>';
+  // Ativos ("+ Criar acesso" agora vive no header do card — ETAPA 3)
   const ativosHTML = ativo.length
     ? ativo.map(u => userRow(u, (u.role==='admin' && u.email===ADMIN_EMAIL ? '<span style="font-size:11px;color:var(--text3);align-self:center;">Administrador principal</span>' : (
         editBtn(u.email)
@@ -14559,7 +14558,7 @@ async function renderAdmin() {
       ))
     )).join('')
     : '<div class="empty" style="padding:24px;">Nenhum usuário ativo</div>';
-  document.getElementById('admin-active-list').innerHTML = criarBtn + ativosHTML;
+  document.getElementById('admin-active-list').innerHTML = ativosHTML;
 
   // Rejeitados
   document.getElementById('admin-rejected-list').innerHTML = rejeit.length
