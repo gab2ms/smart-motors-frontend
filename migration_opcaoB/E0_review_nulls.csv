@@ -1,0 +1,25 @@
+produto_id,nome,categoria,ativo
+9205818f-b254-4076-90a4-862dbeaadbce,"Bomba de Encher Pneu Bashi",acessorio,true
+314dec36-3072-454d-b949-e8a3d6d731c6,"CADEIRINHA UNIVERSAL  - PRETA",acessorio,true
+d996d973-4586-4cb2-a83c-1bfdef476c03,"CAPA DE CHUVA BASHI",acessorio,true
+4f23880d-898a-4ab7-b15a-d501fa4d1113,"CAPACETE ADULTO BASHI  - BRANCA",acessorio,true
+a6ddc00a-8b59-4e9b-96c5-ebdd4c0cb233,"CAPACETE ADULTO BASHI  - PRETO",acessorio,true
+cc5aefac-43a8-4e6a-b13d-35efe3bfd61d,"CAPACETE BIKER HAO - BRANCO",acessorio,true
+bb776e7e-45a4-4ec5-aaad-8d0b168d396e,"CAPACETE BIKER HAO - PRETO",acessorio,true
+807aca87-f138-4f80-b55d-548eab28585c,"CAPACETE INFANTIL BASHI  - AMARELO",acessorio,true
+d8e162a9-e936-4c2e-9fc9-31261fcc8b27,"CAPACETE INFANTIL BASHI  - ROSA",acessorio,true
+1bd9e261-0b01-45af-8b41-59772768ec85,"CAPACETE INFANTIL BASHI  - VERMELHO",acessorio,true
+6d39a4db-106d-489b-8ce3-be3705158df7,"CAPACETE MOUNTAIN HAO - AMARELO",acessorio,true
+84069956-36fc-4196-86d0-b5d8901e2336,"CAPACETE MOUNTAIN HAO - AZUL",acessorio,true
+070eb3d6-9f38-46df-aeab-a4ad6f356210,"CAPACETE MOUNTAIN HAO - BRANCO",acessorio,true
+fc82cdc3-8e16-4648-bd1e-3f2f0f942bba,"CAPACETE MOUNTAIN HAO - PRETO",acessorio,true
+f19df50d-8ac5-464a-8b17-c4b793ec3f46,"CAPACETE MOUNTAIN HAO - ROSA",acessorio,true
+f32b7264-6bd5-4640-ab8a-1974bf3ec9eb,"CAPACETE MOUNTAIN HAO - VERDE",acessorio,true
+9a70cab0-f74e-4301-998a-569d2e3a4915,"CAPACETE MOUNTAIN HAO - VERMELHO",acessorio,true
+0cfd7987-6dab-4690-b4e6-1bbcd94cc68c,"Cesto + Suporte Bashi",acessorio,true
+c0c225eb-f95b-49d0-a751-c88070b430fd,"RETROVISOR HARLEY / X11",acessorio,true
+1f30e403-459c-4bd2-851e-23868039ec4b,"Suporte Exclusivo Pit Bashi",acessorio,true
+da60eca3-0cb7-45c5-8cac-e76610c631a5,"Pagamento Faltante Scooter",scooter,true
+1e21f98a-26d6-4555-a5e6-4cf1b4f00ec9,"Scooter  MC20 2000W",scooter,true
+5658fd25-d07a-4349-8877-e4be0d234943,"Frete",servico,true
+96ff1ff0-df2a-49ec-9016-d6288cb1bc51,"Manutenção",servico,true
