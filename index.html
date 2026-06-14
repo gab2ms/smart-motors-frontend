@@ -4109,7 +4109,7 @@ const pageMeta={
   dashboard:['Dashboard','Resumo geral da Smart Motors'],
   precos:['Preços & Margens','Gerencie preços e veja margens de contribuição'],
   vendas:['Vendas do Mês','Importe o relatório do Tiny ERP e veja a margem líquida real'],
-  estoque:['Produtos & Estoque','Produtos e estoque — controle próprio'],
+  estoque:['Cadastros','Produtos e estoque — controle próprio'],
   localizacao:['Consignação & Estoque','Onde está cada moto — matriz, quiosque e parceiros'],
   pedidos:['Pedidos','Lista unificada de pedidos — Tiny e PDV no mesmo lugar'],
   oficina:['Oficina','Ordens de serviço e cadastro de clientes'],
@@ -4132,7 +4132,7 @@ const BREADCRUMB_MAP = {
   admin:           ['Visão Geral', 'Administração'],
   pedidos:         ['Vendas', 'Pedidos'],
   vendas:          ['Vendas', 'Vendas do Mês'],
-  estoque:         ['Produtos', 'Produtos & Estoque'],
+  estoque:         ['Produtos', 'Cadastros'],
   localizacao:     ['Produtos', 'Consignação & Estoque'],
   precos:          ['Produtos', 'Preços & Margens'],
   oficina:         ['Operação', 'Oficina'],
@@ -4898,7 +4898,7 @@ async function renderDashInternal(){
 // ── Top 5 e alertas ────────────────────────
 async function renderDashMargens(){
   if (!products || !products.length) {
-    document.getElementById('dash-top-margins').innerHTML = '<tr><td colspan="3" class="empty" style="padding:16px;font-size:11px;">Sincronize os produtos na aba Produtos & Estoque</td></tr>';
+    document.getElementById('dash-top-margins').innerHTML = '<tr><td colspan="3" class="empty" style="padding:16px;font-size:11px;">Sincronize os produtos na aba Cadastros</td></tr>';
     document.getElementById('dash-low-margins').innerHTML = '<tr><td colspan="3" class="empty" style="padding:16px;font-size:11px;">—</td></tr>';
     return;
   }
@@ -7962,7 +7962,7 @@ const NAV_TREE = [
       { id:'contratos',       label:'Contrato',       icon:'ic-file-text'    },
   ]},
   { kind:'group', label:'Produtos',   icon:'ic-store', children:[
-      { id:'estoque',         label:'Produtos & Estoque', icon:'ic-store'   },
+      { id:'estoque',         label:'Cadastros',          icon:'ic-store'   },
       { id:'localizacao',     label:'Consignação & Estoque', icon:'ic-package' },
       { id:'custos-produtos', label:'Custos de Produtos', icon:'ic-tag'     },
   ]},
@@ -9988,7 +9988,7 @@ const TODOS_MODULOS = [
   { id: 'dashboard',    nome: 'Dashboard' },
   { id: 'precos',       nome: 'Preços & Margens' },
   { id: 'vendas',       nome: 'Vendas' },
-  { id: 'estoque',      nome: 'Produtos & Estoque' },
+  { id: 'estoque',      nome: 'Cadastros' },
   { id: 'localizacao',  nome: 'Consignação & Estoque' },
   { id: 'pedidos',      nome: 'Pedidos' },
   { id: 'oficina',      nome: 'Oficina' },
