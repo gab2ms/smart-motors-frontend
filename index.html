@@ -2490,6 +2490,22 @@ select:not(.input-pro):not(.search-input){
         </div>
       </div>
     </div>
+
+    <!-- Mural de Novidades (changelog simples p/ a equipe) -->
+    <div class="section-gap">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Mural de Novidades</div>
+            <div class="card-sub" id="nov-sub">—</div>
+          </div>
+          <button class="btn btn-gold" onclick="abrirNovidadeModal()" style="font-size:11px;padding:6px 12px;">+ Nova novidade</button>
+        </div>
+        <div id="nov-lista">
+          <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+        </div>
+      </div>
+    </div>
   </div>
 
     <!-- ══════════════ FINANCEIRO ══════════════ -->
@@ -3895,6 +3911,7 @@ const PRODUCTS_SEED = [
   {modelo:"Maggie",fornecedor:"HAO",custo:2790,montagem:0,comissao:100,nfCompra:27.90,nf:30,jonosake:0,financeiro:34.99,venda:3499},
 ];
 let products = [];
+let novidades = [];   // Mural de Novidades (changelog simples p/ a equipe)
 
 let pedidos = [
   {id:1,fornecedor:"HAO",nome:"Lote HAO — Jan/2026",items:[
@@ -4303,7 +4320,7 @@ async function _enviarParaBanco() {
 async function carregarDados() {
   console.log('[carregarDados] iniciando fetch de todas as tabelas');
   try {
-    const [c, l, cp, cr, cf, pr, sc, vm, oo, cc, mt, ml, mi, mp, clg] = await Promise.all([
+    const [c, l, cp, cr, cf, pr, sc, vm, oo, cc, mt, ml, mi, mp, clg, nv] = await Promise.all([
       sb.from('contas_bancarias').select('*').order('id'),
       sb.from('lancamentos').select('*').order('data', { ascending: false }).order('id', { ascending: false }),
       sb.from('contas_pagar').select('*'),
@@ -4319,10 +4336,11 @@ async function carregarDados() {
       sb.from('montagens_itens').select('*'),
       sb.from('montagens_pagamentos').select('*'),
       sb.from('categorias_lancamento').select('*').order('ordem').order('nome'),
+      sb.from('novidades').select('*').order('data_publicacao', { ascending: false }),
     ]);
 
     // Loga resultado (e erros explicitos) de cada tabela
-    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['contas_receber',cr],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc],['vendedores_mapeamento',vm],['oficina_ordens',oo],['config_custos',cc],['montadores',mt],['montagens_lotes',ml],['montagens_itens',mi],['montagens_pagamentos',mp],['categorias_lancamento',clg]]
+    [['contas_bancarias',c],['lancamentos',l],['contas_pagar',cp],['contas_receber',cr],['custos_fixos',cf],['produtos_precos',pr],['sac_casos',sc],['vendedores_mapeamento',vm],['oficina_ordens',oo],['config_custos',cc],['montadores',mt],['montagens_lotes',ml],['montagens_itens',mi],['montagens_pagamentos',mp],['categorias_lancamento',clg],['novidades',nv]]
       .forEach(([n, r]) => {
         if (r.error) console.error('[carregarDados] ERRO em ' + n + ':', r.error.message, r.error);
         else console.log('[carregarDados] ' + n + ': ' + (r.data?.length || 0) + ' rows');
@@ -4332,6 +4350,7 @@ async function carregarDados() {
     contas       = (!c.error  && c.data?.length)  ? c.data.map(fromDb('contas_bancarias')) : [];
     lancamentos  = (!l.error  && l.data)          ? l.data.map(fromDb('lancamentos'))      : [];
     categoriasLancamento = (!clg.error && clg.data) ? toCamelArr(clg.data)                 : [];
+    novidades    = (!nv.error && nv.data)         ? toCamelArr(nv.data)                    : [];
     contasPagar  = (!cp.error && cp.data)         ? cp.data.map(fromDb('contas_pagar'))    : [];
     contasReceber= (!cr.error && cr.data)         ? cr.data.map(fromDb('contas_receber'))  : [];
     custosFixos  = (!cf.error && cf.data?.length) ? cf.data.map(fromDb('custos_fixos'))    : [];
@@ -4782,6 +4801,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Some com o boot-loader: tudo (login, dados, rota) já está pronto.
   esconderBootLoader();
+
+  // Mural de novidades — 1×/dia no primeiro acesso (cobre o auto-login).
+  try { _mostrarNovidadesDoDia(); } catch(e) { console.warn('[novidades] popup falhou:', e.message); }
 });
 
 function esconderBootLoader() {
@@ -10173,6 +10195,7 @@ async function fazerLogin() {
     localStorage.setItem('sm_user', JSON.stringify({ ...userPersist, loggedAt: Date.now() }));
     hideLoginOverlay();
     atualizarUserDisplay(userPersist);
+    try { _mostrarNovidadesDoDia(); } catch(e) {}
     return;
   }
 
@@ -10198,6 +10221,7 @@ async function fazerLogin() {
   hideLoginOverlay();
   atualizarUserDisplay(user);
   restaurarUltimaPagina();
+  try { _mostrarNovidadesDoDia(); } catch(e) {}
 }
 
 // Restaura a última página acessada (chamado após login e em DOMContentLoaded).
@@ -14428,6 +14452,9 @@ async function renderAdmin() {
 
   try { await initParceiros(); }
   catch(e) { console.warn('[renderAdmin] parceiros falhou:', e.message); }
+
+  try { await initNovidades(); }
+  catch(e) { console.warn('[renderAdmin] novidades falhou:', e.message); }
   const users    = await getUsers();
   const pendente = users.filter(u=>u.status==='pendente');
   const ativo    = users.filter(u=>u.status==='aprovado');
@@ -17605,6 +17632,181 @@ async function _excluirParceiro(parceiroId) {
   const { error } = await sb.from('parceiros').delete().eq('id', parceiroId);
   if (error) { smAlert('Erro ao excluir: ' + error.message); return; }
   await initParceiros();
+}
+
+// ─── Mural de Novidades (changelog simples p/ a equipe) ─────
+// Cadastro no Admin (molde dos CRUDs de Parceiros/Locais) + pop-up 1×/dia
+// no primeiro acesso. Baixo risco: só exibe avisos.
+async function initNovidades() {
+  const { data, error } = await sb.from('novidades').select('*').order('data_publicacao', { ascending: false });
+  if (error) console.warn('[novidades] load:', error.message);
+  novidades = (!error && data) ? toCamelArr(data) : [];
+  renderNovidades();
+}
+
+function renderNovidades() {
+  const el  = document.getElementById('nov-lista');
+  const sub = document.getElementById('nov-sub');
+  if (!el) return;
+  const ativas = novidades.filter(n => n.ativo !== false).length;
+  if (sub) sub.textContent = `${ativas} ativa${ativas === 1 ? '' : 's'} · ${novidades.length} no total`;
+  el.innerHTML = novidades.length
+    ? novidades.map(n => {
+        const inativo = n.ativo === false;
+        const inativoBadge = inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">inativa</span>' : '';
+        const impBadge = n.importante ? ' <span class="badge badge-gold">importante</span>' : '';
+        const dataBR = n.dataPublicacao ? n.dataPublicacao.split('-').reverse().join('/') : '—';
+        return `<div style="display:grid;grid-template-columns:1fr auto;gap:14px;align-items:start;padding:14px 20px;border-bottom:1px solid var(--border);${inativo ? 'opacity:0.55;' : ''}">
+          <div style="min-width:0;">
+            <div style="font-size:13px;font-weight:700;">${escHtml(n.titulo)}${impBadge}${inativoBadge}</div>
+            ${n.descricao ? `<div style="font-size:11px;color:var(--text2);margin-top:3px;line-height:1.5;white-space:pre-line;">${escHtml(n.descricao)}</div>` : ''}
+            <div style="font-size:10px;color:var(--text3);margin-top:4px;">${dataBR}</div>
+          </div>
+          <div style="display:flex;gap:5px;flex-shrink:0;">
+            <button class="action-btn edit-btn" onclick="abrirNovidadeModal('${n.id}')" title="Editar"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
+            ${inativo
+              ? `<button class="action-btn" onclick="_alternarAtivoNovidade('${n.id}', true)" title="Reativar" style="color:var(--green);"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
+              : `<button class="action-btn del-btn" onclick="_alternarAtivoNovidade('${n.id}', false)" title="Desativar"><svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`}
+            <button class="action-btn" onclick="_excluirNovidade('${n.id}')" title="Excluir permanentemente" style="color:var(--red);"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>
+          </div>
+        </div>`;
+      }).join('')
+    : '<div class="empty" style="padding:32px;">Nenhuma novidade cadastrada. Clique em "+ Nova novidade".</div>';
+}
+
+function abrirNovidadeModal(novidadeId) {
+  const old = document.getElementById('nov-modal');
+  if (old) old.remove();
+  const n = novidadeId ? novidades.find(x => x.id === novidadeId) : null;
+  const isEdit = !!n;
+  const titulo = isEdit ? `Editar <span>novidade</span>` : `Nova <span>novidade</span>`;
+  const dataVal = isEdit ? (n.dataPublicacao || _locHojeISO()) : _locHojeISO();
+  const shell = document.createElement('div');
+  shell.id = 'nov-modal';
+  shell.className = 'modal-overlay open';
+  shell.dataset.novidadeId = isEdit ? novidadeId : '';
+  shell.innerHTML =
+      `<div class="modal" style="width:520px;max-width:96vw;">`
+    +   `<div class="modal-title">${titulo}</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group full"><label>Título</label><input class="form-input" id="nov-titulo" type="text" value="${escHtml(n?.titulo || '').replace(/"/g,'&quot;')}" placeholder="Ex: Nova tela: Estoque por Local"></div>`
+    +     `<div class="form-group full"><label>Descrição <span style="color:var(--text3);font-weight:400;">(linguagem simples)</span></label><textarea class="form-input" id="nov-descricao" rows="3" placeholder="Ex: Agora dá pra ver onde está cada moto e controlar as que estão em parceiros.">${escHtml(n?.descricao || '')}</textarea></div>`
+    +     `<div class="form-group"><label>Data</label><input class="form-input" id="nov-data" type="date" value="${dataVal}"></div>`
+    +     `<div class="form-group full" style="font-size:12px;display:flex;gap:18px;align-items:center;">`
+    +       `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="nov-importante"${n?.importante ? ' checked' : ''}> Importante (destaca)</label>`
+    +       `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="nov-ativo"${n?.ativo !== false ? ' checked' : ''}> Ativo</label>`
+    +     `</div>`
+    +   `</div>`
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('nov-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="nov-btn-salvar" onclick="_salvarNovidade()">${isEdit ? 'Salvar alterações' : 'Cadastrar'}</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _salvarNovidade() {
+  const btn = document.getElementById('nov-btn-salvar');
+  if (btn?.disabled) return;
+  const novidadeId = document.getElementById('nov-modal')?.dataset.novidadeId || '';
+  const isEdit = !!novidadeId;
+  const titulo    = (document.getElementById('nov-titulo')?.value || '').trim();
+  const descricao = (document.getElementById('nov-descricao')?.value || '').trim();
+  const data      = document.getElementById('nov-data')?.value || '';
+  const importante = !!document.getElementById('nov-importante')?.checked;
+  const ativo      = !!document.getElementById('nov-ativo')?.checked;
+  if (!titulo) { smAlert('Informe o título.'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    const payload = { titulo, descricao: descricao || null, data_publicacao: data || _locHojeISO(), importante, ativo };
+    if (isEdit) {
+      const { error } = await sb.from('novidades').update(payload).eq('id', novidadeId);
+      if (error) throw error;
+    } else {
+      const { error } = await sb.from('novidades').insert(payload);
+      if (error) throw error;
+    }
+    document.getElementById('nov-modal')?.remove();
+    await initNovidades();
+  } catch (e) {
+    smAlert('Erro ao salvar: ' + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = isEdit ? 'Salvar alterações' : 'Cadastrar'; }
+  }
+}
+
+async function _alternarAtivoNovidade(id, novoAtivo) {
+  const n = novidades.find(x => x.id === id);
+  if (!n) return;
+  const { error } = await sb.from('novidades').update({ ativo: novoAtivo }).eq('id', id);
+  if (error) { smAlert('Erro: ' + error.message); return; }
+  await initNovidades();
+}
+
+async function _excluirNovidade(id) {
+  const n = novidades.find(x => x.id === id);
+  if (!n) return;
+  const ok = await smConfirm(`Excluir a novidade "${n.titulo}"? Esta ação não pode ser desfeita.`);
+  if (!ok) return;
+  const { error } = await sb.from('novidades').delete().eq('id', id);
+  if (error) { smAlert('Erro ao excluir: ' + error.message); return; }
+  await initNovidades();
+}
+
+// Pop-up 1×/dia no primeiro acesso. Só p/ usuário autenticado; chave diária
+// em localStorage (sm_novidades_vistas_<data>). Mostra as novidades ativas
+// (recentes no topo, "importante" destacado).
+function _mostrarNovidadesDoDia() {
+  let u = null;
+  try { u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch (e) {}
+  if (!u) return;
+  const overlay = document.getElementById('login-overlay');
+  if (overlay && overlay.classList.contains('show')) return; // ainda na tela de login
+  const key = 'sm_novidades_vistas_' + _locHojeISO();
+  try { if (localStorage.getItem(key)) return; } catch (e) {}
+  const ativas = (novidades || [])
+    .filter(n => n.ativo !== false)
+    .slice()
+    .sort((a, b) => (b.dataPublicacao || '').localeCompare(a.dataPublicacao || ''));
+  if (!ativas.length) return;
+
+  const old = document.getElementById('nov-popup');
+  if (old) old.remove();
+  const itensHtml = ativas.map(n => {
+    const dataBR = n.dataPublicacao ? n.dataPublicacao.split('-').reverse().join('/') : '';
+    const imp = !!n.importante;
+    return `<div style="padding:14px 16px;border-radius:10px;margin-bottom:10px;border:1px solid ${imp ? 'var(--gold)' : 'var(--border)'};background:${imp ? 'rgba(212,175,55,0.08)' : 'var(--surface2)'};">
+      <div style="font-size:13px;font-weight:700;">${imp ? '⭐ ' : ''}${escHtml(n.titulo)}</div>
+      ${n.descricao ? `<div style="font-size:12px;color:var(--text2);margin-top:5px;line-height:1.55;white-space:pre-line;">${escHtml(n.descricao)}</div>` : ''}
+      ${dataBR ? `<div style="font-size:10px;color:var(--text3);margin-top:6px;">${dataBR}</div>` : ''}
+    </div>`;
+  }).join('');
+  const shell = document.createElement('div');
+  shell.id = 'nov-popup';
+  shell.className = 'modal-overlay open';
+  shell.innerHTML =
+      `<div class="modal" style="width:560px;max-width:96vw;max-height:86vh;display:flex;flex-direction:column;">`
+    +   `<div class="modal-title">📣 <span>Novidades</span></div>`
+    +   `<div style="font-size:11px;color:var(--text3);margin-bottom:12px;">O que mudou no sistema</div>`
+    +   `<div style="overflow:auto;flex:1;margin:0 -4px;padding:0 4px;">${itensHtml}</div>`
+    +   `<div class="modal-actions"><button class="btn btn-gold" type="button" onclick="_fecharNovidades()">Entendi</button></div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+}
+
+function _fecharNovidades() {
+  const hojeKey = 'sm_novidades_vistas_' + _locHojeISO();
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('sm_novidades_vistas_') && k !== hojeKey) localStorage.removeItem(k);
+    }
+    localStorage.setItem(hojeKey, '1');
+  } catch (e) {}
+  const el = document.getElementById('nov-popup');
+  if (el) el.remove();
 }
 
 // ═══════════════════════════════════════════════════════════
