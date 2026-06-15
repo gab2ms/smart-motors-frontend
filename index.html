@@ -18195,7 +18195,10 @@ function _locSelProduto(idx) {
   const cad = _locProdutos.find(x => x.id === p.produtoId) || {};
   // Custo da consignação = SEM comissão de vendedor (venda direta): custoPuro +
   // montagem + NF (= ctReal − comissão). Fallback: produtos.custo (pode ter comissão).
-  const pp = (typeof _matchProdutoPorNome === 'function') ? _matchProdutoPorNome(p.nome) : null;
+  // Opção B · E3: custo por id (FK produto_precos_id) — lookup exato substitui a
+  // heurística. Fallback pro match por nome quando o produto não tem vínculo (NULL).
+  let pp = p.produtoPrecosId ? (products || []).find(x => x.id === p.produtoPrecosId) : null;
+  if (!pp && typeof _matchProdutoPorNome === 'function') pp = _matchProdutoPorNome(p.nome);
   const custoSemComissao = pp
     ? (ctReal(pp) - (Number(pp.comissao) || 0))
     : (cad.custo != null ? Number(cad.custo) : null);
@@ -18626,7 +18629,7 @@ async function _pdvGarantirProdutos() {
     // vivo (que travava no N+1 de estoque). Mapeia pro mesmo shape do produtosTiny[]:
     // id ← tiny_id (mantém o link pra venda no Tiny + a baixa 2e-2), preco ← preco_venda.
     const { data, error } = await sb.from('produtos')
-      .select('id,tiny_id,nome,codigo,preco_venda,estoque')
+      .select('id,tiny_id,nome,codigo,preco_venda,estoque,produto_precos_id')
       .eq('ativo', true).order('nome');
     if (error) throw new Error(error.message || 'erro ao carregar produtos');
     // Fase 3: TODA venda do PDV é local (sem Tiny). Baixa sempre por produto_id (uuid
@@ -18635,6 +18638,7 @@ async function _pdvGarantirProdutos() {
     produtosTiny = (data || []).map(p => ({
       id:        p.tiny_id ? String(p.tiny_id) : '',
       produtoId: String(p.id),
+      produtoPrecosId: p.produto_precos_id || null,   // Opção B · E3 (custo por id)
       local:     true,
       nome:      p.nome   || '',
       codigo:    p.codigo || '',
