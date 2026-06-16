@@ -1918,6 +1918,13 @@ select:not(.input-pro):not(.search-input){
       <span style="font-size:13px;color:var(--text2);">Scooters: <b id="dash-est-scooter" style="color:var(--gold);font-size:15px;">—</b> un</span>
       <span style="font-size:13px;color:var(--text2);">Acessórios: <b id="dash-est-acessorio" style="color:var(--gold);font-size:15px;">—</b> un</span>
     </div>
+    <!-- Vendas por canal (Matriz / Quiosque / Tráfego Pago) — segue o MESMO
+         período e a MESMA régua (sem cancelados) do card de Faturamento.
+         A soma dos canais bate com o Faturamento total do período. -->
+    <div id="dash-canal-card" class="card" style="margin-bottom:14px;padding:14px 18px;">
+      <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Vendas por canal</div>
+      <div id="dash-canal-body"><div class="empty" style="padding:12px;font-size:11px;">Carregando...</div></div>
+    </div>
     <div id="dash-dynamic-container"></div>
   </div>
 
@@ -5076,6 +5083,9 @@ function _pdvParaVenda(p, itens, vendedor) {
     data:     (p.criado_em || '').slice(0, 10).split('-').reverse().join('/'),
     situacao: p.status,
     _origem:  'pdv',
+    // Canal de venda (local_venda_id → pdv_locais_venda). Alimenta o KPI
+    // "Vendas por canal" no Dashboard. Tiny/arquivo não tem → fica undefined.
+    localVendaId: p.local_venda_id || null,
   };
   // cliente_dados é jsonb no banco; quando vier no select, expõe o nome
   // pra renderDashPedidos casar com o shape do Tiny.
@@ -5154,7 +5164,7 @@ async function buscarVendasMescladas(iniISO, fimISO, forcar) {
     // normalizarNomeVendedor pra agrupar com Tiny ("Henrique Quiosque" e
     // "Henrique" do PDV viram "Henrique" no ranking).
     var resp = await sb.from('pdv_pedidos')
-      .select('id,numero_smart,total,status,tiny_pedido_id,criado_em,vendedor_id,cliente_dados,pdv_itens_pedido(produto_nome_tiny,quantidade,valor_unitario,ordem)')
+      .select('id,numero_smart,total,status,tiny_pedido_id,criado_em,vendedor_id,local_venda_id,cliente_dados,pdv_itens_pedido(produto_nome_tiny,quantidade,valor_unitario,ordem)')
       .neq('status', 'cancelado')
       .gte('criado_em', j.iniUTC)
       .lt('criado_em', j.fimUTC);
@@ -6392,6 +6402,69 @@ function _finDreRenderLancamentos(lancs) {
     + tabela('Saídas',   `${lancs.saidas.length} lançamento${lancs.saidas.length===1?'':'s'}`,   lancs.saidas,   lancs.totSaidas,   'var(--red)');
 }
 
+// KPI "Vendas por canal" — agrupa os pedidos do período (JÁ sem cancelados,
+// mesma régua do faturamento) por local_venda_id → pdv_locais_venda
+// (Matriz / Quiosque / Tráfego Pago). Cada pedido cai em EXATAMENTE um balde,
+// então a soma (qtd e R$) é idêntica ao Faturamento total do período:
+//   - PDV com canal conhecido → o canal;
+//   - PDV com canal apagado/inativo → ainda aparece (não some venda);
+//   - Tiny/arquivo ou PDV sem local → "Sem canal" (só aparece se houver).
+// R$ só para admin (mesma régua de privacidade do card de Faturamento).
+function renderDashCanais(pedidos, ehAdmin) {
+  var el = document.getElementById('dash-canal-body');
+  if (!el) return;
+  pedidos = pedidos || [];
+  if (!pedidos.length) {
+    el.innerHTML = '<div class="empty" style="padding:12px;font-size:11px;">Nenhuma venda no período.</div>';
+    return;
+  }
+  var locById = {};
+  (pdvLocais || []).forEach(function(l){ locById[l.id] = l; });
+  var SEM = '__sem__';
+  // Agrega por chave de canal.
+  var agg = {};
+  pedidos.forEach(function(p){
+    var key = (p._origem === 'pdv' && p.localVendaId) ? p.localVendaId : SEM;
+    if (!agg[key]) agg[key] = { qtd: 0, valor: 0 };
+    agg[key].qtd  += 1;
+    agg[key].valor += (p.valor || 0);
+  });
+  // Linhas: união de (canais ativos conhecidos) + (qualquer canal que vendeu).
+  // Garante layout estável (mostra canal ativo mesmo com 0) sem perder venda
+  // de canal inativo/apagado.
+  var ids = {};
+  (pdvLocais || []).forEach(function(l){ if (l.ativo !== false) ids[l.id] = true; });
+  Object.keys(agg).forEach(function(k){ if (k !== SEM) ids[k] = true; });
+  var linhas = Object.keys(ids).map(function(id){
+    var l = locById[id];
+    return {
+      nome:  l ? l.nome : 'Canal removido',
+      ordem: l ? (l.ordem || 98) : 98,
+      qtd:   (agg[id] || {}).qtd   || 0,
+      valor: (agg[id] || {}).valor || 0,
+    };
+  }).sort(function(a,b){ return a.ordem - b.ordem; });
+  if (agg[SEM] && agg[SEM].qtd > 0) {
+    linhas.push({ nome: 'Sem canal', ordem: 100, qtd: agg[SEM].qtd, valor: agg[SEM].valor });
+  }
+  var totQtd = linhas.reduce(function(s,b){ return s + b.qtd; }, 0);
+  var totVal = linhas.reduce(function(s,b){ return s + b.valor; }, 0);
+
+  function linhaHTML(nome, qtd, valor, isTotal){
+    var qtxt = qtd + ' ' + (qtd === 1 ? 'venda' : 'vendas');
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;'
+      + (isTotal ? 'border-top:1px solid var(--surface3);margin-top:4px;' : '') + '">'
+      + '<span style="font-size:13px;font-weight:' + (isTotal ? '700' : '500') + ';color:' + (isTotal ? 'var(--text1)' : 'var(--text2)') + ';">' + escHtml(nome) + '</span>'
+      + '<span style="display:flex;gap:18px;align-items:baseline;">'
+      + '<span style="font-size:12px;color:var(--text3);min-width:72px;text-align:right;">' + qtxt + '</span>'
+      + (ehAdmin ? '<span style="font-size:14px;color:var(--gold);font-weight:700;min-width:96px;text-align:right;">' + fmt(valor) + '</span>' : '')
+      + '</span></div>';
+  }
+
+  el.innerHTML = linhas.map(function(b){ return linhaHTML(b.nome, b.qtd, b.valor, false); }).join('')
+    + linhaHTML('Total', totQtd, totVal, true);
+}
+
 async function carregarFaturamentoDash(forcar) {
   var dot   = document.getElementById('dash-fat-dot');
   var label = document.getElementById('dash-fat-label');
@@ -6517,6 +6590,16 @@ async function carregarFaturamentoDash(forcar) {
       renderDashGrafico(pedidos);
       renderDashPedidos(pedidos);
     }
+
+    // Vendas por canal — segue o MESMO período/régua. pdvLocais pode não ter
+    // sido carregado ainda (boot do dashboard antes da tela PDV); carrega aqui.
+    if (!pdvLocais || !pdvLocais.length) {
+      try {
+        var rLoc = await sb.from('pdv_locais_venda').select('*').order('ordem').order('nome');
+        if (!rLoc.error && rLoc.data) pdvLocais = toCamelArr(rLoc.data);
+      } catch (e) { /* sem locais, o card mostra "Sem canal" mas não perde venda */ }
+    }
+    renderDashCanais(pedidos, _kpisIsAdmin);
 
     // Ranking de scooters (não-admin recebe — render esconde R$ internamente)
     var rankingScooters = calcularRankingScooters(pedidos);
