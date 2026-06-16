@@ -1918,13 +1918,6 @@ select:not(.input-pro):not(.search-input){
       <span style="font-size:13px;color:var(--text2);">Scooters: <b id="dash-est-scooter" style="color:var(--gold);font-size:15px;">—</b> un</span>
       <span style="font-size:13px;color:var(--text2);">Acessórios: <b id="dash-est-acessorio" style="color:var(--gold);font-size:15px;">—</b> un</span>
     </div>
-    <!-- Vendas por canal (Matriz / Quiosque / Tráfego Pago) — segue o MESMO
-         período e a MESMA régua (sem cancelados) do card de Faturamento.
-         A soma dos canais bate com o Faturamento total do período. -->
-    <div id="dash-canal-card" class="card" style="margin-bottom:14px;padding:14px 18px;">
-      <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px;">Vendas por canal</div>
-      <div id="dash-canal-body"><div class="empty" style="padding:12px;font-size:11px;">Carregando...</div></div>
-    </div>
     <div id="dash-dynamic-container"></div>
   </div>
 
@@ -4451,6 +4444,7 @@ async function carregarDados() {
 // Definição de todos os widgets disponíveis
 var DB_WIDGETS_DEF = [
   { id:'kpis-fat',     nome:'KPIs de faturamento',    desc:'Receita, pedidos, ticket, lucro',   icone:'💰', tamanhos:['full','half'], defaultSize:'full' },
+  { id:'vendas-canal', nome:'Vendas por canal',        desc:'Participação por canal (Matriz/Quiosque/Tráfego) — qtd e R$', icone:'📡', tamanhos:['full','half'], defaultSize:'full' },
   { id:'kpis-int',     nome:'KPIs internos',           desc:'Produtos, MC%, empréstimo, caixa',  icone:'📋', tamanhos:['full','half'], defaultSize:'full' },
   { id:'saldo-caixa',     nome:'Saldo em caixa',          desc:'Total disponível com detalhamento por conta', icone:'💳', tamanhos:['full','half'], defaultSize:'full' },
   { id:'caixa-real-mes',  nome:'Caixa real do mês',       desc:'Entradas/saídas/resultado dos lançamentos do mês', icone:'💸', tamanhos:['full','half'], defaultSize:'full' },
@@ -4467,6 +4461,7 @@ var DB_LAYOUT_KEY = 'sm_dash_layout_v1';
 // Layout padrão
 var DB_DEFAULT = [
   { id:'kpis-fat',       ativo:true,  size:'full' },
+  { id:'vendas-canal',   ativo:true,  size:'full' },
   { id:'kpis-int',       ativo:true,  size:'full' },
   { id:'saldo-caixa',    ativo:true,  size:'full' },
   { id:'caixa-real-mes', ativo:true,  size:'full' },
@@ -4488,13 +4483,21 @@ function getLayout() {
     if (saved) dbLayout = JSON.parse(saved);
   } catch(e) {}
   if (!dbLayout) dbLayout = JSON.parse(JSON.stringify(DB_DEFAULT));
-  // Migração: append widgets novos (que não estavam no layout salvo) usando
-  // o default. Garante que features novas apareçam pra usuários existentes
-  // sem precisar resetar layout.
-  DB_DEFAULT.forEach(function(def) {
-    if (!dbLayout.some(function(w) { return w.id === def.id; })) {
-      dbLayout.push(JSON.parse(JSON.stringify(def)));
+  // Migração: insere widgets novos (que não estavam no layout salvo) na MESMA
+  // posição relativa do DB_DEFAULT — logo após o widget que os precede ali.
+  // Assim uma feature nova (ex.: 'vendas-canal' após 'kpis-fat') aparece no
+  // lugar certo pra usuários com layout salvo, sem precisar resetar. Fallback:
+  // se o antecessor não existir no layout salvo, vai pro fim.
+  DB_DEFAULT.forEach(function(def, defIdx) {
+    if (dbLayout.some(function(w) { return w.id === def.id; })) return;
+    var insAt = -1;
+    if (defIdx > 0) {
+      var prevId = DB_DEFAULT[defIdx - 1].id;
+      var pos = dbLayout.findIndex(function(w) { return w.id === prevId; });
+      if (pos !== -1) insAt = pos + 1;
     }
+    if (insAt === -1) dbLayout.push(JSON.parse(JSON.stringify(def)));
+    else dbLayout.splice(insAt, 0, JSON.parse(JSON.stringify(def)));
   });
   return dbLayout;
 }
@@ -4650,6 +4653,15 @@ function renderWidgetHTML(id) {
   switch(id) {
     case 'kpis-fat':
       return '<div class="kpi-grid" id="dash-fat-kpis" style="margin-bottom:0;"></div>';
+
+    case 'vendas-canal':
+      return '<div class="card" id="dash-canal-card" style="padding:12px 18px 13px;">'
+        +'<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:9px;">'
+        +'<span style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;">Vendas por canal</span>'
+        +'<span style="font-size:9px;color:var(--text3);letter-spacing:0.4px;">participação no faturamento</span>'
+        +'</div>'
+        +'<div id="dash-canal-body"><div class="empty" style="padding:8px 0;font-size:11px;">Carregando...</div></div>'
+        +'</div>';
 
     case 'kpis-int':
       return '<div class="kpi-grid" id="dash-int-kpis" style="margin-bottom:0;"></div>';
@@ -6438,31 +6450,50 @@ function renderDashCanais(pedidos, ehAdmin) {
   var linhas = Object.keys(ids).map(function(id){
     var l = locById[id];
     return {
-      nome:  l ? l.nome : 'Canal removido',
-      ordem: l ? (l.ordem || 98) : 98,
-      qtd:   (agg[id] || {}).qtd   || 0,
-      valor: (agg[id] || {}).valor || 0,
+      nome:   l ? l.nome : 'Canal removido',
+      codigo: l ? l.codigo : null,
+      ordem:  l ? (l.ordem || 98) : 98,
+      qtd:    (agg[id] || {}).qtd   || 0,
+      valor:  (agg[id] || {}).valor || 0,
     };
   }).sort(function(a,b){ return a.ordem - b.ordem; });
   if (agg[SEM] && agg[SEM].qtd > 0) {
-    linhas.push({ nome: 'Sem canal', ordem: 100, qtd: agg[SEM].qtd, valor: agg[SEM].valor });
+    linhas.push({ nome: 'Sem canal', codigo: '__sem__', ordem: 100, qtd: agg[SEM].qtd, valor: agg[SEM].valor });
   }
   var totQtd = linhas.reduce(function(s,b){ return s + b.qtd; }, 0);
   var totVal = linhas.reduce(function(s,b){ return s + b.valor; }, 0);
 
-  function linhaHTML(nome, qtd, valor, isTotal){
-    var qtxt = qtd + ' ' + (qtd === 1 ? 'venda' : 'vendas');
-    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;'
-      + (isTotal ? 'border-top:1px solid var(--surface3);margin-top:4px;' : '') + '">'
-      + '<span style="font-size:13px;font-weight:' + (isTotal ? '700' : '500') + ';color:' + (isTotal ? 'var(--text1)' : 'var(--text2)') + ';">' + escHtml(nome) + '</span>'
-      + '<span style="display:flex;gap:18px;align-items:baseline;">'
-      + '<span style="font-size:12px;color:var(--text3);min-width:72px;text-align:right;">' + qtxt + '</span>'
-      + (ehAdmin ? '<span style="font-size:14px;color:var(--gold);font-weight:700;min-width:96px;text-align:right;">' + fmt(valor) + '</span>' : '')
-      + '</span></div>';
+  // Cor por canal (barra de participação). Neutro pra "Sem canal"/removido.
+  function corCanal(codigo){
+    if (codigo === 'matriz')       return 'var(--gold)';
+    if (codigo === 'quiosque')     return 'var(--green)';
+    if (codigo === 'trafego_pago') return '#5b8def';
+    return 'var(--text3)';
   }
+  // Uma linha compacta: nome · barra proporcional (= % do faturamento) · % ·
+  // R$ (admin) · qtd. A barra ocupa o meio (flex), eliminando o vão morto.
+  function linhaHTML(b){
+    var pct  = totVal > 0 ? (b.valor / totVal * 100) : 0;
+    var qtxt = b.qtd + ' ' + (b.qtd === 1 ? 'venda' : 'vendas');
+    return '<div style="display:flex;align-items:center;gap:11px;padding:4px 0;">'
+      + '<span style="font-size:12px;color:var(--text2);width:128px;flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(b.nome) + '</span>'
+      + '<span style="flex:1;min-width:48px;height:7px;background:var(--surface3);border-radius:4px;overflow:hidden;">'
+      +   '<span style="display:block;height:100%;width:' + pct.toFixed(1) + '%;background:' + corCanal(b.codigo) + ';border-radius:4px;"></span>'
+      + '</span>'
+      + '<span style="font-size:11px;font-weight:700;color:var(--text2);width:34px;text-align:right;flex:none;">' + pct.toFixed(0) + '%</span>'
+      + (ehAdmin ? '<span style="font-size:12px;color:var(--gold);font-weight:700;width:100px;text-align:right;flex:none;">' + fmt(b.valor) + '</span>' : '')
+      + '<span style="font-size:11px;color:var(--text3);width:62px;text-align:right;flex:none;">' + qtxt + '</span>'
+      + '</div>';
+  }
+  // Linha de total: fina, peso menor que o hero de faturamento, rotulada como
+  // reforço (= Faturamento do período) em vez de duplicar o número com destaque.
+  var totalHTML = '<div style="display:flex;align-items:center;gap:11px;padding:7px 0 0;margin-top:5px;border-top:1px solid var(--surface3);">'
+    + '<span style="flex:1;font-size:11px;color:var(--text3);">Total <span style="opacity:0.75;">= Faturamento do período</span></span>'
+    + (ehAdmin ? '<span style="font-size:12px;color:var(--text1);font-weight:700;width:100px;text-align:right;flex:none;">' + fmt(totVal) + '</span>' : '')
+    + '<span style="font-size:11px;color:var(--text3);width:62px;text-align:right;flex:none;">' + totQtd + ' vendas</span>'
+    + '</div>';
 
-  el.innerHTML = linhas.map(function(b){ return linhaHTML(b.nome, b.qtd, b.valor, false); }).join('')
-    + linhaHTML('Total', totQtd, totVal, true);
+  el.innerHTML = linhas.map(linhaHTML).join('') + totalHTML;
 }
 
 async function carregarFaturamentoDash(forcar) {
