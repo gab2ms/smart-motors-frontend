@@ -1139,6 +1139,34 @@ label{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text
 .kpi-delta.down  { color: var(--red);   text-shadow: 0 0 8px var(--red-glow); }
 .kpi-delta.flat  { color: var(--text3); font-weight: 600; }
 
+/* ════════════════════════════════════════════════════════════════
+   DASHBOARD ANALÍTICO · FASE 1 — cards enriquecidos + Destaques
+   (só apresentação; ver docs/dashboard-analitico-fase-1.md)
+   ════════════════════════════════════════════════════════════════ */
+/* Cards de faturamento em coluna flex, sem altura travada → crescem com o
+   conteúdo (forward-compat p/ a sparkline da Fase 2, §8). Escopado ao grid
+   de faturamento pra não tocar os outros widgets que usam .kpi. */
+#dash-fat-kpis .kpi { display:flex; flex-direction:column; }
+/* Comparação com o período anterior — protagonista (peso + cor). */
+.kpi-diff {
+  font-size:13px; font-weight:800; letter-spacing:0.2px; margin-top:7px;
+  display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; line-height:1.2;
+}
+.kpi-diff.up   { color: var(--green); }
+.kpi-diff.down { color: var(--red); }
+.kpi-diff.flat { color: var(--text3); font-weight:700; font-size:12px; }
+.kpi-diff .kpi-diff-pct { font-size:11px; font-weight:700; opacity:0.82; }
+.kpi-vs { font-size:10.5px; color: var(--text3); margin-top:3px; font-weight:500; letter-spacing:0.2px; }
+/* Selo "est." do Lucro — único hover ativo dos cards (tooltip nativo). */
+.kpi-badge-est {
+  display:inline-flex; align-items:center; gap:2px; margin-left:6px;
+  padding:1px 6px; border-radius:10px; background:var(--surface3); color:var(--text3);
+  font-size:9px; font-weight:700; letter-spacing:0.4px; text-transform:none;
+  cursor:help; vertical-align:middle; line-height:1.5;
+}
+.kpi-badge-est:hover, .kpi-badge-est:focus { color: var(--text2); outline:none; }
+.kpi-badge-est .kpi-badge-i { font-size:10px; opacity:0.85; }
+
 /* ── MODAL BLOCOS (titulos por secao no modal SAC/Oficina) ── */
 .modal-bloco{margin-top:18px;}
 .modal-bloco:first-of-type{margin-top:0;}
@@ -6414,6 +6442,59 @@ function _finDreRenderLancamentos(lancs) {
     + tabela('Saídas',   `${lancs.saidas.length} lançamento${lancs.saidas.length===1?'':'s'}`,   lancs.saidas,   lancs.totSaidas,   'var(--red)');
 }
 
+// ══════════════════════════════════════════
+//  DASHBOARD ANALÍTICO · FASE 1 — helpers de view (puros, retornam HTML string)
+// ══════════════════════════════════════════
+// GARANTIA DIFF-ZERO: nada aqui é regra de negócio. Os números vêm prontos de
+// carregarFaturamentoDash; a diferença atual−anterior é aritmética de view.
+// % segue a MESMA régua do deltaHTML: .toFixed(0) e |%|<0,5% ⇒ "estável".
+
+// Comparação com o período anterior — protagonista do card. Retorna '' quando
+// não há base anterior (anterior<=0): some o chip Δ e a linha "vs." (nunca
+// exibe ∞%/+100%). tipo ∈ {'money','int'}.
+function _kpiCompara(atual, anterior, tipo) {
+  if (anterior == null || anterior <= 0) return '';
+  var diff = atual - anterior;
+  var pct  = (diff / Math.abs(anterior)) * 100;
+  // fmt() já aplica Math.abs internamente → o sinal vem do prefixo.
+  var diffTxt = (tipo === 'int') ? (Math.abs(diff) + ' un') : fmt(diff);
+  var antTxt  = (tipo === 'int') ? (anterior + ' un')       : fmt(anterior);
+  var diffLine;
+  if (Math.abs(pct) < 0.5) {
+    diffLine = '<div class="kpi-diff flat">— estável vs. anterior</div>';
+  } else {
+    var up   = pct > 0;
+    diffLine = '<div class="kpi-diff ' + (up ? 'up' : 'down') + '">'
+      + (up ? '▲' : '▼') + ' ' + (up ? '+' : '−') + diffTxt
+      + ' <span class="kpi-diff-pct">(' + (up ? '+' : '−') + Math.abs(pct).toFixed(0) + '%)</span></div>';
+  }
+  return diffLine + '<div class="kpi-vs">vs. ' + antTxt + ' anterior</div>';
+}
+
+// Selo "est." do Lucro — único hover ativo dos cards (tooltip nativo via title).
+function _kpiBadgeEst(pct) {
+  var p = (pct * 100).toFixed(1);
+  var t = 'Estimativa: receita do período × margem de contribuição média atual ('
+    + p + '%). Não usa CMV real por pedido — lucro real virá em fase futura.';
+  return '<span class="kpi-badge-est" title="' + t + '" tabindex="0">est.<span class="kpi-badge-i">ⓘ</span></span>';
+}
+
+// Card de KPI em COLUNA FLEX, sem altura travada (forward-compat p/ a sparkline
+// da Fase 2 — ver docs/dashboard-analitico-fase-1.md §8). Ordem dos blocos:
+// [label(+badge)] [valor] [comparação] <slot sparkline> [sublabel]. O slot é só
+// um comentário (ponto de inserção conhecido) — nada renderizado, sem vão vazio.
+// Calmo: sem onclick, sem cursor, sem seta.
+function _kpiCard(o) {
+  var corCls = o.cor ? (' ' + o.cor) : '';
+  return '<div class="kpi" style="border-top:2px solid var(--gold);">'
+    + '<div class="kpi-label">' + o.label + (o.badge || '') + '</div>'
+    + '<div class="kpi-value' + corCls + '">' + o.valor + '</div>'
+    + (o.comparaHtml || '')
+    + '<!-- slot sparkline (Fase 2): inserir aqui, entre a comparação e o sublabel -->'
+    + (o.sublabel ? '<div class="kpi-change">' + o.sublabel + '</div>' : '')
+    + '</div>';
+}
+
 // KPI "Vendas por canal" — agrupa os pedidos do período (JÁ sem cancelados,
 // mesma régua do faturamento) por local_venda_id → pdv_locais_venda
 // (Matriz / Quiosque / Tráfego Pago). Cada pedido cai em EXATAMENTE um balde,
@@ -6422,13 +6503,16 @@ function _finDreRenderLancamentos(lancs) {
 //   - PDV com canal apagado/inativo → ainda aparece (não some venda);
 //   - Tiny/arquivo ou PDV sem local → "Sem canal" (só aparece se houver).
 // R$ só para admin (mesma régua de privacidade do card de Faturamento).
+// Fase 1: além de renderizar, RETORNA {linhas, totVal, totQtd} p/ os Destaques
+// (refator de leitura — não muda o que entra na tela).
 function renderDashCanais(pedidos, ehAdmin) {
+  var VAZIO = { linhas: [], totVal: 0, totQtd: 0 };
   var el = document.getElementById('dash-canal-body');
-  if (!el) return;
+  if (!el) return VAZIO;
   pedidos = pedidos || [];
   if (!pedidos.length) {
     el.innerHTML = '<div class="empty" style="padding:12px;font-size:11px;">Nenhuma venda no período.</div>';
-    return;
+    return VAZIO;
   }
   var locById = {};
   (pdvLocais || []).forEach(function(l){ locById[l.id] = l; });
@@ -6494,6 +6578,7 @@ function renderDashCanais(pedidos, ehAdmin) {
     + '</div>';
 
   el.innerHTML = linhas.map(linhaHTML).join('') + totalHTML;
+  return { linhas: linhas, totVal: totVal, totQtd: totQtd };
 }
 
 async function carregarFaturamentoDash(forcar) {
@@ -6562,47 +6647,41 @@ async function carregarFaturamentoDash(forcar) {
     dot.style.background = 'var(--green)';
     label.textContent    = 'Faturamento — ' + mesLabel;
 
-    var kpiClickPed = ' style="border-top:2px solid var(--gold);cursor:pointer;" onclick="showPage(&quot;pedidos&quot;)"';
-    var kpiClickCus = ' style="border-top:2px solid var(--gold);cursor:pointer;" onclick="showPage(&quot;custos&quot;)"';
-    var kpiNormal   = ' style="border-top:2px solid var(--gold);"';
     var _kpisIsAdmin = _isAdminUser();
     // Unidades de scooter (mesma regra do resumo WhatsApp: SCOOTER_RE + soma
     // quantidade) — destaque do card. Período anterior conta sobre mergedAnt,
     // cujo range já é "mês cheio vs mês cheio" via calcPeriodoAnterior.
     var scootersUnid    = _contarScootersUnidades(pedidos);
     var scootersUnidAnt = _contarScootersUnidades(mergedAnt);
-    var pedidosTxt      = totalPedidos + ' ' + (totalPedidos === 1 ? 'pedido' : 'pedidos');
-    var pedidosKpiHTML =
-        '<div class="kpi"' + kpiClickPed + '>'
-      + '<div class="kpi-label">Scooters vendidas</div>'
-      + '<div class="kpi-value gold">' + scootersUnid + '</div>'
-      + deltaHTML(scootersUnid, scootersUnidAnt)
-      + '<div class="kpi-change">' + pedidosTxt + ' · no período</div></div>';
+    var pedidosTxt      = totalPedidos + ' ' + (totalPedidos === 1 ? 'pedido' : 'pedidos') + ' · no período';
+
+    // ── Fase 1: cards enriquecidos (comparação em destaque) · cards calmos ──
+    // Mesmos números de sempre (diff-zero); só a montagem da string mudou via
+    // _kpiCard/_kpiCompara. Sem onclick/cursor/seta nesta fase (volta na Fase 3).
+    // Card "Scooters vendidas" — único card do não-admin (sem R$).
+    var scootersCard = _kpiCard({
+      label: 'Scooters vendidas', valor: String(scootersUnid), cor: 'gold',
+      comparaHtml: _kpiCompara(scootersUnid, scootersUnidAnt, 'int'),
+      sublabel: pedidosTxt
+    });
     if (_kpisIsAdmin) {
       kpis.innerHTML =
-        '<div class="kpi"' + kpiClickPed + '>'
-        + '<div class="kpi-label">Faturamento do período</div>'
-        + '<div class="kpi-value green">' + fmt(receitaTotal) + '</div>'
-        + deltaHTML(receitaTotal, ka.receita)
-        + '<div class="kpi-change">clique para ver pedidos ↗</div></div>'
-        + pedidosKpiHTML
-        + '<div class="kpi"' + kpiNormal + '>'
-        + '<div class="kpi-label">Ticket médio</div>'
-        + '<div class="kpi-value gold">' + fmt(ticketMedio) + '</div>'
-        + deltaHTML(ticketMedio, ka.ticket)
-        + '<div class="kpi-change">por pedido</div></div>'
-        + '<div class="kpi"' + kpiNormal + '>'
-        + '<div class="kpi-label">Lucro bruto est.</div>'
-        + '<div class="kpi-value ' + (lucroBruto>=0?'green':'red') + '">' + fmt(lucroBruto) + '</div>'
-        + deltaHTML(lucroBruto, lucroBrutoAnt)
-        + '<div class="kpi-change">MC média ' + (avgMCpct*100).toFixed(1) + '% × receita</div></div>'
-        + '<div class="kpi"' + kpiClickCus + '>'
-        + '<div class="kpi-label">Custo Fixo Planejado</div>'
-        + '<div class="kpi-value red">' + fmt(custoFixoMensal) + '</div>'
-        + '<div class="kpi-change">média histórica · real no widget DRE ↗</div></div>';
+          _kpiCard({ label:'Faturamento do período', valor: fmt(receitaTotal), cor:'green',
+                     comparaHtml: _kpiCompara(receitaTotal, ka.receita, 'money') })
+        + scootersCard
+        + _kpiCard({ label:'Ticket médio', valor: fmt(ticketMedio), cor:'gold',
+                     comparaHtml: _kpiCompara(ticketMedio, ka.ticket, 'money'),
+                     sublabel:'por pedido' })
+        + _kpiCard({ label:'Lucro bruto', valor: fmt(lucroBruto), cor:(lucroBruto>=0?'green':'red'),
+                     comparaHtml: _kpiCompara(lucroBruto, lucroBrutoAnt, 'money'),
+                     sublabel:'MC média ' + (avgMCpct*100).toFixed(1) + '% × receita',
+                     badge: _kpiBadgeEst(avgMCpct) })
+        // Custo Fixo: média histórica, não métrica de período → SEM comparação.
+        + _kpiCard({ label:'Custo Fixo Planejado', valor: fmt(custoFixoMensal), cor:'red',
+                     sublabel:'média histórica · real no widget DRE' });
     } else {
-      // Não-admin: só o KPI "Pedidos faturados" (sem nenhum R$).
-      kpis.innerHTML = pedidosKpiHTML;
+      // Não-admin: só o card Scooters (sem nenhum R$).
+      kpis.innerHTML = scootersCard;
     }
 
     // Esconde o container kpis-int duplicado (legacy do builder).
@@ -6630,6 +6709,8 @@ async function carregarFaturamentoDash(forcar) {
         if (!rLoc.error && rLoc.data) pdvLocais = toCamelArr(rLoc.data);
       } catch (e) { /* sem locais, o card mostra "Sem canal" mas não perde venda */ }
     }
+    // renderDashCanais retorna {linhas,totVal,totQtd} (mantido p/ fases futuras);
+    // nesta fase o retorno não é consumido.
     renderDashCanais(pedidos, _kpisIsAdmin);
 
     // Ranking de scooters (não-admin recebe — render esconde R$ internamente)
