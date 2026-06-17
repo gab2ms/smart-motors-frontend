@@ -1,13 +1,22 @@
 # Dashboard Analítico — Especificação Final da Fase 1
 
-> **Status:** aprovada e travada · **não implementada** · escopo: só apresentação/UX
+> **Status:** **implementada** (commit `df83698`) · escopo: só apresentação/UX
 > **Garantia:** diff-zero nos números atuais (nenhuma regra de negócio muda)
-> **Última atualização:** 2026-06-16
+> **Última atualização:** 2026-06-17
+
+> ⚠️ **Mudança de escopo na implementação (2026-06-17):** a **faixa "Destaques
+> do Período" NÃO foi entregue** — removida por **redundância com os cards**.
+> Com a comparação vs. período anterior já em destaque em cada card (diferença
+> absoluta colorida + %), os insights repetiam a mesma informação em prosa. O
+> que de fato entrou foi só os **cards de KPI enriquecidos**. As §§4, 6 e 7
+> abaixo (estados vazios, catálogo de insights e helpers `_insightsBuild`/
+> `_insightBanner`/`_insightItem`) descrevem os Destaques e ficam aqui como
+> registro histórico do plano — não refletem o código atual.
 
 Fase 1 do roadmap em [`dashboard-roadmap.md`](./dashboard-roadmap.md).
 Entrega: **cards de KPI enriquecidos** (comparação com período anterior em
-destaque) + **faixa "Destaques do Período"**. Sem sparklines, sem gráficos, sem
-modais (essas vêm nas fases seguintes).
+destaque). ~~+ faixa "Destaques do Período"~~ (removida — ver nota acima). Sem
+sparklines, sem gráficos, sem modais (essas vêm nas fases seguintes).
 
 ---
 
