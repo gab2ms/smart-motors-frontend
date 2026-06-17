@@ -1,13 +1,28 @@
-# Dashboard Analítico — Roadmap (6 fases)
+# Dashboard Analítico — Roadmap Executivo (revisado)
 
 > Evolução do dashboard de **informativo** para **analítico/gerencial**.
-> Princípio transversal: página calma e escaneável; profundidade via
-> drill-down (modais) — mais gráficos ≠ melhor dashboard.
-> **Última atualização:** 2026-06-16
+> Princípio de produto: página calma e escaneável; profundidade via drill-down
+> (centrais/modais) — mais gráficos ≠ melhor dashboard.
+> **Última atualização:** 2026-06-17
 
-## Reality-check de dados (vale para TODAS as fases)
+## ⚠️ Princípio transversal (vale para TODAS as etapas)
 
-Auditoria da base feita antes do roadmap. O que os dados **realmente** suportam:
+1. **Não construir tela antes do dado existir.** Toda superfície analítica
+   depende de um dado confiável a montante:
+   - *lucro por canal* depende de **lucro correto** (CMV real por pedido);
+   - *meta × realizado* depende de **metas cadastradas**;
+   - *giro de estoque* depende de **estoque confiável**.
+   Sem o dado, a tela mente — então o dado vem primeiro.
+2. **A infraestrutura (Etapa 2) vem ANTES do analytics novo.** É a parte chata
+   (NF-e, lucro real, consolidação financeira), mas é a trava real. **Não pular
+   pra tela bonita adiando a infra** — qualquer analytics construído sobre dado
+   torto vira retrabalho.
+
+---
+
+## Reality-check de dados (auditoria da base)
+
+O que os dados **realmente** suportam hoje:
 
 - **Histórico de faturamento total:** arquivo Tiny (`tiny_pedidos`) cobre
   **dez/2025 → jun/2026** (~7 meses) + PDV (`pdv_pedidos`). Tendência mensal do
@@ -18,77 +33,90 @@ Auditoria da base feita antes do roadmap. O que os dados **realmente** suportam:
   Logo: comparações/tendências **por canal** só ganham sentido conforme os meses
   de PDV acumulam.
 - **Lucro é ESTIMATIVA**, não medição: `receita × margem de contribuição média
-  plana (~25%)`. Não há CMV real por pedido hoje. Waterfall honesto depende de
-  cruzar itens vendidos × custo do produto (Fase 5).
+  plana (~25%)`. Não há CMV real por pedido hoje. Lucro real / waterfall honesto
+  dependem de cruzar itens vendidos × custo do produto — é a **Opção B (Etapa 2)**.
 - **Conversão é IMPOSSÍVEL hoje:** não existe funil — sem leads, visitas ou
   sessões rastreadas. Só após instrumentar captação de leads.
-- **Comparação com período anterior já é calculada** (`ka`/`mergedAnt`) — está
-  pronta, só faltava superfície (Fase 1).
+- **Comparação com período anterior já é calculada** (`ka`/`mergedAnt`) — foi a
+  superfície entregue na **Etapa 1**.
 
 ---
 
-## Fase 1 — Cards enriquecidos + Destaques do Período
+## ETAPA 1 — Finalizar Dashboard Atual
 
 - **Entrega:** cards de KPI com comparação ao período anterior em destaque
-  (diferença absoluta colorida) + faixa "Destaques do Período" (lista simples com
-  setas) + selo `est.` no Lucro com tooltip. Cards calmos (sem clique nesta fase).
-- **Depende de:** nada novo — só reusa agregados já calculados.
-- **Reality-check:** Lucro exibido como estimativa rotulada. Canal nos Destaques
-  só como **share do período atual** (não "subiu/caiu vs anterior").
-- **Spec detalhada:** [`dashboard-analitico-fase-1.md`](./dashboard-analitico-fase-1.md).
-- **Status:** spec aprovada e travada · não implementada.
+  (diferença absoluta colorida) + selo `est.` no Lucro com tooltip. Cards calmos
+  (sem clique nesta etapa — o clique volta na Central de Receita, Etapa 4).
+- **Status:**
+  - ✅ **Cards enriquecidos** — FEITO (commit `df83698`). Spec detalhada em
+    [`dashboard-analitico-fase-1.md`](./dashboard-analitico-fase-1.md).
+  - ✅ **Destaques do Período removidos** — FEITO, por **redundância com os
+    cards**: a comparação vs. período anterior já aparece em destaque em cada
+    card, então os insights em prosa repetiam a mesma informação.
+  - ⏳ **Ajustes finos de layout/KPI** — pendente (refino visual; sem nova regra).
+- **Depende de:** nada novo — reusa agregados já calculados.
 
-## Fase 2 — Sparklines
+## ETAPA 2 — Infraestrutura (a trava real · vem ANTES de qualquer analytics novo)
 
-- **Entrega:** mini-gráfico de tendência mensal (dez→jun) dentro dos cards de
-  Faturamento, Scooters e Ticket. SVG/CSS leve (o app não usa `<canvas>`).
-- **Depende de:** estrutura de card preparada na Fase 1 (coluna flex, sem altura
-  travada, ponto de inserção definido — ver §8 da spec da Fase 1).
-- **Reality-check:** sparkline do **total** é confiável (7 meses). Sparkline
-  **por canal** NÃO entra aqui (só 2 pontos confiáveis). Lucro mensal seria
-  estimativa — exibir só se rotulado.
+> Parte chata e estrutural. É pré-requisito de dado de quase tudo que vem depois.
 
-## Fase 3 — Modais analíticos (drill-down do Faturamento)
+- **NF-e (Focus NFe):** emissão de notas integrada (artefatos `nfe_etapa*.sql`).
+- **Opção B — lucro real / `produto_precos_id`:** custo confiável por produto,
+  substituindo a margem plana estimada. É o que destrava lucro real, lucro por
+  canal e waterfall. Sem isso, tudo que envolve lucro permanece **estimativa
+  rotulada**.
+- **Consolidação dos dados financeiros:** fechar/normalizar as fontes (Tiny ×
+  PDV × lançamentos) pra que a camada financeira tenha base única e confiável.
+- **Depende de:** —. **Destrava:** Etapas 3–6 (analytics) e a Central Financeira.
 
-- **Entrega:** clicar no card abre **modal de análise** (não troca de página).
-  Faturamento primeiro: atual vs anterior, evolução diária comparada (2 séries),
-  participação por canal, decomposição da variação por canal, insight automático.
-  Reintroduz a affordance de clique nos cards (que a Fase 1 removeu).
-- **Depende de:** infra de modal já existente no app; Fases 1–2.
-- **Reality-check:** decomposição/participação por canal confiável só de junho em
-  diante; rotular quando o período incluir meses sem canal.
+## ETAPA 3 — Analytics Básico (gráficos)
 
-## Fase 4 — Ticket e Lucro aprofundados
+- **Entrega:** **gráfico de faturamento diário** + **gráfico de evolução
+  mensal**, logo abaixo dos KPIs.
+- **Decisão registrada:** **gráfico real ANTES de sparkline.** A sparkline
+  responde pouco (mini-tendência decorativa dentro do card); o gráfico responde
+  mais (lê o comportamento do período de fato). Por isso **sparklines deixam de
+  ser a evolução central e viram refinamento (Etapa 6)**.
+- **Depende de:** histórico de total já é confiável (~7 meses). Gráfico **por
+  canal** ainda não (só junho+ é limpo) — entra conforme os meses acumulam.
 
-- **Entrega:** modais de drill-down para Ticket Médio (por canal, por vendedor,
-  por categoria, evolução diária) e Lucro (comparação, evolução da margem, lucro
-  por canal) — Lucro ainda **estimado** até a Fase 5.
-- **Depende de:** Fase 3 (padrão de modal); vendedor nos itens e `categoria` no
-  produto (já existem).
-- **Reality-check:** ticket por canal limitado pela disponibilidade de canal;
-  lucro permanece estimativa rotulada.
+## ETAPA 4 — Central de Receita V1
 
-## Fase 5 — CMV real + Waterfall
+- **Entrega:** clicar no **KPI de Faturamento** abre uma **Central de Receita**
+  (em vez de mandar pra lista de pedidos genérica). V1 **enxuta**:
+  - evolução diária;
+  - comparação histórica (vs. período anterior);
+  - receita por canal;
+  - top vendas.
+- **Fora da V1 (não fazer agora):** metas, projeção, lucro por canal, IA/insights.
+- **Depende de:** Etapas 1–3; reintroduz a affordance de clique que a Etapa 1
+  removeu (agora consistente, em todos os cards de uma vez).
 
-- **Entrega:** lucro **real** por pedido (itens vendidos × custo do produto) e
-  waterfall Receita → (−) CMV → (=) Lucro Bruto; margem real. Substitui a
-  estimativa de margem plana.
-- **Depende de:** **Opção B das telas de custo** (custo confiável por produto /
-  `produto_precos_id`) — é o pré-requisito de dado. Sem isso o waterfall mente.
-- **Reality-check:** só após esta fase o "Lucro" deixa de ser estimativa e o selo
-  `est.` sai. Até lá, tudo que envolve lucro fica rotulado como estimativa.
+## ETAPA 5 — Demais Centrais (uma por vez)
 
-## Fase 6 — Share por canal ao longo dos meses
+- **Entrega:** seguindo o padrão da Central de Receita, uma central por vez:
+  - **Comercial** (vendas/vendedores/produtos);
+  - **Financeira** (DRE, resultado, despesas);
+  - **de Caixa** (saldo, fluxo, entradas/saídas).
+- **Regra:** cada central só entra **quando o dado dela existir e for confiável**
+  (ex.: a **Financeira depende da Opção B / Etapa 2** pra lucro correto).
+- **Depende de:** Etapa 4 (padrão de central) + o dado-base de cada uma.
 
-- **Entrega:** evolução da participação de cada canal mês a mês — quem cresce,
-  quem perde relevância (ganho/perda de share, ranking visual).
-- **Depende de:** acúmulo de meses **limpos** de PDV (de junho/2026 em diante).
-- **Reality-check:** começa pobre (poucos meses) e melhora organicamente a cada
-  mês. Não forçar antes de ter ≥3–4 meses de canal confiável.
+## ETAPA 6 — Analytics Avançado
+
+- **Entrega:** metas, projeções, **insights automáticos**, **sparklines** e
+  demais refinamentos sobre as centrais já existentes.
+- **Depende de:** todas as anteriores + dados maduros (meses limpos de canal,
+  lucro real, metas cadastradas).
+- **Reality-check:** só aqui o "Lucro" deixa de ser estimativa (após Opção B) e
+  o selo `est.` sai; share por canal ao longo dos meses precisa de ≥3–4 meses
+  limpos de PDV (junho/2026 em diante).
 
 ---
 
 ## Fora de escopo até existir dado
 
 - **Taxa de conversão / funil:** requer instrumentar captação de leads/visitas
-  antes. Não é uma fase — é um pré-requisito de produto.
+  antes. Não é uma etapa — é um pré-requisito de produto.
+</content>
+</invoke>
