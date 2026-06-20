@@ -2940,6 +2940,9 @@ select:not(.input-pro):not(.search-input){
         <button class="btn dash-preset-btn mont-preset-btn" data-preset="mes-anterior" onclick="setMontPeriodoPreset('mes-anterior')" style="font-size:10px;padding:5px 9px;">Mês anterior</button>
         <button class="btn dash-preset-btn mont-preset-btn" data-preset="7d"           onclick="setMontPeriodoPreset('7d')"           style="font-size:10px;padding:5px 9px;">7 dias</button>
         <button class="btn dash-preset-btn mont-preset-btn" data-preset="30d"          onclick="setMontPeriodoPreset('30d')"          style="font-size:10px;padding:5px 9px;">30 dias</button>
+        <button class="btn dash-preset-btn mont-preset-btn" data-preset="quinzena"     onclick="setMontPeriodoPreset('quinzena')"     style="font-size:10px;padding:5px 9px;">15 dias</button>
+        <button class="btn dash-preset-btn mont-preset-btn" data-preset="trimestre"    onclick="setMontPeriodoPreset('trimestre')"    style="font-size:10px;padding:5px 9px;">Trimestre</button>
+        <button class="btn dash-preset-btn mont-preset-btn" data-preset="ano"          onclick="setMontPeriodoPreset('ano')"          style="font-size:10px;padding:5px 9px;">Ano</button>
       </div>
       <input type="date" id="mont-periodo-ini" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;" onchange="onMontDateChange()">
       <span style="color:var(--text3);font-size:11px;">até</span>
@@ -16500,15 +16503,11 @@ function setMontPeriodoPreset(preset) {
   const elIni = document.getElementById('mont-periodo-ini');
   const elFim = document.getElementById('mont-periodo-fim');
   if (!elIni || !elFim) return;
-  const hoje = new Date(); hoje.setHours(0,0,0,0);
-  let ini, fim;
-  if (preset === 'mes-atual')         { ini = new Date(hoje.getFullYear(), hoje.getMonth(),     1); fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0); /* último dia do mês atual */ }
-  else if (preset === 'mes-anterior') { ini = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1); fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0); }
-  else if (preset === '7d')           { fim = hoje; ini = new Date(hoje.getTime() -  6 * 86400000); }
-  else if (preset === '30d')          { fim = hoje; ini = new Date(hoje.getTime() - 29 * 86400000); }
-  else return;
-  elIni.value = ini.toISOString().split('T')[0];
-  elFim.value = fim.toISOString().split('T')[0];
+  // #3: datas do helper único calcPeriodoAtalho (idêntico ao anterior nos presets
+  // existentes; novos botões 15d/trimestre/ano reusam a mesma fonte).
+  const { iniISO, fimISO } = calcPeriodoAtalho(preset);
+  elIni.value = iniISO;
+  elFim.value = fimISO;
   document.querySelectorAll('.mont-preset-btn').forEach(b => b.classList.toggle('active', b.dataset.preset === preset));
   renderMontagensKpis();
 }
