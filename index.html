@@ -1923,6 +1923,9 @@ select:not(.input-pro):not(.search-input){
           <button class="btn dash-preset-btn" data-preset="mes-anterior" onclick="setPeriodoPreset('mes-anterior')" style="font-size:10px;padding:5px 9px;">Mês anterior</button>
           <button class="btn dash-preset-btn" data-preset="7d" onclick="setPeriodoPreset('7d')" style="font-size:10px;padding:5px 9px;">7 dias</button>
           <button class="btn dash-preset-btn" data-preset="30d" onclick="setPeriodoPreset('30d')" style="font-size:10px;padding:5px 9px;">30 dias</button>
+          <button class="btn dash-preset-btn" data-preset="quinzena" onclick="setPeriodoPreset('quinzena')" style="font-size:10px;padding:5px 9px;">15 dias</button>
+          <button class="btn dash-preset-btn" data-preset="trimestre" onclick="setPeriodoPreset('trimestre')" style="font-size:10px;padding:5px 9px;">Trimestre</button>
+          <button class="btn dash-preset-btn" data-preset="ano" onclick="setPeriodoPreset('ano')" style="font-size:10px;padding:5px 9px;">Ano</button>
         </div>
         <input type="date" id="dash-fat-ini" class="search-input" style="max-width:135px;padding:6px 10px;font-size:11px;" onchange="onDashDateChange()">
         <span style="color:var(--text3);font-size:11px;">até</span>
@@ -5669,25 +5672,12 @@ function setPeriodoPreset(preset) {
   const elFim = document.getElementById('dash-fat-fim');
   if (!elIni || !elFim) return;
 
-  const hoje = new Date(); hoje.setHours(0,0,0,0);
-  let ini, fim;
-  if (preset === 'mes-atual') {
-    ini = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-    fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0); // último dia do mês atual (dinâmico)
-  } else if (preset === 'mes-anterior') {
-    ini = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
-    fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0); // último dia do mês anterior
-  } else if (preset === '7d') {
-    fim = hoje;
-    ini = new Date(hoje.getTime() - 6 * 86400000);
-  } else if (preset === '30d') {
-    fim = hoje;
-    ini = new Date(hoje.getTime() - 29 * 86400000);
-  } else {
-    return;
-  }
-  elIni.value = _toISO(ini);
-  elFim.value = _toISO(fim);
+  // #3: datas vêm do helper único calcPeriodoAtalho. Idêntico ao anterior nos
+  // presets já existentes (mes-atual/anterior, 7d, 30d); os novos botões
+  // (15d/trimestre/ano) reusam a mesma fonte. _toISO == toISO interno do helper.
+  const { iniISO, fimISO } = calcPeriodoAtalho(preset);
+  elIni.value = iniISO;
+  elFim.value = fimISO;
 
   // Marca preset ativo visualmente
   document.querySelectorAll('.dash-preset-btn').forEach(b => {
@@ -7824,6 +7814,7 @@ function toAPIDate(iso) {
 //    calcPeriodoAtalho devolve {iniISO, fimISO} (YYYY-MM-DD); a data personalizada
 //    continua disponível nos inputs. Mês dinâmico (último dia real do mês) igual ao
 //    Dashboard/DRE. Outros módulos reusam calcPeriodoAtalho + seu próprio applier.
+//    7d/30d (últimos N dias) existem p/ os presets legados do Dashboard/Montagem.
 function calcPeriodoAtalho(tipo) {
   const toISO = d => d.toISOString().split('T')[0];
   const h = new Date();
@@ -7832,6 +7823,8 @@ function calcPeriodoAtalho(tipo) {
   switch (tipo) {
     case 'mes-anterior': ini = new Date(y, m - 1, 1);            fim = new Date(y, m, 0);     break;
     case 'quinzena':     ini = new Date(y, m, h.getDate() - 14); fim = new Date(y, m, h.getDate()); break;
+    case '7d':           ini = new Date(y, m, h.getDate() - 6);  fim = new Date(y, m, h.getDate()); break;
+    case '30d':          ini = new Date(y, m, h.getDate() - 29); fim = new Date(y, m, h.getDate()); break;
     case 'trimestre':    ini = new Date(y, m - 2, 1);            fim = new Date(y, m + 1, 0); break;
     case 'ano':          ini = new Date(y, 0, 1);                fim = new Date(y, 11, 31);   break;
     case 'mes-atual':
