@@ -4,9 +4,9 @@
 > perder contexto entre sessões.
 > **Última atualização:** 2026-06-20
 >
-> **Status:** #1 e #2 pendentes. **#4 ✅ FEITO** (commit `5a4f79b`). **#3 🟡 PARCIAL**
-> — helper reutilizável `calcPeriodoAtalho` + 1ª integração (tela de Pedidos) feitos
-> no mesmo commit; falta espalhar pros demais módulos com filtro de data.
+> **Status:** #1 e #2 pendentes. **#3 ✅ FEITO** (Pedidos `5a4f79b`, Caixa `8be1b70`,
+> Dashboard `89be020`, Montagem `462bb93`, DRE `62193d6` — todos sobre o helper único
+> `calcPeriodoAtalho`). **#4 ✅ FEITO** (commit `5a4f79b`).
 
 ---
 
@@ -54,14 +54,22 @@ as quebras analíticas dessas centrais.
 
 ---
 
-## 3. Atalhos de Período (em todos os módulos com filtro de data) — 🟡 PARCIAL
+## 3. Atalhos de Período (em todos os módulos com filtro de data) — ✅ FEITO
 
-> **Feito (commit `5a4f79b`):** helper reutilizável `calcPeriodoAtalho(tipo)` em
-> `index.html` (devolve `{iniISO,fimISO}` p/ mes-atual, mes-anterior, quinzena,
-> trimestre, ano) + 1ª integração na tela de **Pedidos** (`_pedAtalhoPeriodo` +
-> 5 botões; data personalizada preservada). **Falta:** espalhar pros demais
-> módulos com filtro de data (Dashboard, DRE, Caixa…), cada um com seu applier
-> reusando `calcPeriodoAtalho` — um por vez.
+> **Concluído.** Helper único `calcPeriodoAtalho(tipo)` em `index.html` (devolve
+> `{iniISO,fimISO}` p/ mes-atual, mes-anterior, quinzena/15d, 7d, 30d, trimestre,
+> ano) com **5 appliers** que o reusam, um por módulo de filtro de range:
+> - **Pedidos** `_pedAtalhoPeriodo` (`5a4f79b`)
+> - **Caixa/Lançamentos** `_finCaixaAtalhoPeriodo` (`8be1b70`) — era a única lacuna real
+> - **Dashboard** `setPeriodoPreset` refatorado p/ delegar (`89be020`)
+> - **Montagem** `setMontPeriodoPreset` refatorado (`462bb93`)
+> - **DRE** `_finDrePreset` refatorado (`62193d6`)
+>
+> **Decisão "coexistir":** Dashboard/Montagem/DRE já tinham 7d/30d — mantidos; só
+> ADICIONADOS 15d/trimestre/ano. Diff-zero no comportamento atual verificado
+> numericamente (mês atual/anterior/7d/30d idênticos pela lógica nova). A data
+> personalizada segue nos inputs. Inputs de data avulsos (vencimento, pgto, etc.)
+> são campos de formulário — fora de escopo (não são filtros de range).
 
 **O quê:**
 - Botões de **período pré-definido**: mês atual, mês anterior, quinzenal,
