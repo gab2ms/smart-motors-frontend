@@ -2648,6 +2648,14 @@ select:not(.input-pro):not(.search-input){
         <input type="date" id="fin-data-ini" class="search-input" style="max-width:140px;" onchange="aplicarFiltrosLancamentos()" title="Data inicial">
         <span style="color:var(--text3);font-size:11px;align-self:center;">até</span>
         <input type="date" id="fin-data-fim" class="search-input" style="max-width:140px;" onchange="aplicarFiltrosLancamentos()" title="Data final">
+        <!-- #3: atalhos de período (a data personalizada continua nos inputs ao lado) -->
+        <div style="display:flex;gap:4px;flex-wrap:wrap;align-self:center;">
+          <button class="btn" style="font-size:10px;padding:5px 9px;" onclick="_finCaixaAtalhoPeriodo('mes-atual')">Mês atual</button>
+          <button class="btn" style="font-size:10px;padding:5px 9px;" onclick="_finCaixaAtalhoPeriodo('mes-anterior')">Mês anterior</button>
+          <button class="btn" style="font-size:10px;padding:5px 9px;" onclick="_finCaixaAtalhoPeriodo('quinzena')">15 dias</button>
+          <button class="btn" style="font-size:10px;padding:5px 9px;" onclick="_finCaixaAtalhoPeriodo('trimestre')">Trimestre</button>
+          <button class="btn" style="font-size:10px;padding:5px 9px;" onclick="_finCaixaAtalhoPeriodo('ano')">Ano</button>
+        </div>
         <select class="search-input" id="fin-filtro-tipo" onchange="aplicarFiltrosLancamentos()" style="max-width:130px;">
           <option value="">Todos</option>
           <option value="entrada">Entradas</option>
@@ -12687,6 +12695,17 @@ function limparFiltroData() {
   const elFim = document.getElementById('fin-data-fim');
   if (elIni) elIni.value = '';
   if (elFim) elFim.value = '';
+  aplicarFiltrosLancamentos();
+}
+
+// #3: applier do Caixa — reusa calcPeriodoAtalho; seta os inputs e reaplica o
+// filtro (client-side, instantâneo). A data personalizada segue nos inputs.
+function _finCaixaAtalhoPeriodo(tipo) {
+  const { iniISO, fimISO } = calcPeriodoAtalho(tipo);
+  const elIni = document.getElementById('fin-data-ini');
+  const elFim = document.getElementById('fin-data-fim');
+  if (elIni) elIni.value = iniISO;
+  if (elFim) elFim.value = fimISO;
   aplicarFiltrosLancamentos();
 }
 
