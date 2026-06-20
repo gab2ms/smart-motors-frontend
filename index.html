@@ -2703,6 +2703,9 @@ select:not(.input-pro):not(.search-input){
         <button class="btn-pro" onclick="_finDrePreset('mes-atual')">Mês atual</button>
         <button class="btn-pro" onclick="_finDrePreset('mes-anterior')">Mês anterior</button>
         <button class="btn-pro" onclick="_finDrePreset('30d')">Últimos 30d</button>
+        <button class="btn-pro" onclick="_finDrePreset('quinzena')">15 dias</button>
+        <button class="btn-pro" onclick="_finDrePreset('trimestre')">Trimestre</button>
+        <button class="btn-pro" onclick="_finDrePreset('ano')">Ano</button>
         <button class="btn-pro btn-pro--primary" onclick="_finDreCarregar(false)"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Aplicar</button>
         <button class="btn-pro" onclick="_finDreCarregar(true)" title="Recarrega os dados do nosso banco"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>
         <div style="flex:1;"></div>
@@ -6232,14 +6235,12 @@ function initFinDre() {
 }
 
 function _finDrePreset(p) {
-  const h = new Date();
-  let ini, fim;
-  if (p === 'mes-atual')    { ini = new Date(h.getFullYear(), h.getMonth(), 1); fim = new Date(h.getFullYear(), h.getMonth()+1, 0); }
-  else if (p === 'mes-anterior') { ini = new Date(h.getFullYear(), h.getMonth()-1, 1); fim = new Date(h.getFullYear(), h.getMonth(), 0); }
-  else if (p === '30d')     { fim = new Date(h); ini = new Date(h.getTime() - 29 * 86400000); }
-  else return;
-  document.getElementById('fin-dre-ini').value = _finDreISOLocal(ini);
-  document.getElementById('fin-dre-fim').value = _finDreISOLocal(fim);
+  // #3: datas do helper único calcPeriodoAtalho (mes-atual/anterior, 30d, +15d/
+  // trimestre/ano). Equivalente ao _finDreISOLocal anterior no fuso do app
+  // (Brasil, UTC-3): meia-noite local → mesmo dia em UTC.
+  const { iniISO, fimISO } = calcPeriodoAtalho(p);
+  document.getElementById('fin-dre-ini').value = iniISO;
+  document.getElementById('fin-dre-fim').value = fimISO;
   _finDreCarregar(false);
 }
 
