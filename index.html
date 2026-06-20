@@ -2277,6 +2277,14 @@ select:not(.input-pro):not(.search-input){
       <span class="text-mute" style="font-size:var(--fs-sm);">até</span>
       <input type="date" id="ped-data-fim" class="input-pro" style="max-width:150px;">
       <button class="btn-pro btn-pro--primary" onclick="carregarPedidosUnif()" id="btn-ped-sync"><svg class="ic ic-sm"><use href="#ic-zap"/></svg>Buscar</button>
+      <!-- #3: atalhos de período (a data personalizada continua nos inputs acima) -->
+      <div style="display:flex;gap:4px;flex-wrap:wrap;">
+        <button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:5px 9px;" onclick="_pedAtalhoPeriodo('mes-atual')">Mês atual</button>
+        <button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:5px 9px;" onclick="_pedAtalhoPeriodo('mes-anterior')">Mês anterior</button>
+        <button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:5px 9px;" onclick="_pedAtalhoPeriodo('quinzena')">15 dias</button>
+        <button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:5px 9px;" onclick="_pedAtalhoPeriodo('trimestre')">Trimestre</button>
+        <button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:5px 9px;" onclick="_pedAtalhoPeriodo('ano')">Ano</button>
+      </div>
       <div style="display:flex;align-items:center;gap:6px;">
         <div style="width:7px;height:7px;border-radius:50%;background:var(--text3);" id="ped-api-dot"></div>
         <span class="text-mute" style="font-size:var(--fs-xs);font-weight:var(--fw-md);" id="ped-api-label">Não carregado</span>
@@ -5604,6 +5612,20 @@ function _pedidoProdutoLabel(itens) {
   return nome + ' <span style="color:var(--text3);font-weight:500;">+ ' + extras + ' iten' + (extras !== 1 ? 's' : '') + '</span>';
 }
 
+// #4: lista COMPLETA de itens (nome do modelo) p/ exibir abaixo do cliente na
+// lista de pedidos. Diferente do _pedidoProdutoLabel (compacto: 1 + "N itens"),
+// aqui mostra todos os itens com nome, cada um numa linha. '' se não houver.
+function _pedidoItensLista(itens) {
+  if (!Array.isArray(itens) || !itens.length) return '';
+  const nomes = itens
+    .map(it => (it.descricao || (it.item && it.item.descricao) || it.produto || '').trim())
+    .filter(Boolean);
+  if (!nomes.length) return '';
+  return '<div style="margin-top:3px;display:flex;flex-direction:column;gap:1px;">'
+    + nomes.map(n => `<span style="font-size:var(--fs-xs);color:var(--text3);font-weight:var(--fw-md);">${escHtml(n)}</span>`).join('')
+    + '</div>';
+}
+
 function renderDashPedidos(pedidos) {
   const card = document.getElementById('dash-pedidos-card');
   if (!pedidos || pedidos.length === 0) { card.style.display='none'; return; }
@@ -7737,6 +7759,12 @@ const PEDIDOS_ARQUIVO_CORTE = '2026-06-01'; // .lt → estritamente antes de jun
 function _unifArquivo(row) {
   const dataISO = row.data || '';
   const [y, m, d] = dataISO.split('-');
+  // #4: itens do histórico vêm do raw.itens (Tiny) — mesmo mapeamento do _arquivoParaVendaTiny.
+  const itensRaw = Array.isArray(row.raw && row.raw.itens) ? row.raw.itens : [];
+  const itens = itensRaw.map(it => {
+    const r = it.item || it;
+    return { produto: r.descricao || r.produto || '', quantidade: parseFloat(r.quantidade) || 0, valorUnitario: parseFloat(r.valor_unitario) || 0 };
+  });
   return {
     uid: 'tiny-' + row.tiny_id,
     origem: 'tiny',
@@ -7748,6 +7776,7 @@ function _unifArquivo(row) {
     valor: Number(row.valor_total) || 0,
     statusOriginal: row.situacao || '',
     statusGroup: _pedStatusGroup('tiny', row.situacao),
+    itens,
     raw: { ...row, id: row.tiny_id },
   };
 }
@@ -7756,6 +7785,11 @@ function _unifPdv(p) {
   const vNome = (pdvVendedores.find(v => v.id === p.vendedorId) || {}).nome || null;
   const dataISO = (p.criadoEm || '').slice(0, 10);
   const [y, m, d] = dataISO.split('-');
+  // #4: itens do join pdv_itens_pedido. toCamel é shallow → chaves internas seguem snake.
+  const itensRaw = Array.isArray(p.pdvItensPedido) ? p.pdvItensPedido : [];
+  const itens = itensRaw.slice()
+    .sort((a, b) => (a.ordem || 0) - (b.ordem || 0))
+    .map(it => ({ produto: it.produto_nome_tiny || '', quantidade: Number(it.quantidade) || 0, valorUnitario: Number(it.valor_unitario) || 0 }));
   return {
     uid: 'pdv-' + p.id,
     origem: 'pdv',
@@ -7767,6 +7801,7 @@ function _unifPdv(p) {
     valor: Number(p.total) || 0,
     statusOriginal: p.status || '',
     statusGroup: _pedStatusGroup('pdv', p.status),
+    itens,
     raw: p,
   };
 }
@@ -7775,6 +7810,37 @@ function toAPIDate(iso) {
   if (!iso) return '';
   const [y,m,d] = iso.split('-');
   return `${d}/${m}/${y}`;
+}
+
+// ── #3: atalhos de período REUTILIZÁVEIS por qualquer módulo com filtro de data.
+//    calcPeriodoAtalho devolve {iniISO, fimISO} (YYYY-MM-DD); a data personalizada
+//    continua disponível nos inputs. Mês dinâmico (último dia real do mês) igual ao
+//    Dashboard/DRE. Outros módulos reusam calcPeriodoAtalho + seu próprio applier.
+function calcPeriodoAtalho(tipo) {
+  const toISO = d => d.toISOString().split('T')[0];
+  const h = new Date();
+  const y = h.getFullYear(), m = h.getMonth();
+  let ini, fim;
+  switch (tipo) {
+    case 'mes-anterior': ini = new Date(y, m - 1, 1);            fim = new Date(y, m, 0);     break;
+    case 'quinzena':     ini = new Date(y, m, h.getDate() - 14); fim = new Date(y, m, h.getDate()); break;
+    case 'trimestre':    ini = new Date(y, m - 2, 1);            fim = new Date(y, m + 1, 0); break;
+    case 'ano':          ini = new Date(y, 0, 1);                fim = new Date(y, 11, 31);   break;
+    case 'mes-atual':
+    default:             ini = new Date(y, m, 1);                fim = new Date(y, m + 1, 0); break;
+  }
+  return { iniISO: toISO(ini), fimISO: toISO(fim) };
+}
+
+// Applier da tela de Pedidos (1ª integração do #3): seta os inputs e recarrega.
+// Demais módulos com filtro de data entram depois, reusando calcPeriodoAtalho.
+function _pedAtalhoPeriodo(tipo) {
+  const { iniISO, fimISO } = calcPeriodoAtalho(tipo);
+  const elIni = document.getElementById('ped-data-ini');
+  const elFim = document.getElementById('ped-data-fim');
+  if (elIni) elIni.value = iniISO;
+  if (elFim) elFim.value = fimISO;
+  carregarPedidosUnif();
 }
 
 async function initPedidosUnif() {
@@ -7829,7 +7895,7 @@ async function carregarPedidosUnif() {
     let arqErr = null;
     try {
       const { data, error } = await sb.from('tiny_pedidos')
-        .select('tiny_id,numero,data,cliente_nome,vendedor,situacao,valor_total')
+        .select('tiny_id,numero,data,cliente_nome,vendedor,situacao,valor_total,raw') // +raw: itens p/ a lista (#4)
         .gte('data', iniISO)
         .lte('data', fimISO)
         .lt('data', PEDIDOS_ARQUIVO_CORTE)
@@ -7845,7 +7911,8 @@ async function carregarPedidosUnif() {
     let pdvArr = [];
     let pdvErr = null;
     try {
-      const { data, error } = await sb.from('pdv_pedidos').select('*')
+      const { data, error } = await sb.from('pdv_pedidos')
+        .select('*,pdv_itens_pedido(produto_nome_tiny,quantidade,valor_unitario,ordem)') // +itens p/ a lista (#4)
         .gte('criado_em', iniISO + 'T00:00:00')
         .lte('criado_em', fimISO + 'T23:59:59.999')
         .order('criado_em', { ascending: false });
@@ -7972,7 +8039,7 @@ function renderPedidosUnif() {
     return `<tr>
       <td class="num-tab" style="white-space:nowrap;color:var(--text2);">${p.dataDisplay}</td>
       <td>${seloHTML}</td>
-      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(p.cliente)}">${escHtml(p.cliente)}</td>
+      <td style="max-width:260px;" title="${escHtml(p.cliente)}"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(p.cliente)}</div>${_pedidoItensLista(p.itens)}</td>
       <td>${vendedorCell}</td>
       <td class="num-tab" style="font-weight:var(--fw-bd);white-space:nowrap;">${_fmtBRMoney(p.valor)}</td>
       <td>${statusHTML}</td>
