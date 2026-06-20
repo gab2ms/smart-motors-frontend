@@ -3590,7 +3590,6 @@ select:not(.input-pro):not(.search-input){
 <div class="modal-overlay" id="prod-modal">
   <div class="modal" style="width:760px;">
     <div class="modal-title" id="prod-modal-title">Editar <span>produto</span></div>
-    <div id="prod-novo-nota" style="display:none;font-size:11px;color:var(--text3);background:var(--surface3);border-radius:var(--r-sm);padding:8px 12px;margin-bottom:12px;line-height:1.5;">Produto novo nasce só no nosso sistema (sem vínculo com o Tiny): aparece na lista, no Dashboard e no estoque — mas <b>não no PDV</b> enquanto não tiver vínculo com o Tiny.</div>
     <input type="hidden" id="prod-edit-id">
     <input type="hidden" id="prod-precos-idx">
     <input type="hidden" id="prod-venda">
@@ -9627,7 +9626,6 @@ function prodUpdateComputed(){
 //    prod-edit-id vazio = sinal de criação (consumido por prodSave→prodSaveNovo).
 function prodOpenNovo(){
   document.getElementById('prod-modal-title').innerHTML='Novo <span>produto</span>';
-  document.getElementById('prod-novo-nota').style.display='';
   document.getElementById('prod-edit-id').value='';     // vazio = modo novo
   document.getElementById('prod-precos-idx').value=-1;
   document.getElementById('prod-venda').value=0;
@@ -9648,7 +9646,6 @@ function prodOpenNovo(){
 function prodOpenEdit(id){
   const item=produtosCatalogo.find(p=>String(p.id)===String(id));
   if(!item)return;
-  document.getElementById('prod-novo-nota').style.display='none';
   // Linha de custo casada por nome; guarda o ÍNDICE em products[] (robusto a rename).
   const pp=_matchProdutoPorNome(item.nome);
   const idx=pp?products.indexOf(pp):-1;
@@ -9857,8 +9854,9 @@ async function prodSave(){
 }
 
 // ── Criar produto novo no catálogo (Fase 1c etapa 4). INSERT em produtos (sem tiny_id:
-//    nasce só no nosso sistema → aparece na lista/Dashboard/estoque, mas NÃO no PDV,
-//    que filtra por tiny_id). Custo opcional → produtos_precos (mesma mecânica do prodSave).
+//    nasce só no nosso sistema). Desde a Fase 3 toda venda do PDV é local, então o produto
+//    aparece na lista/Dashboard/estoque E no PDV mesmo sem vínculo com o Tiny.
+//    Custo opcional → produtos_precos (mesma mecânica do prodSave).
 async function prodSaveNovo(){
   const nome=document.getElementById('prod-nome').value.trim();
   if(!nome){smAlert('Preencha o nome do produto');return;}
@@ -18803,7 +18801,7 @@ function _pdvVendaNova() {
 async function initPdv() {
   if (!pdvVendedores.length) try { await initPdvVendedores(); } catch(e) {}
   if (!pdvLocais.length)     try { await initPdvLocais();     } catch(e) {}
-  _pdvGarantirProdutos();  // não bloqueia
+  _pdvGarantirProdutos(true);  // recarrega sempre que a tela abre — produto novo aparece sem F5 (não bloqueia)
   // Carrega a base de clientes pra busca/prefill (não bloqueia o render).
   if (!clientesAll.length) {
     sb.from('clientes').select('*').order('nome')
@@ -18817,8 +18815,9 @@ async function initPdv() {
 }
 
 // Carrega produtosTiny sem depender do DOM de page-estoque (que usa btn-sync).
-async function _pdvGarantirProdutos() {
-  if (produtosTiny.length) return;
+// forcar=true rebusca mesmo com cache (usado pelo initPdv: produto novo aparece sem F5).
+async function _pdvGarantirProdutos(forcar = false) {
+  if (produtosTiny.length && !forcar) return;
   try {
     // Lê do NOSSO banco (tabela produtos) — instantâneo, saldo real, sem Tiny ao
     // vivo (que travava no N+1 de estoque). Mapeia pro mesmo shape do produtosTiny[]:
