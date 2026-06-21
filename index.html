@@ -2568,6 +2568,31 @@ select:not(.input-pro):not(.search-input){
     </div><!-- /admin-tab-comunicacao -->
   </div>
 
+    <!-- ══════════════ RELATÓRIOS ══════════════ -->
+  <div class="page content" id="page-relatorios">
+    <!-- período + ações -->
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <input type="date" id="rel-ini" class="input-pro" style="max-width:150px;">
+      <span class="text-mute" style="font-size:13px;">até</span>
+      <input type="date" id="rel-fim" class="input-pro" style="max-width:150px;">
+      <button class="btn-pro" onclick="_relPreset('mes-atual')">Mês atual</button>
+      <button class="btn-pro" onclick="_relPreset('mes-anterior')">Mês anterior</button>
+      <button class="btn-pro" onclick="_relPreset('30d')">30d</button>
+      <button class="btn-pro" onclick="_relPreset('trimestre')">Trimestre</button>
+      <button class="btn-pro" onclick="_relPreset('ano')">Ano</button>
+      <button class="btn-pro btn-pro--primary" onclick="_relAplicar()"><svg class="ic ic-sm"><use href="#ic-zap"/></svg> Aplicar</button>
+      <div style="flex:1;"></div>
+      <button class="btn-pro" onclick="_relExportCSV()"><svg class="ic ic-sm"><use href="#ic-download"/></svg> CSV</button>
+      <button class="btn-pro btn-pro--primary" onclick="_relExportXLSX()"><svg class="ic ic-sm"><use href="#ic-download"/></svg> Excel</button>
+    </div>
+    <div id="rel-status" class="text-mute" style="font-size:11px;margin-bottom:12px;">—</div>
+    <!-- catálogo de presets (esq) + resultado (dir) -->
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div id="rel-catalogo" style="flex:0 0 220px;min-width:200px;"></div>
+      <div id="rel-resultado" style="flex:1;min-width:320px;"></div>
+    </div>
+  </div>
+
     <!-- ══════════════ FINANCEIRO ══════════════ -->
   <div class="page content" id="page-financeiro">
 
@@ -4183,11 +4208,13 @@ const pageMeta={
   custos:['Custos Operacionais','Análise inteligente baseada em lançamentos reais'],
   'custos-produtos':['Custos de Produtos','Gerencie os componentes de custo de cada produto'],
   pdv:             ['PDV','Painel de operação — criar novas vendas'],
+  relatorios:      ['Relatórios','Biblioteca de relatórios e análises de venda'],
 };
 // Breadcrumb hierárquico — pai não-clicável (etiqueta visual), atual em destaque.
 // Dashboard NÃO aparece (raiz). Pais espelham os agrupadores da sidebar.
 const BREADCRUMB_MAP = {
   admin:           ['Visão Geral', 'Administração'],
+  relatorios:      ['Visão Geral', 'Relatórios'],
   pedidos:         ['Vendas', 'Pedidos'],
   vendas:          ['Vendas', 'Vendas do Mês'],
   estoque:         ['Produtos', 'Cadastros'],
@@ -4304,6 +4331,7 @@ function showPage(id, opts){
   if(id==='clientes')initClientes();
   if(id==='contratos')initContratos();
   if(id==='pdv')initPdv();
+  if(id==='relatorios')initRelatorios();
 }
 
 // Detecta voltar/avançar do navegador
@@ -5152,8 +5180,22 @@ function _pdvParaVenda(p, itens, vendedor) {
     localVendaId: p.local_venda_id || null,
   };
   // cliente_dados é jsonb no banco; quando vier no select, expõe o nome
-  // pra renderDashPedidos casar com o shape do Tiny.
-  if (p.cliente_dados && p.cliente_dados.nome) out.cliente = p.cliente_dados.nome;
+  // pra renderDashPedidos casar com o shape do Tiny. cidade/uf/cpf são
+  // dimensões PDV-only dos relatórios (Tiny/arquivo não tem → ficam undefined).
+  if (p.cliente_dados) {
+    const cd = p.cliente_dados;
+    if (cd.nome)     out.cliente = cd.nome;
+    if (cd.cidade)   out.cidade  = cd.cidade;
+    if (cd.uf)       out.uf      = cd.uf;
+    if (cd.cpf_cnpj) out.cpfCnpj = cd.cpf_cnpj;
+  }
+  // forma_pagamento (jsonb {desconto, metodos:[{tipo,valor,parcelas}]}) — lista
+  // completa de métodos preservada (suporta split de pagamento). PDV-only.
+  if (p.forma_pagamento && Array.isArray(p.forma_pagamento.metodos)) {
+    out.formaPagamento = p.forma_pagamento.metodos.map(function(m){
+      return { tipo: m.tipo, valor: Number(m.valor) || 0, parcelas: m.parcelas || null };
+    });
+  }
   if (Array.isArray(itens)) out.itens = itens;
   if (vendedor)             out.vendedor = vendedor;
   return out;
@@ -5183,6 +5225,7 @@ function _arquivoParaVendaTiny(row) {
     valor:    Number(row.valor_total) || 0,
     vendedor: row.vendedor ? { nome: row.vendedor } : null,
     itens:    itens,
+    _origem:  'tiny', // marca a fonte (PDV já traz _origem:'pdv') p/ o selo 🟢/🟡 dos relatórios
   };
 }
 
@@ -5228,7 +5271,7 @@ async function buscarVendasMescladas(iniISO, fimISO, forcar) {
     // normalizarNomeVendedor pra agrupar com Tiny ("Henrique Quiosque" e
     // "Henrique" do PDV viram "Henrique" no ranking).
     var resp = await sb.from('pdv_pedidos')
-      .select('id,numero_smart,total,status,tiny_pedido_id,criado_em,vendedor_id,local_venda_id,cliente_dados,pdv_itens_pedido(produto_nome_tiny,quantidade,valor_unitario,ordem)')
+      .select('id,numero_smart,total,status,tiny_pedido_id,criado_em,vendedor_id,local_venda_id,cliente_dados,forma_pagamento,pdv_itens_pedido(produto_id,produto_nome_tiny,quantidade,valor_unitario,ordem)')
       .neq('status', 'cancelado')
       .gte('criado_em', j.iniUTC)
       .lt('criado_em', j.fimUTC);
@@ -5242,6 +5285,7 @@ async function buscarVendasMescladas(iniISO, fimISO, forcar) {
             produto:       it.produto_nome_tiny || '',
             quantidade:    Number(it.quantidade) || 0,
             valorUnitario: Number(it.valor_unitario) || 0,
+            produtoId:     it.produto_id || null, // FK p/ produtos (relatórios); descartado antes
           };
         });
       var vendObj = null;
@@ -5260,6 +5304,544 @@ async function buscarVendasMescladas(iniISO, fimISO, forcar) {
   }
   var tinyKept = idsPdv.size ? tiny.filter(function(t){ return !idsPdv.has(String(t.id)); }) : tiny;
   return { tiny: tiny, merged: tinyKept.concat(pdvVendas) };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO DE RELATÓRIOS — Camada de dados (fact rows) · Fase 0
+// ══════════════════════════════════════════════════════════════════════════
+// buscarLinhasVenda(ini,fim): achata as vendas mescladas (arquivo Tiny + PDV)
+// em UMA linha por ITEM vendido, enriquecida com todas as dimensões e métricas.
+// É a base ÚNICA de todo o módulo (Área 1 presets + Área 2 construtor): cada
+// relatório é só um group-by sobre estas linhas.
+//
+// REGRA DE OURO (reconciliação): o CPV reusa a MESMA fórmula do calcularDRE
+// (custo por item via _matchProdutoPorNome + NF 1× por pedido). Por isso a soma
+// das linhas BATE com a DRE no mesmo período — ver reconciliarLinhasVendaDRE().
+// Valores guardados SEM arredondar (formatação é da camada de apresentação,
+// Fase 1) pra não introduzir centavos de divergência na reconciliação.
+function _dataBRtoISO(br){
+  if (!br) return null;
+  const p = String(br).split('/');
+  return p.length === 3 ? (p[2]+'-'+p[1]+'-'+p[0]) : null;
+}
+
+// Cores comuns no fim do nome do modelo — só FALLBACK quando o produto não tem
+// o campo `cor` preenchido. No cadastro cada cor é um produto ("Lee Preta",
+// "SCOOTER X14 BRANCA"); o relatório "por Modelo" agrupa pelo modelo BASE.
+const _RE_CORES_SUFIXO = /\s+(preta|preto|branca|branco|vermelha|vermelho|azul|cinza|verde|prata|amarela|amarelo|rosa|laranja|roxa|roxo|dourada|dourado|marrom|bege|grafite|titanio|titânio)$/i;
+
+// Modelo BASE = nome sem a cor ("SCOOTER X14 Preta" + "… Branca" → "SCOOTER X14").
+// Usa o campo `cor` do cadastro quando existe (preciso); senão remove um sufixo
+// de cor conhecido. Nunca retorna vazio (cai pro nome original).
+function _modeloBase(nome, cor){
+  let m = String(nome || '').trim();
+  if (cor) {
+    const c = String(cor).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (c) m = m.replace(new RegExp('\\s+' + c + '\\s*$', 'i'), '').trim();
+  }
+  m = m.replace(_RE_CORES_SUFIXO, '').trim();
+  m = m.replace(/^scooter\s+/i, '').trim(); // prefixo genérico "SCOOTER " (cadastro inconsistente: X14 tem, X11/Skylo não)
+  return m || String(nome || '').trim();
+}
+
+async function buscarLinhasVenda(iniISO, fimISO){
+  const merged = (await buscarVendasMescladas(iniISO, fimISO)).merged;
+  // mcpReal/_matchProdutoPorNome dependem do preço Tiny — mesma dep. da DRE.
+  await carregarTinyPrecos();
+  // avgMCpct calculado IGUAL ao calcularDRE (espelho exato) → o CPV estimado dos
+  // itens sem cadastro reconcilia com a DRE.
+  const produtosAtivos = (products || []).filter(p => p.ativo !== false);
+  const avgMCpct = produtosAtivos.length
+    ? produtosAtivos.reduce((s,p) => s + mcpReal(p), 0) / produtosAtivos.length / 100
+    : 0;
+  const nfPedido = (typeof CONFIG_CUSTOS !== 'undefined' && CONFIG_CUSTOS.nf_pedido) || 0;
+  const _canalNome = id => {
+    if (!id) return null;
+    const arr = (typeof pdvLocais !== 'undefined' && Array.isArray(pdvLocais)) ? pdvLocais : [];
+    const l = arr.find(x => x.id === id);
+    return l ? l.nome : null;
+  };
+
+  const linhas = [];
+  for (const ped of merged) {
+    const fonte    = ped._origem === 'pdv' ? 'pdv' : 'tiny';
+    const numero   = ped.numero != null ? String(ped.numero) : '';
+    const _nomeV   = (ped.vendedor && ped.vendedor.nome) || '';
+    // venda direta da loja: sócios não recebem comissão (idêntico ao calcularDRE).
+    const vendaDireta = _nomeV === 'Venda Direta Smart Motors' || _nomeV === 'Smart Motors';
+    // dimensões de nível-pedido, repetidas em cada linha-item:
+    const dimsPedido = {
+      pedidoNumero: numero,
+      fonte,
+      dataISO: _dataBRtoISO(ped.data),
+      dataBR:  ped.data || '',
+      situacao: ped.situacao || '',
+      vendedor: _nomeV || 'Não informado',
+      cliente:  ped.cliente || 'Não informado',
+      cpfCnpj:  ped.cpfCnpj || null,
+      canalId:  ped.localVendaId || null,
+      canal:    _canalNome(ped.localVendaId),
+      cidade:   ped.cidade || null,
+      uf:       ped.uf || null,
+      formaPagamento: ped.formaPagamento || null,        // lista [{tipo,valor,parcelas}] | null
+      origemVenda: null,                                  // ← RESERVADA (futuro: whatsapp/loja_fisica/mercado_livre/shopee/instagram/site)
+    };
+    const itens = Array.isArray(ped.itens) ? ped.itens : [];
+    const recPedido = itens.reduce((s,it) => s + (it.quantidade||0)*(it.valorUnitario||0), 0);
+
+    // Pedido SEM itens: a DRE ainda cobra a NF (1× por pedido). Emite linha
+    // placeholder pra (a) reconciliar e (b) sinalizar a falha de cadastro.
+    if (!itens.length) {
+      linhas.push(Object.assign({
+        linhaId: 'PED-'+numero+'#x', modelo: '(pedido sem itens)', modeloBase: '(pedido sem itens)', cor: null, modeloRaw: '',
+        matched: false, produtoId: null, categoria: null, fabricante: null,
+        quantidade: 0, precoUnitario: 0, receita: 0,
+        cpvProduto: 0, cpvNf: nfPedido, cpvTotal: nfPedido, cpvEstimado: false,
+        comissao: 0, lucro: -nfPedido, margemPct: 0,
+      }, dimsPedido));
+      continue;
+    }
+
+    itens.forEach((it, idx) => {
+      const qtd     = it.quantidade || 0;
+      const preco   = it.valorUnitario || 0;
+      const receita = qtd * preco;
+      const prod    = _matchProdutoPorNome((it.produto || '').trim());
+      let cpvProduto, comissao, cpvEstimado, categoria, fabricante, matched, modelo, modeloBase, cor;
+      if (prod) {
+        matched     = true;
+        const comUnit = vendaDireta ? 0 : (prod.comissao || 0);
+        cpvProduto  = ((prod.custoPuro||0) + (prod.montagem||0) + comUnit) * qtd;
+        comissao    = comUnit * qtd;
+        cpvEstimado = false;
+        categoria   = prod.categoria || 'scooter';
+        fabricante  = prod.fabricante || null; // best-effort: fabricante mora no catálogo, nem sempre em products[]
+        modelo      = prod.modelo || (it.produto||'').trim();
+        cor         = prod.cor || null;
+        modeloBase  = _modeloBase(modelo, cor);
+      } else {
+        // item sem cadastro (acessório/serviço): CPV estimado pela MC média (= DRE)
+        matched     = false;
+        cpvProduto  = receita * (1 - avgMCpct);
+        comissao    = 0;
+        cpvEstimado = true;
+        categoria   = null;
+        fabricante  = null;
+        modelo      = (it.produto || '').trim();
+        cor         = null;
+        modeloBase  = _modeloBase(modelo, null);
+      }
+      // NF rateada pela participação na receita do pedido (Σ rateios = nfPedido).
+      const share    = recPedido > 0 ? (receita / recPedido) : (1 / itens.length);
+      const cpvNf    = nfPedido * share;
+      const cpvTotal = cpvProduto + cpvNf;
+      const lucro    = receita - cpvTotal;
+      linhas.push(Object.assign({
+        linhaId: 'PED-'+numero+'#'+idx,
+        modelo, modeloBase, cor, modeloRaw: (it.produto||'').trim(),
+        matched, produtoId: it.produtoId || null, categoria, fabricante,
+        quantidade: qtd, precoUnitario: preco, receita,
+        cpvProduto, cpvNf, cpvTotal, cpvEstimado, comissao, lucro,
+        margemPct: receita > 0 ? (lucro/receita*100) : 0,
+      }, dimsPedido));
+    });
+  }
+  return linhas;
+}
+
+// Teste de reconciliação: a soma das fact rows tem de bater com a DRE no mesmo
+// período. cpv é a invariante dura (mesma fórmula). receita/lucro batem desde
+// que o total do pedido == soma dos itens (sem desconto/frete de nível-pedido) —
+// o delta, quando houver, é justamente isso e é REPORTADO, não escondido.
+// Uso no console: await reconciliarLinhasVendaDRE('2026-06-01','2026-06-30')
+async function reconciliarLinhasVendaDRE(iniISO, fimISO){
+  const linhas = await buscarLinhasVenda(iniISO, fimISO);
+  const dre    = await calcularDRE(iniISO, fimISO);
+  const soma = (arr, f) => arr.reduce((s,x) => s + f(x), 0);
+  const mk = (lin, ref) => ({ linhas:+lin.toFixed(2), dre:+ref.toFixed(2), delta:+(lin-ref).toFixed(2), ok: Math.abs(lin-ref) < 0.01 });
+  const r = {
+    periodo: iniISO+' → '+fimISO,
+    nLinhas: linhas.length,
+    receita: mk(soma(linhas, l => l.receita),  dre.receita),
+    cpv:     mk(soma(linhas, l => l.cpvTotal), dre.cpv),
+    lucro:   mk(soma(linhas, l => l.lucro),    dre.lucroBruto),
+  };
+  r.ok = r.cpv.ok && r.receita.ok && r.lucro.ok;
+  try { console.table({ receita: r.receita, cpv: r.cpv, lucro: r.lucro }); } catch(e){}
+  console.log('[reconciliarLinhasVendaDRE]', r.ok ? '✅ BATE com a DRE' : '⚠️ há delta (ver tabela) — provável desconto/frete de nível-pedido', r);
+  return r;
+}
+
+// expõe os entrypoints p/ rodar a validação no console do navegador
+if (typeof window !== 'undefined') {
+  window.buscarLinhasVenda = buscarLinhasVenda;
+  window.reconciliarLinhasVendaDRE = reconciliarLinhasVendaDRE;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  MÓDULO DE RELATÓRIOS · Fase 1 — agregador genérico + presets + export
+// ══════════════════════════════════════════════════════════════════════════
+// Tudo roda sobre as fact rows da Fase 0 (buscarLinhasVenda). Um relatório =
+// uma config {groupBy, metrics, sort, limit, escopo} aplicada por agregarRelatorio().
+// Os PRESETS (Área 1) são só configs prontas; o construtor (Área 2) vai montar a
+// MESMA config interativamente — por isso o motor já aceita qualquer combinação.
+
+// Dimensões agrupáveis (extrator de chave por linha). 'crossBy' futuro reusa isto.
+const REL_DIMENSOES = {
+  modeloBase:     { label:'Modelo',          get: l => l.modeloBase || l.modelo },
+  modelo:         { label:'Modelo + Cor',    get: l => l.modelo },
+  cor:            { label:'Cor',             get: l => l.cor },
+  vendedor:       { label:'Vendedor',        get: l => l.vendedor },
+  canal:          { label:'Canal',           get: l => l.canal },
+  cidade:         { label:'Cidade',          get: l => l.cidade },
+  uf:             { label:'Estado',          get: l => l.uf },
+  cliente:        { label:'Cliente',         get: l => l.cliente },
+  categoria:      { label:'Categoria',       get: l => l.categoria },
+  fabricante:     { label:'Fabricante',      get: l => l.fabricante },
+  formaPagamento: { label:'Forma de Pgto',   get: l => Array.isArray(l.formaPagamento) ? l.formaPagamento.map(m=>m.tipo).sort().join('+') : l.formaPagamento },
+  origemVenda:    { label:'Origem da Venda', get: l => l.origemVenda }, // reservada (sempre null hoje)
+};
+
+// Métricas (calculadas sobre o acumulador de cada grupo).
+const REL_METRICAS = {
+  quantidade:  { label:'Qtd',          tipo:'int',   calc: g => g.quantidade },
+  pedidos:     { label:'Pedidos',      tipo:'int',   calc: g => g.pedidos.size },
+  receita:     { label:'Receita',      tipo:'money', calc: g => g.receita },
+  cpvTotal:    { label:'CPV',          tipo:'money', calc: g => g.cpv },
+  lucro:       { label:'Lucro',        tipo:'money', calc: g => g.lucro },
+  comissao:    { label:'Comissão',     tipo:'money', calc: g => g.comissao },
+  margemPct:   { label:'Margem %',     tipo:'pct',   calc: g => g.receita > 0 ? g.lucro/g.receita*100 : 0 },
+  ticketMedio: { label:'Ticket Médio', tipo:'money', calc: g => g.pedidos.size > 0 ? g.receita/g.pedidos.size : 0 },
+};
+
+// Normaliza a CHAVE de uma dimensão (null/'' → "Não informado"). Fonte ÚNICA
+// usada pela agregação E pelo drill-down futuro — não podem divergir.
+function _relChaveDim(groupBy, l){
+  const dim = REL_DIMENSOES[groupBy];
+  if (!dim) return 'Não informado';
+  const k = dim.get(l);
+  return (k == null || k === '') ? 'Não informado' : k;
+}
+
+// Matcher de UM filtro sobre uma linha. Aceita a forma simples (igualdade, como
+// na Fase 1) e a forma rica ({op,valores}) com op 'eq'|'in'|'contains'.
+// 'contains' cobre campos que são array NA LINHA (ex.: formaPagamento multi-método).
+// Hoje NENHUM preset usa filtros → totalmente inerte; só fixa o contrato p/ a Área 2.
+function _relMatchFiltro(linha, campo, criterio){
+  const v = linha[campo];
+  if (criterio && typeof criterio === 'object' && !Array.isArray(criterio)) {
+    const op = criterio.op || 'eq';
+    const vals = Array.isArray(criterio.valores) ? criterio.valores : [criterio.valores];
+    if (op === 'in')       return vals.includes(v);
+    if (op === 'contains') return Array.isArray(v) ? v.some(x => vals.includes(x && x.tipo != null ? x.tipo : x)) : vals.includes(v);
+    return v === vals[0]; // eq
+  }
+  if (Array.isArray(criterio)) return criterio.includes(v); // açúcar p/ 'in'
+  return v === criterio;                                    // igualdade simples (forma Fase 1)
+}
+
+// Seleção de linhas = escopo de fonte + filtros do usuário. Fonte ÚNICA, reusada
+// pelo drill-down (drill seleciona com o MESMO predicado da agregação).
+function _relFiltrarLinhas(linhas, config){
+  const escopo = config.escopo || 'completo';
+  let out = (escopo === 'pdv') ? linhas.filter(l => l.fonte === 'pdv') : linhas;
+  if (config.filtros) {
+    Object.keys(config.filtros).forEach(campo => {
+      out = out.filter(l => _relMatchFiltro(l, campo, config.filtros[campo]));
+    });
+  }
+  return out;
+}
+
+// Motor genérico: recebe TODAS as linhas do período + a config, devolve linhas
+// agregadas + totais + cobertura. NÃO toca no DOM (testável isolado).
+function agregarRelatorio(linhasTodas, config){
+  const dim = REL_DIMENSOES[config.groupBy];
+  if (!dim) throw new Error('groupBy inválido: ' + config.groupBy);
+  const escopo = config.escopo || 'completo'; // 'completo' (Tiny+PDV) | 'pdv'
+  // 1) seleção em duas camadas (a mesma lógica reusada pelo drill-down):
+  //    linhasEscopo = só o escopo de fonte (base da cobertura de FONTE);
+  //    linhas       = escopo + filtros do usuário (o que de fato é agregado).
+  const linhasEscopo = (escopo === 'pdv') ? linhasTodas.filter(l => l.fonte === 'pdv') : linhasTodas;
+  const linhas = _relFiltrarLinhas(linhasTodas, config);
+  // 2) agrupa (chave via _relChaveDim — fonte única, idêntica ao drill-down)
+  const grupos = new Map();
+  linhas.forEach(l => {
+    const k = _relChaveDim(config.groupBy, l);
+    let g = grupos.get(k);
+    if (!g) { g = { chave:k, quantidade:0, receita:0, cpv:0, lucro:0, comissao:0, pedidos:new Set() }; grupos.set(k, g); }
+    g.quantidade += l.quantidade || 0;
+    g.receita    += l.receita || 0;
+    g.cpv        += l.cpvTotal || 0;
+    g.lucro      += l.lucro || 0;
+    g.comissao   += l.comissao || 0;
+    if (l.pedidoNumero) g.pedidos.add(l.fonte + ':' + l.pedidoNumero);
+  });
+  // 3) métricas escolhidas
+  const metrics = (config.metrics && config.metrics.length) ? config.metrics : ['quantidade','receita','lucro','margemPct'];
+  let rows = Array.from(grupos.values()).map(g => {
+    const r = { chave: g.chave };
+    metrics.forEach(m => { r[m] = REL_METRICAS[m] ? REL_METRICAS[m].calc(g) : null; });
+    return r;
+  });
+  // 4) ordena (default: 1ª métrica numérica, desc)
+  const sortMetric = (config.sort && config.sort.metric) || metrics[0];
+  const sortDir = (config.sort && config.sort.dir) || 'desc';
+  rows.sort((a,b) => {
+    const av = a[sortMetric] || 0, bv = b[sortMetric] || 0;
+    return sortDir === 'asc' ? av - bv : bv - av;
+  });
+  // 5) limite (Top N) — totais continuam sobre TODOS os grupos
+  const nGrupos = grupos.size;
+  let truncado = false;
+  if (config.limit && rows.length > config.limit) { rows = rows.slice(0, config.limit); truncado = true; }
+  // 6) totais (sobre o conjunto filtrado inteiro; pedidos = distintos globais)
+  let sumQtd=0, sumRec=0, sumCpv=0, sumLucro=0, sumCom=0;
+  grupos.forEach(g => { sumQtd+=g.quantidade; sumRec+=g.receita; sumCpv+=g.cpv; sumLucro+=g.lucro; sumCom+=g.comissao; });
+  const globalPed = new Set(linhas.map(l => l.fonte + ':' + l.pedidoNumero));
+  const totais = {
+    quantidade: sumQtd, pedidos: globalPed.size, receita: sumRec, cpvTotal: sumCpv,
+    lucro: sumLucro, comissao: sumCom,
+    margemPct: sumRec > 0 ? sumLucro/sumRec*100 : 0,
+    ticketMedio: globalPed.size > 0 ? sumRec/globalPed.size : 0,
+  };
+  // 7) cobertura — separa COBERTURA DE FONTE (escopo) do SUBCONJUNTO FILTRADO.
+  //    Hoje nenhum preset usa filtros → receitaFiltrada == receitaEscopo e os
+  //    valores do selo (pct, pctSemDim) ficam IDÊNTICOS à Fase 1.
+  const recPeriodo  = linhasTodas.reduce((s,l) => s + (l.receita||0), 0);
+  const recEscopo   = linhasEscopo.reduce((s,l) => s + (l.receita||0), 0);
+  const recFiltrada = linhas.reduce((s,l) => s + (l.receita||0), 0);
+  const recSemDim   = linhas.filter(l => _relChaveDim(config.groupBy, l) === 'Não informado').reduce((s,l) => s + (l.receita||0), 0);
+  const cobertura = {
+    escopo,
+    receitaPeriodo: recPeriodo,
+    receitaEscopo: recEscopo,        // receita do escopo de fonte (antes dos filtros do usuário)
+    receitaFiltrada: recFiltrada,    // receita após filtros do usuário
+    receitaIncluida: recFiltrada,    // alias retrocompat (nome usado na Fase 1)
+    receitaSemDimensao: recSemDim,
+    pct: recPeriodo > 0 ? recEscopo/recPeriodo*100 : 0,            // selo 🟢/🟡 = cobertura de FONTE
+    pctFiltrada: recEscopo > 0 ? recFiltrada/recEscopo*100 : 0,    // quanto do escopo sobrou após filtros (hoje 100%)
+    pctSemDim: recFiltrada > 0 ? recSemDim/recFiltrada*100 : 0,
+  };
+  return { rows, totais, metrics, cobertura, config, nGrupos, truncado };
+}
+
+// Catálogo de relatórios prontos (Área 1). escopo:'pdv' = dimensão PDV-only.
+const REL_PRESETS = [
+  // ── COMERCIAL ──
+  { id:'vendas-modelo',   cat:'Comercial', nome:'Vendas por Modelo',        escopo:'completo', config:{ groupBy:'modeloBase',   metrics:['quantidade','pedidos','receita','ticketMedio'], sort:{metric:'receita',dir:'desc'} } },
+  { id:'vendas-variante', cat:'Comercial', nome:'Vendas por Variante (Cor)',escopo:'completo', config:{ groupBy:'modelo',       metrics:['quantidade','pedidos','receita'], sort:{metric:'receita',dir:'desc'} } },
+  { id:'vendas-vendedor', cat:'Comercial', nome:'Vendas por Vendedor',      escopo:'completo', config:{ groupBy:'vendedor', metrics:['quantidade','pedidos','receita','ticketMedio'], sort:{metric:'receita',dir:'desc'} } },
+  { id:'vendas-canal',    cat:'Comercial', nome:'Vendas por Canal',         escopo:'pdv',      config:{ groupBy:'canal',    metrics:['quantidade','pedidos','receita'], sort:{metric:'receita',dir:'desc'} } },
+  { id:'vendas-cidade',   cat:'Comercial', nome:'Vendas por Cidade',        escopo:'pdv',      config:{ groupBy:'cidade',   metrics:['quantidade','pedidos','receita'], sort:{metric:'receita',dir:'desc'} } },
+  { id:'vendas-uf',       cat:'Comercial', nome:'Vendas por Estado',        escopo:'pdv',      config:{ groupBy:'uf',       metrics:['quantidade','pedidos','receita'], sort:{metric:'receita',dir:'desc'} } },
+  { id:'ticket-vendedor', cat:'Comercial', nome:'Ticket Médio por Vendedor',escopo:'completo', config:{ groupBy:'vendedor', metrics:['pedidos','receita','ticketMedio'], sort:{metric:'ticketMedio',dir:'desc'} } },
+  // ── FINANCEIRO ──
+  { id:'lucro-modelo',    cat:'Financeiro', nome:'Lucro por Modelo',        escopo:'completo', config:{ groupBy:'modeloBase',   metrics:['receita','cpvTotal','lucro','margemPct'], sort:{metric:'lucro',dir:'desc'} } },
+  { id:'lucro-vendedor',  cat:'Financeiro', nome:'Lucro por Vendedor',      escopo:'completo', config:{ groupBy:'vendedor', metrics:['receita','cpvTotal','lucro','margemPct'], sort:{metric:'lucro',dir:'desc'} } },
+  { id:'lucro-canal',     cat:'Financeiro', nome:'Lucro por Canal',         escopo:'pdv',      config:{ groupBy:'canal',    metrics:['receita','cpvTotal','lucro','margemPct'], sort:{metric:'lucro',dir:'desc'} } },
+  { id:'margem-modelo',   cat:'Financeiro', nome:'Margem por Modelo',       escopo:'completo', config:{ groupBy:'modeloBase',   metrics:['receita','lucro','margemPct'], sort:{metric:'margemPct',dir:'desc'} } },
+  { id:'margem-canal',    cat:'Financeiro', nome:'Margem por Canal',        escopo:'pdv',      config:{ groupBy:'canal',    metrics:['receita','lucro','margemPct'], sort:{metric:'margemPct',dir:'desc'} } },
+  { id:'mais-lucrativos', cat:'Financeiro', nome:'Produtos Mais Lucrativos',escopo:'completo', config:{ groupBy:'modeloBase',   metrics:['quantidade','receita','lucro','margemPct'], sort:{metric:'lucro',dir:'desc'}, limit:10 } },
+  { id:'menos-lucrativos',cat:'Financeiro', nome:'Produtos Menos Lucrativos',escopo:'completo',config:{ groupBy:'modeloBase',   metrics:['quantidade','receita','lucro','margemPct'], sort:{metric:'lucro',dir:'asc'}, limit:10 } },
+  // ── GESTÃO ──
+  { id:'top-modelos',     cat:'Gestão', nome:'Top 10 Modelos',             escopo:'completo', config:{ groupBy:'modeloBase',  metrics:['quantidade','receita'], sort:{metric:'quantidade',dir:'desc'}, limit:10 } },
+  { id:'top-clientes',    cat:'Gestão', nome:'Top 10 Clientes',            escopo:'completo', config:{ groupBy:'cliente', metrics:['pedidos','quantidade','receita'], sort:{metric:'receita',dir:'desc'}, limit:10 } },
+  { id:'top-cidades',     cat:'Gestão', nome:'Top 10 Cidades',             escopo:'pdv',      config:{ groupBy:'cidade',  metrics:['pedidos','receita'], sort:{metric:'receita',dir:'desc'}, limit:10 } },
+  { id:'top-estados',     cat:'Gestão', nome:'Top 10 Estados',             escopo:'pdv',      config:{ groupBy:'uf',      metrics:['pedidos','receita'], sort:{metric:'receita',dir:'desc'}, limit:10 } },
+  { id:'clientes-fieis',  cat:'Gestão', nome:'Clientes que Mais Compraram',escopo:'completo', config:{ groupBy:'cliente', metrics:['pedidos','quantidade','receita'], sort:{metric:'pedidos',dir:'desc'}, limit:20 } },
+  // Reservado p/ Fase 5 (precisa de varredura do histórico inteiro por cliente).
+  { id:'clientes-inativos', cat:'Gestão', nome:'Clientes sem Compra há X dias', indisponivel:true, motivo:'Requer varredura do histórico completo por cliente — previsto p/ Fase 5.' },
+];
+
+// Estado do módulo em memória (linhas do período + relatório atual, p/ export).
+const _relEstado = { ini:null, fim:null, linhas:null, presetId:null, preset:null, resultado:null };
+
+// Selo de cobertura/fonte (🟢 histórico completo · 🟡 só PDV).
+function _relSeloCobertura(cob){
+  if (cob.escopo === 'pdv') {
+    return '<span title="Esta dimensão (canal/cidade/estado/forma de pgto) só existe no PDV — o histórico Tiny é excluído automaticamente." '
+      + 'style="font-size:11px;font-weight:600;color:var(--text2,#9BA0A8);background:var(--surface2);padding:3px 8px;border-radius:10px;white-space:nowrap;">'
+      + '🟡 Apenas PDV · ' + Math.round(cob.pct) + '% da receita do período</span>';
+  }
+  const extra = cob.pctSemDim >= 1 ? ' · ' + Math.round(cob.pctSemDim) + '% sem classificação' : '';
+  return '<span title="Usa todo o histórico disponível (arquivo Tiny + PDV)." '
+    + 'style="font-size:11px;font-weight:600;color:var(--green);background:var(--surface2);padding:3px 8px;border-radius:10px;white-space:nowrap;">'
+    + '🟢 Histórico Completo (Tiny + PDV)' + extra + '</span>';
+}
+
+// Renderiza a tabela do relatório (mesmo estilo card/table-pro da DRE).
+function _relRenderRelatorio(preset, res){
+  const el = document.getElementById('rel-resultado'); if (!el) return;
+  const fmt = (m, v) => {
+    if (v == null || isNaN(v)) return '—';
+    const t = REL_METRICAS[m].tipo;
+    if (t === 'money') return _fmtBRMoney(v);
+    if (t === 'pct')   return Number(v).toFixed(1) + '%';
+    return Math.round(v).toLocaleString('pt-BR');
+  };
+  const dimLabel = REL_DIMENSOES[preset.config.groupBy].label;
+  const ths = '<th>' + escHtml(dimLabel) + '</th>'
+    + res.metrics.map(m => '<th style="text-align:right;">' + escHtml(REL_METRICAS[m].label) + '</th>').join('');
+  const rows = res.rows.map(r => {
+    const tds = res.metrics.map(m => {
+      let color = '';
+      if (m === 'lucro' || m === 'margemPct') color = 'color:' + ((r[m]||0) >= 0 ? 'var(--green)' : 'var(--red)') + ';font-weight:600;';
+      return '<td class="num-tab" style="text-align:right;' + color + '">' + fmt(m, r[m]) + '</td>';
+    }).join('');
+    return '<tr><td>' + escHtml(String(r.chave)) + '</td>' + tds + '</tr>';
+  }).join('');
+  const tot = res.totais;
+  const totTds = res.metrics.map(m => '<td class="num-tab" style="text-align:right;">' + fmt(m, tot[m]) + '</td>').join('');
+  const subInfo = res.truncado
+    ? ('top ' + preset.config.limit + ' de ' + res.nGrupos + ' ' + REL_DIMENSOES[preset.config.groupBy].label.toLowerCase() + 's')
+    : (res.nGrupos + ' ' + (res.nGrupos === 1 ? 'linha' : 'linhas'));
+  el.innerHTML = '<div class="card">'
+    + '<div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">'
+      + '<div><div class="card-title">' + escHtml(preset.nome) + '</div>'
+      + '<div class="card-sub">' + subInfo + ' no período</div></div>'
+      + '<div>' + _relSeloCobertura(res.cobertura) + '</div>'
+    + '</div>'
+    + '<div class="table-wrap"><table class="table-pro"><thead><tr>' + ths + '</tr></thead><tbody>'
+    + (rows || ('<tr><td colspan="' + (res.metrics.length+1) + '" class="empty text-mute" style="text-align:center;padding:18px;">Nenhuma venda no período.</td></tr>'))
+    + (res.rows.length ? ('<tr style="background:var(--surface2);font-weight:700;color:var(--gold);"><td>TOTAL' + (res.truncado ? ' GERAL' : '') + '</td>' + totTds + '</tr>') : '')
+    + '</tbody></table></div></div>';
+}
+
+// Catálogo lateral de presets (agrupado por categoria).
+function _relRenderCatalogo(){
+  const el = document.getElementById('rel-catalogo'); if (!el) return;
+  const cats = ['Comercial','Financeiro','Gestão'];
+  el.innerHTML = cats.map(cat => {
+    const items = REL_PRESETS.filter(p => p.cat === cat).map(p => {
+      const selo = p.escopo === 'pdv' ? '🟡' : (p.indisponivel ? '' : '🟢');
+      if (p.indisponivel) {
+        return '<div class="rel-preset-item" style="opacity:.45;cursor:not-allowed;font-size:12px;padding:6px 8px;" title="' + escHtml(p.motivo||'') + '">' + escHtml(p.nome) + ' <span style="font-size:10px;">(em breve)</span></div>';
+      }
+      return '<button class="rel-preset-item btn-pro" data-preset="' + p.id + '" onclick="_relSelecionar(\'' + p.id + '\')" '
+        + 'style="display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;margin-bottom:4px;font-size:12px;">'
+        + '<span>' + escHtml(p.nome) + '</span><span style="opacity:.8;">' + selo + '</span></button>';
+    }).join('');
+    return '<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">' + cat + '</div>' + items + '</div>';
+  }).join('');
+}
+
+// Favoritos do usuário (Área futura) — hoje vazio. Quando existir, virão do
+// localStorage com a MESMA forma {id,nome,escopo,config} dos presets.
+function _relFavoritos(){ return []; }
+// Lookup unificado: presets prontos + favoritos. Fonte única de resolução de id.
+function _relItem(id){
+  return REL_PRESETS.find(p => p.id === id) || _relFavoritos().find(p => p.id === id) || null;
+}
+
+// Seleciona e renderiza um preset/favorito a partir das linhas já em cache.
+function _relSelecionar(presetId){
+  const preset = _relItem(presetId);
+  if (!preset || preset.indisponivel) return;
+  _relEstado.presetId = presetId;
+  document.querySelectorAll('.rel-preset-item').forEach(b => {
+    b.style.outline = (b.dataset && b.dataset.preset === presetId) ? '2px solid var(--gold)' : '';
+  });
+  if (!_relEstado.linhas) return;
+  const cfg = Object.assign({ escopo: preset.escopo }, preset.config);
+  const res = agregarRelatorio(_relEstado.linhas, cfg);
+  _relEstado.preset = preset; _relEstado.resultado = res;
+  _relRenderRelatorio(preset, res);
+}
+
+// Atalho de período (reusa calcPeriodoAtalho da Fase 0/#3).
+function _relPreset(tipo){
+  const p = calcPeriodoAtalho(tipo);
+  const i = document.getElementById('rel-ini'), f = document.getElementById('rel-fim');
+  if (i) i.value = p.iniISO; if (f) f.value = p.fimISO;
+  _relAplicar();
+}
+
+// Busca as linhas do período (1× por período) e re-renderiza o preset atual.
+async function _relAplicar(){
+  const ini = document.getElementById('rel-ini').value;
+  const fim = document.getElementById('rel-fim').value;
+  if (!ini || !fim) { smAlert('Selecione um período.'); return; }
+  const status = document.getElementById('rel-status');
+  if (status) status.textContent = 'Carregando vendas…';
+  try {
+    const linhas = await buscarLinhasVenda(ini, fim);
+    _relEstado.ini = ini; _relEstado.fim = fim; _relEstado.linhas = linhas;
+    if (status) status.textContent = linhas.length + ' linhas de venda no período (' + ini + ' a ' + fim + ').';
+    _relSelecionar(_relEstado.presetId || REL_PRESETS[0].id);
+  } catch(e) {
+    if (status) status.textContent = 'Erro ao carregar: ' + e.message;
+    console.error('[relatorios] _relAplicar', e);
+  }
+}
+
+function _relNomeArquivo(){
+  const f = iso => { const p = String(iso||'').split('-'); return p.length === 3 ? (p[2]+p[1]+p[0]) : iso; };
+  const pid = (_relEstado.preset && _relEstado.preset.id) || 'relatorio';
+  return 'SM_Relatorio_' + pid + '_' + f(_relEstado.ini) + '_a_' + f(_relEstado.fim);
+}
+function _relBaixarBlob(blob, nome){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nome; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
+}
+// CSV (separador ';' + BOM → abre certinho no Excel pt-BR).
+function _relExportCSV(){
+  const e = _relEstado;
+  if (!e.resultado) { smAlert('Gere um relatório primeiro.'); return; }
+  const dimLabel = REL_DIMENSOES[e.preset.config.groupBy].label;
+  const header = [dimLabel].concat(e.resultado.metrics.map(m => REL_METRICAS[m].label));
+  const linhas = [header].concat(e.resultado.rows.map(r => [r.chave].concat(e.resultado.metrics.map(m => {
+    const v = r[m]; if (v == null) return '';
+    const t = REL_METRICAS[m].tipo;
+    return t === 'int' ? Math.round(v) : Number(v).toFixed(2);
+  }))));
+  const csv = linhas.map(row => row.map(c => {
+    const s = String(c == null ? '' : c);
+    return /[";\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(';')).join('\r\n');
+  _relBaixarBlob(new Blob(['﻿' + csv], { type:'text/csv;charset=utf-8;' }), _relNomeArquivo() + '.csv');
+}
+// Excel (reusa SheetJS, igual ao gerarFechamentoMes).
+function _relExportXLSX(){
+  const e = _relEstado;
+  if (!e.resultado) { smAlert('Gere um relatório primeiro.'); return; }
+  if (typeof XLSX === 'undefined') { smAlert('Biblioteca de Excel não carregada.'); return; }
+  const dimLabel = REL_DIMENSOES[e.preset.config.groupBy].label;
+  const header = [dimLabel].concat(e.resultado.metrics.map(m => REL_METRICAS[m].label));
+  const aoa = [
+    [e.preset.nome],
+    ['Período: ' + e.ini + ' a ' + e.fim + '  ·  ' + (e.preset.escopo === 'pdv' ? 'Apenas PDV' : 'Histórico completo (Tiny + PDV)')],
+    [],
+    header,
+  ];
+  e.resultado.rows.forEach(r => {
+    aoa.push([r.chave].concat(e.resultado.metrics.map(m => {
+      const v = r[m]; if (v == null) return '';
+      return REL_METRICAS[m].tipo === 'int' ? Math.round(v) : +Number(v).toFixed(2);
+    })));
+  });
+  const tot = e.resultado.totais;
+  aoa.push(['TOTAL'].concat(e.resultado.metrics.map(m => REL_METRICAS[m].tipo === 'int' ? Math.round(tot[m]) : +Number(tot[m]).toFixed(2))));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = header.map((h, i) => i === 0 ? { wch:28 } : { wch:14 });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Relatório');
+  XLSX.writeFile(wb, _relNomeArquivo() + '.xlsx');
+}
+
+// Init do módulo (lazy, chamado por showPage). Admin-only (dados de lucro).
+function initRelatorios(){
+  const res = document.getElementById('rel-resultado');
+  if (typeof _isAdminUser === 'function' && !_isAdminUser()) {
+    if (res) res.innerHTML = '<div class="card"><div class="text-mute" style="padding:18px;">Acesso restrito.</div></div>';
+    return;
+  }
+  _relRenderCatalogo();
+  const i = document.getElementById('rel-ini'), f = document.getElementById('rel-fim');
+  if (i && !i.value) { const p = calcPeriodoAtalho('mes-atual'); i.value = p.iniISO; if (f) f.value = p.fimISO; }
+  _relAplicar();
 }
 
 function calcularRankingScooters(pedidos) {
@@ -8249,6 +8831,7 @@ const NAV_TREE = [
       { id:'contas-receber', label:'Contas a Receber',     icon:'ic-inbox'   },
       { id:'custos',         label:'Custos Operacionais',  icon:'ic-receipt' },
   ]},
+  { kind:'solo', id:'relatorios', label:'Relatórios', icon:'ic-bar-chart' },
   { kind:'sep' },
   { kind:'solo', id:'admin', label:'Admin', icon:'ic-shield', adminOnly:true, dotId:'admin-pending-dot' },
 ];
@@ -10275,6 +10858,7 @@ const TODOS_MODULOS = [
   { id: 'custos',       nome: 'Custos Operacionais' },
   { id: 'custos-produtos', nome: 'Custos de Produtos' },
   { id: 'pdv',             nome: 'PDV — Operação' },
+  { id: 'relatorios',      nome: 'Relatórios' },
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
