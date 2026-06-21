@@ -3313,36 +3313,38 @@ select:not(.input-pro):not(.search-input){
 
   <!-- MODAL: PAGAR CONTA (2 passos — só marcar vs marcar+lançar) -->
   <div class="modal-overlay" id="cp-pagar-modal">
-    <div class="modal" style="width:520px;max-width:96vw;">
-      <!-- PASSO 1 — escolha -->
-      <div class="cp-pag-step-1">
-        <div class="modal-title">Marcar como paga</div>
-        <div id="cp-pag-info"></div>
-        <p style="margin-top:14px;font-size:12px;color:var(--text2);">Como você quer marcar essa conta?</p>
-        <div class="modal-actions" style="flex-direction:column;gap:8px;margin-top:16px;">
-          <button class="btn" id="cp-pag-btn-so" style="width:100%;">Só marcar como paga</button>
-          <button class="btn btn-gold" id="cp-pag-btn-lancar" style="width:100%;">Marcar paga + lançar no caixa</button>
-          <button class="btn" onclick="closeCpPagarModal()" style="width:100%;">Cancelar</button>
-        </div>
-      </div>
-      <!-- PASSO 2 — escolhe conta e data -->
-      <div class="cp-pag-step-2" style="display:none;">
-        <div class="modal-title">Lançar no caixa</div>
-        <div id="cp-pag-info-2"></div>
-        <div class="form-grid" style="margin-top:14px;">
+    <div class="modal" style="width:560px;max-width:96vw;">
+      <div class="modal-title">Registrar pagamento</div>
+      <div id="cp-pag-info"></div>
+      <div id="cp-pag-resumo" style="margin-top:12px;"></div>
+      <div id="cp-pag-historico" style="margin-top:6px;max-height:170px;overflow:auto;"></div>
+      <div id="cp-pag-form" style="margin-top:14px;">
+        <div id="cp-pag-emprestimo-nota" style="display:none;font-size:11px;color:var(--text3);margin-bottom:8px;">💰 Conta de empréstimo: pagamento sempre total (parcial desabilitado).</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Valor do pagamento</label>
+            <input class="form-input" id="cp-pag-valor" type="number" step="0.01" min="0">
+          </div>
+          <div class="form-group">
+            <label>Data do pagamento</label>
+            <input class="form-input" id="cp-pag-data" type="date">
+          </div>
           <div class="form-group full">
             <label>Conta bancária</label>
             <select class="form-input" id="cp-pag-conta"></select>
           </div>
           <div class="form-group full">
-            <label>Data do pagamento</label>
-            <input class="form-input" id="cp-pag-data" type="date">
+            <label>Observação (opcional)</label>
+            <input class="form-input" id="cp-pag-obs" type="text" placeholder="Ex.: adiantamento salarial">
           </div>
         </div>
-        <div class="modal-actions" style="margin-top:16px;">
-          <button class="btn" id="cp-pag-btn-voltar">Voltar</button>
-          <button class="btn btn-gold" id="cp-pag-btn-confirmar">Confirmar e salvar</button>
+        <div class="modal-actions" style="margin-top:14px;">
+          <button class="btn" id="cp-pag-btn-quitar-admin" title="Marca a conta inteira como paga sem lançar no caixa">Só marcar como paga</button>
+          <button class="btn btn-gold" id="cp-pag-btn-registrar">Registrar pagamento</button>
         </div>
+      </div>
+      <div class="modal-actions" style="margin-top:10px;">
+        <button class="btn" onclick="closeCpPagarModal()" style="width:100%;">Fechar</button>
       </div>
     </div>
   </div>
@@ -7437,12 +7439,12 @@ function renderDashResumoCp() {
     </div>
     <div class="kpi" onclick="${goMes}" style="border-top:2px solid var(--orange);cursor:pointer;" title="Abrir aba A Vencer">
       <div class="kpi-label">Pendente no mês</div>
-      <div class="kpi-value" style="color:var(--orange);">${fmt(sum(pendenteMes))}</div>
+      <div class="kpi-value" style="color:var(--orange);">${fmt(pendenteMes.reduce((s,c)=>s+_cpSaldo(c),0))}</div>
       <div class="kpi-change">${cnt(pendenteMes.length)}</div>
     </div>
     <div class="kpi" onclick="${goAtr}" style="border-top:2px solid var(--red);cursor:pointer;" title="Abrir aba Atrasadas">
       <div class="kpi-label">Atrasado</div>
-      <div class="kpi-value red">${fmt(sum(atrasado))}</div>
+      <div class="kpi-value red">${fmt(atrasado.reduce((s,c)=>s+_cpSaldo(c),0))}</div>
       <div class="kpi-change">${cnt(atrasado.length)}</div>
     </div>
   `;
@@ -14028,8 +14030,40 @@ function diasAteVencimento(dataISO) {
   return Math.round((venc - hoje) / (1000*60*60*24));
 }
 
+// ── Pagamentos parciais ───────────────────────────────────────────────
+// Cada pagamento é um lançamento de saída ligado por contaPagarId (vínculo já
+// existente). Total pago / saldo / status são DERIVADOS desses lançamentos —
+// sem coluna nova no banco. DRE/fluxo/extrato já leem de `lancamentos`.
+function _cpPagamentosDe(c) {
+  return (lancamentos || [])
+    .filter(l => l.contaPagarId === c.id && l.tipo === 'saida')
+    .sort((a,b) => String(a.data||'').localeCompare(String(b.data||'')));
+}
+function _cpTotalPago(c) {
+  return _cpPagamentosDe(c).reduce((s,l) => s + (Number(l.valor)||0), 0);
+}
+function _cpSaldo(c) {
+  return Math.max(0, (Number(c.valor)||0) - _cpTotalPago(c));
+}
+// Conta com pagamento iniciado mas ainda não quitada (parcial em aberto).
+function _cpEhParcial(c) {
+  if (c.paga) return false;
+  const pago = _cpTotalPago(c);
+  return pago > 0.005 && pago < (Number(c.valor)||0) - 0.005;
+}
+function _cpStatusBadge(st) {
+  const m = {
+    paga:     '<span class="badge badge-green">Paga</span>',
+    pendente: '<span class="badge badge-orange">Pendente</span>',
+    vencida:  '<span class="badge badge-red">Vencida</span>',
+    parcial:  '<span class="badge" style="background:rgba(56,139,253,.16);color:#5aa9ff;border:1px solid rgba(56,139,253,.4);">Parcial</span>',
+  };
+  return m[st] || '';
+}
+
 function statusConta(c) {
   if (c.paga) return 'paga';
+  if (_cpEhParcial(c)) return 'parcial';
   const dias = diasAteVencimento(c.vencimento);
   if (dias < 0) return 'vencida';
   return 'pendente';
@@ -14051,11 +14085,13 @@ function renderContasPagarKpis() {
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   const mes  = hoje.getMonth(); const ano = hoje.getFullYear();
 
-  const pendentes = contasPagar.filter(c=>!c.paga&&statusConta(c)==='pendente');
-  const vencidas  = contasPagar.filter(c=>statusConta(c)==='vencida');
+  // Filtra por data de vencimento (não por statusConta) p/ INCLUIR contas
+  // parcialmente pagas, e soma o SALDO (o que falta), não o valor cheio.
+  const pendentes = contasPagar.filter(c=>!c.paga&&diasAteVencimento(c.vencimento)>=0);
+  const vencidas  = contasPagar.filter(c=>!c.paga&&diasAteVencimento(c.vencimento)<0);
   const pagas     = contasPagar.filter(c=>c.paga);
-  const totalPend = pendentes.reduce((s,c)=>s+c.valor,0);
-  const totalVenc = vencidas.reduce((s,c)=>s+c.valor,0);
+  const totalPend = pendentes.reduce((s,c)=>s+_cpSaldo(c),0);
+  const totalVenc = vencidas.reduce((s,c)=>s+_cpSaldo(c),0);
   const proximas  = pendentes.filter(c=>diasAteVencimento(c.vencimento)<=7);
 
   document.getElementById('cp-kpis').innerHTML = `
@@ -14067,7 +14103,7 @@ function renderContasPagarKpis() {
     <div class="kpi" style="border-top:2px solid var(--orange);">
       <div class="kpi-label">Vencem em 7 dias</div>
       <div class="kpi-value" style="color:var(--orange);">${proximas.length}</div>
-      <div class="kpi-change">${fmt(proximas.reduce((s,c)=>s+c.valor,0))}</div>
+      <div class="kpi-change">${fmt(proximas.reduce((s,c)=>s+_cpSaldo(c),0))}</div>
     </div>
     <div class="kpi" style="border-top:2px solid var(--text3);">
       <div class="kpi-label">Pendentes</div>
@@ -14121,12 +14157,12 @@ function renderContasPagarKpisMes() {
     </div>
     <div class="kpi" style="border-top:2px solid var(--orange);">
       <div class="kpi-label">${lblPend}</div>
-      <div class="kpi-value" style="color:var(--orange);">${fmt(sum(pendenteMes))}</div>
+      <div class="kpi-value" style="color:var(--orange);">${fmt(pendenteMes.reduce((s,c)=>s+_cpSaldo(c),0))}</div>
       <div class="kpi-change">${cnt(pendenteMes.length)}</div>
     </div>
     <div class="kpi" style="border-top:2px solid var(--red);">
       <div class="kpi-label">Atrasado</div>
-      <div class="kpi-value red">${fmt(sum(atrasado))}</div>
+      <div class="kpi-value red">${fmt(atrasado.reduce((s,c)=>s+_cpSaldo(c),0))}</div>
       <div class="kpi-change">${cnt(atrasado.length)}</div>
     </div>
   `;
@@ -14229,12 +14265,7 @@ function renderContasPagar() {
   el.innerHTML = lista.map(c => {
     const st   = statusConta(c);
     const dias = diasAteVencimento(c.vencimento);
-    const stColors = {paga:'var(--green)',pendente:'var(--text2)',vencida:'var(--red)'};
-    const stBadges = {
-      paga:'<span class="badge badge-green">Paga</span>',
-      pendente:'<span class="badge badge-orange">Pendente</span>',
-      vencida:'<span class="badge badge-red">Vencida</span>',
-    };
+    const stColors = {paga:'var(--green)',pendente:'var(--text2)',vencida:'var(--red)',parcial:'#5aa9ff'};
     const periodoLabel = {unico:'Único',semanal:'Semanal',mensal:'Mensal',bimestral:'Bimestral',trimestral:'Trimestral',semestral:'Semestral',anual:'Anual'};
     const eparcId = c.emprestimoParcelaId;
     const empBadge = eparcId
@@ -14257,13 +14288,13 @@ function renderContasPagar() {
         <div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1fr minmax(150px, auto);gap:12px;align-items:center;padding:13px 20px;font-size:13px;">
           <div style="font-weight:700;color:${stColors[st]};min-width:0;overflow:hidden;text-overflow:ellipsis;">${empBadge}${escHtml(c.nome)}${empIcone}${obsIcone}</div>
           <div class="hide-mobile" style="font-size:11px;color:var(--text3);min-width:0;">${escHtml(c.categoria)||'—'} · ${escHtml(periodoLabel[c.periodicidade]||c.periodicidade)}</div>
-          <div class="td-mono" style="font-weight:700;text-align:right;">${fmt(c.valor)}</div>
+          <div class="td-mono" style="font-weight:700;text-align:right;">${fmt(c.valor)}${(!c.paga && _cpTotalPago(c) > 0.005) ? `<div style="font-size:10px;font-weight:600;color:#5aa9ff;">saldo ${fmt(_cpSaldo(c))}</div>` : ''}</div>
           <div>
             <div class="td-mono" style="font-size:12px;">${_vencComDia(c.vencimento)}</div>
             <div style="font-size:10px;color:${dias<0?'var(--red)':dias<=3?'var(--orange)':'var(--text3)'};">
               ${c.paga?'':'('+(dias<0?'atrasado '+Math.abs(dias)+'d':dias===0?'hoje':dias+'d')+')'}</div>
           </div>
-          <div>${stBadges[st]}</div>
+          <div>${_cpStatusBadge(st)}</div>
           <div style="display:flex;gap:5px;">
             ${!c.paga
               ? '<button class="btn btn-gold" onclick="pagarContaModal(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;"><svg class="ic ic-sm"><use href="#ic-check"/></svg></button>'
@@ -14472,34 +14503,123 @@ function pagarContaModal(id) {
 }
 
 function _cpPagInit(c) {
-  const dataBR = c.vencimento.split('-').reverse().join('/');
-  const infoHtml = `<p style="font-weight:600;">"${escHtml(c.nome)}"</p>
-                    <p style="color:var(--text3);font-size:11px;margin-top:4px;">
-                      Vence ${dataBR} · ${fmt(c.valor)}</p>`;
-  document.getElementById('cp-pag-info').innerHTML = infoHtml;
-  document.getElementById('cp-pag-info-2').innerHTML = infoHtml;
-  // Reset pra step 1
-  document.querySelector('#cp-pagar-modal .cp-pag-step-1').style.display = 'block';
-  document.querySelector('#cp-pagar-modal .cp-pag-step-2').style.display = 'none';
-  // Popula select de contas bancárias (placeholder força escolha consciente)
+  const saldo = _cpSaldo(c);
+  const pago  = _cpTotalPago(c);
+  const ehEmprestimo = !!c.emprestimoParcelaId;
+  const dataBR = (c.vencimento||'').split('-').reverse().join('/');
+  document.getElementById('cp-pag-info').innerHTML =
+    `<p style="font-weight:600;">"${escHtml(c.nome)}"</p>
+     <p style="color:var(--text3);font-size:11px;margin-top:4px;">Vence ${dataBR} · valor ${fmt(c.valor)}</p>`;
+  // Resumo Pago / Saldo / Status
+  document.getElementById('cp-pag-resumo').innerHTML =
+    `<div style="display:flex;gap:22px;padding:10px 12px;background:var(--surface2);border-radius:8px;font-size:12px;">
+       <div><div style="color:var(--text3);">Pago</div><b>${fmt(pago)}</b></div>
+       <div><div style="color:var(--text3);">Saldo</div><b style="color:${saldo>0.005?'#5aa9ff':'var(--green)'};">${fmt(saldo)}</b></div>
+       <div><div style="color:var(--text3);margin-bottom:2px;">Status</div>${_cpStatusBadge(statusConta(c))}</div>
+     </div>`;
+  _cpRenderHistoricoPag(c);
+  // Form (some quando já quitada)
+  document.getElementById('cp-pag-form').style.display = saldo > 0.005 ? 'block' : 'none';
   const sel = document.getElementById('cp-pag-conta');
   sel.innerHTML = '<option value="">Selecione...</option>' +
     (contas || []).map(b => `<option value="${escHtml(b.nome)}">${escHtml(b.nome)}</option>`).join('');
+  const valEl = document.getElementById('cp-pag-valor');
+  valEl.value = saldo > 0 ? saldo.toFixed(2) : '';
+  valEl.readOnly = ehEmprestimo;                 // empréstimo: pagamento só total
+  document.getElementById('cp-pag-emprestimo-nota').style.display = ehEmprestimo ? 'block' : 'none';
   document.getElementById('cp-pag-data').value = new Date().toISOString().slice(0,10);
+  document.getElementById('cp-pag-obs').value = '';
+  // "Só marcar como paga" (sem caixa) só faz sentido se ainda não há pagamento.
+  document.getElementById('cp-pag-btn-quitar-admin').style.display = (pago > 0.005) ? 'none' : '';
   // Handlers
-  document.getElementById('cp-pag-btn-so').onclick = () => {
-    closeCpPagarModal();
-    pagarConta(c.id);
-  };
-  document.getElementById('cp-pag-btn-lancar').onclick = () => {
-    document.querySelector('#cp-pagar-modal .cp-pag-step-1').style.display = 'none';
-    document.querySelector('#cp-pagar-modal .cp-pag-step-2').style.display = 'block';
-  };
-  document.getElementById('cp-pag-btn-voltar').onclick = () => {
-    document.querySelector('#cp-pagar-modal .cp-pag-step-1').style.display = 'block';
-    document.querySelector('#cp-pagar-modal .cp-pag-step-2').style.display = 'none';
-  };
-  document.getElementById('cp-pag-btn-confirmar').onclick = () => _cpPagConfirmar(c);
+  document.getElementById('cp-pag-btn-registrar').onclick = () => _cpRegistrarPagamento(c);
+  document.getElementById('cp-pag-btn-quitar-admin').onclick = () => { closeCpPagarModal(); pagarConta(c.id); };
+}
+
+// Histórico de pagamentos no modal (cada item com botão remover).
+function _cpRenderHistoricoPag(c) {
+  const el = document.getElementById('cp-pag-historico'); if (!el) return;
+  const pags = _cpPagamentosDe(c);
+  if (!pags.length) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:6px 2px;">Nenhum pagamento registrado ainda.</div>'; return; }
+  el.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--text2);margin:4px 2px;">Histórico de pagamentos</div>' +
+    pags.map(l => `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;padding:5px 2px;border-bottom:1px solid var(--border);">
+        <span>${(l.data||'').split('-').reverse().join('/')} · <b>${fmt(l.valor)}</b>${l.obs?` <span style="color:var(--text3);">— ${escHtml(l.obs)}</span>`:''}</span>
+        <button class="action-btn del-btn" style="font-size:10px;padding:3px 8px;" onclick="_cpRemoverPagamento('${c.id}','${l.id}')" title="Remover este pagamento">remover</button>
+      </div>`).join('');
+}
+
+// Registra um pagamento (parcial ou total): valida saldo, cria lançamento de
+// saída na data real, debita o banco e quita a conta se zerar o saldo.
+async function _cpRegistrarPagamento(c) {
+  const valor = parseFloat(String(document.getElementById('cp-pag-valor').value||'').replace(',','.'));
+  const data  = document.getElementById('cp-pag-data').value;
+  const contaNome = document.getElementById('cp-pag-conta').value;
+  const obs   = String(document.getElementById('cp-pag-obs').value||'').trim();
+  if (!(valor > 0))   { smAlert('Informe um valor de pagamento maior que zero.'); return; }
+  if (!data)          { smAlert('Escolha a data do pagamento.'); return; }
+  if (!contaNome)     { smAlert('Escolha a conta bancária do pagamento.'); return; }
+  const saldo = _cpSaldo(c);
+  if (valor > saldo + 0.005) { smAlert(`Valor acima do saldo. Saldo disponível: ${fmt(saldo)}.`); return; }
+  const ctBanco = contas.find(b => b.nome === contaNome);
+  if (!ctBanco) { smAlert('Conta bancária inválida.'); return; }
+  closeCpPagarModal();
+  // Usuário responsável (se existir conceito de usuário) — embutido na observação.
+  let usuario = '';
+  try { const u = JSON.parse(localStorage.getItem('sm_user')||'null'); usuario = u ? (u.nome || u.email || '') : ''; } catch(e){}
+  const obsFinal = `Pagamento de conta a pagar: ${c.nome}` + (obs ? ` — ${obs}` : '') + (usuario ? ` (por ${usuario})` : '');
+  // 1. Lançamento de saída vinculado (entra no DRE/fluxo/extrato na data real).
+  lancamentos.push({
+    id: Date.now().toString(),
+    tipo: 'saida', descricao: c.nome, valor, data,
+    categoria: c.categoria || 'Outros',
+    conta: contaNome, contaId: ctBanco.id,
+    obs: obsFinal, contaPagarId: c.id,
+  });
+  // 2. Debita o saldo do banco.
+  ctBanco.saldo -= valor;
+  // 3. Quita a conta se o saldo zerou (_cpSaldo já considera o novo lançamento).
+  if (_cpSaldo(c) <= 0.005) { c.paga = true; c.pagaEm = data; }
+  // 4. Re-render dos consumidores.
+  renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar(); atualizarDotContasPagar();
+  if (typeof renderDashResumoCp === 'function') { try { renderDashResumoCp(); } catch(e){} }
+  if (typeof populateFinCatFilter === 'function') populateFinCatFilter();
+  if (typeof populateFinContaFilter === 'function') populateFinContaFilter();
+  if (typeof renderContas === 'function')      renderContas();
+  if (typeof renderFinKpis === 'function')     renderFinKpis();
+  if (typeof renderLancamentos === 'function') renderLancamentos();
+  salvarDados();
+  if (c.emprestimoParcelaId) { try { await carregarEmprestimos(); } catch(e){} }
+}
+
+// Remove um pagamento: apaga o lançamento, restaura o saldo do banco e reabre a
+// conta se ela havia sido quitada por esse pagamento.
+async function _cpRemoverPagamento(contaId, lancId) {
+  const c    = contasPagar.find(x => x.id === contaId);
+  const lanc = (lancamentos || []).find(l => l.id === lancId);
+  if (!c || !lanc) return;
+  const dataBR = String(lanc.data||'').split('-').reverse().join('/');
+  const ok = await smConfirm(
+    `Remover pagamento\n\n${fmt(lanc.valor)} em ${dataBR} (${lanc.conta}).\n\nVai apagar o lançamento do caixa e restaurar o saldo de ${lanc.conta}. Continuar?`
+  );
+  if (!ok) return;
+  const ctBanco = contas.find(b => b.nome === lanc.conta);
+  if (ctBanco) ctBanco.saldo += (Number(lanc.valor)||0);
+  await sb.from('lancamentos').delete().eq('id', lanc.id);
+  lancamentos = lancamentos.filter(l => l.id !== lanc.id);
+  if (c.paga && _cpSaldo(c) > 0.005) { c.paga = false; delete c.pagaEm; }
+  renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar(); atualizarDotContasPagar();
+  if (typeof renderDashResumoCp === 'function') { try { renderDashResumoCp(); } catch(e){} }
+  if (typeof populateFinCatFilter === 'function') populateFinCatFilter();
+  if (typeof populateFinContaFilter === 'function') populateFinContaFilter();
+  if (typeof renderContas === 'function')      renderContas();
+  if (typeof renderFinKpis === 'function')     renderFinKpis();
+  if (typeof renderLancamentos === 'function') renderLancamentos();
+  salvarDados();
+  if (c.emprestimoParcelaId) { try { await carregarEmprestimos(); } catch(e){} }
+  // Se o modal de pagamento está aberto, atualiza resumo/histórico.
+  const modal = document.getElementById('cp-pagar-modal');
+  if (modal && modal.classList.contains('open')) _cpPagInit(c);
 }
 
 async function _cpPagConfirmar(c) {
@@ -14562,13 +14682,12 @@ async function pagarConta(id) {
 async function despagarConta(id) {
   const c = contasPagar.find(x=>x.id===id);
   if (!c) return;
-  // Se há lançamento vinculado (paga foi marcada via "Marcar paga + lançar"),
-  // pede confirmação e reverte tudo: lançamento + saldo + status.
-  const lanc = (lancamentos || []).find(l => l.contaPagarId === c.id);
-  if (lanc) return _cpReverterPagamentoModal(c, lanc);
+  // Se há pagamentos lançados, gerencia pelo modal (histórico + remover por pagamento).
+  if (_cpPagamentosDe(c).length) { pagarContaModal(id); return; }
   // Despagar simples (caso "Só marcar como paga" — sem lançamento).
   c.paga = false; delete c.pagaEm;
   renderContasPagarKpis(); renderContasPagarAlertas(); renderContasPagar(); atualizarDotContasPagar(); salvarDados();
+  if (typeof renderDashResumoCp === 'function') { try { renderDashResumoCp(); } catch(e){} }
   if (c.emprestimoParcelaId) { try { await carregarEmprestimos(); } catch(e) {} }
 }
 
