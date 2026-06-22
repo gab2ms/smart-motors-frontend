@@ -2586,11 +2586,18 @@ select:not(.input-pro):not(.search-input){
       <button class="btn-pro btn-pro--primary" onclick="_relExportXLSX()"><svg class="ic ic-sm"><use href="#ic-download"/></svg> Excel</button>
     </div>
     <div id="rel-status" class="text-mute" style="font-size:11px;margin-bottom:12px;">—</div>
-    <!-- catálogo de presets (esq) + resultado (dir) -->
+    <!-- alternador Presets / Construtor (troca o painel esquerdo) -->
+    <div style="display:flex;gap:6px;margin-bottom:10px;">
+      <button class="btn-pro btn-pro--primary" id="rel-modo-presets"    onclick="_relSetModo('presets')">Modelos prontos</button>
+      <button class="btn-pro"                   id="rel-modo-construtor" onclick="_relSetModo('construtor')">Personalizado</button>
+    </div>
+    <!-- catálogo de presets / construtor (esq) + resultado (dir) -->
     <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
       <div id="rel-catalogo" style="flex:0 0 220px;min-width:200px;"></div>
       <div id="rel-resultado" style="flex:1;min-width:320px;"></div>
     </div>
+    <!-- detalhe do drill-down (largura total, abaixo do resultado) -->
+    <div id="rel-drill" style="margin-top:16px;"></div>
   </div>
 
     <!-- ══════════════ FINANCEIRO ══════════════ -->
@@ -5657,7 +5664,19 @@ const REL_PRESETS = [
 ];
 
 // Estado do módulo em memória (linhas do período + relatório atual, p/ export).
-const _relEstado = { ini:null, fim:null, linhas:null, presetId:null, preset:null, resultado:null };
+const _relEstado = { ini:null, fim:null, linhas:null, presetId:null, preset:null, resultado:null,
+  modo:'presets', construtor:{ groupBy:'modeloBase', metrics:['receita','lucro'], sortMetric:'receita', sortDir:'desc', limit:null, filtros:{} } };
+
+// Dimensões que só existem no PDV → forçam escopo 'pdv' (selo 🟡). Mesma regra dos presets.
+const REL_DIMS_PDV = new Set(['canal','cidade','uf','formaPagamento']);
+const REL_FAV_KEY = 'sm_rel_favoritos';
+
+// Escopo automático: 'pdv' se a dimensão agrupada OU algum campo filtrado for PDV-only.
+function _relEscopoAuto(cfg){
+  if (REL_DIMS_PDV.has(cfg.groupBy)) return 'pdv';
+  if (cfg.filtros && Object.keys(cfg.filtros).some(c => REL_DIMS_PDV.has(c))) return 'pdv';
+  return 'completo';
+}
 
 // Selo de cobertura/fonte (🟢 histórico completo · 🟡 só PDV).
 function _relSeloCobertura(cob){
@@ -5685,13 +5704,13 @@ function _relRenderRelatorio(preset, res){
   const dimLabel = REL_DIMENSOES[preset.config.groupBy].label;
   const ths = '<th>' + escHtml(dimLabel) + '</th>'
     + res.metrics.map(m => '<th style="text-align:right;">' + escHtml(REL_METRICAS[m].label) + '</th>').join('');
-  const rows = res.rows.map(r => {
+  const rows = res.rows.map((r, ri) => {
     const tds = res.metrics.map(m => {
       let color = '';
       if (m === 'lucro' || m === 'margemPct') color = 'color:' + ((r[m]||0) >= 0 ? 'var(--green)' : 'var(--red)') + ';font-weight:600;';
       return '<td class="num-tab" style="text-align:right;' + color + '">' + fmt(m, r[m]) + '</td>';
     }).join('');
-    return '<tr><td>' + escHtml(String(r.chave)) + '</td>' + tds + '</tr>';
+    return '<tr style="cursor:pointer;" onclick="_relDrill(' + ri + ')" title="Ver as vendas desta linha"><td>' + escHtml(String(r.chave)) + '</td>' + tds + '</tr>';
   }).join('');
   const tot = res.totais;
   const totTds = res.metrics.map(m => '<td class="num-tab" style="text-align:right;">' + fmt(m, tot[m]) + '</td>').join('');
@@ -5701,7 +5720,7 @@ function _relRenderRelatorio(preset, res){
   el.innerHTML = '<div class="card">'
     + '<div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">'
       + '<div><div class="card-title">' + escHtml(preset.nome) + '</div>'
-      + '<div class="card-sub">' + subInfo + ' no período</div></div>'
+      + '<div class="card-sub">' + subInfo + ' no período · clique numa linha para ver as vendas</div></div>'
       + '<div>' + _relSeloCobertura(res.cobertura) + '</div>'
     + '</div>'
     + '<div class="table-wrap"><table class="table-pro"><thead><tr>' + ths + '</tr></thead><tbody>'
@@ -5710,11 +5729,72 @@ function _relRenderRelatorio(preset, res){
     + '</tbody></table></div></div>';
 }
 
+// ── Drill-down: vendas individuais de uma linha agregada ─────────────────────
+function _relDrill(idx){
+  const e = _relEstado;
+  if (!e.resultado || !e.preset || !e.linhas) return;
+  const el = document.getElementById('rel-drill'); if (!el) return;
+  const row = e.resultado.rows[idx]; if (!row) return;
+  const cfg = Object.assign({ escopo: e.preset.escopo }, e.preset.config);
+  const groupBy = cfg.groupBy, chave = row.chave;
+  const linhas = _relFiltrarLinhas(e.linhas, cfg).filter(l => _relChaveDim(groupBy, l) === chave);
+  linhas.sort((a, b) => String(a.dataISO || '').localeCompare(String(b.dataISO || '')));
+  const money = v => _fmtBRMoney(v || 0);
+  const trs = linhas.map(l => {
+    const cor = (l.lucro || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+    return '<tr>'
+      + '<td>' + escHtml(l.dataBR || l.dataISO || '—') + '</td>'
+      + '<td>' + escHtml(l.pedidoNumero || '—') + '</td>'
+      + '<td>' + escHtml(l.cliente || '—') + '</td>'
+      + '<td>' + escHtml(l.modelo || l.modeloRaw || '—') + '</td>'
+      + '<td class="num-tab" style="text-align:right;">' + Math.round(l.quantidade || 0).toLocaleString('pt-BR') + '</td>'
+      + '<td class="num-tab" style="text-align:right;">' + money(l.receita) + '</td>'
+      + '<td class="num-tab" style="text-align:right;color:' + cor + ';font-weight:600;">' + money(l.lucro) + '</td>'
+      + '</tr>';
+  }).join('');
+  const totQtd = linhas.reduce((s, l) => s + (l.quantidade || 0), 0);
+  const totRec = linhas.reduce((s, l) => s + (l.receita || 0), 0);
+  const totLuc = linhas.reduce((s, l) => s + (l.lucro || 0), 0);
+  el.innerHTML = '<div class="card">'
+    + '<div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">'
+      + '<div><div class="card-title">' + escHtml(String(chave)) + '</div>'
+      + '<div class="card-sub">' + linhas.length + ' ' + (linhas.length === 1 ? 'venda' : 'vendas') + ' · ' + escHtml(REL_DIMENSOES[groupBy].label) + '</div></div>'
+      + '<button class="btn-pro" onclick="_relDrillFechar()" style="font-size:12px;">✕ fechar</button>'
+    + '</div>'
+    + '<div class="table-wrap"><table class="table-pro"><thead><tr>'
+      + '<th>Data</th><th>Pedido</th><th>Cliente</th><th>Modelo</th>'
+      + '<th style="text-align:right;">Qtd</th><th style="text-align:right;">Receita</th><th style="text-align:right;">Lucro</th>'
+    + '</tr></thead><tbody>'
+    + (trs || '<tr><td colspan="7" class="empty text-mute" style="text-align:center;padding:18px;">Sem vendas.</td></tr>')
+    + (linhas.length ? ('<tr style="background:var(--surface2);font-weight:700;color:var(--gold);"><td colspan="4">TOTAL</td>'
+        + '<td class="num-tab" style="text-align:right;">' + Math.round(totQtd).toLocaleString('pt-BR') + '</td>'
+        + '<td class="num-tab" style="text-align:right;">' + money(totRec) + '</td>'
+        + '<td class="num-tab" style="text-align:right;">' + money(totLuc) + '</td></tr>') : '')
+    + '</tbody></table></div></div>';
+  if (el.scrollIntoView) el.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+function _relDrillFechar(){ const el = document.getElementById('rel-drill'); if (el) el.innerHTML = ''; }
+
 // Catálogo lateral de presets (agrupado por categoria).
 function _relRenderCatalogo(){
   const el = document.getElementById('rel-catalogo'); if (!el) return;
+  // Grupo "★ Favoritos" (no topo) — relatórios salvos pelo construtor.
+  const favs = _relFavoritos();
+  let favHtml = '';
+  if (favs.length) {
+    const items = favs.map(f => {
+      const selo = f.escopo === 'pdv' ? '🟡' : '🟢';
+      return '<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">'
+        + '<button class="rel-preset-item btn-pro" data-preset="' + f.id + '" onclick="_relSelecionar(\'' + f.id + '\')" '
+        + 'style="display:flex;justify-content:space-between;gap:8px;flex:1;text-align:left;font-size:12px;">'
+        + '<span>' + escHtml(f.nome) + '</span><span style="opacity:.8;">' + selo + '</span></button>'
+        + '<button class="btn-pro" title="Remover favorito" onclick="_relRemoverFavorito(\'' + f.id + '\')" '
+        + 'style="padding:6px 8px;font-size:12px;line-height:1;">✕</button></div>';
+    }).join('');
+    favHtml = '<div style="margin-bottom:14px;"><div style="font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">★ Favoritos</div>' + items + '</div>';
+  }
   const cats = ['Comercial','Financeiro','Gestão'];
-  el.innerHTML = cats.map(cat => {
+  el.innerHTML = favHtml + cats.map(cat => {
     const items = REL_PRESETS.filter(p => p.cat === cat).map(p => {
       const selo = p.escopo === 'pdv' ? '🟡' : (p.indisponivel ? '' : '🟢');
       if (p.indisponivel) {
@@ -5728,9 +5808,31 @@ function _relRenderCatalogo(){
   }).join('');
 }
 
-// Favoritos do usuário (Área futura) — hoje vazio. Quando existir, virão do
-// localStorage com a MESMA forma {id,nome,escopo,config} dos presets.
-function _relFavoritos(){ return []; }
+// Favoritos do usuário — persistidos no localStorage, MESMA forma {id,nome,escopo,config}
+// dos presets (por isso passam por _relSelecionar/_relRenderRelatorio sem mudança).
+function _relFavoritos(){
+  try { const a = JSON.parse(localStorage.getItem(REL_FAV_KEY) || '[]'); return Array.isArray(a) ? a : []; }
+  catch(e) { return []; }
+}
+function _relSalvarFavorito(){
+  const e = _relEstado;
+  if (!e.preset || e.preset.id !== '__construtor' || !e.resultado) { smAlert('Gere um relatório no construtor primeiro.'); return; }
+  smPrompt('Nome do relatório favorito:', '').then(nome => {
+    nome = (nome || '').trim(); if (!nome) return;
+    const favs = _relFavoritos();
+    favs.push({ id:'fav-' + Date.now(), nome, escopo: e.preset.escopo, config: JSON.parse(JSON.stringify(e.preset.config)) });
+    try { localStorage.setItem(REL_FAV_KEY, JSON.stringify(favs)); } catch(err) { smAlert('Não foi possível salvar.'); return; }
+    if (_relEstado.modo === 'presets') _relRenderCatalogo();
+  });
+}
+function _relRemoverFavorito(id){
+  smConfirm('Remover este relatório favorito?').then(ok => {
+    if (!ok) return;
+    const favs = _relFavoritos().filter(f => f.id !== id);
+    try { localStorage.setItem(REL_FAV_KEY, JSON.stringify(favs)); } catch(err) {}
+    _relRenderCatalogo();
+  });
+}
 // Lookup unificado: presets prontos + favoritos. Fonte única de resolução de id.
 function _relItem(id){
   return REL_PRESETS.find(p => p.id === id) || _relFavoritos().find(p => p.id === id) || null;
@@ -5748,6 +5850,146 @@ function _relSelecionar(presetId){
   const cfg = Object.assign({ escopo: preset.escopo }, preset.config);
   const res = agregarRelatorio(_relEstado.linhas, cfg);
   _relEstado.preset = preset; _relEstado.resultado = res;
+  _relRenderRelatorio(preset, res);
+}
+
+// ── Alternador Presets / Construtor ──────────────────────────────────────────
+function _relSetModo(modo){
+  _relEstado.modo = (modo === 'construtor') ? 'construtor' : 'presets';
+  const bp = document.getElementById('rel-modo-presets'), bc = document.getElementById('rel-modo-construtor');
+  if (bp) bp.classList.toggle('btn-pro--primary', _relEstado.modo === 'presets');
+  if (bc) bc.classList.toggle('btn-pro--primary', _relEstado.modo === 'construtor');
+  _relDrillFechar();
+  if (_relEstado.modo === 'construtor') {
+    _relRenderConstrutor();
+    if (_relEstado.linhas) _relGerarConstrutor();
+  } else {
+    _relRenderCatalogo();
+    if (_relEstado.linhas) _relSelecionar(_relEstado.presetId && _relEstado.presetId !== '__construtor' ? _relEstado.presetId : REL_PRESETS[0].id);
+  }
+}
+
+// ── Construtor (Área 2) ──────────────────────────────────────────────────────
+function _relCampo(label, inner){
+  return '<div style="margin-bottom:10px;"><div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">'
+    + escHtml(label) + '</div>' + inner + '</div>';
+}
+function _relRenderConstrutor(){
+  const el = document.getElementById('rel-catalogo'); if (!el) return;
+  const c = _relEstado.construtor;
+  const dimOpts = Object.keys(REL_DIMENSOES).filter(k => k !== 'origemVenda')
+    .map(k => '<option value="' + k + '"' + (k === c.groupBy ? ' selected' : '') + '>' + escHtml(REL_DIMENSOES[k].label) + '</option>').join('');
+  const metBoxes = Object.keys(REL_METRICAS).map(k =>
+    '<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;cursor:pointer;">'
+    + '<input type="checkbox" class="rel-c-met" value="' + k + '"' + (c.metrics.includes(k) ? ' checked' : '') + ' onchange="_relSyncSort()" style="width:auto;"> '
+    + escHtml(REL_METRICAS[k].label) + '</label>').join('');
+  el.innerHTML = '<div class="card" style="padding:14px;">'
+    + '<div class="card-title" style="margin-bottom:10px;">Montar relatório</div>'
+    + _relCampo('Agrupar por', '<select id="rel-c-group" class="input-pro" style="width:100%;" onchange="_relRenderConstrutorSelo()">' + dimOpts + '</select>')
+    + _relCampo('Métricas', '<div>' + metBoxes + '</div>')
+    + _relCampo('Ordenar por', '<div style="display:flex;gap:6px;"><select id="rel-c-sort" class="input-pro" style="flex:1;"></select>'
+        + '<button class="btn-pro" id="rel-c-dir" onclick="_relToggleDir()" title="Direção">' + (c.sortDir === 'asc' ? '⬆' : '⬇') + '</button></div>')
+    + _relCampo('Top N (vazio = todas)', '<input type="number" id="rel-c-limit" class="input-pro" min="1" style="width:100%;" value="' + (c.limit || '') + '" placeholder="todas">')
+    + _relCampo('Filtros', '<div id="rel-c-filtros"></div><button class="btn-pro" onclick="_relAddFiltroRow()" style="font-size:12px;margin-top:4px;">＋ filtro</button>')
+    + '<div id="rel-c-selo" style="margin:8px 0;"></div>'
+    + '<div style="display:flex;gap:6px;margin-top:6px;">'
+      + '<button class="btn-pro btn-pro--primary" onclick="_relGerarConstrutor()" style="flex:1;">Gerar</button>'
+      + '<button class="btn-pro" onclick="_relSalvarFavorito()" title="Salvar como favorito">★</button>'
+    + '</div></div>';
+  _relSyncSort();
+  Object.keys(c.filtros || {}).forEach(campo => {
+    const cr = c.filtros[campo];
+    _relAddFiltroRow(campo, Array.isArray(cr.valores) ? cr.valores : (cr.valores != null ? [cr.valores] : []));
+  });
+  _relRenderConstrutorSelo();
+}
+// Repovoa o <select> de ordenação com as métricas marcadas (preserva escolha).
+function _relSyncSort(){
+  const sel = document.getElementById('rel-c-sort'); if (!sel) return;
+  const checked = Array.from(document.querySelectorAll('.rel-c-met:checked')).map(b => b.value);
+  const prev = sel.value || _relEstado.construtor.sortMetric;
+  sel.innerHTML = checked.map(m => '<option value="' + m + '">' + escHtml(REL_METRICAS[m].label) + '</option>').join('');
+  if (checked.includes(prev)) sel.value = prev;
+  else if (checked.length) sel.value = checked[0];
+}
+function _relToggleDir(){
+  const c = _relEstado.construtor;
+  c.sortDir = (c.sortDir === 'asc') ? 'desc' : 'asc';
+  const b = document.getElementById('rel-c-dir'); if (b) b.textContent = (c.sortDir === 'asc') ? '⬆' : '⬇';
+}
+// Selo de escopo previsto (atualiza ao mexer em dimensão/filtros).
+function _relRenderConstrutorSelo(){
+  const el = document.getElementById('rel-c-selo'); if (!el) return;
+  const cfg = _relColetarConfig(true);
+  el.innerHTML = (cfg.escopo === 'pdv')
+    ? '<span style="font-size:11px;color:var(--text2);">🟡 Apenas PDV — dimensão/filtro só existe no PDV</span>'
+    : '<span style="font-size:11px;color:var(--green);">🟢 Histórico completo (Tiny + PDV)</span>';
+}
+// Valores distintos de um campo nas linhas carregadas (p/ multiselect de filtro).
+function _relDistinctValores(campo){
+  const linhas = _relEstado.linhas || [];
+  const s = new Set();
+  linhas.forEach(l => { const v = l[campo]; if (v != null && v !== '') s.add(v); });
+  return Array.from(s).sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
+}
+function _relPreencherValores(selEl, campo, selecionados){
+  if (!selEl) return;
+  const set = new Set(selecionados || []);
+  selEl.innerHTML = _relDistinctValores(campo).map(v =>
+    '<option value="' + escHtml(String(v)) + '"' + (set.has(v) ? ' selected' : '') + '>' + escHtml(String(v)) + '</option>').join('');
+}
+// Linha de filtro: campo (string dims) + multiselect de valores presentes.
+function _relAddFiltroRow(campo, valores){
+  const box = document.getElementById('rel-c-filtros'); if (!box) return;
+  const campos = Object.keys(REL_DIMENSOES).filter(k => k !== 'origemVenda' && k !== 'formaPagamento');
+  const ini = campo || campos[0];
+  const row = document.createElement('div');
+  row.className = 'rel-c-filtro';
+  row.style.cssText = 'margin-bottom:8px;border:1px solid var(--border);border-radius:6px;padding:6px;';
+  row.innerHTML = '<select class="input-pro rel-c-fcampo" style="width:100%;margin-bottom:4px;" onchange="_relFiltroCampoChange(this)">'
+      + campos.map(k => '<option value="' + k + '"' + (k === ini ? ' selected' : '') + '>' + escHtml(REL_DIMENSOES[k].label) + '</option>').join('') + '</select>'
+    + '<select multiple class="input-pro rel-c-fvals" style="width:100%;height:90px;font-size:12px;"></select>'
+    + '<button class="btn-pro" onclick="this.parentNode.remove();_relRenderConstrutorSelo();" style="font-size:11px;margin-top:4px;">remover</button>';
+  box.appendChild(row);
+  _relPreencherValores(row.querySelector('.rel-c-fvals'), ini, valores || []);
+  _relRenderConstrutorSelo();
+}
+function _relFiltroCampoChange(selEl){
+  const row = selEl.closest('.rel-c-filtro');
+  _relPreencherValores(row.querySelector('.rel-c-fvals'), selEl.value, []);
+  _relRenderConstrutorSelo();
+}
+// Lê o formulário → config p/ agregarRelatorio. preview=true tolera form incompleto (só p/ selo).
+function _relColetarConfig(preview){
+  const groupEl = document.getElementById('rel-c-group');
+  const groupBy = groupEl ? groupEl.value : _relEstado.construtor.groupBy;
+  let metrics = Array.from(document.querySelectorAll('.rel-c-met:checked')).map(b => b.value);
+  if (!metrics.length && preview) metrics = _relEstado.construtor.metrics.slice();
+  const sortEl = document.getElementById('rel-c-sort');
+  const sortMetric = (sortEl && sortEl.value) ? sortEl.value : (metrics[0] || 'receita');
+  const limEl = document.getElementById('rel-c-limit');
+  const limit = (limEl && limEl.value && +limEl.value > 0) ? Math.floor(+limEl.value) : null;
+  const filtros = {};
+  document.querySelectorAll('.rel-c-filtro').forEach(row => {
+    const campo = row.querySelector('.rel-c-fcampo').value;
+    const valores = Array.from(row.querySelector('.rel-c-fvals').selectedOptions).map(o => o.value);
+    if (valores.length) filtros[campo] = { op: 'in', valores };
+  });
+  const cfg = { groupBy, metrics, sort: { metric: sortMetric, dir: _relEstado.construtor.sortDir }, filtros };
+  if (limit) cfg.limit = limit;
+  cfg.escopo = _relEscopoAuto(cfg);
+  return cfg;
+}
+function _relGerarConstrutor(){
+  const cfg = _relColetarConfig(false);
+  if (!cfg.metrics.length) { smAlert('Selecione ao menos uma métrica.'); return; }
+  const c = _relEstado.construtor;
+  c.groupBy = cfg.groupBy; c.metrics = cfg.metrics.slice(); c.sortMetric = cfg.sort.metric; c.limit = cfg.limit || null; c.filtros = cfg.filtros;
+  _relDrillFechar();
+  if (!_relEstado.linhas) return;
+  const preset = { id: '__construtor', nome: 'Relatório personalizado', escopo: cfg.escopo, config: cfg };
+  const res = agregarRelatorio(_relEstado.linhas, cfg);
+  _relEstado.preset = preset; _relEstado.presetId = '__construtor'; _relEstado.resultado = res;
   _relRenderRelatorio(preset, res);
 }
 
@@ -5770,7 +6012,8 @@ async function _relAplicar(){
     const linhas = await buscarLinhasVenda(ini, fim);
     _relEstado.ini = ini; _relEstado.fim = fim; _relEstado.linhas = linhas;
     if (status) status.textContent = linhas.length + ' linhas de venda no período (' + ini + ' a ' + fim + ').';
-    _relSelecionar(_relEstado.presetId || REL_PRESETS[0].id);
+    if (_relEstado.modo === 'construtor') _relGerarConstrutor();
+    else _relSelecionar(_relEstado.presetId && _relEstado.presetId !== '__construtor' ? _relEstado.presetId : REL_PRESETS[0].id);
   } catch(e) {
     if (status) status.textContent = 'Erro ao carregar: ' + e.message;
     console.error('[relatorios] _relAplicar', e);
@@ -5840,6 +6083,10 @@ function initRelatorios(){
     if (res) res.innerHTML = '<div class="card"><div class="text-mute" style="padding:18px;">Acesso restrito.</div></div>';
     return;
   }
+  _relEstado.modo = 'presets';
+  const bp = document.getElementById('rel-modo-presets'), bc = document.getElementById('rel-modo-construtor');
+  if (bp) bp.classList.add('btn-pro--primary');
+  if (bc) bc.classList.remove('btn-pro--primary');
   _relRenderCatalogo();
   const i = document.getElementById('rel-ini'), f = document.getElementById('rel-fim');
   if (i && !i.value) { const p = calcPeriodoAtalho('mes-atual'); i.value = p.iniISO; if (f) f.value = p.fimISO; }
