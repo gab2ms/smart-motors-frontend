@@ -2902,6 +2902,52 @@ select:not(.input-pro):not(.search-input){
     </div>
   </div>
 
+  <!-- ══════════════ OFICINA & SAC (pós-venda unificado) ══════════════ -->
+  <div class="page content" id="page-oficina-sac">
+    <!-- Abas internas ocultas: a troca Pós-venda/Oficina agora é pelos 2 itens da sidebar.
+         Mantidas (display:none) só pra preservar os contadores que renderOficinaSac atualiza. -->
+    <div class="fin-tabs" style="display:none;">
+      <button class="fin-tab-btn active" data-ostipo="oficina"  onclick="switchOsTipo('oficina')">Oficina (<span id="os-cnt-oficina">0</span>)</button>
+      <button class="fin-tab-btn"        data-ostipo="posvenda" onclick="switchOsTipo('posvenda')">Pós-venda (<span id="os-cnt-posvenda">0</span>)</button>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;" id="os-titulo">Oficina</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="os-sub">—</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select class="search-input" id="os-filtro-estado" onchange="renderOficinaSac()" style="max-width:140px;">
+          <option value="abertos">Em aberto</option>
+          <option value="finalizados">Finalizados</option>
+          <option value="todos">Todos</option>
+        </select>
+        <select class="search-input" id="os-filtro-status" onchange="renderOficinaSac()" style="max-width:180px;">
+          <option value="">Todos status</option>
+          <option value="acao_interna">Ação interna</option>
+          <option value="aguardando_terceiro">Aguardando terceiro</option>
+          <option value="pronto_entrega">Pronto pra entrega</option>
+        </select>
+        <select class="search-input" id="os-filtro-prio" onchange="renderOficinaSac()" style="max-width:140px;">
+          <option value="">Todas prioridades</option>
+          <option value="alta">Alta</option>
+          <option value="media">Média</option>
+          <option value="baixa">Baixa</option>
+        </select>
+        <input type="text" class="search-input" id="os-busca" placeholder="Cliente, modelo, chassi, fornecedor..." oninput="renderOficinaSac()" style="min-width:220px;">
+        <button class="btn btn-gold" onclick="abrirOfModal()"><svg class="ic ic-sm"><use href="#ic-wrench"/></svg> Nova OS</button>
+        <button class="btn btn-gold" onclick="abrirSacModal()"><svg class="ic ic-sm"><use href="#ic-phone"/></svg> Novo pós-venda</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid" id="os-kpis"></div>
+
+    <div class="card">
+      <div class="card-header"><div><div class="card-sub" id="os-count">—</div></div></div>
+      <div id="os-lista"></div>
+    </div>
+  </div>
+
   <!-- ══════════════ CALENDÁRIO ══════════════ -->
   <div class="page content" id="page-calendario">
     <!-- Toolbar: navegação de mês + filtros + ação principal -->
@@ -4204,8 +4250,10 @@ const pageMeta={
   estoque:['Cadastros','Produtos e estoque — controle próprio'],
   localizacao:['Consignação & Estoque','Onde está cada moto — matriz, quiosque e parceiros'],
   pedidos:['Pedidos','Lista unificada de pedidos — Tiny e PDV no mesmo lugar'],
-  oficina:['Oficina','Ordens de serviço e cadastro de clientes'],
+  oficina:['Oficina','Ordens de serviço — inclui itens de pós-venda que estão na loja'],
   sac:['SAC','Atendimento pós-venda, garantias e contatos com fornecedores'],
+  posvenda:['Pós-venda','Garantias, atendimentos e contatos com fornecedores'],
+  'oficina-sac':['Pós-venda / Oficina','Pós-venda — ordens de serviço e atendimento num só painel'],
   calendario:['Calendário','Agenda — visitas, compromissos e eventos manuais'],
   montagens:['Montagens','Controle de lotes enviados pra montadores externos'],
   clientes:['Clientes','Cadastro central — manuais e sincronizados com Tiny'],
@@ -4231,6 +4279,8 @@ const BREADCRUMB_MAP = {
   precos:          ['Produtos', 'Preços & Margens'],
   oficina:         ['Operação', 'Oficina'],
   sac:             ['Operação', 'SAC'],
+  posvenda:        ['Operação', 'Pós-venda'],
+  'oficina-sac':   ['Operação', 'Pós-venda / Oficina'],
   calendario:      ['Visão Geral', 'Calendário'],
   montagens:       ['Operação', 'Montagens'],
   clientes:        ['Operação', 'Clientes'],
@@ -4269,6 +4319,12 @@ function renderBreadcrumb(id) {
   if (!crumbs) { renderBreadcrumbItems([]); return; }
   renderBreadcrumbItems(crumbs.map(label => ({ label })));
 }
+// Pós-venda e Oficina são DUAS entradas de menu que abrem o MESMO painel
+// (#page-oficina-sac) em modos diferentes (osTipoAtivo). Ambas usam a mesma
+// permissão 'oficina-sac' — o modelo de permissão não muda.
+function _osAreaModo(id){ return id === 'posvenda' ? 'posvenda' : (id === 'oficina' ? 'oficina' : null); }
+function _permModulo(id){ return _osAreaModo(id) ? 'oficina-sac' : id; }
+function _pageDomId(id){ return _osAreaModo(id) ? 'oficina-sac' : id; }
 // opts.fromHistory=true → veio do popstate, NÃO empilha (evita loop)
 // opts.replace=true     → primeira navegação, replaceState em vez de pushState
 function showPage(id, opts){
@@ -4285,7 +4341,7 @@ function showPage(id, opts){
   try { _user = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
   if (_user) {
     const permitidos = modulosPermitidos(_user);
-    if (!permitidos.includes(id)) {
+    if (!permitidos.includes(_permModulo(id))) {
       console.warn('[showPage] acesso NEGADO a "' + id + '" (perfil='
         + (_user.perfil || 'sem-perfil') + ') — redireciona dashboard');
       id = 'dashboard';
@@ -4294,7 +4350,7 @@ function showPage(id, opts){
   try { localStorage.setItem('sm_pagina_atual', id); } catch(e) {}
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  document.getElementById('page-'+id).classList.add('active');
+  document.getElementById('page-'+_pageDomId(id)).classList.add('active');
   // Marca itens da sidebar nova (data-page-id) + grupo-pai
   try { _navMarcarAtivo(id); } catch(e) {}
   // Fallback pro markup antigo (caso a sidebar nova falhe e o fallback flat rode)
@@ -4333,8 +4389,9 @@ function showPage(id, opts){
   if(id==='contas-receber')initContasReceber();
   if(id==='custos')renderCustos();
   if(id==='custos-produtos')renderCustosProdutos();
-  if(id==='oficina')initOficina();
-  if(id==='sac')initSac();
+  const _osModo = _osAreaModo(id);
+  if(_osModo){ osTipoAtivo = _osModo; initOficinaSac(); }
+  else if(id==='oficina-sac')initOficinaSac(); // back-compat (id antigo unificado)
   if(id==='calendario')initCalendario();
   if(id==='montagens')initMontagens();
   if(id==='clientes')initClientes();
@@ -4348,7 +4405,7 @@ window.addEventListener('popstate', function(e) {
   const id = (e.state && e.state.pagina)
     || (location.hash ? location.hash.slice(1) : 'dashboard');
   console.log('[popstate] navegando para:', id);
-  if (document.getElementById('page-' + id)) {
+  if (document.getElementById('page-' + _pageDomId(id))) {
     showPage(id, { fromHistory: true });
   }
 });
@@ -9070,9 +9127,9 @@ const NAV_TREE = [
       { id:'custos-produtos', label:'Custos de Produtos', icon:'ic-tag'     },
   ]},
   { kind:'group', label:'Operação',   icon:'ic-wrench', children:[
-      { id:'oficina',   label:'Oficina',   icon:'ic-wrench' },
-      { id:'sac',       label:'SAC',       icon:'ic-phone',  dotId:'dot-sac' },
-      { id:'montagens', label:'Montagens', icon:'ic-tool'  },
+      { id:'posvenda', label:'Pós-venda', icon:'ic-phone',  dotId:'dot-sac' },
+      { id:'oficina',  label:'Oficina',   icon:'ic-wrench' },
+      { id:'montagens',   label:'Montagens',     icon:'ic-tool'  },
   ]},
   { kind:'group', label:'Financeiro', icon:'ic-wallet', children:[
       { id:'financeiro',     label:'Financeiro',           icon:'ic-wallet'  },
@@ -9174,7 +9231,7 @@ function renderSidebar() {
     const u = JSON.parse(localStorage.getItem('sm_user') || 'null');
     if (u) permitidos = modulosPermitidos(u);
   } catch(e) {}
-  const podeVer = id => !permitidos || permitidos.includes(id);
+  const podeVer = id => !permitidos || permitidos.includes(_permModulo(id));
 
   // Garante _navGrupoDaTelaAtual coerente antes da render
   try {
@@ -9259,7 +9316,7 @@ function _navAbrirHoverPanel(groupEl) {
     const u = JSON.parse(localStorage.getItem('sm_user') || 'null');
     if (u) permitidos = modulosPermitidos(u);
   } catch(e) {}
-  const childrenVis = node.children.filter(c => !permitidos || permitidos.includes(c.id));
+  const childrenVis = node.children.filter(c => !permitidos || permitidos.includes(_permModulo(c.id)));
   if (!childrenVis.length) return;
 
   const panel = document.createElement('div');
@@ -11094,8 +11151,7 @@ const TODOS_MODULOS = [
   { id: 'estoque',      nome: 'Cadastros' },
   { id: 'localizacao',  nome: 'Consignação & Estoque' },
   { id: 'pedidos',      nome: 'Pedidos' },
-  { id: 'oficina',      nome: 'Oficina' },
-  { id: 'sac',          nome: 'SAC' },
+  { id: 'oficina-sac',  nome: 'Pós-venda / Oficina' },
   { id: 'calendario',   nome: 'Calendário' },
   { id: 'montagens',    nome: 'Montagens' },
   { id: 'clientes',     nome: 'Clientes' },
@@ -11111,8 +11167,8 @@ const TODOS_MODULOS = [
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
-  vendedor:    ['dashboard', 'vendas', 'estoque', 'pedidos', 'oficina', 'sac', 'calendario', 'montagens', 'clientes', 'contratos', 'pdv'],
-  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'localizacao', 'vendas', 'pedidos', 'oficina', 'sac', 'calendario', 'montagens', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv'],
+  vendedor:    ['dashboard', 'vendas', 'estoque', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'clientes', 'contratos', 'pdv'],
+  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'localizacao', 'vendas', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv'],
   customizado: null, // usa user.modulosPermitidos
 };
 function modulosPermitidos(user) {
@@ -11353,7 +11409,7 @@ function restaurarUltimaPagina() {
     + JSON.stringify(localStorage.getItem('sm_pagina_atual'))
     + ' -> escolhida=' + paginaSalva);
 
-  const pageEl = document.getElementById('page-' + paginaSalva);
+  const pageEl = document.getElementById('page-' + _pageDomId(paginaSalva));
   if (!pageEl) {
     console.warn('[restaurarUltimaPagina] page-' + paginaSalva + ' nao existe — fallback dashboard');
     localStorage.removeItem('sm_pagina_atual');
@@ -16376,14 +16432,29 @@ function renderOficinaKpis() {
   const acaoInterna = oficinaOrdens.filter(o => o.status === 'acao_interna').length;
   const aguardTerc  = oficinaOrdens.filter(o => o.status === 'aguardando_terceiro').length;
   const prontas     = oficinaOrdens.filter(o => o.status === 'pronto_entrega').length;
-  const finalMes    = oficinaOrdens.filter(o => o.status === 'finalizado' && (o.dataConclusao || '').startsWith(prefMes)).length;
+  const finalizadasMes = oficinaOrdens.filter(o => o.status === 'finalizado' && (o.dataConclusao || '').startsWith(prefMes));
+  const finalMes    = finalizadasMes.length;
+  const lucroMes    = finalizadasMes.reduce((s, o) => { const l = ofLucro(o); return s + (l === null ? 0 : l); }, 0);
   const el = document.getElementById('of-kpis');
   if (!el) return;
   el.innerHTML =
     `<div class="kpi kpi-clickable" data-of-card="acao_interna" onclick="filtrarOfPorCard('acao_interna')" style="border-top:2px solid var(--orange);"><div class="kpi-label">Ação interna</div><div class="kpi-value" style="color:var(--orange);">${acaoInterna}</div><div class="kpi-change">loja precisa agir</div></div>`
     + `<div class="kpi kpi-clickable" data-of-card="aguardando_terceiro" onclick="filtrarOfPorCard('aguardando_terceiro')" style="border-top:2px solid var(--gold);"><div class="kpi-label">Aguardando terceiro</div><div class="kpi-value gold">${aguardTerc}</div><div class="kpi-change">cliente / fornecedor / garantia</div></div>`
     + `<div class="kpi kpi-clickable" data-of-card="pronto_entrega" onclick="filtrarOfPorCard('pronto_entrega')" style="border-top:2px solid var(--green);"><div class="kpi-label">Pronto pra entrega</div><div class="kpi-value green">${prontas}</div><div class="kpi-change">aguardando cliente</div></div>`
-    + `<div class="kpi kpi-clickable" data-of-card="finalizado" onclick="filtrarOfPorCard('finalizado')" style="border-top:2px solid var(--text2);"><div class="kpi-label">Finalizadas no mês</div><div class="kpi-value" style="color:var(--text);">${finalMes}</div><div class="kpi-change">${hoje.toLocaleString('pt-BR',{month:'long'})}/${ano}</div></div>`;
+    + `<div class="kpi kpi-clickable" data-of-card="finalizado" onclick="filtrarOfPorCard('finalizado')" style="border-top:2px solid var(--text2);"><div class="kpi-label">Finalizadas no mês</div><div class="kpi-value" style="color:var(--text);">${finalMes}</div><div class="kpi-change">${hoje.toLocaleString('pt-BR',{month:'long'})}/${ano}</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Lucro de serviços no mês</div><div class="kpi-value" style="color:${lucroMes>=0?'var(--green)':'var(--red)'};">${fmtSigned(lucroMes)}</div><div class="kpi-change">finalizadas · ${hoje.toLocaleString('pt-BR',{month:'long'})}</div></div>`;
+}
+
+// Custo real de serviço (Oficina + SAC, backlog #2): mão de obra + peças avulsas.
+// pecas = [{descricao, custo}]. Derivados NÃO são persistidos — calculados na hora.
+function custoServico(reg) {
+  const mo = Number((reg && reg.custoMaoObra) || 0);
+  const pecas = (reg && Array.isArray(reg.pecas)) ? reg.pecas : [];
+  return mo + pecas.reduce((s, p) => s + Number((p && p.custo) || 0), 0);
+}
+// Lucro da OS = receita − custo. null quando não há valor de serviço (sem receita p/ comparar).
+function ofLucro(o) {
+  return (o && Number(o.valorServico || 0) > 0) ? Number(o.valorServico) - custoServico(o) : null;
 }
 
 // Card KPI da Oficina → filtro de status (toggle). "Finalizadas" troca de tab.
@@ -16420,6 +16491,7 @@ function switchOfTab(t) {
 }
 
 function renderOficina() {
+  _osRefresh();
   const el  = document.getElementById('of-lista');
   const sub = document.getElementById('of-sub');
   if (!el) return;
@@ -16467,12 +16539,14 @@ function renderOficina() {
     const next = { acao_interna: 'pronto_entrega', pronto_entrega: 'finalizado' }[o.status];
     const nextLabel = next ? OF_STATUS[next].label : null;
     const valorTxt = o.valorServico ? fmt(o.valorServico) : '—';
+    const _luc = ofLucro(o);
+    const lucroSub = (_luc === null) ? '' : `<div style="font-size:10px;font-weight:600;margin-top:2px;color:${_luc>=0?'var(--green)':'var(--red)'};">Lucro ${fmtSigned(_luc)}</div>`;
     return '<div style="display:grid;grid-template-columns:60px 1.7fr 1.3fr 1.3fr 110px 130px auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
       + `<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#${o.numero}</div>`
       + `<div style="min-width:0;overflow:hidden;"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(o.clienteNome)||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(o.modeloScooter)||'—'}${o.cor?(' · '+escHtml(o.cor)):''}${o.chassi?(' · '+escHtml(o.chassi)):''}</div></div>`
       + `<div style="min-width:0;font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(o.problemaRelatado)}">${escHtml(o.problemaRelatado)||'—'}</div>`
       + `<div style="min-width:0;font-size:10px;color:var(--text3);overflow:hidden;">Abertura: ${o.dataAbertura||'—'}${o.dataProximoContato?('<br>Próximo: '+o.dataProximoContato):''}</div>`
-      + `<div class="td-mono" style="font-weight:700;color:var(--green);">${valorTxt}</div>`
+      + `<div class="td-mono" style="font-weight:700;color:var(--green);">${valorTxt}${lucroSub}</div>`
       + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
       + `<div style="display:flex;gap:5px;">`
         + (next ? `<button class="btn btn-gold" onclick="ofAvancarStatus('${o.id}')" style="font-size:10px;padding:5px 10px;" title="Avançar para ${nextLabel}">→ ${nextLabel}</button>` : '')
@@ -16513,7 +16587,7 @@ async function ofMoverParaSac(id) {
   let _u = null;
   try { _u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
   if (!_u) { smAlert('Sessão inválida.'); return; }
-  if (!modulosPermitidos(_u).includes('sac')) { smAlert('Sem permissão para acessar o módulo SAC.'); return; }
+  if (!modulosPermitidos(_u).includes('oficina-sac')) { smAlert('Sem permissão para acessar o módulo SAC.'); return; }
   const o = oficinaOrdens.find(x => x.id === id);
   if (!o) return;
   if (o.sacDestinoId) { smAlert('Esta OS já foi convertida em caso SAC.'); return; }
@@ -16776,7 +16850,7 @@ function abrirOfModal(id) {
 
   let _u = null;
   try { _u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
-  const podeMover = isEdit && o && !o.sacDestinoId && _u && modulosPermitidos(_u).includes('sac');
+  const podeMover = isEdit && o && !o.sacDestinoId && _u && modulosPermitidos(_u).includes('oficina-sac');
   const sacDestino = (isEdit && o && o.sacDestinoId)
     ? (sacCasos || []).find(c => c.id === o.sacDestinoId) : null;
   const bannerSac = sacDestino
@@ -16790,9 +16864,9 @@ function abrirOfModal(id) {
   const sacOrigem = (isEdit && o && o.sacOrigemId)
     ? (sacCasos || []).find(c => c.id === o.sacOrigemId) : null;
   const bannerSacOrigem = sacOrigem
-    ? '<div style="margin-bottom:12px;padding:10px 12px;background:rgba(245,197,24,0.10);border:1px solid var(--gold);border-radius:var(--r-sm);font-size:11px;line-height:1.5;">'
-      + '🔄 OS originada do <a href="javascript:void(0)" onclick="ofAbrirSacOrigem(\'' + o.id + '\')" style="color:var(--gold);font-weight:700;text-decoration:underline;">SAC #' + sacOrigem.numero + '</a>'
-      + ' — status atual: <strong>' + ((SAC_STATUS[sacOrigem.status]||{}).label || sacOrigem.status) + '</strong>.'
+    ? '<div style="margin-bottom:12px;padding:10px 12px;background:var(--orange-dim);border:1px solid var(--orange);border-radius:var(--r-sm);font-size:11px;line-height:1.5;color:var(--orange);">'
+      + '🛡️ <strong>OS de PÓS-VENDA / GARANTIA</strong> — originada do <a href="javascript:void(0)" onclick="ofAbrirSacOrigem(\'' + o.id + '\')" style="color:var(--gold);font-weight:700;text-decoration:underline;">SAC #' + sacOrigem.numero + '</a>'
+      + ' (status: <strong>' + ((SAC_STATUS[sacOrigem.status]||{}).label || sacOrigem.status) + '</strong>). Não é serviço pago de manutenção.'
       + '</div>'
     : '';
 
@@ -16848,7 +16922,13 @@ function abrirOfModal(id) {
     +     `<div class="form-group" id="of-tipo-outro-wrap" style="${tipoOutroDisplay}"><label>Especifique o tipo</label><input class="form-input" id="of-tipo-outro" value="${escAttr(o&&o.tipoProblemaOutro)}"></div>`
     +     `<div class="form-group"><label>Prioridade</label><select class="form-input" id="of-prio">${prioOpts}</select></div>`
     +     `<div class="form-group"><label>Status</label><select class="form-input" id="of-status">${statusOpts}</select></div>`
-    +     `<div class="form-group full"><label>Valor do serviço (R$)</label><input class="form-input" id="of-valor" type="number" step="0.01" value="${(o&&o.valorServico)||0}"></div>`
+    +     `<div class="form-group"><label>Valor do serviço (R$)</label><input class="form-input" id="of-valor" type="number" step="0.01" value="${(o&&o.valorServico)||0}" oninput="ofRecalcResumo()"></div>`
+    +     `<div class="form-group"><label>Mão de obra (custo R$)</label><input class="form-input" id="of-custo-mo" type="number" step="0.01" value="${(o&&o.custoMaoObra)||0}" oninput="ofRecalcResumo()"></div>`
+    +     `<div class="form-group full"><label>Peças usadas (custo)</label>`
+    +       `<table style="width:100%;border-collapse:collapse;"><tbody id="of-pecas-tbody"></tbody></table>`
+    +       `<button type="button" class="btn" style="margin-top:6px;padding:4px 10px;font-size:13px;" onclick="ofAddPeca()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Peça</button>`
+    +     `</div>`
+    +     `<div class="form-group full"><div id="of-resumo" style="border:1px solid var(--border);border-radius:8px;padding:8px 12px;"></div></div>`
     +     (isEdit ? `<div class="form-group full"><label>Diagnóstico</label><textarea class="form-input" id="of-diag" rows="2">${escAttr(o.diagnostico)}</textarea></div>` : '')
     +     (isEdit ? `<div class="form-group full"><label>Solução aplicada</label><textarea class="form-input" id="of-sol" rows="2">${escAttr(o.solucao)}</textarea></div>` : '')
     +   `</div>`
@@ -16875,6 +16955,8 @@ function abrirOfModal(id) {
     + `</div>`;
   document.body.appendChild(shell);
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+  ((o && Array.isArray(o.pecas)) ? o.pecas : []).forEach(p => ofAddPeca(p));
+  ofRecalcResumo();
   initClienteSearch('of-cli-search', {
     onSelect: ofClienteOnSelect,
     initial: o ? (o.clienteId ? { clienteId: o.clienteId }
@@ -16903,6 +16985,46 @@ async function _ofRecarregarTimeline(casoId) {
   const incluirExcluidos = !!(shell && shell.dataset.tlIncluirExcluidos === '1');
   const eventos = await _smTimelineCarregar(casoId, 'oficina', { incluirExcluidos });
   _smTimelineRender(cont, eventos);
+}
+
+// Linha de peça avulsa no modal da Oficina (descrição + custo). Espelha o padrão da Montagem.
+function ofAddPeca(peca) {
+  const tbody = document.getElementById('of-pecas-tbody');
+  if (!tbody) return;
+  const desc  = peca ? (peca.descricao || '') : '';
+  const custo = peca ? Number(peca.custo || 0) : '';
+  const tr = document.createElement('tr');
+  tr.className = 'of-peca-row';
+  tr.innerHTML =
+      `<td style="padding:3px 4px 3px 0;"><input class="form-input of-peca-desc" type="text" placeholder="Peça" value="${String(desc).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"></td>`
+    + `<td style="padding:3px 4px;width:130px;"><input class="form-input of-peca-custo" type="number" step="0.01" placeholder="0,00" value="${custo}" oninput="ofRecalcResumo()" style="text-align:right;"></td>`
+    + `<td style="padding:3px 0;text-align:center;width:40px;"><button class="action-btn del-btn" type="button" onclick="ofRemovePeca(this)" title="Remover"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button></td>`;
+  tbody.appendChild(tr);
+  ofRecalcResumo();
+}
+function ofRemovePeca(btn) {
+  const tr = btn.closest('tr');
+  if (tr) tr.remove();
+  ofRecalcResumo();
+}
+// Resumo ao vivo do serviço da Oficina: Receita / Custo / Lucro.
+function ofRecalcResumo() {
+  const el = document.getElementById('of-resumo');
+  if (!el) return;
+  const receita = parseFloat(document.getElementById('of-valor')?.value) || 0;
+  const mo = parseFloat(document.getElementById('of-custo-mo')?.value) || 0;
+  let pecasTot = 0;
+  document.querySelectorAll('#of-pecas-tbody .of-peca-row').forEach(r => {
+    pecasTot += parseFloat(r.querySelector('.of-peca-custo')?.value) || 0;
+  });
+  const custo = mo + pecasTot;
+  const lucro = receita - custo;
+  const lucroCor = lucro >= 0 ? 'var(--green)' : 'var(--red)';
+  const linha = (lbl, val, extra) => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;${extra||''}"><span style="color:var(--text2);">${lbl}</span><b>${val}</b></div>`;
+  el.innerHTML =
+      linha('Receita', fmt(receita))
+    + linha('Custo (mão de obra + peças)', fmt(custo))
+    + linha('Lucro', `<span style="color:${lucroCor};">${fmtSigned(lucro)}</span>`, 'border-top:1px solid var(--border);margin-top:4px;padding-top:6px;font-size:14px;');
 }
 
 function _ofToggleExcluidos(casoId) {
@@ -16983,6 +17105,11 @@ async function _ofSalvarReal(editId) {
   const prazoAlerta = parseInt(document.getElementById('of-prazo').value) || 3;
   const status    = document.getElementById('of-status').value;
   const valor     = parseFloat(document.getElementById('of-valor').value) || 0;
+  const custoMo   = parseFloat(document.getElementById('of-custo-mo').value) || 0;
+  const pecas     = [...document.querySelectorAll('#of-pecas-tbody .of-peca-row')]
+    .map(r => ({ descricao: (r.querySelector('.of-peca-desc').value || '').trim(),
+                 custo: parseFloat(r.querySelector('.of-peca-custo').value) || 0 }))
+    .filter(p => p.descricao || p.custo > 0);
   const diag      = document.getElementById('of-diag')?.value.trim() || null;
   const sol       = document.getElementById('of-sol')?.value.trim() || null;
 
@@ -17002,6 +17129,8 @@ async function _ofSalvarReal(editId) {
     itens_deixados: itens || null,
     status,
     valor_servico: valor,
+    custo_mao_obra: custoMo,
+    pecas: pecas,
     data_abertura: dataAbert || new Date().toISOString().split('T')[0],
     data_proximo_contato: dataProx || null,
   };
@@ -21581,6 +21710,15 @@ const SAC_PRIO = {
   media: { label: 'Média', cor: 'var(--text2)',  bg: 'var(--surface3)' },
   alta:  { label: 'Alta',  cor: 'var(--red)',    bg: 'var(--red-dim)' },
 };
+// Localização física do item (scooter ou peça) no caso de pós-venda/garantia.
+// 'na_loja' = item está na oficina em manutenção → aparece também na aba Oficina.
+const SAC_LOCALIZACAO = {
+  com_cliente:        { label: 'Com o cliente',          cor: 'var(--text3)' },
+  na_loja:            { label: 'Na loja (em manutenção)', cor: 'var(--gold)' },
+  enviada_fornecedor: { label: 'Enviada ao fornecedor',  cor: 'var(--orange)' },
+  voltou_fornecedor:  { label: 'Voltou do fornecedor',   cor: 'var(--gold-bright)' },
+  entregue_cliente:   { label: 'Entregue ao cliente',    cor: 'var(--green)' },
+};
 
 async function initSac() {
   const requests = [sb.from('sac_casos').select('*').order('numero', { ascending: false })];
@@ -21634,12 +21772,15 @@ function renderSacKpis() {
   const abertos    = sacCasos.filter(c => c.status !== 'finalizado' && c.status !== 'transferido').length;
   const altas      = sacCasos.filter(c => c.status !== 'finalizado' && c.status !== 'transferido' && c.prioridade === 'alta').length;
   const vencidos   = sacCasos.filter(c => c.status !== 'finalizado' && c.status !== 'transferido' && c.dataProximoContato && c.dataProximoContato <= hoje).length;
-  const finalMes   = sacCasos.filter(c => c.status === 'finalizado' && (c.dataResolucao || '').startsWith(mesPref)).length;
+  const finalizadosMes = sacCasos.filter(c => c.status === 'finalizado' && (c.dataResolucao || '').startsWith(mesPref));
+  const finalMes   = finalizadosMes.length;
+  const custoGarantiaMes = finalizadosMes.reduce((s, c) => s + custoServico(c), 0);
   document.getElementById('sac-kpis').innerHTML =
     `<div class="kpi kpi-clickable" data-sac-card="todos-abertos" onclick="filtrarSacPorCard('todos-abertos')" style="border-top:2px solid var(--gold);"><div class="kpi-label">Casos abertos</div><div class="kpi-value gold">${abertos}</div><div class="kpi-change">em aberto</div></div>`
     + `<div class="kpi kpi-clickable" data-sac-card="prio-alta" onclick="filtrarSacPorCard('prio-alta')" style="border-top:2px solid var(--red);"><div class="kpi-label">Prioridade alta</div><div class="kpi-value red">${altas}</div><div class="kpi-change">requer atenção</div></div>`
     + `<div class="kpi kpi-clickable" data-sac-card="vencidos" onclick="filtrarSacPorCard('vencidos')" style="border-top:2px solid var(--red);"><div class="kpi-label">Contato vencido</div><div class="kpi-value red">${vencidos}</div><div class="kpi-change">precisa retornar hoje</div></div>`
-    + `<div class="kpi kpi-clickable" data-sac-card="finalizados" onclick="filtrarSacPorCard('finalizados')" style="border-top:2px solid var(--green);"><div class="kpi-label">Finalizados no mês</div><div class="kpi-value green">${finalMes}</div><div class="kpi-change">${new Date().toLocaleString('pt-BR',{month:'long'})}</div></div>`;
+    + `<div class="kpi kpi-clickable" data-sac-card="finalizados" onclick="filtrarSacPorCard('finalizados')" style="border-top:2px solid var(--green);"><div class="kpi-label">Finalizados no mês</div><div class="kpi-value green">${finalMes}</div><div class="kpi-change">${new Date().toLocaleString('pt-BR',{month:'long'})}</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--orange);"><div class="kpi-label">Custo de garantias no mês</div><div class="kpi-value" style="color:var(--orange);">${fmt(custoGarantiaMes)}</div><div class="kpi-change">finalizados · ${new Date().toLocaleString('pt-BR',{month:'long'})}</div></div>`;
 }
 
 // Card KPI do SAC → filtro (toggle). Cada card mapeia ao filtro que representa.
@@ -21687,6 +21828,7 @@ function switchSacTab(t) {
 }
 
 function renderSac() {
+  _osRefresh();
   const el = document.getElementById('sac-lista');
   const sub = document.getElementById('sac-sub');
   if (!el) return;
@@ -21731,6 +21873,8 @@ function renderSac() {
     const pr = SAC_PRIO[c.prioridade] || SAC_PRIO.media;
     const venc = c.dataProximoContato && c.dataProximoContato <= hoje && c.status !== 'finalizado';
     const vencHTML = venc ? `<span style="color:var(--red);font-weight:700;">⚠ contato vencido</span>` : (c.dataProximoContato ? `próximo: ${c.dataProximoContato}` : '');
+    const _cg = custoServico(c);
+    const custoSub = _cg > 0 ? `<div style="margin-top:2px;color:var(--orange);font-weight:600;">Custo garantia ${fmt(_cg)}</div>` : '';
     const tipoTxt = tipoProblemaLabel(c);
     return '<div style="display:grid;grid-template-columns:60px 1.6fr 1.4fr 110px 110px 1fr auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;' + (venc?'background:rgba(255,77,77,0.04);':'') + '">'
       + `<div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;">#${c.numero}</div>`
@@ -21738,13 +21882,186 @@ function renderSac() {
       + `<div style="min-width:0;overflow:hidden;"><div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(tipoTxt)}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(c.problemaRelatado)}">${escHtml(c.problemaRelatado)}</div></div>`
       + `<div><span class="badge" style="background:${pr.bg};color:${pr.cor};">${pr.label}</span></div>`
       + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
-      + `<div style="font-size:10px;color:var(--text3);">${vencHTML}</div>`
+      + `<div style="font-size:10px;color:var(--text3);">${vencHTML}${custoSub}</div>`
       + `<div style="display:flex;gap:5px;">`
         + `<button class="action-btn edit-btn" onclick="abrirSacModal('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
         + `<button class="action-btn del-btn" onclick="sacExcluir('${c.id}')"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
       + `</div>`
       + '</div>';
   }).join('');
+}
+
+// ══════════════════════════════════════════
+//  OFICINA & SAC — painel pós-venda unificado
+//  Reusa as duas tabelas/modais; só junta a visão por cima.
+// ══════════════════════════════════════════
+let osTipoAtivo = 'oficina'; // 'oficina' | 'posvenda'
+
+function initOficinaSac() {
+  // osTipoAtivo já vem definido pela navegação (item Pós-venda ou Oficina).
+  const tit = document.getElementById('os-titulo');
+  if (tit) tit.textContent = (osTipoAtivo === 'oficina') ? 'Oficina' : 'Pós-venda';
+  renderOficinaSacKpis();
+  renderOficinaSac();
+}
+
+function switchOsTipo(t) {
+  if (!['oficina', 'posvenda'].includes(t)) return;
+  osTipoAtivo = t;
+  document.querySelectorAll('.fin-tab-btn[data-ostipo]').forEach(b => b.classList.toggle('active', b.dataset.ostipo === t));
+  const tit = document.getElementById('os-titulo');
+  if (tit) tit.textContent = (t === 'oficina') ? 'Oficina' : 'Pós-venda';
+  renderOficinaSacKpis();
+  renderOficinaSac();
+}
+
+// Universo de uma aba, com flag aberto. Esconde 'transferido'.
+//  - 'oficina'  = OS da oficina (menos as movidas p/ SAC ativo) + casos de
+//                 pós-venda com o item na loja em manutenção (localizacao==='na_loja').
+//  - 'posvenda' = todos os casos SAC.
+// Regra de OS movida pra SAC ativo (sacDestinoId) preservada de renderOficina.
+function _osLista(tipo) {
+  tipo = tipo || osTipoAtivo;
+  const sacAtivosIds = new Set((sacCasos || []).filter(c => c.status !== 'finalizado').map(c => c.id));
+  const arr = [];
+  if (tipo === 'oficina') {
+    (oficinaOrdens || []).forEach(o => {
+      if (o.status === 'transferido') return;
+      if (o.sacDestinoId && sacAtivosIds.has(o.sacDestinoId)) return;
+      arr.push({ tipo: 'oficina', rec: o, aberto: o.status !== 'finalizado' });
+    });
+    (sacCasos || []).forEach(c => {
+      if (c.status === 'transferido') return;
+      if (c.localizacao !== 'na_loja') return; // só pós-venda com item na loja em manutenção
+      arr.push({ tipo: 'sac', rec: c, aberto: c.status !== 'finalizado' });
+    });
+  } else { // posvenda
+    (sacCasos || []).forEach(c => {
+      if (c.status === 'transferido') return;
+      arr.push({ tipo: 'sac', rec: c, aberto: c.status !== 'finalizado' });
+    });
+  }
+  return arr;
+}
+
+function renderOficinaSacKpis() {
+  const el = document.getElementById('os-kpis');
+  if (!el) return;
+  const hoje = new Date().toISOString().split('T')[0];
+  const prefMes = hoje.slice(0, 7);
+  const isOf = osTipoAtivo === 'oficina';
+  const arr = _osLista(osTipoAtivo);
+  const abertos = arr.filter(x => x.aberto);
+  const emAberto = abertos.length;
+  const prioAlta = abertos.filter(x => x.rec.prioridade === 'alta').length;
+  const vencidos = abertos.filter(x => x.rec.dataProximoContato && x.rec.dataProximoContato <= hoje).length;
+  const finalMes = arr.filter(x => !x.aberto && ((x.tipo === 'oficina' ? x.rec.dataConclusao : x.rec.dataResolucao) || '').startsWith(prefMes)).length;
+  const mesNome = new Date().toLocaleString('pt-BR', { month: 'long' });
+  // 4 KPIs comuns + 1 KPI de dinheiro específico da aba.
+  let cards =
+      `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">Em aberto</div><div class="kpi-value gold">${emAberto}</div><div class="kpi-change">${isOf?'oficina + SAC na loja':'pós-venda'}</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">Prioridade alta</div><div class="kpi-value red">${prioAlta}</div><div class="kpi-change">requer atenção</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">Contato vencido</div><div class="kpi-value red">${vencidos}</div><div class="kpi-change">retornar hoje</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--text2);"><div class="kpi-label">Finalizados no mês</div><div class="kpi-value" style="color:var(--text);">${finalMes}</div><div class="kpi-change">${mesNome}</div></div>`;
+  if (isOf) {
+    const lucroMes = arr.filter(x => x.tipo === 'oficina' && !x.aberto && (x.rec.dataConclusao || '').startsWith(prefMes))
+      .reduce((s, x) => { const l = ofLucro(x.rec); return s + (l === null ? 0 : l); }, 0);
+    cards += `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Lucro de serviços no mês</div><div class="kpi-value" style="color:${lucroMes>=0?'var(--green)':'var(--red)'};">${fmtSigned(lucroMes)}</div><div class="kpi-change">oficina · ${mesNome}</div></div>`;
+  } else {
+    const custoGarMes = arr.filter(x => x.tipo === 'sac' && !x.aberto && (x.rec.dataResolucao || '').startsWith(prefMes))
+      .reduce((s, x) => s + custoServico(x.rec), 0);
+    cards += `<div class="kpi" style="border-top:2px solid var(--orange);"><div class="kpi-label">Custo de garantias no mês</div><div class="kpi-value" style="color:var(--orange);">${fmt(custoGarMes)}</div><div class="kpi-change">pós-venda · ${mesNome}</div></div>`;
+  }
+  el.innerHTML = cards;
+}
+
+function renderOficinaSac() {
+  const el = document.getElementById('os-lista');
+  if (!el) return;
+  const sub     = document.getElementById('os-sub');
+  const estado  = document.getElementById('os-filtro-estado')?.value || 'abertos';
+  const fStatus = document.getElementById('os-filtro-status')?.value || '';
+  const fPrio   = document.getElementById('os-filtro-prio')?.value || '';
+  const busca   = (document.getElementById('os-busca')?.value || '').toLowerCase();
+
+  // Contadores das abas = itens em aberto de cada visão (independem dos filtros).
+  const elCO = document.getElementById('os-cnt-oficina');  if (elCO) elCO.textContent = _osLista('oficina').filter(x => x.aberto).length;
+  const elCP = document.getElementById('os-cnt-posvenda'); if (elCP) elCP.textContent = _osLista('posvenda').filter(x => x.aberto).length;
+
+  const arr = _osLista(osTipoAtivo);
+
+  let lista = arr;
+  if (estado === 'abertos')          lista = lista.filter(x => x.aberto);
+  else if (estado === 'finalizados') lista = lista.filter(x => !x.aberto);
+  if (fStatus && estado !== 'finalizados') lista = lista.filter(x => x.rec.status === fStatus);
+  if (fPrio)   lista = lista.filter(x => x.rec.prioridade === fPrio);
+  if (busca)   lista = lista.filter(x => {
+    const r = x.rec;
+    return (r.clienteNome || '').toLowerCase().includes(busca)
+      || (r.modeloScooter || '').toLowerCase().includes(busca)
+      || (r.chassi || '').toLowerCase().includes(busca)
+      || (r.fornecedor || '').toLowerCase().includes(busca);
+  });
+  lista.sort((a, b) => {
+    const da = a.rec.dataAbertura || '', db = b.rec.dataAbertura || '';
+    if (da !== db) return da < db ? 1 : -1;
+    return (b.rec.numero || 0) - (a.rec.numero || 0);
+  });
+
+  if (sub) sub.textContent = lista.length + ' registro' + (lista.length !== 1 ? 's' : '') + ' exibido' + (lista.length !== 1 ? 's' : '');
+  const elCount = document.getElementById('os-count');
+  if (elCount) elCount.textContent = arr.length + ' no total (' + (osTipoAtivo === 'oficina' ? 'oficina + SAC na loja' : 'pós-venda') + ')';
+
+  if (!lista.length) {
+    el.innerHTML = '<div class="empty" style="padding:32px;">' + (estado === 'finalizados' ? 'Nada finalizado' : (estado === 'todos' ? 'Nada por aqui' : 'Nada em aberto')) + '</div>';
+    return;
+  }
+
+  el.innerHTML = lista.map(x => {
+    const r = x.rec;
+    const isOf = x.tipo === 'oficina';
+    const st = OS_STATUS[r.status] || OS_STATUS.acao_interna;
+    const pr = SAC_PRIO[r.prioridade] || SAC_PRIO.media;
+    const tipoChip = isOf
+      ? `<span title="Serviço pago de manutenção" style="display:inline-block;font-size:9px;font-weight:700;color:var(--gold);border:1px solid var(--gold);border-radius:4px;padding:1px 5px;">OFICINA</span>`
+        + (r.sacOrigemId ? `<div title="OS originada de um caso de pós-venda / garantia — não é serviço pago" style="margin-top:3px;display:inline-block;font-size:8px;font-weight:800;color:#1a1a1a;background:var(--orange);border-radius:4px;padding:1px 4px;">↩ PÓS-VENDA</div>` : '')
+      : `<span title="Atendimento de pós-venda / garantia — não é serviço pago de manutenção" style="display:inline-block;font-size:9px;font-weight:800;color:#1a1a1a;background:var(--orange);border:1px solid var(--orange);border-radius:4px;padding:1px 5px;">PÓS-VENDA</span>`;
+    let valCol;
+    if (isOf) {
+      const v = r.valorServico ? fmt(r.valorServico) : '—';
+      const l = ofLucro(r);
+      const lsub = (l === null) ? '' : `<div style="font-size:10px;font-weight:600;margin-top:2px;color:${l>=0?'var(--green)':'var(--red)'};">Lucro ${fmtSigned(l)}</div>`;
+      valCol = `<div class="td-mono" style="font-weight:700;color:var(--green);">${v}${lsub}</div>`;
+    } else {
+      const cg = custoServico(r);
+      const loc = SAC_LOCALIZACAO[r.localizacao];
+      const locSub = loc ? `<div style="font-size:10px;font-weight:600;margin-top:2px;color:${loc.cor};">📍 ${loc.label}</div>` : '';
+      valCol = `<div class="td-mono" style="font-weight:700;color:${cg>0?'var(--orange)':'var(--text3)'};">${cg>0?('Custo '+fmt(cg)):'—'}${locSub}</div>`;
+    }
+    const editFn = isOf ? `abrirOfModal('${r.id}')` : `abrirSacModal('${r.id}')`;
+    const delFn  = isOf ? `ofExcluir('${r.id}')` : `sacExcluir('${r.id}')`;
+    return '<div style="display:grid;grid-template-columns:96px 1.6fr 1.3fr 130px 110px auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
+      + `<div style="min-width:0;">${tipoChip}<div style="font-family:var(--mono,monospace);color:var(--text2);font-weight:800;margin-top:3px;">#${r.numero}</div></div>`
+      + `<div style="min-width:0;overflow:hidden;"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(r.clienteNome)||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(r.modeloScooter)||'—'}${r.cor?(' · '+escHtml(r.cor)):''}${isOf?'':(r.fornecedor?(' · '+escHtml(r.fornecedor)):'')}</div></div>`
+      + `<div style="min-width:0;overflow:hidden;"><div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(r.problemaRelatado)}">${escHtml(r.problemaRelatado)||'—'}</div><div style="margin-top:3px;"><span class="badge" style="background:${pr.bg};color:${pr.cor};font-size:9px;">${pr.label}</span></div></div>`
+      + valCol
+      + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
+      + `<div style="display:flex;gap:5px;justify-content:flex-end;">`
+        + `<button class="action-btn edit-btn" onclick="${editFn}" title="Abrir"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
+        + `<button class="action-btn del-btn" onclick="${delFn}" title="Excluir"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
+      + `</div>`
+      + '</div>';
+  }).join('');
+}
+
+// Refresca o painel unificado quando qualquer módulo muta (chamado de renderOficina/renderSac).
+function _osRefresh() {
+  try {
+    if (typeof renderOficinaSac === 'function' && document.getElementById('os-lista')) {
+      renderOficinaSacKpis();
+      renderOficinaSac();
+    }
+  } catch (e) {}
 }
 
 function abrirSacModal(id) {
@@ -21762,6 +22079,9 @@ function abrirSacModal(id) {
     `<option value="${k}"${(c?c.status===k:k==='acao_interna')?' selected':''}>${SAC_STATUS[k].label}</option>`).join('');
   const prioOpts = Object.keys(SAC_PRIO).map(k =>
     `<option value="${k}"${(c?c.prioridade===k:k==='media')?' selected':''}>${SAC_PRIO[k].label}</option>`).join('');
+  const locAtual = (c && c.localizacao) || 'com_cliente';
+  const locOpts = Object.keys(SAC_LOCALIZACAO).map(k =>
+    `<option value="${k}"${(locAtual===k)?' selected':''}>${SAC_LOCALIZACAO[k].label}</option>`).join('');
   const tipoOpts = '<option value="">—</option>' + Object.keys(TIPOS_PROBLEMA).map(k =>
     `<option value="${k}"${(c&&c.tipoProblema===k)?' selected':''}>${TIPOS_PROBLEMA[k]}</option>`).join('');
 
@@ -21791,7 +22111,7 @@ function abrirSacModal(id) {
     : '';
   const podeReverter = isEdit && c && c.osOrigemId && isAdminUser && c.status !== 'finalizado' && c.status !== 'transferido';
   // Mover pra Oficina: qualquer usuário com perm Oficina, caso não-transferido.
-  const podeMoverOf  = isEdit && c && !c.oficinaDestinoId && c.status !== 'transferido' && _u && modulosPermitidos(_u).includes('oficina');
+  const podeMoverOf  = isEdit && c && !c.oficinaDestinoId && c.status !== 'transferido' && _u && modulosPermitidos(_u).includes('oficina-sac');
 
   // CPF: prefere o que está no caso; fallback no cadastro de clientes
   let cpfInicial = (c && c.clienteCpf) || '';
@@ -21812,6 +22132,7 @@ function abrirSacModal(id) {
   shell.innerHTML =
     `<div class="modal" style="width:760px;max-width:95vw;">`
     + `<div class="modal-title">${isEdit?('Caso #'+c.numero):'Novo <span>caso</span>'}</div>`
+    + `<div style="margin-bottom:12px;padding:10px 12px;background:var(--orange-dim);border:1px solid var(--orange);border-radius:var(--r-sm);font-size:11px;line-height:1.5;font-weight:600;color:var(--orange);">🛡️ Atendimento de <strong>pós-venda / garantia</strong> — não é serviço pago de manutenção.</div>`
     + bannerOrigem
     + bannerOficinaDestino
     // ── Bloco 1 — Cliente ──
@@ -21850,7 +22171,14 @@ function abrirSacModal(id) {
     +     `<div class="form-group" id="sac-tipo-outro-wrap" style="${tipoOutroDisplay}"><label>Especifique o tipo</label><input class="form-input" id="sac-tipo-outro" value="${escAttr(c&&c.tipoProblemaOutro)}"></div>`
     +     `<div class="form-group"><label>Prioridade</label><select class="form-input" id="sac-prio">${prioOpts}</select></div>`
     +     `<div class="form-group"><label>Status</label><select class="form-input" id="sac-status">${statusOpts}</select></div>`
+    +     `<div class="form-group full"><label>Localização do item <span style="color:var(--text3);font-weight:400;font-size:10px;">(onde está a scooter ou peça · "Na loja" mostra também na aba Oficina)</span></label><select class="form-input" id="sac-localizacao">${locOpts}</select></div>`
     +     `<div class="form-group full"><label>Fornecedor</label><input class="form-input" id="sac-forn" value="${escAttr(c&&c.fornecedor)}"></div>`
+    +     `<div class="form-group"><label>Mão de obra (custo R$)</label><input class="form-input" id="sac-custo-mo" type="number" step="0.01" value="${(c&&c.custoMaoObra)||0}" oninput="sacRecalcResumo()"></div>`
+    +     `<div class="form-group full"><label>Peças usadas (custo)</label>`
+    +       `<table style="width:100%;border-collapse:collapse;"><tbody id="sac-pecas-tbody"></tbody></table>`
+    +       `<button type="button" class="btn" style="margin-top:6px;padding:4px 10px;font-size:13px;" onclick="sacAddPeca()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Peça</button>`
+    +     `</div>`
+    +     `<div class="form-group full"><div id="sac-resumo" style="border:1px solid var(--border);border-radius:8px;padding:8px 12px;"></div></div>`
     +   `</div>`
     + `</div>`
     // ── Bloco 5 — Prazos ──
@@ -21876,6 +22204,8 @@ function abrirSacModal(id) {
     + `</div>`;
   document.body.appendChild(shell);
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+  ((c && Array.isArray(c.pecas)) ? c.pecas : []).forEach(p => sacAddPeca(p));
+  sacRecalcResumo();
   initClienteSearch('sac-cli-search', {
     onSelect: sacClienteOnSelect,
     initial: c ? (c.clienteId ? { clienteId: c.clienteId }
@@ -21904,6 +22234,40 @@ async function _sacRecarregarTimeline(casoId) {
   const incluirExcluidos = !!(shell && shell.dataset.tlIncluirExcluidos === '1');
   const eventos = await _smTimelineCarregar(casoId, 'sac', { incluirExcluidos });
   _smTimelineRender(cont, eventos);
+}
+
+// Linha de peça avulsa no modal do SAC (descrição + custo). Mesmo padrão da Oficina.
+function sacAddPeca(peca) {
+  const tbody = document.getElementById('sac-pecas-tbody');
+  if (!tbody) return;
+  const desc  = peca ? (peca.descricao || '') : '';
+  const custo = peca ? Number(peca.custo || 0) : '';
+  const tr = document.createElement('tr');
+  tr.className = 'sac-peca-row';
+  tr.innerHTML =
+      `<td style="padding:3px 4px 3px 0;"><input class="form-input sac-peca-desc" type="text" placeholder="Peça" value="${String(desc).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"></td>`
+    + `<td style="padding:3px 4px;width:130px;"><input class="form-input sac-peca-custo" type="number" step="0.01" placeholder="0,00" value="${custo}" oninput="sacRecalcResumo()" style="text-align:right;"></td>`
+    + `<td style="padding:3px 0;text-align:center;width:40px;"><button class="action-btn del-btn" type="button" onclick="sacRemovePeca(this)" title="Remover"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button></td>`;
+  tbody.appendChild(tr);
+  sacRecalcResumo();
+}
+function sacRemovePeca(btn) {
+  const tr = btn.closest('tr');
+  if (tr) tr.remove();
+  sacRecalcResumo();
+}
+// Resumo ao vivo do SAC: só o Custo da garantia (não há receita).
+function sacRecalcResumo() {
+  const el = document.getElementById('sac-resumo');
+  if (!el) return;
+  const mo = parseFloat(document.getElementById('sac-custo-mo')?.value) || 0;
+  let pecasTot = 0;
+  document.querySelectorAll('#sac-pecas-tbody .sac-peca-row').forEach(r => {
+    pecasTot += parseFloat(r.querySelector('.sac-peca-custo')?.value) || 0;
+  });
+  const custo = mo + pecasTot;
+  el.innerHTML =
+    `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:14px;"><span style="color:var(--text2);">Custo da garantia (mão de obra + peças)</span><b style="color:var(--orange);">${fmt(custo)}</b></div>`;
 }
 
 function _sacToggleExcluidos(casoId) {
@@ -21973,6 +22337,12 @@ async function _sacSalvarReal(editId) {
   const prazoAlerta     = parseInt(document.getElementById('sac-alerta').value) || 3;
   const problemaRelatado= document.getElementById('sac-desc').value.trim();
   const itensDeixados   = document.getElementById('sac-itens').value.trim();
+  const custoMo         = parseFloat(document.getElementById('sac-custo-mo').value) || 0;
+  const localizacao     = document.getElementById('sac-localizacao')?.value || 'com_cliente';
+  const pecas           = [...document.querySelectorAll('#sac-pecas-tbody .sac-peca-row')]
+    .map(r => ({ descricao: (r.querySelector('.sac-peca-desc').value || '').trim(),
+                 custo: parseFloat(r.querySelector('.sac-peca-custo').value) || 0 }))
+    .filter(p => p.descricao || p.custo > 0);
 
   const payload = {
     cliente_id: clienteId,
@@ -21992,6 +22362,9 @@ async function _sacSalvarReal(editId) {
     prazo_alerta: prazoAlerta,
     problema_relatado: problemaRelatado,
     itens_deixados: itensDeixados || null,
+    custo_mao_obra: custoMo,
+    pecas: pecas,
+    localizacao: localizacao,
   };
   if (status === 'finalizado') {
     payload.data_resolucao = new Date().toISOString().split('T')[0];
@@ -22130,7 +22503,7 @@ async function sacMoverParaOficina(sacId) {
   let _u = null;
   try { _u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
   if (!_u) { smAlert('Sessão inválida.'); return; }
-  if (!modulosPermitidos(_u).includes('oficina')) { smAlert('Sem permissão para acessar o módulo Oficina.'); return; }
+  if (!modulosPermitidos(_u).includes('oficina-sac')) { smAlert('Sem permissão para acessar o módulo Oficina.'); return; }
   const c = sacCasos.find(x => x.id === sacId);
   if (!c) return;
   if (c.oficinaDestinoId) { smAlert('Este caso já foi transferido pra Oficina.'); return; }
