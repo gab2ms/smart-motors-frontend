@@ -21,14 +21,21 @@
 ALTER TABLE public.sac_casos DROP COLUMN IF EXISTS na_oficina;
 
 
--- (2) adiciona a localização (default = com o cliente)
+-- (2) adiciona a localização no pós-venda/SAC (default = com o cliente)
 ALTER TABLE public.sac_casos
   ADD COLUMN IF NOT EXISTS localizacao text NOT NULL DEFAULT 'com_cliente';
 
 
--- (3) conferir (esperado: 1 linha, localizacao text default 'com_cliente')
-SELECT column_name, data_type, column_default, is_nullable
+-- (3) adiciona a localização também na Oficina (default = na loja, pois a OS
+--     normalmente está sendo trabalhada na loja; o usuário ajusta por OS).
+ALTER TABLE public.oficina_ordens
+  ADD COLUMN IF NOT EXISTS localizacao text NOT NULL DEFAULT 'na_loja';
+
+
+-- (4) conferir (esperado: 2 linhas)
+SELECT table_name, column_name, data_type, column_default, is_nullable
 FROM information_schema.columns
 WHERE table_schema = 'public'
-  AND table_name = 'sac_casos'
-  AND column_name = 'localizacao';
+  AND table_name IN ('sac_casos', 'oficina_ordens')
+  AND column_name = 'localizacao'
+ORDER BY table_name;

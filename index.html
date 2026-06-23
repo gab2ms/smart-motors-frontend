@@ -16840,6 +16840,9 @@ function abrirOfModal(id) {
     `<option value="${k}"${(o&&o.tipoProblema===k)?' selected':''}>${TIPOS_PROBLEMA[k]}</option>`).join('');
   const prioOpts = ['baixa','media','alta'].map(k =>
     `<option value="${k}"${(o?o.prioridade===k:k==='media')?' selected':''}>${k.charAt(0).toUpperCase()+k.slice(1)}</option>`).join('');
+  const ofLocAtual = (o && o.localizacao) || 'na_loja';
+  const ofLocOpts = Object.keys(SAC_LOCALIZACAO).map(k =>
+    `<option value="${k}"${(ofLocAtual===k)?' selected':''}>${SAC_LOCALIZACAO[k].label}</option>`).join('');
 
   // CPF: prefere o que está salvo na OS; fallback no cadastro de clientes
   let cpfInicial = (o && o.clienteCpf) || '';
@@ -16922,6 +16925,7 @@ function abrirOfModal(id) {
     +     `<div class="form-group" id="of-tipo-outro-wrap" style="${tipoOutroDisplay}"><label>Especifique o tipo</label><input class="form-input" id="of-tipo-outro" value="${escAttr(o&&o.tipoProblemaOutro)}"></div>`
     +     `<div class="form-group"><label>Prioridade</label><select class="form-input" id="of-prio">${prioOpts}</select></div>`
     +     `<div class="form-group"><label>Status</label><select class="form-input" id="of-status">${statusOpts}</select></div>`
+    +     `<div class="form-group full"><label>Localização do item <span style="color:var(--text3);font-weight:400;font-size:10px;">(onde está a scooter ou peça)</span></label><select class="form-input" id="of-localizacao">${ofLocOpts}</select></div>`
     +     `<div class="form-group"><label>Valor do serviço (R$)</label><input class="form-input" id="of-valor" type="number" step="0.01" value="${(o&&o.valorServico)||0}" oninput="ofRecalcResumo()"></div>`
     +     `<div class="form-group"><label>Mão de obra (custo R$)</label><input class="form-input" id="of-custo-mo" type="number" step="0.01" value="${(o&&o.custoMaoObra)||0}" oninput="ofRecalcResumo()"></div>`
     +     `<div class="form-group full"><label>Peças usadas (custo)</label>`
@@ -17104,6 +17108,7 @@ async function _ofSalvarReal(editId) {
   const dataProx  = document.getElementById('of-data-prox').value;
   const prazoAlerta = parseInt(document.getElementById('of-prazo').value) || 3;
   const status    = document.getElementById('of-status').value;
+  const localizacao = document.getElementById('of-localizacao')?.value || 'na_loja';
   const valor     = parseFloat(document.getElementById('of-valor').value) || 0;
   const custoMo   = parseFloat(document.getElementById('of-custo-mo').value) || 0;
   const pecas     = [...document.querySelectorAll('#of-pecas-tbody .of-peca-row')]
@@ -17128,6 +17133,7 @@ async function _ofSalvarReal(editId) {
     problema_relatado: problema,
     itens_deixados: itens || null,
     status,
+    localizacao: localizacao,
     valor_servico: valor,
     custo_mao_obra: custoMo,
     pecas: pecas,
@@ -17145,11 +17151,13 @@ async function _ofSalvarReal(editId) {
     if (error) return smAlert('Erro ao salvar: ' + error.message);
     const i = oficinaOrdens.findIndex(x => x.id === editId);
     if (i >= 0) oficinaOrdens[i] = toCamel(data);
+    _resumoIaGerar('oficina_ordens', editId, data);
   } else {
     const { data, error } = await sb.from('oficina_ordens').insert(payload).select().single();
     if (error) return smAlert('Erro ao salvar: ' + error.message);
     const novoCaso = toCamel(data);
     oficinaOrdens.unshift(novoCaso);
+    _resumoIaGerar('oficina_ordens', novoCaso.id, data);
     await _smTimelineCriar({
       casoId: novoCaso.id,
       modulo: 'oficina',
@@ -21713,11 +21721,11 @@ const SAC_PRIO = {
 // Localização física do item (scooter ou peça) no caso de pós-venda/garantia.
 // 'na_loja' = item está na oficina em manutenção → aparece também na aba Oficina.
 const SAC_LOCALIZACAO = {
-  com_cliente:        { label: 'Com o cliente',          cor: 'var(--text3)' },
-  na_loja:            { label: 'Na loja (em manutenção)', cor: 'var(--gold)' },
-  enviada_fornecedor: { label: 'Enviada ao fornecedor',  cor: 'var(--orange)' },
-  voltou_fornecedor:  { label: 'Voltou do fornecedor',   cor: 'var(--gold-bright)' },
-  entregue_cliente:   { label: 'Entregue ao cliente',    cor: 'var(--green)' },
+  com_cliente:        { label: 'Com o cliente',          tag: 'Com o cliente',   cor: 'var(--text3)' },
+  na_loja:            { label: 'Na loja (em manutenção)', tag: 'Na loja',         cor: 'var(--gold)' },
+  enviada_fornecedor: { label: 'Enviada ao fornecedor',  tag: 'No fornecedor',   cor: 'var(--orange)' },
+  voltou_fornecedor:  { label: 'Voltou do fornecedor',   tag: 'Voltou do forn.', cor: 'var(--gold-bright)' },
+  entregue_cliente:   { label: 'Entregue ao cliente',    tag: 'Entregue',        cor: 'var(--green)' },
 };
 
 async function initSac() {
@@ -21897,6 +21905,23 @@ function renderSac() {
 // ══════════════════════════════════════════
 let osTipoAtivo = 'oficina'; // 'oficina' | 'posvenda'
 
+// Gera o resumo de IA (Edge Function gerar-resumo-os) e grava em resumo_ia.
+// Best-effort: NÃO bloqueia o save; atualiza a lista quando o resumo chega.
+async function _resumoIaGerar(tabela, id, dados) {
+  if (!id || !dados) return;
+  try {
+    const { data, error } = await sb.functions.invoke('gerar-resumo-os', { body: dados });
+    const resumo = (!error && data && data.resumo) ? String(data.resumo).trim() : '';
+    if (!resumo) return;
+    const em = new Date().toISOString();
+    await sb.from(tabela).update({ resumo_ia: resumo, resumo_ia_em: em }).eq('id', id);
+    const arr = (tabela === 'oficina_ordens') ? oficinaOrdens : sacCasos;
+    const i = (arr || []).findIndex(x => x.id === id);
+    if (i >= 0) { arr[i].resumoIa = resumo; arr[i].resumoIaEm = em; }
+    try { _osRefresh(); } catch (e) {}
+  } catch (e) { /* best-effort */ }
+}
+
 function initOficinaSac() {
   // osTipoAtivo já vem definido pela navegação (item Pós-venda ou Oficina).
   const tit = document.getElementById('os-titulo');
@@ -22026,24 +22051,29 @@ function renderOficinaSac() {
       ? `<span title="Serviço pago de manutenção" style="display:inline-block;font-size:9px;font-weight:700;color:var(--gold);border:1px solid var(--gold);border-radius:4px;padding:1px 5px;">OFICINA</span>`
         + (r.sacOrigemId ? `<div title="OS originada de um caso de pós-venda / garantia — não é serviço pago" style="margin-top:3px;display:inline-block;font-size:8px;font-weight:800;color:#1a1a1a;background:var(--orange);border-radius:4px;padding:1px 4px;">↩ PÓS-VENDA</div>` : '')
       : `<span title="Atendimento de pós-venda / garantia — não é serviço pago de manutenção" style="display:inline-block;font-size:9px;font-weight:800;color:#1a1a1a;background:var(--orange);border:1px solid var(--orange);border-radius:4px;padding:1px 5px;">PÓS-VENDA</span>`;
+    // Localização em destaque (selo colorido por estado) — leitura "de bater o olho".
+    // Vale pra OS da oficina E pra pós-venda (todo item tem uma localização).
+    const loc = SAC_LOCALIZACAO[r.localizacao];
+    const locPill = loc
+      ? `<span title="Localização do item" style="display:inline-block;font-size:10px;font-weight:700;color:${loc.cor};border:1px solid ${loc.cor};border-radius:5px;padding:2px 7px;white-space:nowrap;">📍 ${loc.tag}</span>`
+      : `<span style="font-size:10px;color:var(--text3);">📍 —</span>`;
     let valCol;
     if (isOf) {
       const v = r.valorServico ? fmt(r.valorServico) : '—';
       const l = ofLucro(r);
       const lsub = (l === null) ? '' : `<div style="font-size:10px;font-weight:600;margin-top:2px;color:${l>=0?'var(--green)':'var(--red)'};">Lucro ${fmtSigned(l)}</div>`;
-      valCol = `<div class="td-mono" style="font-weight:700;color:var(--green);">${v}${lsub}</div>`;
+      valCol = `<div><div class="td-mono" style="font-weight:700;color:var(--green);">${v}${lsub}</div><div style="margin-top:4px;">${locPill}</div></div>`;
     } else {
       const cg = custoServico(r);
-      const loc = SAC_LOCALIZACAO[r.localizacao];
-      const locSub = loc ? `<div style="font-size:10px;font-weight:600;margin-top:2px;color:${loc.cor};">📍 ${loc.label}</div>` : '';
-      valCol = `<div class="td-mono" style="font-weight:700;color:${cg>0?'var(--orange)':'var(--text3)'};">${cg>0?('Custo '+fmt(cg)):'—'}${locSub}</div>`;
+      const custoSub = cg > 0 ? `<div style="font-size:10px;font-weight:600;margin-top:3px;color:var(--orange);">Custo ${fmt(cg)}</div>` : '';
+      valCol = `<div>${locPill}${custoSub}</div>`;
     }
     const editFn = isOf ? `abrirOfModal('${r.id}')` : `abrirSacModal('${r.id}')`;
     const delFn  = isOf ? `ofExcluir('${r.id}')` : `sacExcluir('${r.id}')`;
     return '<div style="display:grid;grid-template-columns:96px 1.6fr 1.3fr 130px 110px auto;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;">'
       + `<div style="min-width:0;">${tipoChip}<div style="font-family:var(--mono,monospace);color:var(--text2);font-weight:800;margin-top:3px;">#${r.numero}</div></div>`
       + `<div style="min-width:0;overflow:hidden;"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(r.clienteNome)||'—'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(r.modeloScooter)||'—'}${r.cor?(' · '+escHtml(r.cor)):''}${isOf?'':(r.fornecedor?(' · '+escHtml(r.fornecedor)):'')}</div></div>`
-      + `<div style="min-width:0;overflow:hidden;"><div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(r.problemaRelatado)}">${escHtml(r.problemaRelatado)||'—'}</div><div style="margin-top:3px;"><span class="badge" style="background:${pr.bg};color:${pr.cor};font-size:9px;">${pr.label}</span></div></div>`
+      + `<div style="min-width:0;overflow:hidden;"><div style="font-size:11px;color:var(--text2);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.35;" title="${escHtml(r.resumoIa||r.problemaRelatado)}">${escHtml(r.resumoIa||r.problemaRelatado)||'—'}</div><div style="margin-top:3px;"><span class="badge" style="background:${pr.bg};color:${pr.cor};font-size:9px;">${pr.label}</span></div></div>`
       + valCol
       + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
       + `<div style="display:flex;gap:5px;justify-content:flex-end;">`
@@ -22375,11 +22405,13 @@ async function _sacSalvarReal(editId) {
     if (error) return smAlert('Erro ao salvar: ' + error.message);
     const i = sacCasos.findIndex(x => x.id === editId);
     if (i >= 0) sacCasos[i] = toCamel(data);
+    _resumoIaGerar('sac_casos', editId, data);
   } else {
     const { data, error } = await sb.from('sac_casos').insert(payload).select().single();
     if (error) return smAlert('Erro ao salvar: ' + error.message);
     const novoCaso = toCamel(data);
     sacCasos.unshift(novoCaso);
+    _resumoIaGerar('sac_casos', novoCaso.id, data);
     await _smTimelineCriar({
       casoId: novoCaso.id,
       modulo: 'sac',
