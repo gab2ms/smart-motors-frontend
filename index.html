@@ -16857,7 +16857,9 @@ function abrirOfModal(id) {
 
   let _u = null;
   try { _u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
-  const podeMover = isEdit && o && !o.sacDestinoId && _u && modulosPermitidos(_u).includes('oficina-sac');
+  // Handoff "Mover pro SAC" removido: agora reclassifica-se pelo "Tipo de atendimento"
+  // (sem duplicar registro). Função ofMoverParaSac e banners de histórico mantidos.
+  const podeMover = false;
   const sacDestino = (isEdit && o && o.sacDestinoId)
     ? (sacCasos || []).find(c => c.id === o.sacDestinoId) : null;
   const bannerSac = sacDestino
@@ -22182,7 +22184,8 @@ function abrirSacModal(id) {
     : '';
   const podeReverter = isEdit && c && c.osOrigemId && isAdminUser && c.status !== 'finalizado' && c.status !== 'transferido';
   // Mover pra Oficina: qualquer usuário com perm Oficina, caso não-transferido.
-  const podeMoverOf  = isEdit && c && !c.oficinaDestinoId && c.status !== 'transferido' && _u && modulosPermitidos(_u).includes('oficina-sac');
+  // Handoff "Mover pra Oficina" removido: reclassifica-se pelo "Tipo de atendimento".
+  const podeMoverOf  = false;
 
   // CPF: prefere o que está no caso; fallback no cadastro de clientes
   let cpfInicial = (c && c.clienteCpf) || '';
