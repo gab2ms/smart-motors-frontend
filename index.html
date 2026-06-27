@@ -2610,6 +2610,7 @@ select:not(.input-pro):not(.search-input){
         <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="fin-periodo-label">Todos os lançamentos</div>
       </div>
       <div id="fin-header-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn" onclick="recalcularSaldosManual()" title="Recalcula o saldo de cada conta a partir dos lançamentos (corrige saldo descolado)">↻ Recalcular saldos</button>
         <button class="btn" onclick="openContaModal()">+ Conta</button>
       </div>
     </div>
@@ -4575,6 +4576,12 @@ async function carregarDados() {
       'custosFixos=' + custosFixos.length,
       'products=' + products.length,
       'vendasMes=' + vendasMesConfig.valor);
+
+    // Saldo = âncora (saldoInicial) + soma dos lançamentos. Recalcula no load
+    // pra curar qualquer descolamento do saldo guardado (ex.: sobrescrita por
+    // aba antiga). Lançamentos são a fonte da verdade.
+    recalcularSaldos();
+
     return true;
   } catch(e) {
     console.warn('Erro ao carregar do Supabase:', e.message || e);
@@ -14037,12 +14044,60 @@ async function _deletarTransferencia(l) {
   salvarDados();
 }
 
+// Soma líquida dos lançamentos de uma conta (pelo nome): entrada soma, saída subtrai.
+function _somaLancamentosConta(nome) {
+  let s = 0;
+  for (const l of (lancamentos || [])) {
+    if (l.conta !== nome) continue;
+    s += l.tipo === 'entrada' ? (Number(l.valor) || 0) : -(Number(l.valor) || 0);
+  }
+  return Math.round(s * 100) / 100;
+}
+
+// Recalcula o saldo de TODAS as contas a partir da âncora (saldoInicial) +
+// soma dos lançamentos. A fonte da verdade é o conjunto de lançamentos —
+// isso mata qualquer "descolamento" do saldo guardado (ex.: uma aba antiga
+// sobrescrevendo o saldo por cima dos lançamentos novos). Roda no carregamento
+// e no botão "Recalcular saldos".
+function recalcularSaldos() {
+  const soma = {};
+  for (const l of (lancamentos || [])) {
+    if (!l.conta) continue;
+    soma[l.conta] = (soma[l.conta] || 0) + (l.tipo === 'entrada' ? (Number(l.valor) || 0) : -(Number(l.valor) || 0));
+  }
+  for (const c of (contas || [])) {
+    const base = Number(c.saldoInicial) || 0;
+    c.saldo = Math.round((base + (soma[c.nome] || 0)) * 100) / 100;
+  }
+}
+
+// Botão manual: recalcula, re-renderiza e persiste. Mostra o que mudou.
+async function recalcularSaldosManual() {
+  const antes = (contas || []).map(c => ({ nome: c.nome, saldo: Number(c.saldo) || 0 }));
+  recalcularSaldos();
+  const mudancas = (contas || [])
+    .map(c => { const a = antes.find(x => x.nome === c.nome); return { nome: c.nome, de: a ? a.saldo : 0, para: Number(c.saldo) || 0 }; })
+    .filter(m => Math.abs(m.de - m.para) >= 0.005);
+  renderContas();
+  renderFinKpis();
+  salvarDados();
+  if (!mudancas.length) {
+    smToast('Saldos conferidos — tudo já estava batendo com os lançamentos. ✅');
+  } else {
+    const linhas = mudancas.map(m => `• ${m.nome}: ${fmt(m.de)} → ${fmt(m.para)}`).join('\n');
+    smAlert(`Saldos recalculados a partir dos lançamentos:\n\n${linhas}`);
+  }
+}
+
 async function editarSaldoConta(i) {
   const c = contas[i];
   const novoSaldo = await smPrompt(`Saldo atual de "${c.nome}":\n\nDigite o saldo correto (R$):`, c.saldo.toFixed(2));
   if (novoSaldo === null) return;
   const val = parseFloat(novoSaldo.replace(',','.'));
   if (isNaN(val)) { smAlert('Valor inválido'); return; }
+  // Ajusta a ÂNCORA (saldoInicial) pra que o novo saldo SOBREVIVA ao recálculo.
+  // saldo = saldoInicial + soma(lançamentos)  ⇒  saldoInicial = saldo - soma(lançamentos).
+  c.saldoInicial = Math.round((val - _somaLancamentosConta(c.nome)) * 100) / 100;
   c.saldo = val;
   renderContas();
   renderFinKpis();
@@ -14072,7 +14127,7 @@ async function openContaModal() {
   const tipo = await smPrompt('Tipo (Dinheiro, Banco, Digital, etc.):','Banco');
   if (tipo===null) return;
   const saldoInicial = parseFloat(await smPrompt('Saldo inicial (R$):','0'))||0;
-  contas.push({nome, tipo:tipo||'Banco', saldo:saldoInicial});
+  contas.push({nome, tipo:tipo||'Banco', saldo:saldoInicial, saldoInicial});
   renderContas();
   renderFinKpis();
   salvarDados();
