@@ -18791,21 +18791,56 @@ function renderAfiliadosComissoes() {
 function _aflRenderComissoesInner() {
   const root = document.getElementById('afl-tab-comissoes');
   if (!root) return;
-  const q = (document.getElementById('afl-c-busca')?.value || '').trim().toLowerCase();
-  let arr = (typeof produtosCatalogo !== 'undefined' ? produtosCatalogo : []).filter(p => p.ativo !== false);
-  if (q) arr = arr.filter(p => (p.nome || '').toLowerCase().includes(q));
-  arr = arr.slice().sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || '')));
+  const q    = (document.getElementById('afl-c-busca')?.value || '').trim().toLowerCase();
+  const fCat = document.getElementById('afl-c-cat')?.value || '';
+  const fCom = document.getElementById('afl-c-com')?.value || '';
+  const fOrd = document.getElementById('afl-c-ord')?.value || 'nome-asc';
+
+  const base = (typeof produtosCatalogo !== 'undefined' ? produtosCatalogo : []).filter(p => p.ativo !== false);
+  const temCom = p => p.comissaoAfiliado != null && Number(p.comissaoAfiliado) > 0;
+
+  let arr = base.slice();
+  if (q)    arr = arr.filter(p => (p.nome || '').toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q));
+  if (fCat) arr = arr.filter(p => (p.categoria || '') === fCat);
+  if (fCom === 'com') arr = arr.filter(temCom);
+  else if (fCom === 'sem') arr = arr.filter(p => !temCom(p));
+
+  const byNome = (a, b) => String(a.nome || '').localeCompare(String(b.nome || ''));
+  const num = v => Number(v) || 0;
+  arr = arr.sort((a, b) => {
+    switch (fOrd) {
+      case 'nome-desc':  return byNome(b, a);
+      case 'preco-desc': return num(b.precoVenda) - num(a.precoVenda) || byNome(a, b);
+      case 'preco-asc':  return num(a.precoVenda) - num(b.precoVenda) || byNome(a, b);
+      case 'com-desc':   return num(b.comissaoAfiliado) - num(a.comissaoAfiliado) || byNome(a, b);
+      case 'com-asc':    return num(a.comissaoAfiliado) - num(b.comissaoAfiliado) || byNome(a, b);
+      default:           return byNome(a, b);
+    }
+  });
+
+  // Categorias presentes no catálogo (dinâmico) pro filtro.
+  const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+  const cats = [...new Set(base.map(p => p.categoria || '').filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const optCat = `<option value="">Todas as categorias</option>` + cats.map(c => `<option value="${escHtml(c)}"${fCat === c ? ' selected' : ''}>${escHtml(cap(c))}</option>`).join('');
+  const optCom = [['', 'Comissão: todas'], ['com', 'Só com comissão'], ['sem', 'Só sem comissão']].map(([v, l]) => `<option value="${v}"${fCom === v ? ' selected' : ''}>${l}</option>`).join('');
+  const optOrd = [['nome-asc', 'Nome (A→Z)'], ['nome-desc', 'Nome (Z→A)'], ['preco-desc', 'Maior preço'], ['preco-asc', 'Menor preço'], ['com-desc', 'Maior comissão'], ['com-asc', 'Menor comissão']].map(([v, l]) => `<option value="${v}"${fOrd === v ? ' selected' : ''}>${l}</option>`).join('');
 
   root.innerHTML =
-      `<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px;">`
-    +   `<input type="text" class="search-input" id="afl-c-busca" placeholder="Buscar produto..." oninput="_aflRenderComissoesInner()" value="${escHtml(q).replace(/"/g,'&quot;')}" style="min-width:240px;">`
-    +   `<div style="font-size:12px;color:var(--text3);align-self:center;">A comissão vale pra todos os afiliados. Edite o R$ e clique fora pra salvar.</div>`
+      `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">`
+    +   `<input type="text" class="search-input" id="afl-c-busca" placeholder="Buscar produto..." oninput="_aflRenderComissoesInner()" value="${escHtml(q).replace(/"/g,'&quot;')}" style="flex:1;min-width:200px;">`
+    +   `<select class="search-input" id="afl-c-cat" onchange="_aflRenderComissoesInner()" style="max-width:200px;">${optCat}</select>`
+    +   `<select class="search-input" id="afl-c-com" onchange="_aflRenderComissoesInner()" style="max-width:180px;">${optCom}</select>`
+    +   `<select class="search-input" id="afl-c-ord" onchange="_aflRenderComissoesInner()" style="max-width:180px;">${optOrd}</select>`
+    + `</div>`
+    + `<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:12px;color:var(--text3);">`
+    +   `<span>${arr.length} produto${arr.length === 1 ? '' : 's'}${(q || fCat || fCom) ? ' (filtrado)' : ''}</span>`
+    +   `<span>A comissão vale pra todos os afiliados. Edite o R$ e clique fora pra salvar.</span>`
     + `</div>`
     + `<div class="card"><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">`
     +   `<thead><tr style="border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;"><th style="text-align:left;padding:8px 14px;">Produto</th><th style="text-align:left;padding:8px 14px;">Categoria</th><th style="text-align:right;padding:8px 14px;">Preço</th><th style="text-align:right;padding:8px 14px;">Comissão afiliado (R$)</th></tr></thead><tbody>`
     +   (arr.length
         ? arr.map(p => `<tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;font-weight:700;">${escHtml(p.nome || '—')}</td><td style="padding:8px 14px;color:var(--text3);">${escHtml(p.categoria || '—')}</td><td style="padding:8px 14px;text-align:right;">${_fmtBRMoney(p.precoVenda)}</td><td style="padding:8px 14px;text-align:right;"><input type="number" step="0.01" min="0" value="${p.comissaoAfiliado != null ? Number(p.comissaoAfiliado) : ''}" placeholder="0,00" style="width:120px;text-align:right;padding:6px 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);" onchange="_aflSalvarComissaoProduto('${p.id}', this.value, this)"></td></tr>`).join('')
-        : `<tr><td colspan="4" style="padding:18px;color:var(--text3);text-align:center;">Nenhum produto.</td></tr>`)
+        : `<tr><td colspan="4" style="padding:18px;color:var(--text3);text-align:center;">Nenhum produto no filtro.</td></tr>`)
     +   `</tbody></table></div></div>`;
 }
 
