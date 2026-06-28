@@ -11322,73 +11322,59 @@ async function getUserByIdOrEmail(id, email) {
   return null;
 }
 
+// Busca a linha de usuarios correspondente ao usuario do Supabase Auth
+// (por auth_uid, com fallback por email) e devolve no formato camelCase do app.
+async function _carregarPerfilLogado(authUser) {
+  let row = null;
+  let r = await sb.from('usuarios').select('*').eq('auth_uid', authUser.id).maybeSingle();
+  if (r.data) row = r.data;
+  if (!row && authUser.email) {
+    r = await sb.from('usuarios').select('*').eq('email', authUser.email).maybeSingle();
+    if (r.data) row = r.data;
+  }
+  if (!row) return null;
+  const u = TABLE_MAP.usuarios.fromDb(row);
+  if (!u.email) u.email = authUser.email;
+  return u;
+}
+
+// Aplica a sessao no app: cacheia o perfil em sm_user (lido por outras partes,
+// ex. _isAdminUser/renderSidebar) e atualiza a UI. A sessao real e do Auth.
+function _aplicarSessao(perfil) {
+  try { localStorage.setItem('sm_user', JSON.stringify({ ...perfil, loggedAt: Date.now() })); } catch(e) {}
+  hideLoginOverlay();
+  atualizarUserDisplay(perfil);
+}
+
+function _mostrarLogin() {
+  const ov = document.getElementById('login-overlay');
+  if (ov) ov.classList.add('show');
+}
+
 async function initLogin() {
   const log = (...args) => console.log('[initLogin]', ...args);
-  const userJSON = localStorage.getItem('sm_user');
-  log('localStorage.sm_user presente?', !!userJSON);
+  let session = null;
+  try { const { data } = await sb.auth.getSession(); session = data.session; }
+  catch(e) { log('getSession falhou:', e.message); }
 
-  if (!userJSON) {
-    log('decisao: sem sm_user -> garantirAdmin + mostra login');
-    await garantirAdmin();
+  // Se a sessao cair (logout, expiracao, refresh falho), volta pro login.
+  try {
+    sb.auth.onAuthStateChange((event, sess) => {
+      if (event === 'SIGNED_OUT' || !sess) { _mostrarLogin(); }
+    });
+  } catch(e) {}
+
+  if (!session || !session.user) { log('sem sessao -> mostra login'); _mostrarLogin(); return; }
+
+  const perfil = await _carregarPerfilLogado(session.user);
+  if (!perfil || perfil.status !== 'aprovado') {
+    log('sessao sem perfil aprovado -> signOut + login');
+    try { await sb.auth.signOut(); } catch(e) {}
+    _mostrarLogin();
     return;
   }
-
-  let u;
-  try { u = JSON.parse(userJSON); }
-  catch(e) {
-    log('decisao: JSON.parse falhou (' + e.message + ') -> remove sm_user e mostra login');
-    localStorage.removeItem('sm_user');
-    await garantirAdmin();
-    return;
-  }
-  log('parsed user ok (id presente?', !!(u && u.id), ')');
-
-  if (u.status !== 'aprovado') {
-    log('decisao: status="' + u.status + '" != aprovado -> remove sm_user e mostra login');
-    localStorage.removeItem('sm_user');
-    await garantirAdmin();
-    return;
-  }
-
-  // Sessão fresca (< 24h): confia no localStorage e nem fala com Supabase
-  const idade = Date.now() - (u.loggedAt || 0);
-  log('idade da sessao (ms) =', idade, '/ limite =', SESSAO_REVALIDA_MS, '/ Date.now()=', Date.now(), '/ loggedAt=', u.loggedAt);
-  if (idade < SESSAO_REVALIDA_MS) {
-    log('decisao: caminho rapido -> mantem logado SEM falar com Supabase');
-    try {
-      hideLoginOverlay();
-      atualizarUserDisplay(u);
-      log('hideLoginOverlay + atualizarUserDisplay ok');
-    } catch(e) {
-      log('ERRO ao esconder overlay/atualizar display:', e.message, e.stack);
-    }
-    return;
-  }
-
-  // Sessão antiga: revalida no Supabase (por id ou email)
-  log('sessao > 24h -> revalidando no Supabase');
-  const fresh = await getUserByIdOrEmail(u.id, u.email);
-  log('getUserByIdOrEmail retornou:', fresh);
-
-  if (fresh === undefined) {
-    log('decisao: erro de rede/API -> mantem logado (resiliencia)');
-    hideLoginOverlay();
-    atualizarUserDisplay(u);
-    return;
-  }
-
-  if (fresh && fresh.status === 'aprovado') {
-    log('decisao: revalidado, status aprovado -> renova loggedAt');
-    const updated = { ...fresh, loggedAt: Date.now() };
-    localStorage.setItem('sm_user', JSON.stringify(updated));
-    hideLoginOverlay();
-    atualizarUserDisplay(updated);
-    return;
-  }
-
-  log('decisao: usuario removido ou status mudou -> remove sm_user e mostra login');
-  localStorage.removeItem('sm_user');
-  await garantirAdmin();
+  log('sessao valida -> aplica');
+  _aplicarSessao(perfil);
 }
 
 async function garantirAdmin() {
@@ -11487,32 +11473,40 @@ async function fazerLogin() {
 
   if (!identificador || !senha) { showLoginErro(erroEl,'Preencha e-mail/usuário e senha.'); return; }
 
-  // (Removido) Atalho de admin com senha fixa em texto puro no fonte público.
-  // O admin agora loga pelo fluxo normal abaixo, validando contra a tabela
-  // usuarios (a senha do admin vive no banco, não no código).
-  const users    = await getUsers();
-  const senhaH   = hashSenha(senha);
-  const porEmail = identificador.includes('@');
-  const user = porEmail
-    ? users.find(u => (u.email||'').toLowerCase() === identificador && u.senha === senhaH)
-    : users.find(u => (u.nome ||'').toLowerCase() === identificador && u.senha === senhaH);
-
-  if (!user) { showLoginErro(erroEl, porEmail ? 'E-mail ou senha incorretos.' : 'Usuário ou senha incorretos.'); return; }
-
-  if (user.status === 'pendente') {
-    showLoginErro(erroEl,'Seu cadastro ainda aguarda aprovação do administrador.');
-    return;
+  // Login agora via Supabase Auth. Aceita e-mail OU nome (resolve nome->email
+  // pela RPC resolver_email_login, que funciona mesmo com o RLS fechado).
+  let email = identificadorRaw;
+  if (!identificadorRaw.includes('@')) {
+    try {
+      const { data, error } = await sb.rpc('resolver_email_login', { p_ident: identificadorRaw });
+      if (!error && data) email = data;
+    } catch(e) {}
   }
-  if (user.status === 'rejeitado') {
-    showLoginErro(erroEl,'Seu acesso foi negado. Entre em contato com o administrador.');
+
+  const { data: authData, error: authErr } =
+    await sb.auth.signInWithPassword({ email: (email||'').toLowerCase(), password: senha });
+  if (authErr || !authData || !authData.user) {
+    showLoginErro(erroEl, 'E-mail/usuário ou senha incorretos.');
     return;
   }
 
-  localStorage.setItem('sm_user', JSON.stringify({ ...user, loggedAt: Date.now() }));
-  hideLoginOverlay();
-  atualizarUserDisplay(user);
-  restaurarUltimaPagina();
+  const perfil = await _carregarPerfilLogado(authData.user);
+  if (!perfil) {
+    await sb.auth.signOut();
+    showLoginErro(erroEl, 'Conta sem perfil configurado. Fale com o administrador.');
+    return;
+  }
+  if (perfil.status === 'pendente')  { await sb.auth.signOut(); showLoginErro(erroEl,'Seu cadastro ainda aguarda aprovação do administrador.'); return; }
+  if (perfil.status === 'rejeitado') { await sb.auth.signOut(); showLoginErro(erroEl,'Seu acesso foi negado. Entre em contato com o administrador.'); return; }
+
+  _aplicarSessao(perfil);
+  try { restaurarUltimaPagina(); } catch(e) {}
   try { _mostrarNovidadesDoDia(); } catch(e) {}
+
+  // Primeiro acesso com senha provisoria -> forca a troca de senha.
+  if (authData.user.user_metadata && authData.user.user_metadata.must_change) {
+    abrirTrocarSenha(true);
+  }
 }
 
 // Restaura a última página acessada (chamado após login e em DOMContentLoaded).
@@ -11543,33 +11537,14 @@ async function criarConta() {
   const erroEl   = document.getElementById('criar-erro');
   const okEl     = document.getElementById('criar-ok');
 
-  if (!nome||!email||!senha||!confirma) { showLoginErro(erroEl,'Preencha todos os campos.'); return; }
-  if (senha.length < 6)  { showLoginErro(erroEl,'Senha deve ter mínimo 6 caracteres.'); return; }
-  if (senha !== confirma){ showLoginErro(erroEl,'As senhas não conferem.'); return; }
-
-  const users = await getUsers();
-  if (users.find(u => u.email === email)){ showLoginErro(erroEl,'E-mail já cadastrado.'); return; }
-
-  console.log('[criarConta] tentando salvar novo usuario (role=usuario status=pendente)');
-  const salvo = await saveUser({
-    nome, email, senha: hashSenha(senha),
-    role: 'usuario',
-    status: 'pendente',
-    criadoEm: new Date().toISOString(),
-  });
-  console.log('[criarConta] saveUser retornou:', salvo);
-
-  if (!salvo) {
-    console.error('[criarConta] FALHOU — saveUser retornou null. Veja erro acima.');
-    showLoginErro(erroEl, 'Erro ao salvar no servidor. Tente novamente.');
-    return;
+  // Com o login pelo Supabase Auth, a criacao de acesso passou a ser
+  // centralizada no administrador (mais seguro). Mantemos a aba apenas
+  // orientando — o admin cria o usuario e entrega uma senha provisoria.
+  if (erroEl) erroEl.classList.remove('show');
+  if (okEl) {
+    okEl.textContent = 'Para criar um acesso, peca ao administrador. O cadastro foi centralizado por seguranca.';
+    okEl.classList.add('show');
   }
-
-  console.log('[criarConta] usuario criado OK, id=' + salvo.id);
-  erroEl.classList.remove('show');
-  okEl.textContent = 'Solicitação enviada! Aguarde a aprovação do administrador para fazer login.';
-  okEl.classList.add('show');
-  await atualizarPendingDot();
 }
 
 async function resetSenha() {
@@ -11577,24 +11552,12 @@ async function resetSenha() {
   const erroEl = document.getElementById('reset-erro');
   const okEl   = document.getElementById('reset-ok');
 
-  if (!email){ showLoginErro(erroEl,'Digite seu e-mail.'); return; }
-
-  const users = await getUsers();
-  const user  = users.find(u => u.email === email);
-
-  // Senha temporária aleatória por reset (não mais um valor fixo no fonte).
-  const novaSenha = _senhaAleatoria(12);
-
-  // Por segurança, sempre mostra mesma mensagem
-  erroEl.classList.remove('show');
-  okEl.textContent = `Se houver uma conta com ${email}, a nova senha temporária é: ${novaSenha}
-
-Faça login e altere sua senha.`;
-  okEl.classList.add('show');
-
-  if (user) {
-    user.senha = hashSenha(novaSenha);
-    await saveUser(user);
+  // Redefinicao de senha agora e feita pelo administrador (gera uma senha
+  // provisoria via painel; o usuario troca no proximo acesso).
+  if (erroEl) erroEl.classList.remove('show');
+  if (okEl) {
+    okEl.textContent = 'Para redefinir sua senha, peca ao administrador. Ele gera uma senha provisoria e voce troca no proximo acesso.';
+    okEl.classList.add('show');
   }
 }
 
@@ -11661,10 +11624,47 @@ async function atualizarPendingDot() {
 
 async function fazerLogout() {
   if (!(await smConfirm('Deseja sair da sua conta?'))) return;
+  try { await sb.auth.signOut(); } catch(e) {}
   localStorage.removeItem('sm_user');
   document.getElementById('login-overlay').classList.add('show');
   const su = document.getElementById('sidebar-user');
   if (su) su.remove();
+}
+
+// ── Troca de senha (Supabase Auth) ──
+// forcado=true: usado no 1o acesso (senha provisoria), sem botao de cancelar.
+function abrirTrocarSenha(forcado) {
+  if (document.getElementById('troca-senha-modal')) return;
+  const ov = document.createElement('div');
+  ov.id = 'troca-senha-modal';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;';
+  ov.innerHTML =
+    '<div style="background:var(--surface,#1c1c1c);border:1px solid var(--border,#333);border-radius:12px;padding:22px;width:330px;max-width:90vw;font-family:var(--font-primary,sans-serif);">'
+    + '<div style="font-size:15px;font-weight:800;color:var(--text,#fff);margin-bottom:6px;">' + (forcado ? 'Crie sua senha' : 'Trocar senha') + '</div>'
+    + '<div style="font-size:12px;color:var(--text3,#999);margin-bottom:14px;">' + (forcado ? 'Voce entrou com uma senha provisoria. Defina sua senha pessoal para continuar.' : 'Digite a nova senha.') + '</div>'
+    + '<input id="ts-nova" type="password" placeholder="Nova senha (min. 6)" class="form-input" style="width:100%;margin-bottom:8px;">'
+    + '<input id="ts-conf" type="password" placeholder="Confirmar nova senha" class="form-input" style="width:100%;margin-bottom:8px;">'
+    + '<div id="ts-erro" style="color:var(--red,#e55);font-size:12px;min-height:16px;margin-bottom:8px;"></div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;">'
+    + (forcado ? '' : '<button id="ts-cancel" style="padding:8px 12px;border:1px solid var(--border2,#444);background:none;color:var(--text3,#999);border-radius:8px;cursor:pointer;">Cancelar</button>')
+    + '<button id="ts-salvar" style="padding:8px 14px;background:var(--gold,#f0a500);border:none;border-radius:8px;font-weight:700;cursor:pointer;">Salvar</button>'
+    + '</div></div>';
+  document.body.appendChild(ov);
+  const cancel = document.getElementById('ts-cancel');
+  if (cancel) cancel.addEventListener('click', () => ov.remove());
+  document.getElementById('ts-salvar').addEventListener('click', confirmarTrocarSenha);
+}
+
+async function confirmarTrocarSenha() {
+  const nova = document.getElementById('ts-nova').value;
+  const conf = document.getElementById('ts-conf').value;
+  const erro = document.getElementById('ts-erro');
+  if (!nova || nova.length < 6) { erro.textContent = 'A senha deve ter ao menos 6 caracteres.'; return; }
+  if (nova !== conf) { erro.textContent = 'As senhas nao conferem.'; return; }
+  const { error } = await sb.auth.updateUser({ password: nova, data: { must_change: false } });
+  if (error) { erro.textContent = 'Erro: ' + error.message; return; }
+  const m = document.getElementById('troca-senha-modal'); if (m) m.remove();
+  try { smToast('Senha atualizada!'); } catch(e) {}
 }
 
 // ══════════════════════════════════════════
