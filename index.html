@@ -24199,21 +24199,22 @@ async function _contratoGerarPdf() {
 // ══════════════════════════════════════════
 //  WHATSAPP NOTIFY (CallMeBot)
 // ══════════════════════════════════════════
-const WA_NUMBER  = '5521997507738';
-const WA_APIKEY  = '6372158';
-const WA_API_URL = 'https://api.textmebot.com/send.php';
+const WA_NUMBER  = '5521997507738'; // telefone da loja (não é segredo)
 
-// Envio parametrizado — base de qualquer disparo (notificações de evento,
-// teste de destinatário, resumos). CallMeBot responde texto simples; no-cors
-// evita erro de CORS, mas em troca não dá pra ler a resposta: sucesso aqui
-// significa "requisição saiu", não "mensagem entregue".
+// Envio via Edge Function wa-notify: a API key NÃO fica mais no front. A função
+// resolve a key server-side (body > tabela whatsapp_destinatarios > secret) e
+// dispara o envio. `apikey` aqui só é usada no fluxo de "teste" (key digitada,
+// ainda não salva); nos demais casos passa null e a função busca pela tabela.
 async function _enviarWhatsAppRaw(numero, apikey, mensagem) {
-  if (!mensagem || !numero || !apikey) return false;
+  if (!mensagem || !numero) return false;
   try {
-    const url = `${WA_API_URL}?recipient=+${encodeURIComponent(numero)}&text=${encodeURIComponent(mensagem)}&apikey=${encodeURIComponent(apikey)}`;
-    await fetch(url, { method: 'GET', mode: 'no-cors' });
-    console.log('[whatsapp] enviado p/', numero, ':', mensagem.split('\n')[0]);
-    return true;
+    const { data, error } = await sb.functions.invoke('wa-notify', {
+      body: { numero, mensagem, apiKey: apikey || undefined },
+    });
+    if (error) { console.warn('[whatsapp] falhou:', error.message); return false; }
+    const ok = !!(data && data.ok);
+    console.log('[whatsapp] envio p/', numero, '->', ok ? 'ok' : ('falha: ' + ((data && data.erro) || '?')));
+    return ok;
   } catch (e) {
     console.warn('[whatsapp] falhou:', e.message);
     return false;
@@ -24223,7 +24224,7 @@ async function _enviarWhatsAppRaw(numero, apikey, mensagem) {
 // Wrapper p/ o número fixo da loja — usado pelas notificações de evento.
 async function enviarWhatsApp(mensagem) {
   if (!mensagem) return false;
-  return _enviarWhatsAppRaw(WA_NUMBER, WA_APIKEY, mensagem);
+  return _enviarWhatsAppRaw(WA_NUMBER, null, mensagem);
 }
 
 function _waHoje() { return new Date().toISOString().slice(0,10); }
@@ -24362,12 +24363,12 @@ async function _carregarWhatsappDest() {
   whatsappDestinatarios = toCamelArr(data || []);
 }
 
-// Seed idempotente: na 1ª abertura insere o Gabriel a partir das constantes
-// WA_NUMBER/WA_APIKEY já existentes — fonte única, sem duplicar a key.
+// Seed idempotente: na 1ª abertura insere o Gabriel (sem a api_key — ela é
+// cadastrada na tela de destinatários e resolvida server-side pela wa-notify).
 async function _seedWhatsappDest() {
   if (whatsappDestinatarios.length) return;
   const { error } = await sb.from('whatsapp_destinatarios').insert({
-    nome: 'Gabriel', numero: WA_NUMBER, api_key: WA_APIKEY,
+    nome: 'Gabriel', numero: WA_NUMBER,
     receber_manha: true, receber_noite: true, ativo: true,
   });
   if (error) { console.warn('[wa-dest] seed falhou:', error.message); return; }
@@ -24739,7 +24740,7 @@ async function _enviarPreviaResumo() {
   if (!texto) { smAlert('A prévia está vazia.'); return; }
   if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
   try {
-    const ok = await _enviarWhatsAppRaw(WA_NUMBER, WA_APIKEY, texto);
+    const ok = await _enviarWhatsAppRaw(WA_NUMBER, null, texto);
     await _logEnvioWhatsapp(null, 'previa', texto, ok, ok ? null : 'falha no envio');
     smToast('Prévia enviada — confira o WhatsApp.');
     document.getElementById('wa-preview-modal')?.remove();

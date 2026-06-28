@@ -18,6 +18,17 @@ Instruções e contexto do projeto para o Claude Code.
 - **Backend:** **Supabase** (Postgres + Edge Functions), projeto ref `sxmeuqlotjuchslevofv`. Edge Functions: `portal-afiliado` (token HMAC próprio), `gerar-resumo-os` (verify_jwt), rotas de NF-e. Há também um backend Node no **Railway** (`smartmotorsestoque-production.up.railway.app`) para estoque/NF-e.
 - **Auth atual:** login caseiro client-side (lê a tabela `usuarios` via anon key; sessão em `localStorage` `sm_user`). **Sem Supabase Auth ainda** (migração prevista — ver Segurança / Frente 2).
 
+## Integrações de WhatsApp (mapa — investigado 2026-06-28)
+
+Há **dois disparadores** que usam a **mesma API (textmebot)** e a **mesma tabela** `whatsapp_destinatarios` (cada destinatário tem `numero` + `api_key`). NÃO são integrações concorrentes com keys diferentes — bebem da mesma fonte:
+
+1. **Railway `resumoWhatsapp.js`** (cron 8h/20h) — manda os **resumos automáticos**. Lê `whatsapp_destinatarios` e envia com `d.api_key` (`resumoWhatsapp.js:615,627`), respeitando `TEXTMEBOT_DELAY_MS = 8000` (8s entre envios, pra não bater no rate limit). **É a que FUNCIONA** (o dono recebe manhã/noite).
+2. **App `index.html`** (disparo manual + notificações de evento: conta vencida, OS pronta, SAC, prévia, teste) — desde 2026-06-28 envia via Edge Function `wa-notify`, que resolve a key na **mesma tabela**. Antes usava a key `6372158` **hardcoded** no front, que é **INVÁLIDA** ("Invalid Premium APIkey" — CallMeBot/era antiga). Essa key morta foi removida; é a "integração desativada cujo registro continuava" mencionada pelo dono.
+
+**Conclusão:** key boa = a de `whatsapp_destinatarios` (textmebot premium, usada pelo Railway). Key `6372158` = lixo legado (removida). O app agora usa a key certa.
+
+**⚠️ PROBLEMA ATIVO (confirmado 28/06):** o textmebot retorna `recipient disconnected` para o número do Gabriel (+5521997507738) — **confirmado com envio único** (não é rate limit). O sender/bot é **+5521965107705**. Como Railway e app usam o MESMO número/key, **os dois pararam de entregar** (o dono não recebeu o resumo de hoje). **Ação necessária (no textmebot, não no código):** reconectar o número do Gabriel — abrir o WhatsApp dele, mandar a mensagem de ativação pro bot **+5521965107705** (mesmo procedimento da configuração inicial), ou checar o painel via `status.php?apikey=<a key do cadastro do destinatário>`. Depois disso os automáticos voltam.
+
 ## Segurança
 
 Auditoria completa feita em **28/06/2026** (5 agentes de varredura + 3 arquitetos cruzando estratégia de RLS). Plano: `~/.claude/plans/quero-atacar-aquela-pendencia-serene-fox.md`. **Nota inicial: 2/10.**
@@ -29,7 +40,7 @@ Auditoria completa feita em **28/06/2026** (5 agentes de varredura + 3 arquiteto
 ### Pendências de infra (ação manual do dono)
 - **"Site não seguro":** o GitHub Pages nunca provisionou o cert do domínio (apresenta `CN=*.github.io`). DNS já está correto. Corrigir em **Settings → Pages**: remover e re-adicionar `smartmotorsapp.com.br` (força reprovisionar o cert Let's Encrypt) e marcar **Enforce HTTPS**.
 - **Headers HTTP** (HSTS, X-Frame-Options, CSP completa) só com proxy/CDN (ex.: Cloudflare) na frente — GitHub Pages não envia headers. Hoje há só CSP parcial via `<meta>`.
-- **WhatsApp/CallMeBot key** (`WA_APIKEY` no `index.html`): mover para Edge Function `wa-notify` + rotacionar a key (pendente; impacto real baixo — só envia msg pro número da loja).
+- **WhatsApp/CallMeBot key:** ✅ movida pra Edge Function `wa-notify` (key fora do front). Pendência opcional: rotacionar a key no CallMeBot e (se quiser fallback) setar os secrets `WA_APIKEY`/`WA_NUMBER` na função.
 
 ## Histórico de mudanças
 
@@ -41,3 +52,11 @@ Arquivos: `index.html`, `portal.html`, `.gitignore`, migração Supabase. **Em v
 - **CSP via `<meta>`** adicionada em `index.html` e `portal.html` (allowlist de origens; `'unsafe-inline'` necessário pois o JS é inline — valor parcial).
 - **`.gitignore`** reforçado: `*.bak`, `sim_*.js`, `dre_baseline_*.json`, `supabase/.temp/`, `*.local.json`, `.env*`.
 - **Hardening SQL** (migração `harden_function_search_path`, **aplicada em produção**): `SET search_path = public` em `apagar_movimento`, `fn_conta_to_parcela`, `fn_parcela_to_conta`, `registrar_movimento`, `vendas_por_produto` (neutro; advisor `function_search_path_mutable` zerado).
+
+### 2026-06-28 — WhatsApp: key fora do front (Edge Function `wa-notify`)
+Arquivos: `supabase/functions/wa-notify/index.ts` (nova, **deployada**, verify_jwt=true), `index.html`. **Em validação local antes do push.**
+- Removidas as constantes `WA_APIKEY`/`WA_API_URL` do `index.html` (a `WA_APIKEY` era a única key hardcoded; `WA_NUMBER` foi mantida — é só telefone).
+- `_enviarWhatsAppRaw` agora chama `sb.functions.invoke('wa-notify', { body:{ numero, mensagem, apiKey? } })`; a função resolve a key server-side (body do "teste" → tabela `whatsapp_destinatarios` → secret opcional) e dispara o envio. Passou a retornar o status real do textmebot (antes era `no-cors`, sempre true).
+- Healthcheck `__ping__` (não envia zap) testado: sem JWT → 401, com anon key → 200, e via front (`sb.functions.invoke`) → ok.
+- **Descoberta (ver "Integrações de WhatsApp"):** a key `6372158` que estava hardcoded no app é INVÁLIDA; a key boa é a de `whatsapp_destinatarios` (mesma do Railway). A migração alinhou o app à key certa. O `no-cors` antigo mascarava tudo (app dizia "enviado" sem entregar). Erro `recipient disconnected` no teste manual = provável rajada sem o delay de 8s.
+- **v2 da função:** sanitiza a resposta do textmebot (mascara `apikey=***` e remove HTML) — o HTML de erro do serviço ecoava uma apikey, que não deve voltar ao front.
