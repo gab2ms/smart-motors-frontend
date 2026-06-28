@@ -11500,6 +11500,10 @@ async function fazerLogin() {
   if (perfil.status === 'rejeitado') { await sb.auth.signOut(); showLoginErro(erroEl,'Seu acesso foi negado. Entre em contato com o administrador.'); return; }
 
   _aplicarSessao(perfil);
+  // Recarrega os dados JA autenticado. Necessario porque, com o RLS fechado
+  // (to authenticated), o anon nao le nada — entao o que foi (ou nao) carregado
+  // no boot precisa ser (re)buscado agora que ha sessao.
+  try { await carregarDados(); } catch(e) { console.warn('[fazerLogin] carregarDados falhou:', e.message); }
   try { restaurarUltimaPagina(); } catch(e) {}
   try { _mostrarNovidadesDoDia(); } catch(e) {}
 
