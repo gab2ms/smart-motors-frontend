@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- CSP (defesa em profundidade). GitHub Pages não envia headers HTTP, então
+     usamos <meta>. Limita as ORIGENS de scripts/conexões/recursos. Mantém
+     'unsafe-inline' porque todo o JS/handlers são inline (valor parcial).
+     HSTS / X-Frame-Options / CSP completa exigem proxy (ex.: Cloudflare). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src 'self' https://sxmeuqlotjuchslevofv.supabase.co wss://sxmeuqlotjuchslevofv.supabase.co https://smartmotorsestoque-production.up.railway.app https://api.textmebot.com https://viacep.com.br https://api.anthropic.com https://cdn.jsdelivr.net">
 <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="pragma" content="no-cache">
 <meta http-equiv="expires" content="0">
@@ -12,10 +17,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onload="console.log('[head] supabase CDN carregou')" onerror="console.error('[head] supabase CDN FALHOU ao carregar')"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js" integrity="sha384-nD3dwv4+ZqdYnmZKe/249ImlV04om7xTCcsoSeQYI+RO+XlKPoqAWaJR1M5SJH9p" crossorigin="anonymous" referrerpolicy="no-referrer" onload="console.log('[head] supabase CDN carregou')" onerror="console.error('[head] supabase CDN FALHOU ao carregar')"></script>
 <!-- xlsx-js-style: fork do SheetJS que preserva estilos (cell.s) no output xlsx.
      A versao oficial community em cdn.sheetjs.com nao salva estilos. -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onload="console.log('[head] xlsx-js-style carregou')" onerror="console.error('[head] xlsx-js-style FALHOU')"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" integrity="sha384-OUW9euuUyxyHcAhTqbhI+Iyb8LMssXt/cpz0yXhs9UWG2/R/uaWdakx/4cfww7Vb" crossorigin="anonymous" referrerpolicy="no-referrer" onload="console.log('[head] xlsx-js-style carregou')" onerror="console.error('[head] xlsx-js-style FALHOU')"></script>
 <style>
 :root {
   --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -11283,7 +11288,7 @@ function modulosPermitidos(user) {
 }
 function aplicarPermissoes(user) {
   const permitidos = modulosPermitidos(user);
-  console.log('[aplicarPermissoes] user=' + (user && user.email) + ' perfil=' + (user && user.perfil) + ' modulos=', permitidos);
+  console.log('[aplicarPermissoes] perfil=' + (user && user.perfil) + ' modulos=', permitidos);
   // Sidebar dinâmica: a render lê localStorage.sm_user (que já foi setado
   // antes deste call) e filtra por modulosPermitidos. Re-renderiza pra
   // refletir o user atual.
@@ -11320,7 +11325,7 @@ async function getUserByIdOrEmail(id, email) {
 async function initLogin() {
   const log = (...args) => console.log('[initLogin]', ...args);
   const userJSON = localStorage.getItem('sm_user');
-  log('localStorage.sm_user =', userJSON);
+  log('localStorage.sm_user presente?', !!userJSON);
 
   if (!userJSON) {
     log('decisao: sem sm_user -> garantirAdmin + mostra login');
@@ -11336,7 +11341,7 @@ async function initLogin() {
     await garantirAdmin();
     return;
   }
-  log('parsed user =', u);
+  log('parsed user ok (id presente?', !!(u && u.id), ')');
 
   if (u.status !== 'aprovado') {
     log('decisao: status="' + u.status + '" != aprovado -> remove sm_user e mostra login');
@@ -11390,10 +11395,15 @@ async function garantirAdmin() {
   const users = await getUsers();
   const exists = users.find(u => u.email === ADMIN_EMAIL);
   if (!exists) {
+    // Só cria o admin se ele não existir (ex.: banco zerado). Gera senha
+    // aleatória — sem senha fixa no fonte. Use "Esqueci a senha" para definir
+    // uma nova, ou veja a senha provisória abaixo no console nesse 1º boot.
+    const senhaInicial = _senhaAleatoria(14);
+    console.warn('[garantirAdmin] admin criado com senha provisória:', senhaInicial, '— troque via "Esqueci a senha".');
     await saveUser({
       nome:     'Gabriel',
       email:    ADMIN_EMAIL,
-      senha:    hashSenha('Ma49721106'),
+      senha:    hashSenha(senhaInicial),
       role:     'admin',
       perfil:   'admin',
       status:   'aprovado',
@@ -11416,8 +11426,23 @@ function switchLoginTab(tab) {
 
 function hashSenha(s) {
   // Usa btoa com fallback para garantir consistência
+  // NOTA SEGURANÇA: btoa é codificação reversível, NÃO é hash. A troca por
+  // hashing real (bcrypt via Supabase Auth) está prevista na Frente 2 do
+  // plano de segurança (lockdown de RLS + auth). Não alterar isoladamente
+  // sem migrar o login, senão as senhas já salvas no banco param de bater.
   try { return btoa(unescape(encodeURIComponent(s))); }
   catch(e) { return btoa(s); }
+}
+
+// Senha aleatória forte (substitui senhas fixas hardcoded no fonte público).
+function _senhaAleatoria(len) {
+  len = len || 14;
+  const alf = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+  const buf = new Uint32Array(len);
+  (crypto || window.crypto).getRandomValues(buf);
+  let out = '';
+  for (let i = 0; i < len; i++) out += alf[buf[i] % alf.length];
+  return out;
 }
 
 async function getUsers() {
@@ -11462,18 +11487,9 @@ async function fazerLogin() {
 
   if (!identificador || !senha) { showLoginErro(erroEl,'Preencha e-mail/usuário e senha.'); return; }
 
-  // Atalho admin fixo: garante existência e loga
-  if (identificador === ADMIN_EMAIL && senha === 'Ma49721106') {
-    const adminUser = { nome:'Gabriel', email:ADMIN_EMAIL, role:'admin', perfil:'admin', status:'aprovado' };
-    const salvo = await saveUser({ ...adminUser, senha: hashSenha(senha), criadoEm: new Date().toISOString() });
-    const userPersist = salvo || adminUser;
-    localStorage.setItem('sm_user', JSON.stringify({ ...userPersist, loggedAt: Date.now() }));
-    hideLoginOverlay();
-    atualizarUserDisplay(userPersist);
-    try { _mostrarNovidadesDoDia(); } catch(e) {}
-    return;
-  }
-
+  // (Removido) Atalho de admin com senha fixa em texto puro no fonte público.
+  // O admin agora loga pelo fluxo normal abaixo, validando contra a tabela
+  // usuarios (a senha do admin vive no banco, não no código).
   const users    = await getUsers();
   const senhaH   = hashSenha(senha);
   const porEmail = identificador.includes('@');
@@ -11534,7 +11550,7 @@ async function criarConta() {
   const users = await getUsers();
   if (users.find(u => u.email === email)){ showLoginErro(erroEl,'E-mail já cadastrado.'); return; }
 
-  console.log('[criarConta] tentando salvar usuario:', email, 'role=usuario status=pendente');
+  console.log('[criarConta] tentando salvar novo usuario (role=usuario status=pendente)');
   const salvo = await saveUser({
     nome, email, senha: hashSenha(senha),
     role: 'usuario',
@@ -11566,15 +11582,18 @@ async function resetSenha() {
   const users = await getUsers();
   const user  = users.find(u => u.email === email);
 
+  // Senha temporária aleatória por reset (não mais um valor fixo no fonte).
+  const novaSenha = _senhaAleatoria(12);
+
   // Por segurança, sempre mostra mesma mensagem
   erroEl.classList.remove('show');
-  okEl.textContent = `Se houver uma conta com ${email}, a nova senha temporária é: smartmotors123
+  okEl.textContent = `Se houver uma conta com ${email}, a nova senha temporária é: ${novaSenha}
 
 Faça login e altere sua senha.`;
   okEl.classList.add('show');
 
   if (user) {
-    user.senha = hashSenha('smartmotors123');
+    user.senha = hashSenha(novaSenha);
     await saveUser(user);
   }
 }
@@ -15943,7 +15962,7 @@ async function renderAdmin() {
     + ' | pendentes=' + pendente.length
     + ' | aprovados=' + ativo.length
     + ' | rejeitados=' + rejeit.length);
-  if (pendente.length) console.log('[renderAdmin] pendentes:', pendente.map(u => u.email));
+  if (pendente.length) console.log('[renderAdmin] pendentes:', pendente.length);
 
   document.getElementById('admin-pending-count').textContent = pendente.length;
   document.getElementById('admin-active-count').textContent = ativo.length;

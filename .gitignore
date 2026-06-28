@@ -1,2 +1,12 @@
 .DS_Store
 .validation-shots/
+
+# Seguranca — nunca commitar segredos / backups / descartaveis (Frente 1 auditoria)
+*.bak
+*.bak2
+sim_*.js
+dre_baseline_*.json
+supabase/.temp/
+*.local.json
+.env
+.env.*
