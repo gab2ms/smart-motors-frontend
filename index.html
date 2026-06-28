@@ -2984,6 +2984,38 @@ select:not(.input-pro):not(.search-input){
     <div class="cal-mobile" id="cal-mobile"></div>
   </div>
 
+  <!-- ══════════════ AFILIADOS ══════════════ -->
+  <div class="page content" id="page-afiliados">
+    <!-- ABAS -->
+    <div class="fin-tabs">
+      <button class="fin-tab-btn active" data-afltab="cadastro"  onclick="switchAfiliadosTab('cadastro')">Afiliados (<span id="afl-cnt">0</span>)</button>
+      <button class="fin-tab-btn"         data-afltab="vendas"    onclick="switchAfiliadosTab('vendas')">Vendas &amp; Comissões</button>
+      <button class="fin-tab-btn"         data-afltab="comissoes" onclick="switchAfiliadosTab('comissoes')">Comissões por produto</button>
+    </div>
+
+    <!-- TAB: cadastro -->
+    <div class="fin-tab-content" id="afl-tab-cadastro">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        <input type="text" class="search-input" id="afl-busca" placeholder="Buscar afiliado..." oninput="renderAfiliados()" style="min-width:220px;">
+        <button class="btn btn-gold" onclick="abrirAfiliadoModal()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Novo afiliado</button>
+      </div>
+      <div class="card">
+        <div class="card-header"><div><div class="card-sub" id="afl-count">—</div></div></div>
+        <div id="afl-lista"></div>
+      </div>
+    </div>
+
+    <!-- TAB: vendas & comissões (Fase 3) -->
+    <div class="fin-tab-content" id="afl-tab-vendas" style="display:none;">
+      <div id="afl-vendas-conteudo" style="color:var(--text3);padding:24px;text-align:center;">Vendas e comissões por afiliado entram na próxima fase.</div>
+    </div>
+
+    <!-- TAB: comissões por produto (Fase 3) -->
+    <div class="fin-tab-content" id="afl-tab-comissoes" style="display:none;">
+      <div id="afl-comissoes-conteudo" style="color:var(--text3);padding:24px;text-align:center;">A tabela de comissão por produto entra na próxima fase.</div>
+    </div>
+  </div>
+
   <!-- ══════════════ MONTAGENS ══════════════ -->
   <div class="page content" id="page-montagens">
     <!-- ABAS -->
@@ -4257,6 +4289,7 @@ const pageMeta={
   'oficina-sac':['Pós-venda / Oficina','Pós-venda — ordens de serviço e atendimento num só painel'],
   calendario:['Calendário','Agenda — visitas, compromissos e eventos manuais'],
   montagens:['Montagens','Controle de lotes enviados pra montadores externos'],
+  afiliados:['Afiliados','Cadastro de afiliados, vendas e comissões por venda'],
   clientes:['Clientes','Cadastro central — manuais e sincronizados com Tiny'],
   contratos:['Contrato','Geração e histórico de contratos de garantia'],
   admin:['Administração','Gerenciar usuários e aprovações de acesso'],
@@ -4395,6 +4428,7 @@ function showPage(id, opts){
   else if(id==='oficina-sac')initOficinaSac(); // back-compat (id antigo unificado)
   if(id==='calendario')initCalendario();
   if(id==='montagens')initMontagens();
+  if(id==='afiliados')initAfiliados();
   if(id==='clientes')initClientes();
   if(id==='contratos')initContratos();
   if(id==='pdv')initPdv();
@@ -9127,6 +9161,7 @@ const NAV_TREE = [
       { id:'vendas',          label:'Vendas do Mês',  icon:'ic-trending-up'  },
       { id:'clientes',        label:'Clientes',       icon:'ic-users'        },
       { id:'contratos',       label:'Contrato',       icon:'ic-file-text'    },
+      { id:'afiliados',       label:'Afiliados',      icon:'ic-users'        },
   ]},
   { kind:'group', label:'Produtos',   icon:'ic-store', children:[
       { id:'estoque',         label:'Cadastros',          icon:'ic-store'   },
@@ -11161,6 +11196,7 @@ const TODOS_MODULOS = [
   { id: 'oficina-sac',  nome: 'Pós-venda / Oficina' },
   { id: 'calendario',   nome: 'Calendário' },
   { id: 'montagens',    nome: 'Montagens' },
+  { id: 'afiliados',    nome: 'Afiliados' },
   { id: 'clientes',     nome: 'Clientes' },
   { id: 'contratos',    nome: 'Contrato' },
   { id: 'admin',        nome: 'Administração' },
@@ -11174,8 +11210,8 @@ const TODOS_MODULOS = [
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
-  vendedor:    ['dashboard', 'vendas', 'estoque', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'clientes', 'contratos', 'pdv'],
-  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'localizacao', 'vendas', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv'],
+  vendedor:    ['dashboard', 'vendas', 'estoque', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'afiliados', 'clientes', 'contratos', 'pdv'],
+  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'localizacao', 'vendas', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'afiliados', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv'],
   customizado: null, // usa user.modulosPermitidos
 };
 function modulosPermitidos(user) {
@@ -18441,6 +18477,169 @@ function _cancelarSelMontagens() {
 function _montPagarSelecionados() {
   if (!_montagensSelecionados.size) return;
   abrirMontagemPagarModal([..._montagensSelecionados]);
+}
+
+// ═══════════════════════════════════════════════════════════
+// AFILIADOS — cadastro de parceiros que vendem e ganham comissão.
+// Fase 1: CRUD do cadastro. Vendas/comissões e fechamento mensal
+// entram nas fases seguintes. Espelha o módulo Montagens.
+// ═══════════════════════════════════════════════════════════
+let afiliados = [];
+let _afiliadosAbaAtiva = 'cadastro';
+
+async function carregarAfiliados() {
+  const r = await sb.from('afiliados').select('*').order('nome');
+  if (!r.error && r.data) afiliados = toCamelArr(r.data);
+  return afiliados;
+}
+
+async function initAfiliados() {
+  switchAfiliadosTab(_afiliadosAbaAtiva || 'cadastro');
+  await carregarAfiliados();
+  renderAfiliados();
+}
+
+function switchAfiliadosTab(t) {
+  if (!['cadastro', 'vendas', 'comissoes'].includes(t)) t = 'cadastro';
+  _afiliadosAbaAtiva = t;
+  ['cadastro', 'vendas', 'comissoes'].forEach(x => {
+    const c = document.getElementById('afl-tab-' + x);
+    if (c) c.style.display = (x === t) ? '' : 'none';
+  });
+  document.querySelectorAll('#page-afiliados .fin-tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.afltab === t));
+}
+
+function renderAfiliados() {
+  const lista = document.getElementById('afl-lista');
+  if (!lista) return;
+  const q = (document.getElementById('afl-busca')?.value || '').trim().toLowerCase();
+  const ativosCount = afiliados.filter(a => a.ativo !== false).length;
+  const cnt = document.getElementById('afl-cnt');
+  if (cnt) cnt.textContent = ativosCount;
+
+  // Ativos primeiro, depois por nome.
+  let arr = afiliados.slice().sort((a, b) =>
+    (a.ativo === false ? 1 : 0) - (b.ativo === false ? 1 : 0) ||
+    String(a.nome || '').localeCompare(String(b.nome || '')));
+  if (q) arr = arr.filter(a =>
+    (a.nome || '').toLowerCase().includes(q) || (a.telefone || '').toLowerCase().includes(q));
+
+  const count = document.getElementById('afl-count');
+  if (count) count.textContent = `${arr.length} afiliado${arr.length === 1 ? '' : 's'}`;
+
+  if (!arr.length) {
+    lista.innerHTML = '<div style="padding:24px;color:var(--text3);text-align:center;">'
+      + (afiliados.length ? 'Nenhum afiliado encontrado na busca.' : 'Nenhum afiliado cadastrado ainda. Clique em "Novo afiliado".')
+      + '</div>';
+    return;
+  }
+
+  lista.innerHTML = `<table style="width:100%;border-collapse:collapse;">`
+    + `<thead><tr style="border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;">`
+    +   `<th style="text-align:left;padding:8px 10px;">Nome</th>`
+    +   `<th style="text-align:left;padding:8px 10px;">Telefone</th>`
+    +   `<th style="text-align:left;padding:8px 10px;">Chave PIX</th>`
+    +   `<th style="text-align:center;padding:8px 10px;">Status</th>`
+    +   `<th style="padding:8px 10px;"></th></tr></thead><tbody>`
+    + arr.map(a => {
+        const inativo = a.ativo === false;
+        return `<tr style="border-bottom:1px solid var(--border);${inativo ? 'opacity:.55;' : ''}">`
+          + `<td style="padding:9px 10px;font-weight:700;">${escHtml(a.nome || '—')}</td>`
+          + `<td style="padding:9px 10px;">${escHtml(a.telefone || '—')}</td>`
+          + `<td style="padding:9px 10px;">${escHtml(a.chavePix || '—')}</td>`
+          + `<td style="padding:9px 10px;text-align:center;">`
+          +   (inativo ? '<span style="color:var(--text3);">inativo</span>' : '<span style="color:var(--green);font-weight:700;">ativo</span>')
+          + `</td>`
+          + `<td style="padding:9px 10px;text-align:right;white-space:nowrap;">`
+          +   `<button class="action-btn edit-btn" onclick="abrirAfiliadoModal('${a.id}')" title="Editar"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
+          +   (inativo
+              ? `<button class="action-btn" onclick="_alternarStatusAfiliado('${a.id}', true)" title="Reativar" style="color:var(--green);"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
+              : `<button class="action-btn del-btn" onclick="_alternarStatusAfiliado('${a.id}', false)" title="Desativar"><svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`)
+          + `</td></tr>`;
+      }).join('')
+    + `</tbody></table>`;
+}
+
+function abrirAfiliadoModal(afiliadoId) {
+  const old = document.getElementById('afl-modal'); if (old) old.remove();
+  const a = afiliadoId ? afiliados.find(x => x.id === afiliadoId) : null;
+  const isEdit = !!a;
+  const shell = document.createElement('div');
+  shell.id = 'afl-modal';
+  shell.className = 'modal-overlay open';
+  shell.dataset.afiliadoId = isEdit ? afiliadoId : '';
+  shell.innerHTML =
+      `<div class="modal" style="width:460px;max-width:96vw;">`
+    +   `<div class="modal-title">${isEdit ? 'Editar <span>afiliado</span>' : 'Novo <span>afiliado</span>'}</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group full"><label>Nome</label><input class="form-input" id="afl-nome" type="text" value="${escHtml(a?.nome || '').replace(/"/g,'&quot;')}" placeholder="Nome do afiliado"></div>`
+    +     `<div class="form-group"><label>Telefone (opcional)</label><input class="form-input" id="afl-tel" type="text" value="${escHtml(a?.telefone || '').replace(/"/g,'&quot;')}" placeholder="(00) 00000-0000"></div>`
+    +     `<div class="form-group"><label>CPF/CNPJ (opcional)</label><input class="form-input" id="afl-doc" type="text" value="${escHtml(a?.documento || '').replace(/"/g,'&quot;')}" placeholder="—"></div>`
+    +     `<div class="form-group full"><label>Chave PIX (opcional)</label><input class="form-input" id="afl-pix" type="text" value="${escHtml(a?.chavePix || '').replace(/"/g,'&quot;')}" placeholder="Pra facilitar o pagamento da comissão"></div>`
+    +     `<div class="form-group full"><label>Observações (opcional)</label><textarea class="form-input" id="afl-obs" rows="2" placeholder="—">${escHtml(a?.observacoes || '')}</textarea></div>`
+    +     `<div class="form-group full" style="font-size:12px;"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="afl-ativo"${a?.ativo !== false ? ' checked' : ''}> Ativo</label></div>`
+    +   `</div>`
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('afl-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="afl-btn-salvar" onclick="_salvarAfiliado()">${isEdit ? 'Salvar alterações' : 'Cadastrar'}</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _salvarAfiliado() {
+  const btn = document.getElementById('afl-btn-salvar');
+  if (btn?.disabled) return;
+  const afiliadoId = document.getElementById('afl-modal')?.dataset.afiliadoId || '';
+  const isEdit = !!afiliadoId;
+
+  const nome      = (document.getElementById('afl-nome')?.value || '').trim();
+  const telefone  = (document.getElementById('afl-tel')?.value || '').trim();
+  const documento = (document.getElementById('afl-doc')?.value || '').trim();
+  const chavePix  = (document.getElementById('afl-pix')?.value || '').trim();
+  const obs       = (document.getElementById('afl-obs')?.value || '').trim();
+  const ativo     = !!document.getElementById('afl-ativo')?.checked;
+
+  if (!nome) { smAlert('Informe o nome do afiliado.'); return; }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    const payload = {
+      nome,
+      telefone:   telefone  || null,
+      documento:  documento || null,
+      chave_pix:  chavePix  || null,
+      observacoes: obs      || null,
+      ativo,
+      atualizado_em: new Date().toISOString(),
+    };
+    if (isEdit) {
+      const { error } = await sb.from('afiliados').update(payload).eq('id', afiliadoId);
+      if (error) throw new Error('Erro ao atualizar: ' + error.message);
+    } else {
+      const { error } = await sb.from('afiliados').insert(payload);
+      if (error) throw new Error('Erro ao cadastrar: ' + error.message);
+    }
+    document.getElementById('afl-modal')?.remove();
+    await carregarAfiliados();
+    renderAfiliados();
+  } catch (e) {
+    smAlert(e.message || 'Erro desconhecido.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = isEdit ? 'Salvar alterações' : 'Cadastrar'; }
+  }
+}
+
+async function _alternarStatusAfiliado(afiliadoId, novoAtivo) {
+  const a = afiliados.find(x => x.id === afiliadoId);
+  if (!a) return;
+  if (!(await smConfirm(`${novoAtivo ? 'Reativar' : 'Desativar'} "${a.nome}"?`))) return;
+  const { error } = await sb.from('afiliados').update({ ativo: novoAtivo, atualizado_em: new Date().toISOString() }).eq('id', afiliadoId);
+  if (error) { smAlert('Erro: ' + error.message); return; }
+  a.ativo = novoAtivo;
+  renderAfiliados();
 }
 
 // ── Cancelar 1 pagamento (com tratamento de lançamento único vs. agregado) ──
