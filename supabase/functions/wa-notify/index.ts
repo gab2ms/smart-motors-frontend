@@ -6,10 +6,11 @@
 //   2) busca na tabela whatsapp_destinatarios pelo número (service_role);
 //   3) fallback opcional: secret WA_APIKEY, se o número == secret WA_NUMBER.
 //
-// Auth: verify_jwt=true (exige a anon/JWT do projeto). É barreira mínima — a
-// proteção real (usuário autenticado) entra na Frente 2 (Supabase Auth + RLS).
+// DEDUP NO SERVIDOR: a mesma mensagem pro mesmo número no mesmo dia é enviada
+// só uma vez (tabela wa_dedup). Evita repeticao quando varios navegadores
+// disparam o mesmo aviso de evento (o dedup do front e por navegador).
 //
-// Healthcheck: mensagem "__ping__" valida deploy/CORS/auth SEM enviar zap.
+// Auth: verify_jwt=true. Healthcheck: mensagem "__ping__" (não envia, não dedup).
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -26,6 +27,9 @@ function json(obj: unknown, status = 200) {
   });
 }
 
+const sbAdmin = () =>
+  createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ ok: false, erro: "use POST" }, 405);
@@ -41,13 +45,21 @@ Deno.serve(async (req) => {
     // Healthcheck sem envio real.
     if (mensagem === "__ping__") return json({ ok: true, ping: true, numero: numeroLimpo });
 
-    let key = (apiKey || "").toString().trim();
+    const sb = sbAdmin();
 
+    // DEDUP: mesma (numero + dia + mensagem) só envia uma vez. Quem inserir a
+    // chave primeiro envia; chamadas seguintes batem em conflito (23505) e param.
+    const dia = new Date().toISOString().slice(0, 10);
+    const chave = (numeroLimpo + "|" + dia + "|" + mensagem).slice(0, 1024);
+    const { error: dedupErr } = await sb.from("wa_dedup").insert({ chave });
+    if (dedupErr) {
+      // ja enviado hoje (ou erro ao gravar) -> nao reenvia
+      return json({ ok: true, dedup: true });
+    }
+
+    // Resolve a api_key.
+    let key = (apiKey || "").toString().trim();
     if (!key) {
-      const sb = createClient(
-        Deno.env.get("SUPABASE_URL")!,
-        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      );
       const { data } = await sb
         .from("whatsapp_destinatarios")
         .select("api_key")
@@ -56,12 +68,10 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (data?.api_key) key = String(data.api_key).trim();
     }
-
     if (!key) {
       const lojaNum = (Deno.env.get("WA_NUMBER") || "").replace(/\D/g, "");
       if (lojaNum && numeroLimpo === lojaNum) key = (Deno.env.get("WA_APIKEY") || "").trim();
     }
-
     if (!key) return json({ ok: false, erro: "sem api_key para esse número" }, 422);
 
     const url = `https://api.textmebot.com/send.php?recipient=+${encodeURIComponent(numeroLimpo)}` +
@@ -69,14 +79,14 @@ Deno.serve(async (req) => {
 
     const r = await fetch(url, { method: "GET" });
     const body = await r.text();
-    // Sanitiza a resposta antes de devolver ao cliente: o textmebot às vezes
-    // ecoa uma `apikey=...` no HTML de erro — nunca repassar isso ao front.
     const limpo = body
       .replace(/apikey=[^&"'\s<>]+/gi, "apikey=***")
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim();
     const ok = r.ok && !/error|invalid|not found|disconnected/i.test(limpo);
+    // Se o envio falhou, libera a chave pra permitir nova tentativa depois.
+    if (!ok) { try { await sb.from("wa_dedup").delete().eq("chave", chave); } catch (_) { /* ignore */ } }
     return json({ ok, status: r.status, resposta: limpo.slice(0, 300) });
   } catch (e) {
     return json({ ok: false, erro: String((e as Error)?.message || e) }, 500);
