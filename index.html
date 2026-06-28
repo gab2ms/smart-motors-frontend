@@ -2996,7 +2996,7 @@ select:not(.input-pro):not(.search-input){
     <div class="fin-tabs">
       <button class="fin-tab-btn active" data-afltab="cadastro"  onclick="switchAfiliadosTab('cadastro')">Afiliados (<span id="afl-cnt">0</span>)</button>
       <button class="fin-tab-btn"         data-afltab="vendas"    onclick="switchAfiliadosTab('vendas')">Vendas &amp; Comissões</button>
-      <button class="fin-tab-btn"         data-afltab="comissoes" onclick="switchAfiliadosTab('comissoes')">Comissões por produto</button>
+      <button class="fin-tab-btn"         data-afltab="comissoes" onclick="switchAfiliadosTab('comissoes')">Preço mínimo &amp; comissão</button>
     </div>
 
     <!-- TAB: cadastro -->
@@ -4147,7 +4147,7 @@ let vendasMesConfig = { nome: VENDAS_MES_CONFIG_NOME, valor: 40 };
 
 // Config de Custos de Produtos. Tabela config_custos (chave/valor) —
 // custos que não escalam por unidade vendida (ex.: NF por pedido).
-let CONFIG_CUSTOS = { nf_pedido: 30 };
+let CONFIG_CUSTOS = { nf_pedido: 30, afiliado_comissao_base: 100, afiliado_comissao_incremento: 50, afiliado_comissao_passo: 100 };
 
 let emprestimos = [];
 let emprestimoSelecionadoId = null;
@@ -9547,7 +9547,7 @@ async function carregarProdutosCatalogo() {
   setApiStatus('carregando', 'Carregando produtos...');
   try {
     const { data, error } = await sb.from('produtos')
-      .select('id,nome,codigo,preco_venda,custo,categoria,fabricante,cor,motor,descricao,estoque,ativo,comissao_afiliado').order('nome');
+      .select('id,nome,codigo,preco_venda,custo,categoria,fabricante,cor,motor,descricao,estoque,ativo,comissao_afiliado,produto_precos_id').order('nome');
     if (error) throw new Error(error.message || 'erro Supabase produtos');
     catSelecionados.clear();   // Commit 1: recarga do banco zera a seleção (evita ids órfãos)
     produtosCatalogo = (data || []).map(p => ({
@@ -9561,6 +9561,7 @@ async function carregarProdutosCatalogo() {
       cor:        p.cor || '',
       motor:      p.motor || '',
       comissaoAfiliado: p.comissao_afiliado == null ? null : Number(p.comissao_afiliado),
+      produtoPrecosId: p.produto_precos_id || null,   // FK p/ produtos_precos (lookup exato do modelo/preço mínimo)
       descricao:  p.descricao || '',
       estoque:    Number(p.estoque) || 0,
       ativo:      p.ativo !== false,
@@ -18632,6 +18633,7 @@ function abrirAfiliadoModal(afiliadoId) {
     +   `<div class="modal-title">${isEdit ? 'Editar <span>afiliado</span>' : 'Novo <span>afiliado</span>'}</div>`
     +   `<div class="form-grid">`
     +     `<div class="form-group full"><label>Nome</label><input class="form-input" id="afl-nome" type="text" value="${escHtml(a?.nome || '').replace(/"/g,'&quot;')}" placeholder="Nome do afiliado"></div>`
+    +     `<div class="form-group full"><label>E-mail (opcional, serve para login no portal)</label><input class="form-input" id="afl-email" type="email" value="${escHtml(a?.email || '').replace(/"/g,'&quot;')}" placeholder="email@exemplo.com"></div>`
     +     `<div class="form-group"><label>Telefone (opcional)</label><input class="form-input" id="afl-tel" type="text" value="${escHtml(a?.telefone || '').replace(/"/g,'&quot;')}" placeholder="(00) 00000-0000"></div>`
     +     `<div class="form-group"><label>CPF/CNPJ (opcional)</label><input class="form-input" id="afl-doc" type="text" value="${escHtml(a?.documento || '').replace(/"/g,'&quot;')}" placeholder="—"></div>`
     +     `<div class="form-group full"><label>Chave PIX (opcional)</label><input class="form-input" id="afl-pix" type="text" value="${escHtml(a?.chavePix || '').replace(/"/g,'&quot;')}" placeholder="Pra facilitar o pagamento da comissão"></div>`
@@ -18654,6 +18656,7 @@ async function _salvarAfiliado() {
   const isEdit = !!afiliadoId;
 
   const nome      = (document.getElementById('afl-nome')?.value || '').trim();
+  const email     = (document.getElementById('afl-email')?.value || '').trim().toLowerCase();
   const telefone  = (document.getElementById('afl-tel')?.value || '').trim();
   const documento = (document.getElementById('afl-doc')?.value || '').trim();
   const chavePix  = (document.getElementById('afl-pix')?.value || '').trim();
@@ -18666,6 +18669,7 @@ async function _salvarAfiliado() {
   try {
     const payload = {
       nome,
+      email:      email     || null,
       telefone:   telefone  || null,
       documento:  documento || null,
       chave_pix:  chavePix  || null,
@@ -18704,8 +18708,17 @@ async function _alternarStatusAfiliado(afiliadoId, novoAtivo) {
 let _aflVendasCache = null;
 
 async function _aflGarantirProdutos() {
-  if (typeof produtosCatalogo !== 'undefined' && produtosCatalogo.length) return;
-  if (typeof carregarProdutosCatalogo === 'function') { try { await carregarProdutosCatalogo(); } catch (e) {} }
+  if (!(typeof produtosCatalogo !== 'undefined' && produtosCatalogo.length)) {
+    if (typeof carregarProdutosCatalogo === 'function') { try { await carregarProdutosCatalogo(); } catch (e) {} }
+  }
+  // products (produtos_precos) traz o preço mínimo por modelo; é carregado no boot,
+  // mas garantimos aqui caso a aba Afiliados abra antes do carregarDados terminar.
+  if (!(typeof products !== 'undefined' && products.length)) {
+    try {
+      const r = await sb.from('produtos_precos').select('*').order('id');
+      if (!r.error && r.data) products = r.data.map((TABLE_MAP['produtos_precos'] || { fromDb: toCamel }).fromDb);
+    } catch (e) {}
+  }
 }
 
 function _aflProdutoMap() {
@@ -18714,13 +18727,61 @@ function _aflProdutoMap() {
   return m;
 }
 
-// Comissão CALCULADA pelo cadastro = Σ (comissao_afiliado do produto × quantidade).
+// Map id da linha de custo (produtos_precos) → linha. Usado p/ resolver o preço
+// mínimo do modelo a partir da FK produtos.produto_precos_id (lookup exato).
+function _aflPrecosPorId() {
+  const m = new Map();
+  (typeof products !== 'undefined' ? products : []).forEach(pp => { if (pp && pp.id != null) m.set(pp.id, pp); });
+  return m;
+}
+
+// Escala global da comissão escalonada (config_custos, editável na aba).
+function _aflCfgEscala() {
+  const cc = (typeof CONFIG_CUSTOS !== 'undefined') ? CONFIG_CUSTOS : {};
+  return {
+    base:       Number(cc.afiliado_comissao_base)       || 100,
+    incremento: Number(cc.afiliado_comissao_incremento) || 50,
+    passo:      Number(cc.afiliado_comissao_passo)       || 100,
+  };
+}
+
+// Comissão escalonada POR UNIDADE.
+// faixas = quantas vezes o "passo" cabe no quanto se vendeu ACIMA do mínimo.
+// Vendeu no mínimo (ou abaixo) → faixas=0 → comissão = base (não penaliza vendas
+// abaixo do mínimo, por decisão do dono). Mantida em sincronia com a réplica em
+// Deno na Edge Function portal-afiliado (supabase/functions/portal-afiliado).
+function _aflComissaoEscalonadaUnit(valorUnit, precoMin, cfg) {
+  const c = cfg || _aflCfgEscala();
+  const passo = c.passo || 100, base = c.base || 100, incr = c.incremento || 50;
+  const faixas = Math.max(0, Math.floor(((Number(valorUnit) || 0) - (Number(precoMin) || 0)) / passo));
+  return base + incr * faixas;
+}
+
+// Comissão CALCULADA pelo cadastro (regra escalonada por preço mínimo do MODELO).
+// Por item: resolve o modelo via FK produto.produtoPrecosId → linha de produtos_precos,
+// pega o preco_minimo_afiliado e aplica a escala sobre o valor unitário vendido.
+// Fallback de transição: modelo SEM preço mínimo cadastrado cai na comissão antiga
+// (produtos.comissao_afiliado por unidade), pra não zerar comissões durante o cadastro.
 function _aflComissaoCalculada(ped, prodMap) {
   const itens = ped.pdvItensPedido || ped.itens || [];
+  const precos = _aflPrecosPorId();
+  const cfg = _aflCfgEscala();
   return itens.reduce((s, it) => {
+    const qtd = Number(it.quantidade || it.qtd || 0);
+    if (!qtd) return s;
     const p = prodMap.get(it.produtoId || it.produto_id);
-    const com = (p && p.comissaoAfiliado != null) ? Number(p.comissaoAfiliado) : 0;
-    return s + com * Number(it.quantidade || it.qtd || 0);
+    const pp = (p && p.produtoPrecosId != null) ? precos.get(p.produtoPrecosId) : null;
+    const precoMin = (pp && pp.precoMinimoAfiliado != null) ? Number(pp.precoMinimoAfiliado) : null;
+    let comUnit;
+    if (precoMin != null) {
+      const valorUnit = it.valorUnitario != null
+        ? Number(it.valorUnitario)
+        : Number(it.valorTotal || 0) / Math.max(1, qtd);
+      comUnit = _aflComissaoEscalonadaUnit(valorUnit, precoMin, cfg);
+    } else {
+      comUnit = (p && p.comissaoAfiliado != null) ? Number(p.comissaoAfiliado) : 0; // fallback antigo
+    }
+    return s + comUnit * qtd;
   }, 0);
 }
 function _aflTemOverride(ped) { return ped && ped.comissaoAfiliadoOverride != null; }
@@ -18734,7 +18795,7 @@ async function carregarVendasAfiliados() {
   await _aflGarantirProdutos();
   if (typeof afiliados === 'undefined' || !afiliados.length) { try { await carregarAfiliados(); } catch (e) {} }
   const r = await sb.from('pdv_pedidos')
-    .select('id,numero_smart,total,status,criado_em,data_entrega_real,cliente_dados,afiliado_id,comissao_afiliado_override,pdv_itens_pedido(produto_id,produto_nome_tiny,produto_modelo,quantidade,valor_total)')
+    .select('id,numero_smart,total,status,criado_em,data_entrega_real,cliente_dados,afiliado_id,comissao_afiliado_override,pdv_itens_pedido(produto_id,produto_nome_tiny,produto_modelo,quantidade,valor_unitario,valor_total)')
     .not('afiliado_id', 'is', null)
     .neq('status', 'cancelado')
     .order('criado_em', { ascending: false });
@@ -18883,20 +18944,29 @@ function renderAfiliadosComissoes() {
   _aflGarantirProdutos().then(() => _aflRenderComissoesInner());
 }
 
-// true se o produto já tem comissão de afiliado definida (> 0).
-function _aflTemComissao(p) { return p.comissaoAfiliado != null && Number(p.comissaoAfiliado) > 0; }
+// true se o modelo já tem preço mínimo de afiliado cadastrado.
+function _aflTemPrecoMin(pp) { return pp && pp.precoMinimoAfiliado != null && Number(pp.precoMinimoAfiliado) >= 0; }
 
-// Aplica os filtros atuais (busca/categoria/comissão) e devolve o array — usado
-// pelo render e pelo "aplicar em massa" (mesma régua dos dois).
-function _aflProdutosComissaoFiltrados() {
-  const q    = (document.getElementById('afl-c-busca')?.value || '').trim().toLowerCase();
-  const fCat = document.getElementById('afl-c-cat')?.value || '';
-  const fCom = document.getElementById('afl-c-com')?.value || '';
-  let arr = (typeof produtosCatalogo !== 'undefined' ? produtosCatalogo : []).filter(p => p.ativo !== false);
-  if (q)    arr = arr.filter(p => (p.nome || '').toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q));
-  if (fCat) arr = arr.filter(p => (p.categoria || '') === fCat);
-  if (fCom === 'com') arr = arr.filter(_aflTemComissao);
-  else if (fCom === 'sem') arr = arr.filter(p => !_aflTemComissao(p));
+// Aplica os filtros (busca por modelo + com/sem preço mínimo) sobre os MODELOS
+// (produtos_precos = global products), já ordenados.
+function _aflModelosFiltrados() {
+  const q   = (document.getElementById('afl-c-busca')?.value || '').trim().toLowerCase();
+  const fPm = document.getElementById('afl-c-pm')?.value || '';
+  const fOrd = document.getElementById('afl-c-ord')?.value || 'modelo-asc';
+  let arr = (typeof products !== 'undefined' ? products : []).slice();
+  if (q)   arr = arr.filter(pp => (pp.modelo || '').toLowerCase().includes(q));
+  if (fPm === 'com') arr = arr.filter(_aflTemPrecoMin);
+  else if (fPm === 'sem') arr = arr.filter(pp => !_aflTemPrecoMin(pp));
+  const byModelo = (a, b) => String(a.modelo || '').localeCompare(String(b.modelo || ''));
+  const num = v => Number(v) || 0;
+  arr.sort((a, b) => {
+    switch (fOrd) {
+      case 'modelo-desc': return byModelo(b, a);
+      case 'pm-desc':     return num(b.precoMinimoAfiliado) - num(a.precoMinimoAfiliado) || byModelo(a, b);
+      case 'pm-asc':      return num(a.precoMinimoAfiliado) - num(b.precoMinimoAfiliado) || byModelo(a, b);
+      default:            return byModelo(a, b);
+    }
+  });
   return arr;
 }
 
@@ -18904,96 +18974,81 @@ function _aflRenderComissoesInner() {
   const root = document.getElementById('afl-tab-comissoes');
   if (!root) return;
   const q    = (document.getElementById('afl-c-busca')?.value || '').trim().toLowerCase();
-  const fCat = document.getElementById('afl-c-cat')?.value || '';
-  const fCom = document.getElementById('afl-c-com')?.value || '';
-  const fOrd = document.getElementById('afl-c-ord')?.value || 'nome-asc';
+  const fPm  = document.getElementById('afl-c-pm')?.value || '';
+  const fOrd = document.getElementById('afl-c-ord')?.value || 'modelo-asc';
+  const cfg = _aflCfgEscala();
 
-  const base = (typeof produtosCatalogo !== 'undefined' ? produtosCatalogo : []).filter(p => p.ativo !== false);
-  const temCom = _aflTemComissao;
+  const arr = _aflModelosFiltrados();
+  const semCount = (typeof products !== 'undefined' ? products : []).filter(pp => !_aflTemPrecoMin(pp)).length;
 
-  let arr = _aflProdutosComissaoFiltrados();
+  const optPm  = [['', 'Preço mínimo: todos'], ['com', 'Só com preço mínimo'], ['sem', 'Só sem preço mínimo']].map(([v, l]) => `<option value="${v}"${fPm === v ? ' selected' : ''}>${l}</option>`).join('');
+  const optOrd = [['modelo-asc', 'Modelo (A→Z)'], ['modelo-desc', 'Modelo (Z→A)'], ['pm-desc', 'Maior preço mínimo'], ['pm-asc', 'Menor preço mínimo']].map(([v, l]) => `<option value="${v}"${fOrd === v ? ' selected' : ''}>${l}</option>`).join('');
+  const fmtMoney = v => (typeof _fmtBRMoney === 'function') ? _fmtBRMoney(v) : ('R$ ' + (Number(v)||0).toFixed(2));
 
-  const byNome = (a, b) => String(a.nome || '').localeCompare(String(b.nome || ''));
-  const num = v => Number(v) || 0;
-  arr = arr.sort((a, b) => {
-    switch (fOrd) {
-      case 'nome-desc':  return byNome(b, a);
-      case 'preco-desc': return num(b.precoVenda) - num(a.precoVenda) || byNome(a, b);
-      case 'preco-asc':  return num(a.precoVenda) - num(b.precoVenda) || byNome(a, b);
-      case 'com-desc':   return num(b.comissaoAfiliado) - num(a.comissaoAfiliado) || byNome(a, b);
-      case 'com-asc':    return num(a.comissaoAfiliado) - num(b.comissaoAfiliado) || byNome(a, b);
-      default:           return byNome(a, b);
-    }
-  });
+  // Painel: escala global da comissão (editável) + explicação.
+  const inEscala = (chave, val) => `<input type="number" step="1" min="0" value="${Number(val)}" onchange="_aflSalvarEscala('${chave}', this.value, this)" style="width:90px;text-align:right;padding:6px 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);">`;
+  const painel =
+      `<div class="card" style="margin-bottom:14px;"><div style="padding:14px 16px;">`
+    +   `<div style="font-weight:800;font-size:15px;margin-bottom:6px;">Regra de comissão escalonada</div>`
+    +   `<div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:12px;">Vendendo um modelo no <b>preço mínimo</b>, o afiliado ganha a comissão <b>base</b>. A cada faixa vendida acima do mínimo, soma o <b>incremento</b>. Vender abaixo do mínimo paga só a base (não penaliza).</div>`
+    +   `<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:13px;">`
+    +     `<label style="display:flex;gap:8px;align-items:center;">Base (R$) ${inEscala('afiliado_comissao_base', cfg.base)}</label>`
+    +     `<label style="display:flex;gap:8px;align-items:center;">Incremento (R$) ${inEscala('afiliado_comissao_incremento', cfg.incremento)}</label>`
+    +     `<label style="display:flex;gap:8px;align-items:center;">Passo (R$) ${inEscala('afiliado_comissao_passo', cfg.passo)}</label>`
+    +   `</div>`
+    +   `<div style="font-size:12px;color:var(--text3);margin-top:10px;">Ex.: base ${fmtMoney(cfg.base)} + ${fmtMoney(cfg.incremento)} a cada ${fmtMoney(cfg.passo)} acima do mínimo.</div>`
+    + `</div></div>`;
 
-  // Categorias presentes no catálogo (dinâmico) pro filtro.
-  const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
-  const cats = [...new Set(base.map(p => p.categoria || '').filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  const optCat = `<option value="">Todas as categorias</option>` + cats.map(c => `<option value="${escHtml(c)}"${fCat === c ? ' selected' : ''}>${escHtml(cap(c))}</option>`).join('');
-  const optCom = [['', 'Comissão: todas'], ['com', 'Só com comissão'], ['sem', 'Só sem comissão']].map(([v, l]) => `<option value="${v}"${fCom === v ? ' selected' : ''}>${l}</option>`).join('');
-  const optOrd = [['nome-asc', 'Nome (A→Z)'], ['nome-desc', 'Nome (Z→A)'], ['preco-desc', 'Maior preço'], ['preco-asc', 'Menor preço'], ['com-desc', 'Maior comissão'], ['com-asc', 'Menor comissão']].map(([v, l]) => `<option value="${v}"${fOrd === v ? ' selected' : ''}>${l}</option>`).join('');
-
-  root.innerHTML =
-      `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">`
-    +   `<input type="text" class="search-input" id="afl-c-busca" placeholder="Buscar produto..." oninput="_aflRenderComissoesInner()" value="${escHtml(q).replace(/"/g,'&quot;')}" style="flex:1;min-width:200px;">`
-    +   `<select class="search-input" id="afl-c-cat" onchange="_aflRenderComissoesInner()" style="max-width:200px;">${optCat}</select>`
-    +   `<select class="search-input" id="afl-c-com" onchange="_aflRenderComissoesInner()" style="max-width:180px;">${optCom}</select>`
-    +   `<select class="search-input" id="afl-c-ord" onchange="_aflRenderComissoesInner()" style="max-width:180px;">${optOrd}</select>`
+  root.innerHTML = painel
+    + `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">`
+    +   `<input type="text" class="search-input" id="afl-c-busca" placeholder="Buscar modelo..." oninput="_aflRenderComissoesInner()" value="${escHtml(q).replace(/"/g,'&quot;')}" style="flex:1;min-width:200px;">`
+    +   `<select class="search-input" id="afl-c-pm" onchange="_aflRenderComissoesInner()" style="max-width:200px;">${optPm}</select>`
+    +   `<select class="search-input" id="afl-c-ord" onchange="_aflRenderComissoesInner()" style="max-width:200px;">${optOrd}</select>`
     + `</div>`
     + `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:12px;color:var(--text3);">`
-    +   `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">`
-    +     `<span>${arr.length} produto${arr.length === 1 ? '' : 's'}${(q || fCat || fCom) ? ' (filtrado)' : ''}</span>`
-    +     (arr.length ? `<button class="btn" style="padding:6px 12px;font-size:12px;" onclick="_aflAplicarComissaoEmMassa()">Aplicar comissão aos ${arr.length} filtrado${arr.length === 1 ? '' : 's'}</button>` : '')
-    +   `</div>`
-    +   `<span>A comissão vale pra todos os afiliados. Edite o R$ e clique fora pra salvar.</span>`
+    +   `<span>${arr.length} modelo${arr.length === 1 ? '' : 's'}${(q || fPm) ? ' (filtrado)' : ''}${semCount ? ` · <span style="color:var(--gold);">${semCount} sem preço mínimo</span>` : ''}</span>`
+    +   `<span>O preço mínimo é por modelo e vale pra todos os afiliados. Edite e clique fora pra salvar.</span>`
     + `</div>`
     + `<div class="card"><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">`
-    +   `<thead><tr style="border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;"><th style="text-align:left;padding:8px 14px;">Produto</th><th style="text-align:left;padding:8px 14px;">Categoria</th><th style="text-align:right;padding:8px 14px;">Preço</th><th style="text-align:right;padding:8px 14px;">Comissão afiliado (R$)</th></tr></thead><tbody>`
+    +   `<thead><tr style="border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;"><th style="text-align:left;padding:8px 14px;">Modelo</th><th style="text-align:right;padding:8px 14px;">Preço de venda</th><th style="text-align:right;padding:8px 14px;">Preço mínimo afiliado (R$)</th></tr></thead><tbody>`
     +   (arr.length
-        ? arr.map(p => { const sc = !temCom(p); return `<tr style="border-bottom:1px solid var(--border);${sc ? 'background:rgba(245,158,11,0.07);' : ''}"><td style="padding:8px 14px;font-weight:700;">${escHtml(p.nome || '—')}${sc ? ' <span style="font-weight:400;font-size:10px;color:var(--gold);border:1px solid var(--gold);border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:middle;">sem comissão</span>' : ''}</td><td style="padding:8px 14px;color:var(--text3);">${escHtml(p.categoria || '—')}</td><td style="padding:8px 14px;text-align:right;">${_fmtBRMoney(p.precoVenda)}</td><td style="padding:8px 14px;text-align:right;"><input type="number" step="0.01" min="0" value="${p.comissaoAfiliado != null ? Number(p.comissaoAfiliado) : ''}" placeholder="0,00" style="width:120px;text-align:right;padding:6px 8px;background:var(--surface2);border:1px solid ${sc ? 'rgba(245,158,11,0.5)' : 'var(--border2)'};border-radius:6px;color:var(--text);" onchange="_aflSalvarComissaoProduto('${p.id}', this.value, this)"></td></tr>`; }).join('')
-        : `<tr><td colspan="4" style="padding:18px;color:var(--text3);text-align:center;">Nenhum produto no filtro.</td></tr>`)
+        ? arr.map(pp => { const sc = !_aflTemPrecoMin(pp); return `<tr style="border-bottom:1px solid var(--border);${sc ? 'background:rgba(245,158,11,0.07);' : ''}"><td style="padding:8px 14px;font-weight:700;">${escHtml(pp.modelo || '—')}${sc ? ' <span style="font-weight:400;font-size:10px;color:var(--gold);border:1px solid var(--gold);border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:middle;">⚠ definir preço mínimo</span>' : ''}</td><td style="padding:8px 14px;text-align:right;color:var(--text3);">${fmtMoney(pp.venda)}</td><td style="padding:8px 14px;text-align:right;"><input type="number" step="0.01" min="0" value="${pp.precoMinimoAfiliado != null ? Number(pp.precoMinimoAfiliado) : ''}" placeholder="0,00" style="width:140px;text-align:right;padding:6px 8px;background:var(--surface2);border:1px solid ${sc ? 'rgba(245,158,11,0.5)' : 'var(--border2)'};border-radius:6px;color:var(--text);" onchange="_aflSalvarPrecoMinimo('${pp.id}', this.value, this)"></td></tr>`; }).join('')
+        : `<tr><td colspan="3" style="padding:18px;color:var(--text3);text-align:center;">Nenhum modelo no filtro.</td></tr>`)
     +   `</tbody></table></div></div>`;
 }
 
-async function _aflSalvarComissaoProduto(produtoId, valorRaw, inputEl) {
+// Salva o preço mínimo de um MODELO (produtos_precos). Vazio = limpa (volta ao fallback).
+async function _aflSalvarPrecoMinimo(precosId, valorRaw, inputEl) {
   const valor = (valorRaw === '' || valorRaw == null) ? null : Number(valorRaw);
-  if (valor != null && !(valor >= 0)) { smAlert('Valor de comissão inválido.'); return; }
+  if (valor != null && !(valor >= 0)) { smAlert('Preço mínimo inválido.'); return; }
   if (inputEl) inputEl.disabled = true;
   try {
-    const { error } = await sb.from('produtos').update({ comissao_afiliado: valor, atualizado_em: new Date().toISOString() }).eq('id', produtoId);
+    const { error } = await sb.from('produtos_precos').update({ preco_minimo_afiliado: valor }).eq('id', precosId);
     if (error) throw new Error(error.message);
-    const p = (typeof produtosCatalogo !== 'undefined' ? produtosCatalogo : []).find(x => x.id === produtoId);
-    if (p) p.comissaoAfiliado = valor;
+    const pp = (typeof products !== 'undefined' ? products : []).find(x => x.id === precosId);
+    if (pp) pp.precoMinimoAfiliado = valor;
     if (inputEl) { inputEl.style.borderColor = 'var(--green)'; setTimeout(() => { if (inputEl) inputEl.style.borderColor = 'var(--border2)'; }, 900); }
   } catch (e) {
-    smAlert('Erro ao salvar comissão: ' + e.message);
+    smAlert('Erro ao salvar preço mínimo: ' + e.message);
   } finally {
     if (inputEl) inputEl.disabled = false;
   }
 }
 
-// Aplica uma mesma comissão (R$) a TODOS os produtos atualmente filtrados.
-// Vazio = remover a comissão. Pede valor + confirma antes (mostra a contagem).
-async function _aflAplicarComissaoEmMassa() {
-  const arr = _aflProdutosComissaoFiltrados();
-  if (!arr.length) { smAlert('Nenhum produto no filtro pra aplicar.'); return; }
-  const raw = await smPrompt(`Comissão (R$ por unidade) pra aplicar aos ${arr.length} produto(s) filtrado(s).\nDeixe vazio pra remover a comissão.`, '');
-  if (raw == null) return; // cancelou
-  const txt = String(raw).trim().replace(',', '.');
-  const valor = txt === '' ? null : Number(txt);
-  if (valor != null && !(valor >= 0)) { smAlert('Valor de comissão inválido.'); return; }
-  const label = valor == null ? 'remover a comissão' : `R$ ${valor.toFixed(2)}`;
-  if (!(await smConfirm(`Aplicar ${label} a ${arr.length} produto(s)? Isso sobrescreve a comissão atual deles.`))) return;
-  const ids = arr.map(p => p.id);
+// Salva uma chave da escala global em config_custos (base/incremento/passo).
+async function _aflSalvarEscala(chave, valorRaw, inputEl) {
+  const valor = Number(valorRaw);
+  if (!(valor >= 0)) { smAlert('Valor inválido.'); return; }
+  if (inputEl) inputEl.disabled = true;
   try {
-    const { error } = await sb.from('produtos').update({ comissao_afiliado: valor, atualizado_em: new Date().toISOString() }).in('id', ids);
+    const { error } = await sb.from('config_custos').upsert({ chave, valor, atualizado_em: new Date().toISOString() });
     if (error) throw new Error(error.message);
-    const idSet = new Set(ids);
-    (typeof produtosCatalogo !== 'undefined' ? produtosCatalogo : []).forEach(p => { if (idSet.has(p.id)) p.comissaoAfiliado = valor; });
+    if (typeof CONFIG_CUSTOS !== 'undefined') CONFIG_CUSTOS[chave] = valor;
     _aflRenderComissoesInner();
-    smAlert(`Comissão ${valor == null ? 'removida de' : 'aplicada a'} ${ids.length} produto(s).`);
   } catch (e) {
-    smAlert('Erro ao aplicar em massa: ' + e.message);
+    smAlert('Erro ao salvar a escala: ' + e.message);
+  } finally {
+    if (inputEl) inputEl.disabled = false;
   }
 }
 

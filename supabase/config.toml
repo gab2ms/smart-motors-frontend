@@ -1,0 +1,7 @@
+project_id = "sxmeuqlotjuchslevofv"
+
+# portal-afiliado é chamada pela página pública portal.html, que NÃO carrega
+# nenhuma chave Supabase. Por isso a função precisa ser chamável sem JWT/anon key.
+# A autenticação do afiliado é feita dentro da própria função (token HMAC).
+[functions.portal-afiliado]
+verify_jwt = false
