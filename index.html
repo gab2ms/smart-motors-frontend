@@ -18743,6 +18743,7 @@ function _aflRenderVendasInner() {
     +   `<select class="search-input" id="afl-v-afiliado" onchange="_aflRenderVendasInner()" style="max-width:240px;">${optAfil}</select>`
     +   `<select class="search-input" id="afl-v-status" onchange="_aflRenderVendasInner()" style="max-width:200px;">${optStatus}</select>`
     + `</div>`
+    + _aflCardFechamento()
     + `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">`
     +   _aflKpi('Vendas (filtro)', arr.length)
     +   _aflKpi('Receita atribuída', _fmtBRMoney(kReceita))
@@ -18823,6 +18824,97 @@ async function _aflSalvarComissaoProduto(produtoId, valorRaw, inputEl) {
   } finally {
     if (inputEl) inputEl.disabled = false;
   }
+}
+
+// ─── Fase 4: fechamento mensal → Contas a Pagar (vence dia 5) ───
+function _aflMesAtual() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
+function _aflFmtData(s) { if (!s) return '—'; const p = String(s).slice(0,10).split('-'); return p.length===3 ? `${p[2]}/${p[1]}/${p[0]}` : s; }
+// Competência de uma venda = mês da entrega (a comissão só libera quando entregue).
+function _aflCompetenciaDe(ped) { return (ped.status === 'entregue' && ped.dataEntregaReal) ? String(ped.dataEntregaReal).slice(0,7) : null; }
+// Vencimento = dia 5 do mês seguinte à competência.
+function _aflVencimentoDia5(comp) {
+  const [y, m] = comp.split('-').map(Number);
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return `${ny}-${String(nm).padStart(2,'0')}-05`;
+}
+function _aflStatusConta(c) {
+  const total = Number(c.valor) || 0;
+  const pago = (typeof _cpTotalPago === 'function') ? _cpTotalPago(c) : (c.paga ? total : 0);
+  if (c.paga || pago >= total - 0.005) return { txt: 'pago', cor: 'var(--green)' };
+  if (pago > 0.005) return { txt: 'parcial', cor: 'var(--gold)' };
+  return { txt: 'pendente', cor: 'var(--text3)' };
+}
+
+function _aflCardFechamento() {
+  const compSel = document.getElementById('afl-comp')?.value || _aflMesAtual();
+  const contasComp = (typeof contasPagar !== 'undefined' ? contasPagar : [])
+    .filter(c => c.comissaoCompetencia === compSel)
+    .sort((a, b) => String(a.nome||'').localeCompare(String(b.nome||'')));
+  const linhas = contasComp.length
+    ? contasComp.map(c => {
+        const st = _aflStatusConta(c);
+        return `<tr style="border-bottom:1px solid var(--border);"><td style="padding:7px 12px;">${escHtml(c.nome||'—')}</td><td style="padding:7px 12px;text-align:right;">${_fmtBRMoney(c.valor)}</td><td style="padding:7px 12px;text-align:center;">${escHtml(_aflFmtData(c.vencimento))}</td><td style="padding:7px 12px;text-align:center;color:${st.cor};font-weight:700;">${st.txt}</td></tr>`;
+      }).join('')
+    : `<tr><td colspan="4" style="padding:14px;color:var(--text3);text-align:center;">Nenhuma conta de comissão gerada pra ${escHtml(compSel)}. Clique em "Gerar/atualizar".</td></tr>`;
+  return `<div class="card" style="margin-bottom:14px;"><div style="padding:14px 16px;">`
+    + `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">`
+    +   `<div style="font-weight:800;font-size:15px;flex:1;min-width:200px;">Fechamento de comissões <span style="font-weight:400;font-size:12px;color:var(--text3);">— vira conta a pagar (vence dia 5)</span></div>`
+    +   `<label style="font-size:12px;color:var(--text3);">Competência <input type="month" id="afl-comp" value="${escHtml(compSel)}" onchange="_aflRenderVendasInner()" style="margin-left:6px;padding:6px 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);"></label>`
+    +   `<button class="btn btn-gold" onclick="gerarComissoesAfiliados(document.getElementById('afl-comp').value)">Gerar/atualizar contas do mês</button>`
+    + `</div>`
+    + `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;"><th style="text-align:left;padding:7px 12px;">Conta</th><th style="text-align:right;padding:7px 12px;">Valor</th><th style="text-align:center;padding:7px 12px;">Vencimento</th><th style="text-align:center;padding:7px 12px;">Status</th></tr></thead><tbody>${linhas}</tbody></table></div>`
+    + `</div></div>`;
+}
+
+// Gera/atualiza 1 conta a pagar por afiliado pra a competência (idempotente pelo id
+// 'afl-<comp>-<afiliado>'). Soma a comissão das vendas ENTREGUES no mês. Se a conta
+// já tem pagamento, não sobrescreve o valor (sinaliza).
+async function gerarComissoesAfiliados(comp) {
+  if (!comp) { smAlert('Selecione a competência.'); return; }
+  if (typeof contasPagar === 'undefined') { smAlert('Contas a pagar indisponível.'); return; }
+  await carregarVendasAfiliados();
+  const prodMap = _aflProdutoMap();
+  const afilMap = new Map((typeof afiliados !== 'undefined' ? afiliados : []).map(a => [a.id, a]));
+
+  const soma = {};
+  (_aflVendasCache || []).forEach(p => {
+    if (_aflCompetenciaDe(p) !== comp) return;
+    const c = _aflComissaoPedido(p, prodMap);
+    if (c > 0) soma[p.afiliadoId] = (soma[p.afiliadoId] || 0) + c;
+  });
+
+  const venc = _aflVencimentoDia5(comp);
+  const [yy, mm] = comp.split('-');
+  const compLabel = `${mm}/${yy}`;
+  let criadas = 0, atualizadas = 0, travadas = 0;
+  for (const afilId of Object.keys(soma)) {
+    const valor = Math.round(soma[afilId] * 100) / 100;
+    const nome = `Comissão — ${(afilMap.get(afilId)?.nome) || 'afiliado'} — ${compLabel}`;
+    const id = `afl-${comp}-${afilId}`;
+    const existente = contasPagar.find(c => c.id === id);
+    if (existente) {
+      const pago = (typeof _cpTotalPago === 'function') ? _cpTotalPago(existente) : 0;
+      if (pago > 0.005) { travadas++; continue; }
+      existente.valor = valor; existente.vencimento = venc; existente.nome = nome;
+      existente.afiliadoId = afilId; existente.comissaoCompetencia = comp;
+      atualizadas++;
+    } else {
+      contasPagar.push({
+        id, nome, valor, vencimento: venc, periodicidade: 'unico',
+        categoria: 'Comissão Afiliados', avisar: 0, obs: `Fechamento de comissões ${compLabel}`,
+        paga: false, afiliadoId: afilId, comissaoCompetencia: comp,
+      });
+      criadas++;
+    }
+  }
+  if (typeof salvarDados === 'function') salvarDados();
+  if (typeof renderContasPagar === 'function') { try { renderContasPagar(); } catch (e) {} }
+  _aflRenderVendasInner();
+  const semComissao = Object.keys(soma).length === 0;
+  smAlert(semComissao
+    ? `Nenhuma comissão a pagar em ${compLabel} (sem vendas entregues com comissão).`
+    : `Comissões de ${compLabel}: ${criadas} criada(s), ${atualizadas} atualizada(s)${travadas ? `, ${travadas} já com pagamento (mantidas)` : ''}. Veja em Financeiro → Contas a Pagar.`);
 }
 
 // ── Cancelar 1 pagamento (com tratamento de lançamento único vs. agregado) ──
