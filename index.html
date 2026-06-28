@@ -20231,7 +20231,7 @@ const _fmtBRMoney = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR', { minimumF
 
 function _pdvVendaNova() {
   return {
-    vendedorId: '', localId: '', itens: [],
+    vendedorId: '', localId: '', afiliadoId: '', itens: [],
     cliente: { nome:'', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'', _consumidorFinal:false, _clienteId:null },
     dataPrevistaEntrega: '', entregaImediata: false, observacao: '', desconto: 0, pagamentos: [],
   };
@@ -20370,6 +20370,13 @@ function _pdvRenderNovaVenda(root) {
   const optVendedor = '<option value="">Selecione vendedor *</option>' + vendedoresAtivos.map(x => `<option value="${x.id}"${v.vendedorId===x.id?' selected':''}>${escHtml(x.nome)}</option>`).join('');
   const optLocal    = '<option value="">Selecione local *</option>'    + locaisAtivos.map(x =>     `<option value="${x.id}"${v.localId===x.id?' selected':''}>${escHtml(x.nome)}</option>`).join('');
 
+  // Afiliado: só aparece quando o local de venda é "Afiliado" (casa por nome,
+  // não por id fixo). As opções vêm de `afiliados` (carregado sob demanda no toggle).
+  const localAfiliado   = locaisAtivos.find(x => (x.nome||'').trim().toLowerCase() === 'afiliado');
+  const afiliadosAtivos = (typeof afiliados !== 'undefined' ? afiliados : []).filter(a => a.ativo !== false).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  const optAfiliado = '<option value="">Selecione o afiliado *</option>' + afiliadosAtivos.map(a => `<option value="${a.id}"${v.afiliadoId===a.id?' selected':''}>${escHtml(a.nome)}</option>`).join('');
+  const mostrarAfiliado = !!(localAfiliado && v.localId === localAfiliado.id);
+
   const emEdicao = !!v._editId;
   root.innerHTML =
       `<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap;">`
@@ -20384,8 +20391,9 @@ function _pdvRenderNovaVenda(root) {
     +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);font-weight:700;margin-bottom:10px;">Vendedor + Local</div>`
     +   `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">`
     +     `<div class="form-group"><label>Vendedor *</label><select class="form-input" onchange="_pdvVenda.vendedorId=this.value;">${optVendedor}</select></div>`
-    +     `<div class="form-group"><label>Local *</label><select class="form-input" onchange="_pdvVenda.localId=this.value;">${optLocal}</select></div>`
+    +     `<div class="form-group"><label>Local *</label><select class="form-input" onchange="_pdvVenda.localId=this.value;_pdvToggleAfiliado();">${optLocal}</select></div>`
     +   `</div>`
+    +   `<div id="pdv-afiliado-wrap" class="form-group" style="margin:14px 0 0;${mostrarAfiliado?'':'display:none;'}"><label>Afiliado * <span style="color:var(--text3);font-weight:400;">(quem fez a venda)</span></label><select class="form-input" id="pdv-afiliado-sel" onchange="_pdvVenda.afiliadoId=this.value;">${optAfiliado}</select>${afiliadosAtivos.length?'':`<div class="afl-hint" style="font-size:11px;color:var(--text3);margin-top:6px;">Nenhum afiliado ativo. Cadastre em <a onclick="showPage('afiliados')" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Vendas → Afiliados</a>.</div>`}</div>`
     + `</div></div>`
 
     + `<div class="card" style="margin-bottom:18px;overflow:visible;"><div style="padding:18px 20px;">`
@@ -20448,6 +20456,44 @@ function _pdvRenderNovaVenda(root) {
     +     `<button class="btn btn-gold" onclick="_pdvAvancarParaFinalizacao()">Avançar →</button>`
     +   `</div>`
     + `</div>`;
+
+  // Garante estado/preenchimento do campo de afiliado (importante na edição,
+  // quando o local já vem como "Afiliado").
+  _pdvToggleAfiliado();
+}
+
+// Mostra/esconde o campo de afiliado conforme o local de venda. Carrega
+// `afiliados` sob demanda (1ª vez) e repopula o select.
+async function _pdvToggleAfiliado() {
+  const wrap = document.getElementById('pdv-afiliado-wrap');
+  if (!wrap || !_pdvVenda) return;
+  const localAfil = (pdvLocais || []).find(x => (x.nome||'').trim().toLowerCase() === 'afiliado');
+  const ehAfiliado = !!(localAfil && _pdvVenda.localId === localAfil.id);
+  wrap.style.display = ehAfiliado ? '' : 'none';
+  if (ehAfiliado && typeof afiliados !== 'undefined' && !afiliados.length) {
+    try { await carregarAfiliados(); } catch (e) {}
+    _pdvPreencherSelectAfiliado();
+  }
+}
+
+function _pdvPreencherSelectAfiliado() {
+  const sel = document.getElementById('pdv-afiliado-sel');
+  if (!sel) return;
+  const ativos = (typeof afiliados !== 'undefined' ? afiliados : []).filter(a => a.ativo !== false).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  const cur = _pdvVenda?.afiliadoId || '';
+  sel.innerHTML = '<option value="">Selecione o afiliado *</option>'
+    + ativos.map(a => `<option value="${a.id}"${cur===a.id?' selected':''}>${escHtml(a.nome)}</option>`).join('');
+  const wrap = document.getElementById('pdv-afiliado-wrap');
+  const hint = wrap?.querySelector('.afl-hint');
+  if (!ativos.length && wrap && !hint) {
+    const d = document.createElement('div');
+    d.className = 'afl-hint';
+    d.style.cssText = 'font-size:11px;color:var(--text3);margin-top:6px;';
+    d.innerHTML = `Nenhum afiliado ativo. Cadastre em <a onclick="showPage('afiliados')" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Vendas → Afiliados</a>.`;
+    wrap.appendChild(d);
+  } else if (ativos.length && hint) {
+    hint.remove();
+  }
 }
 
 function _pdvRenderItensTabela() {
@@ -20840,6 +20886,8 @@ function _pdvAvancarParaFinalizacao() {
   const v = _pdvVenda;
   if (!v.vendedorId)   return smAlert('Selecione um vendedor.');
   if (!v.localId)      return smAlert('Selecione um local.');
+  const _localAfil = (pdvLocais || []).find(x => (x.nome||'').trim().toLowerCase() === 'afiliado');
+  if (_localAfil && v.localId === _localAfil.id && !v.afiliadoId) return smAlert('Selecione o afiliado que fez a venda.');
   if (!v.itens.length) return smAlert('Adicione pelo menos um item.');
   if (v.itens.some(it => !(Number(it.qtd) > 0)))      return smAlert('Todo item precisa ter quantidade ≥ 1.');
   if (v.itens.some(it => !(Number(it.precoUnit) >= 0))) return smAlert('Preço inválido em algum item.');
@@ -21014,9 +21062,12 @@ async function _pdvFinalizarVenda() {
     // "Cliente leva agora" → status='entregue' já na criação, data_entrega_real
     // = now() e data_prevista_entrega fica null. Modo normal segue como antes.
     // Fase 3: TODA venda nasce local (sem Tiny). venda_local sempre true.
+    const _localAfilFin = (pdvLocais || []).find(x => (x.nome||'').trim().toLowerCase() === 'afiliado');
+    const _afiliadoIdVenda = (_localAfilFin && v.localId === _localAfilFin.id) ? (v.afiliadoId || null) : null;
     const pedidoPayload = {
       vendedor_id: v.vendedorId,
       local_venda_id: v.localId,
+      afiliado_id: _afiliadoIdVenda,
       cliente_dados: clienteDados,
       forma_pagamento: formaPagamento,
       desconto,
@@ -21691,6 +21742,7 @@ async function _pdvEditarPedido(pedidoId) {
     vendaLocal:       !!p.vendaLocal,
     vendedorId:       p.vendedorId || '',
     localId:          p.localVendaId || '',
+    afiliadoId:       p.afiliadoId || '',
     itens: itensCam.map(it => ({
       tinyProdutoId:   it.tinyProdutoId || '',
       produtoId:       it.produtoId || null,
@@ -21742,9 +21794,11 @@ async function _pdvSalvarEdicao(v, built) {
   const btn = document.getElementById('pdv-btn-finalizar');
   if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
   try {
+    const _localAfilEd = (pdvLocais || []).find(x => (x.nome||'').trim().toLowerCase() === 'afiliado');
     const pedidoPatch = {
       vendedor_id:     v.vendedorId,
       local_venda_id:  v.localId,
+      afiliado_id:     (_localAfilEd && v.localId === _localAfilEd.id) ? (v.afiliadoId || null) : null,
       cliente_dados:   clienteDados,
       forma_pagamento: formaPagamento,
       desconto,
