@@ -2315,6 +2315,12 @@ select:not(.input-pro):not(.search-input){
       <select id="ped-filtro-vendedor" class="input-pro" onchange="filtrarPedidos()" style="max-width:200px;">
         <option value="">Todos vendedores</option>
       </select>
+      <select id="ped-filtro-local" class="input-pro" onchange="_pedToggleAfiliadoFiltro();filtrarPedidos()" style="max-width:200px;">
+        <option value="">Todos os locais</option>
+      </select>
+      <select id="ped-filtro-afiliado" class="input-pro" onchange="filtrarPedidos()" style="max-width:200px;display:none;">
+        <option value="">Todos os afiliados</option>
+      </select>
     </div>
     <div id="ped-aviso-vendedor" class="text-mute" style="display:none;font-size:var(--fs-xs);font-style:italic;margin-bottom:var(--sp-4);">
       Filtro por vendedor restringe a pedidos PDV (Tiny não armazena vendedor).
@@ -8789,10 +8795,14 @@ async function initPedidosUnif() {
   const elFim = document.getElementById('ped-data-fim');
   if (elIni && !elIni.value) elIni.value = toISO(ini);
   if (elFim && !elFim.value) elFim.value = toISO(fim);
-  // Carrega vendedores PDV pro filtro
+  // Carrega vendedores / locais / afiliados pros filtros
   if (!pdvVendedores.length) try { await initPdvVendedores(); } catch(e) {}
   if (!pdvLocais.length)     try { await initPdvLocais();     } catch(e) {}
+  if (typeof afiliados === 'undefined' || !afiliados.length) try { await carregarAfiliados(); } catch(e) {}
   _populaSelectVendedorFiltro();
+  _populaSelectLocalFiltro();
+  _populaSelectAfiliadoFiltro();
+  _pedToggleAfiliadoFiltro();
   // Primeira entrada da sessão: dispara busca automática. Próximas
   // visitas usam o cache em memória (rerender só).
   if (pedidosUnif.length) {
@@ -8809,6 +8819,40 @@ function _populaSelectVendedorFiltro() {
     .slice().sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
   sel.innerHTML = '<option value="">Todos vendedores</option>' +
     ativos.map(v => `<option value="${v.id}">${escHtml(v.nome)}</option>`).join('');
+}
+
+function _populaSelectLocalFiltro() {
+  const sel = document.getElementById('ped-filtro-local');
+  if (!sel) return;
+  const prev = sel.value;
+  const ativos = (pdvLocais || []).filter(l => l.ativo !== false)
+    .slice().sort((a,b) => (Number(a.ordem)||0) - (Number(b.ordem)||0) || (a.nome||'').localeCompare(b.nome||''));
+  sel.innerHTML = '<option value="">Todos os locais</option>' +
+    ativos.map(l => `<option value="${l.id}">${escHtml(l.nome)}</option>`).join('');
+  if (prev) sel.value = prev;
+}
+
+function _populaSelectAfiliadoFiltro() {
+  const sel = document.getElementById('ped-filtro-afiliado');
+  if (!sel) return;
+  const prev = sel.value;
+  const ativos = (typeof afiliados !== 'undefined' ? afiliados : []).filter(a => a.ativo !== false)
+    .slice().sort((a,b) => (a.nome||'').localeCompare(b.nome||''));
+  sel.innerHTML = '<option value="">Todos os afiliados</option>' +
+    ativos.map(a => `<option value="${a.id}">${escHtml(a.nome)}</option>`).join('');
+  if (prev) sel.value = prev;
+}
+
+// Mostra o filtro de afiliado só quando o local selecionado é "Afiliado"
+// (casa por nome, igual ao PDV). Ao esconder, zera o valor pra não filtrar oculto.
+function _pedToggleAfiliadoFiltro() {
+  const selLocal = document.getElementById('ped-filtro-local');
+  const selAfil  = document.getElementById('ped-filtro-afiliado');
+  if (!selLocal || !selAfil) return;
+  const localAfil = (pdvLocais || []).find(x => (x.nome||'').trim().toLowerCase() === 'afiliado');
+  const ehAfiliado = !!(localAfil && selLocal.value === localAfil.id);
+  selAfil.style.display = ehAfiliado ? '' : 'none';
+  if (!ehAfiliado && selAfil.value) selAfil.value = '';
 }
 
 async function carregarPedidosUnif() {
@@ -8909,6 +8953,8 @@ function renderPedidosUnif() {
   const fOrigem   = document.getElementById('ped-filtro-origem')?.value || '';
   const fStatus   = document.getElementById('ped-filtro-status')?.value || '';
   const fVendedor = document.getElementById('ped-filtro-vendedor')?.value || '';
+  const fLocal    = document.getElementById('ped-filtro-local')?.value || '';
+  const fAfiliado = document.getElementById('ped-filtro-afiliado')?.value || '';
   const q         = (document.getElementById('ped-search')?.value || '').trim().toLowerCase();
 
   // Aviso quando filtro de vendedor está ativo (esconde Tiny implicitamente)
@@ -8919,6 +8965,8 @@ function renderPedidosUnif() {
   let base = pedidosUnif.slice();
   if (fOrigem)   base = base.filter(p => p.origem === fOrigem);
   if (fVendedor) base = base.filter(p => p.origem === 'pdv' && p.raw.vendedorId === fVendedor);
+  if (fLocal)    base = base.filter(p => p.origem === 'pdv' && p.raw?.localVendaId === fLocal);
+  if (fAfiliado) base = base.filter(p => p.origem === 'pdv' && p.raw?.afiliadoId === fAfiliado);
   if (q)         base = base.filter(p =>
     String(p.numero).toLowerCase().includes(q) ||
     (p.cliente  || '').toLowerCase().includes(q) ||
