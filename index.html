@@ -18633,6 +18633,7 @@ function abrirAfiliadoModal(afiliadoId) {
     +   `<div class="modal-title">${isEdit ? 'Editar <span>afiliado</span>' : 'Novo <span>afiliado</span>'}</div>`
     +   `<div class="form-grid">`
     +     `<div class="form-group full"><label>Nome</label><input class="form-input" id="afl-nome" type="text" value="${escHtml(a?.nome || '').replace(/"/g,'&quot;')}" placeholder="Nome do afiliado"></div>`
+    +     `<div class="form-group full"><label>E-mail (opcional, serve para login no portal)</label><input class="form-input" id="afl-email" type="email" value="${escHtml(a?.email || '').replace(/"/g,'&quot;')}" placeholder="email@exemplo.com"></div>`
     +     `<div class="form-group"><label>Telefone (opcional)</label><input class="form-input" id="afl-tel" type="text" value="${escHtml(a?.telefone || '').replace(/"/g,'&quot;')}" placeholder="(00) 00000-0000"></div>`
     +     `<div class="form-group"><label>CPF/CNPJ (opcional)</label><input class="form-input" id="afl-doc" type="text" value="${escHtml(a?.documento || '').replace(/"/g,'&quot;')}" placeholder="—"></div>`
     +     `<div class="form-group full"><label>Chave PIX (opcional)</label><input class="form-input" id="afl-pix" type="text" value="${escHtml(a?.chavePix || '').replace(/"/g,'&quot;')}" placeholder="Pra facilitar o pagamento da comissão"></div>`
@@ -18655,6 +18656,7 @@ async function _salvarAfiliado() {
   const isEdit = !!afiliadoId;
 
   const nome      = (document.getElementById('afl-nome')?.value || '').trim();
+  const email     = (document.getElementById('afl-email')?.value || '').trim().toLowerCase();
   const telefone  = (document.getElementById('afl-tel')?.value || '').trim();
   const documento = (document.getElementById('afl-doc')?.value || '').trim();
   const chavePix  = (document.getElementById('afl-pix')?.value || '').trim();
@@ -18667,6 +18669,7 @@ async function _salvarAfiliado() {
   try {
     const payload = {
       nome,
+      email:      email     || null,
       telefone:   telefone  || null,
       documento:  documento || null,
       chave_pix:  chavePix  || null,

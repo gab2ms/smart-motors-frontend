@@ -101,9 +101,11 @@ Deno.serve(async (req: Request) => {
       const tel = digits(body.telefone);
       if (!idNome || !tel) return json({ error: "Informe nome e telefone." }, 400);
 
-      const { data, error } = await sb.from("afiliados").select("id,nome,telefone").eq("ativo", true);
+      const { data, error } = await sb.from("afiliados").select("id,nome,telefone,email").eq("ativo", true);
       if (error) return json({ error: "Falha ao validar." }, 500);
-      const match = (data || []).filter((a) => norm(a.nome) === idNome && digits(a.telefone) === tel);
+      // identificador casa com o nome OU com o e-mail; telefone é o 2º fator.
+      const match = (data || []).filter((a) =>
+        (norm(a.nome) === idNome || (a.email && norm(a.email) === idNome)) && digits(a.telefone) === tel);
       // Erro genérico (não revela se nome existe). Ambíguo (2+) também recusa.
       if (match.length !== 1) return json({ error: "Nome ou telefone não confere." }, 401);
 
@@ -158,7 +160,8 @@ Deno.serve(async (req: Request) => {
       }
       const comissaoBaseTexto = `Base R$ ${cfg.base} + R$ ${cfg.incremento} a cada R$ ${cfg.passo} acima do mínimo`;
       const vitrine = [...vitMap.values()]
-        .sort((a, b) => a.modelo.localeCompare(b.modelo))
+        // disponíveis primeiro; depois indisponíveis. Dentro de cada grupo, por nome.
+        .sort((a, b) => (Number(b.disponivel) - Number(a.disponivel)) || a.modelo.localeCompare(b.modelo))
         .map((v) => ({ ...v, comissaoBaseTexto }));
 
       // ── Pedidos do próprio afiliado (status != cancelado). ──
