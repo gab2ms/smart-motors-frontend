@@ -18788,6 +18788,23 @@ function renderAfiliadosComissoes() {
   _aflGarantirProdutos().then(() => _aflRenderComissoesInner());
 }
 
+// true se o produto já tem comissão de afiliado definida (> 0).
+function _aflTemComissao(p) { return p.comissaoAfiliado != null && Number(p.comissaoAfiliado) > 0; }
+
+// Aplica os filtros atuais (busca/categoria/comissão) e devolve o array — usado
+// pelo render e pelo "aplicar em massa" (mesma régua dos dois).
+function _aflProdutosComissaoFiltrados() {
+  const q    = (document.getElementById('afl-c-busca')?.value || '').trim().toLowerCase();
+  const fCat = document.getElementById('afl-c-cat')?.value || '';
+  const fCom = document.getElementById('afl-c-com')?.value || '';
+  let arr = (typeof produtosCatalogo !== 'undefined' ? produtosCatalogo : []).filter(p => p.ativo !== false);
+  if (q)    arr = arr.filter(p => (p.nome || '').toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q));
+  if (fCat) arr = arr.filter(p => (p.categoria || '') === fCat);
+  if (fCom === 'com') arr = arr.filter(_aflTemComissao);
+  else if (fCom === 'sem') arr = arr.filter(p => !_aflTemComissao(p));
+  return arr;
+}
+
 function _aflRenderComissoesInner() {
   const root = document.getElementById('afl-tab-comissoes');
   if (!root) return;
@@ -18797,13 +18814,9 @@ function _aflRenderComissoesInner() {
   const fOrd = document.getElementById('afl-c-ord')?.value || 'nome-asc';
 
   const base = (typeof produtosCatalogo !== 'undefined' ? produtosCatalogo : []).filter(p => p.ativo !== false);
-  const temCom = p => p.comissaoAfiliado != null && Number(p.comissaoAfiliado) > 0;
+  const temCom = _aflTemComissao;
 
-  let arr = base.slice();
-  if (q)    arr = arr.filter(p => (p.nome || '').toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q));
-  if (fCat) arr = arr.filter(p => (p.categoria || '') === fCat);
-  if (fCom === 'com') arr = arr.filter(temCom);
-  else if (fCom === 'sem') arr = arr.filter(p => !temCom(p));
+  let arr = _aflProdutosComissaoFiltrados();
 
   const byNome = (a, b) => String(a.nome || '').localeCompare(String(b.nome || ''));
   const num = v => Number(v) || 0;
@@ -18832,14 +18845,17 @@ function _aflRenderComissoesInner() {
     +   `<select class="search-input" id="afl-c-com" onchange="_aflRenderComissoesInner()" style="max-width:180px;">${optCom}</select>`
     +   `<select class="search-input" id="afl-c-ord" onchange="_aflRenderComissoesInner()" style="max-width:180px;">${optOrd}</select>`
     + `</div>`
-    + `<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:12px;color:var(--text3);">`
-    +   `<span>${arr.length} produto${arr.length === 1 ? '' : 's'}${(q || fCat || fCom) ? ' (filtrado)' : ''}</span>`
+    + `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:12px;color:var(--text3);">`
+    +   `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">`
+    +     `<span>${arr.length} produto${arr.length === 1 ? '' : 's'}${(q || fCat || fCom) ? ' (filtrado)' : ''}</span>`
+    +     (arr.length ? `<button class="btn" style="padding:6px 12px;font-size:12px;" onclick="_aflAplicarComissaoEmMassa()">Aplicar comissão aos ${arr.length} filtrado${arr.length === 1 ? '' : 's'}</button>` : '')
+    +   `</div>`
     +   `<span>A comissão vale pra todos os afiliados. Edite o R$ e clique fora pra salvar.</span>`
     + `</div>`
     + `<div class="card"><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">`
     +   `<thead><tr style="border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;"><th style="text-align:left;padding:8px 14px;">Produto</th><th style="text-align:left;padding:8px 14px;">Categoria</th><th style="text-align:right;padding:8px 14px;">Preço</th><th style="text-align:right;padding:8px 14px;">Comissão afiliado (R$)</th></tr></thead><tbody>`
     +   (arr.length
-        ? arr.map(p => `<tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 14px;font-weight:700;">${escHtml(p.nome || '—')}</td><td style="padding:8px 14px;color:var(--text3);">${escHtml(p.categoria || '—')}</td><td style="padding:8px 14px;text-align:right;">${_fmtBRMoney(p.precoVenda)}</td><td style="padding:8px 14px;text-align:right;"><input type="number" step="0.01" min="0" value="${p.comissaoAfiliado != null ? Number(p.comissaoAfiliado) : ''}" placeholder="0,00" style="width:120px;text-align:right;padding:6px 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);" onchange="_aflSalvarComissaoProduto('${p.id}', this.value, this)"></td></tr>`).join('')
+        ? arr.map(p => { const sc = !temCom(p); return `<tr style="border-bottom:1px solid var(--border);${sc ? 'background:rgba(245,158,11,0.07);' : ''}"><td style="padding:8px 14px;font-weight:700;">${escHtml(p.nome || '—')}${sc ? ' <span style="font-weight:400;font-size:10px;color:var(--gold);border:1px solid var(--gold);border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:middle;">sem comissão</span>' : ''}</td><td style="padding:8px 14px;color:var(--text3);">${escHtml(p.categoria || '—')}</td><td style="padding:8px 14px;text-align:right;">${_fmtBRMoney(p.precoVenda)}</td><td style="padding:8px 14px;text-align:right;"><input type="number" step="0.01" min="0" value="${p.comissaoAfiliado != null ? Number(p.comissaoAfiliado) : ''}" placeholder="0,00" style="width:120px;text-align:right;padding:6px 8px;background:var(--surface2);border:1px solid ${sc ? 'rgba(245,158,11,0.5)' : 'var(--border2)'};border-radius:6px;color:var(--text);" onchange="_aflSalvarComissaoProduto('${p.id}', this.value, this)"></td></tr>`; }).join('')
         : `<tr><td colspan="4" style="padding:18px;color:var(--text3);text-align:center;">Nenhum produto no filtro.</td></tr>`)
     +   `</tbody></table></div></div>`;
 }
@@ -18858,6 +18874,31 @@ async function _aflSalvarComissaoProduto(produtoId, valorRaw, inputEl) {
     smAlert('Erro ao salvar comissão: ' + e.message);
   } finally {
     if (inputEl) inputEl.disabled = false;
+  }
+}
+
+// Aplica uma mesma comissão (R$) a TODOS os produtos atualmente filtrados.
+// Vazio = remover a comissão. Pede valor + confirma antes (mostra a contagem).
+async function _aflAplicarComissaoEmMassa() {
+  const arr = _aflProdutosComissaoFiltrados();
+  if (!arr.length) { smAlert('Nenhum produto no filtro pra aplicar.'); return; }
+  const raw = await smPrompt(`Comissão (R$ por unidade) pra aplicar aos ${arr.length} produto(s) filtrado(s).\nDeixe vazio pra remover a comissão.`, '');
+  if (raw == null) return; // cancelou
+  const txt = String(raw).trim().replace(',', '.');
+  const valor = txt === '' ? null : Number(txt);
+  if (valor != null && !(valor >= 0)) { smAlert('Valor de comissão inválido.'); return; }
+  const label = valor == null ? 'remover a comissão' : `R$ ${valor.toFixed(2)}`;
+  if (!(await smConfirm(`Aplicar ${label} a ${arr.length} produto(s)? Isso sobrescreve a comissão atual deles.`))) return;
+  const ids = arr.map(p => p.id);
+  try {
+    const { error } = await sb.from('produtos').update({ comissao_afiliado: valor, atualizado_em: new Date().toISOString() }).in('id', ids);
+    if (error) throw new Error(error.message);
+    const idSet = new Set(ids);
+    (typeof produtosCatalogo !== 'undefined' ? produtosCatalogo : []).forEach(p => { if (idSet.has(p.id)) p.comissaoAfiliado = valor; });
+    _aflRenderComissoesInner();
+    smAlert(`Comissão ${valor == null ? 'removida de' : 'aplicada a'} ${ids.length} produto(s).`);
+  } catch (e) {
+    smAlert('Erro ao aplicar em massa: ' + e.message);
   }
 }
 
