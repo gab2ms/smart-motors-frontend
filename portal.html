@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>Portal do Afiliado — Smart Motors</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#141517; --surface:#1E1F22; --surface2:#26282C; --surface3:#2E3035;
+    --border:rgba(255,255,255,0.08); --border2:rgba(255,255,255,0.14);
+    --text:#F4F3EF; --text2:rgba(255,255,255,0.64); --text3:rgba(255,255,255,0.40);
+    --gold:#F6A41C; --green:#35C281; --red:#EF6048;
+    --r:14px; --r-sm:10px;
+    --ui:'Manrope',system-ui,sans-serif; --display:'Sora',var(--ui);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--ui);
+    -webkit-font-smoothing:antialiased;line-height:1.5;}
+  a{color:var(--gold);}
+  .wrap{max-width:960px;margin:0 auto;padding:20px 16px 56px;}
+  .brand{display:flex;align-items:center;gap:10px;padding:18px 0 6px;}
+  .brand b{font-family:var(--display);font-size:18px;letter-spacing:.2px;}
+  .brand span{color:var(--text3);font-size:13px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);}
+  .pad{padding:18px;}
+  h1{font-family:var(--display);font-size:22px;margin:0 0 4px;}
+  h2{font-family:var(--display);font-size:15px;margin:0 0 12px;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);}
+  label{display:block;font-size:13px;color:var(--text2);margin:14px 0 6px;}
+  input{width:100%;padding:12px 14px;background:var(--surface2);border:1px solid var(--border2);
+    border-radius:var(--r-sm);color:var(--text);font-size:15px;font-family:var(--ui);}
+  input:focus{outline:none;border-color:var(--gold);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;
+    margin-top:18px;padding:13px 16px;background:var(--gold);color:#1a1300;border:none;
+    border-radius:var(--r-sm);font-weight:800;font-size:15px;font-family:var(--ui);cursor:pointer;}
+  .btn:disabled{opacity:.55;cursor:default;}
+  .btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border2);width:auto;margin:0;
+    padding:8px 14px;font-size:13px;font-weight:600;}
+  .msg{margin-top:14px;font-size:13px;min-height:18px;}
+  .msg.err{color:var(--red);} .msg.ok{color:var(--green);}
+  /* login */
+  #login{max-width:380px;margin:8vh auto 0;}
+  /* dashboard */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:6px 0 18px;}
+  .hello{font-family:var(--display);font-size:20px;}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;}
+  .kpi .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);}
+  .kpi .val{font-family:var(--display);font-size:22px;font-weight:800;margin-top:6px;}
+  .kpi.green .val{color:var(--green);} .kpi.gold .val{color:var(--gold);}
+  .box{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:20px;}
+  .box .how{font-size:13px;color:var(--text2);}
+  table{width:100%;border-collapse:collapse;font-size:14px;}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);
+    padding:10px 12px;border-bottom:1px solid var(--border);font-weight:600;}
+  td{padding:11px 12px;border-bottom:1px solid var(--border);}
+  .num{text-align:right;font-variant-numeric:tabular-nums;}
+  .vit{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border);}
+  .vit:last-child{border-bottom:none;}
+  .vit .nome{font-weight:700;}
+  .vit .sub{font-size:12px;color:var(--text3);margin-top:2px;}
+  .sel{font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;}
+  .sel.on{color:var(--green);background:rgba(53,194,129,.12);}
+  .sel.off{color:var(--text3);background:rgba(255,255,255,.05);}
+  .pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;}
+  .pill.ent{color:var(--green);background:rgba(53,194,129,.12);}
+  .pill.aguard{color:var(--gold);background:rgba(246,164,28,.12);}
+  .muted{color:var(--text3);text-align:center;padding:20px;}
+  .scroll{overflow-x:auto;}
+  .hidden{display:none;}
+  @media(max-width:520px){ td,th{padding:9px 8px;} h1{font-size:20px;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ───────────── LOGIN ───────────── -->
+  <div id="login">
+    <div class="brand"><b>Smart Motors</b><span>Portal do Afiliado</span></div>
+    <div class="card pad">
+      <h1>Entrar</h1>
+      <div style="color:var(--text2);font-size:13px;">Use o nome e o telefone cadastrados com a loja.</div>
+      <label for="in-nome">Nome</label>
+      <input id="in-nome" type="text" autocomplete="name" placeholder="Seu nome">
+      <label for="in-tel">Telefone</label>
+      <input id="in-tel" type="tel" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000">
+      <button class="btn" id="btn-login">Entrar</button>
+      <div class="msg" id="login-msg"></div>
+    </div>
+  </div>
+
+  <!-- ───────────── DASHBOARD ───────────── -->
+  <div id="dash" class="hidden">
+    <div class="brand"><b>Smart Motors</b><span>Portal do Afiliado</span></div>
+    <div class="topbar">
+      <div class="hello" id="hello">Olá</div>
+      <button class="btn btn-ghost" id="btn-logout">Sair</button>
+    </div>
+
+    <div class="cards" id="kpis"></div>
+
+    <div class="box">
+      <h2>Como funciona sua comissão</h2>
+      <div class="how" id="how"></div>
+    </div>
+
+    <h2 style="margin-left:2px;">Vitrine de modelos</h2>
+    <div class="card" id="vitrine" style="margin-bottom:24px;"></div>
+
+    <h2 style="margin-left:2px;">Meus pedidos</h2>
+    <div class="card scroll" id="pedidos"></div>
+
+    <div class="msg" id="dash-msg"></div>
+  </div>
+
+</div>
+
+<script>
+  // Endpoint da Edge Function (nenhuma chave Supabase mora aqui — só a URL pública).
+  const API = 'https://sxmeuqlotjuchslevofv.supabase.co/functions/v1/portal-afiliado';
+  const LS_TOKEN = 'sm_portal_token';
+  const LS_NOME  = 'sm_portal_nome';
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const money = (v) => 'R$ ' + (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtData = (iso) => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toLocaleDateString('pt-BR'); };
+
+  function show(view) {
+    $('login').classList.toggle('hidden', view !== 'login');
+    $('dash').classList.toggle('hidden', view !== 'dash');
+  }
+
+  // ── Login ──
+  async function fazerLogin() {
+    const nome = $('in-nome').value.trim();
+    const tel  = $('in-tel').value.trim();
+    const msg  = $('login-msg');
+    msg.className = 'msg';
+    msg.textContent = '';
+    if (!nome || !tel) { msg.className = 'msg err'; msg.textContent = 'Preencha nome e telefone.'; return; }
+    $('btn-login').disabled = true;
+    $('btn-login').textContent = 'Entrando...';
+    try {
+      const r = await fetch(API + '?acao=login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ identificador: nome, telefone: tel }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || !data.token) { msg.className = 'msg err'; msg.textContent = data.error || 'Não foi possível entrar.'; return; }
+      localStorage.setItem(LS_TOKEN, data.token);
+      localStorage.setItem(LS_NOME, (data.afiliado && data.afiliado.nome) || nome);
+      await carregarDashboard();
+    } catch (e) {
+      msg.className = 'msg err'; msg.textContent = 'Falha de conexão. Tente de novo.';
+    } finally {
+      $('btn-login').disabled = false;
+      $('btn-login').textContent = 'Entrar';
+    }
+  }
+
+  function logout() {
+    localStorage.removeItem(LS_TOKEN);
+    localStorage.removeItem(LS_NOME);
+    show('login');
+  }
+
+  // ── Dashboard ──
+  async function carregarDashboard() {
+    const token = localStorage.getItem(LS_TOKEN);
+    if (!token) { show('login'); return; }
+    show('dash');
+    $('hello').textContent = 'Olá, ' + (localStorage.getItem(LS_NOME) || 'afiliado');
+    $('dash-msg').className = 'msg';
+    $('dash-msg').textContent = 'Carregando...';
+    try {
+      const r = await fetch(API + '?acao=dados', { headers: { authorization: 'Bearer ' + token } });
+      if (r.status === 401) { logout(); return; }
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { $('dash-msg').className = 'msg err'; $('dash-msg').textContent = data.error || 'Erro ao carregar.'; return; }
+      $('dash-msg').textContent = '';
+      render(data);
+    } catch (e) {
+      $('dash-msg').className = 'msg err'; $('dash-msg').textContent = 'Falha de conexão.';
+    }
+  }
+
+  function render(data) {
+    const t = data.totais || {};
+    $('kpis').innerHTML =
+        kpi('Total vendido', money(t.totalVendido), '')
+      + kpi('Comissão liberada', money(t.comissaoLiberada), 'green')
+      + kpi('Comissão pendente', money(t.comissaoPendente), '')
+      + kpi('Comissão a receber', money(t.comissaoTotal), 'gold');
+
+    const vit = data.vitrine || [];
+    const how = vit[0] && vit[0].comissaoBaseTexto ? vit[0].comissaoBaseTexto : 'Comissão base ao vender no preço mínimo, com adicional por faixa acima dele.';
+    $('how').innerHTML = esc(how) + '. <span style="color:var(--text3);">Quanto melhor o preço acima do mínimo, maior sua comissão.</span>';
+
+    $('vitrine').innerHTML = vit.length
+      ? vit.map((v) => {
+          const on = !!v.disponivel;
+          const pm = v.precoMinimo != null ? ('Preço mínimo: ' + money(v.precoMinimo)) : 'Preço mínimo a definir';
+          return `<div class="vit"><div><div class="nome">${esc(v.modelo)}</div><div class="sub">${esc(pm)}</div></div>`
+            + `<div class="sel ${on ? 'on' : 'off'}">${on ? '🟢 Disponível' : '⛔ Indisponível'}</div></div>`;
+        }).join('')
+      : '<div class="muted">Nenhum modelo disponível no momento.</div>';
+
+    const peds = data.pedidos || [];
+    $('pedidos').innerHTML = peds.length
+      ? `<table><thead><tr><th>Nº</th><th>Data</th><th>Cliente</th><th class="num">Valor</th><th>Status</th><th class="num">Comissão</th></tr></thead><tbody>`
+        + peds.map((p) => {
+            const ent = p.status === 'entregue';
+            const pill = ent ? '<span class="pill ent">Entregue</span>' : '<span class="pill aguard">Aguardando</span>';
+            return `<tr><td>#${esc(p.numero != null ? p.numero : '?')}</td><td>${esc(fmtData(p.data))}</td>`
+              + `<td>${esc(p.cliente || '—')}</td><td class="num">${money(p.valorTotal)}</td>`
+              + `<td>${pill}</td><td class="num">${money(p.comissao)}</td></tr>`;
+          }).join('')
+        + `</tbody></table>`
+      : '<div class="muted">Você ainda não tem pedidos.</div>';
+  }
+
+  function kpi(lbl, val, cls) {
+    return `<div class="kpi ${cls}"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(val)}</div></div>`;
+  }
+
+  // ── Eventos ──
+  $('btn-login').addEventListener('click', fazerLogin);
+  $('in-tel').addEventListener('keydown', (e) => { if (e.key === 'Enter') fazerLogin(); });
+  $('btn-logout').addEventListener('click', logout);
+
+  // Auto-login se já houver token salvo.
+  if (localStorage.getItem(LS_TOKEN)) carregarDashboard(); else show('login');
+</script>
+</body>
+</html>
