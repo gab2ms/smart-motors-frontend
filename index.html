@@ -21653,22 +21653,57 @@ async function _pdvTextoContabilidade(pedidoId) {
   const cli   = ped.clienteDados || {};
 
   // Só scooters (mesma regra do projeto). Cada linha de item vira um bloco.
-  const scooters = itens
+  const linhasScooter = itens
     .map(it => ({ it, nome: it.produtoModelo || it.produtoNomeTiny || '' }))
-    .filter(x => SCOOTER_RE.test(x.nome))
-    .map(x => ({
+    .filter(x => SCOOTER_RE.test(x.nome));
+  if (!linhasScooter.length) { smAlert('Este pedido não tem scooter — o texto de contabilidade só se aplica a scooters (acessórios não entram).'); return; }
+
+  // Catálogo: Fabricante/Cor/Motor vêm do cadastro do produto (item.produtoId);
+  // garantia vem por MODELO (compartilhada entre cores — ver _modeloBase).
+  let catalogo = [];
+  try {
+    const rc = await sb.from('produtos').select('id,nome,cor,fabricante,motor,garantia_meses');
+    catalogo = rc.data || [];
+  } catch (_) { catalogo = []; }
+  const prodById = new Map(catalogo.map(p => [p.id, p]));
+  const garantiaPorBase = new Map();
+  for (const p of catalogo) {
+    if (p.garantia_meses == null) continue;
+    const base = _modeloBase(p.nome, p.cor).toLowerCase();
+    if (!garantiaPorBase.has(base)) garantiaPorBase.set(base, p.garantia_meses);
+  }
+  const titleCase = s => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '';
+
+  const scooters = linhasScooter.map(x => {
+    const prod       = x.it.produtoId ? prodById.get(x.it.produtoId) : null;
+    const corDoNome  = titleCase((String(x.nome).match(_RE_CORES_SUFIXO) || [])[1] || '');
+    const corDefault = (prod && prod.cor) || corDoNome || '';
+    const modeloBase = _modeloBase(x.nome, (prod && prod.cor) || corDoNome || null);
+    return {
+      produtoId:     x.it.produtoId || null,
       modeloDefault: x.nome,
+      fabDefault:    (prod && prod.fabricante) || '',
+      corDefault,
+      motorDefault:  (prod && prod.motor) || '',
       chassiOrig:    x.it.chassi || '',
+      modeloBase,
       valorLinha:    x.it.valorTotal != null ? Number(x.it.valorTotal) : Number(x.it.valorUnitario || 0) * Number(x.it.quantidade || 0),
-    }));
-  if (!scooters.length) { smAlert('Este pedido não tem scooter — o texto de contabilidade só se aplica a scooters (acessórios não entram).'); return; }
+    };
+  });
+
+  // Garantia default = a do modelo (1ª scooter que já tiver registro); senão 12.
+  let garantiaDefault = 12;
+  for (const sc of scooters) {
+    const g = garantiaPorBase.get((sc.modeloBase || '').toLowerCase());
+    if (g != null) { garantiaDefault = g; break; }
+  }
 
   const formaPagamento = ((ped.formaPagamento && ped.formaPagamento.metodos) || []).map(m => {
     const lbl = (PDV_PAGTO_TIPOS.find(t => t.code === m.tipo) || {}).label || m.tipo;
     return m.parcelas ? `${lbl} (${m.parcelas}x)` : lbl;
   }).join(' + ');
 
-  _pdvContabCtx = { pedidoId, cli, scooters, formaPagamento, numero: ped.numeroSmart };
+  _pdvContabCtx = { pedidoId, cli, scooters, formaPagamento, numero: ped.numeroSmart, catalogo, garantiaDefault };
   _pdvContabRenderModal();
 }
 
@@ -21685,9 +21720,9 @@ function _pdvContabRenderModal() {
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);font-weight:700;margin-bottom:10px;">Scooter ${i+1}${ctx.scooters.length>1?' de '+ctx.scooters.length:''} · ${_fmtBRMoney(sc.valorLinha)}</div>
       <div class="form-group" style="margin-bottom:8px;"><label>Modelo</label><input class="form-input" id="contab-modelo-${i}" type="text" value="${escHtml(sc.modeloDefault).replace(/"/g,'&quot;')}"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-        <div class="form-group" style="margin-bottom:8px;"><label>Fabricante</label><input class="form-input" id="contab-fab-${i}" type="text" placeholder="ex: Shineray"></div>
-        <div class="form-group" style="margin-bottom:8px;"><label>Cor</label><input class="form-input" id="contab-cor-${i}" type="text" placeholder="ex: Vermelha"></div>
-        <div class="form-group" style="margin-bottom:8px;"><label>Motor</label><input class="form-input" id="contab-motor-${i}" type="text" placeholder="ex: 2000W"></div>
+        <div class="form-group" style="margin-bottom:8px;"><label>Fabricante</label><input class="form-input" id="contab-fab-${i}" type="text" placeholder="ex: Shineray" value="${escHtml(sc.fabDefault||'').replace(/"/g,'&quot;')}"></div>
+        <div class="form-group" style="margin-bottom:8px;"><label>Cor</label><input class="form-input" id="contab-cor-${i}" type="text" placeholder="ex: Vermelha" value="${escHtml(sc.corDefault||'').replace(/"/g,'&quot;')}"></div>
+        <div class="form-group" style="margin-bottom:8px;"><label>Motor</label><input class="form-input" id="contab-motor-${i}" type="text" placeholder="ex: 2000W" value="${escHtml(sc.motorDefault||'').replace(/"/g,'&quot;')}"></div>
         <div class="form-group" style="margin-bottom:0;"><label>Chassi</label><input class="form-input" id="contab-chassi-${i}" type="text" value="${escHtml(sc.chassiOrig).replace(/"/g,'&quot;')}" style="text-transform:uppercase;"></div>
       </div>
     </div>`).join('');
@@ -21696,7 +21731,7 @@ function _pdvContabRenderModal() {
       `<div class="modal" style="width:560px;max-width:96vw;max-height:90vh;overflow-y:auto;">`
     +   `<div class="modal-title">Texto p/ contabilidade — Pedido #${escHtml(ctx.numero ?? '?')}</div>`
     +   `<div style="font-size:12px;color:var(--text3);margin-bottom:16px;">Preencha o que não vem do cadastro. ${ctx.scooters.length>1?'Cada scooter vira um bloco no mesmo texto (cliente e garantia saem uma vez só).':''}</div>`
-    +   `<div class="form-group" style="margin-bottom:16px;"><label>Garantia (meses)</label><input class="form-input" id="contab-garantia" type="number" min="0" step="1" value="12" style="max-width:120px;"></div>`
+    +   `<div class="form-group" style="margin-bottom:16px;"><label>Garantia (meses)</label><input class="form-input" id="contab-garantia" type="number" min="0" step="1" value="${ctx.garantiaDefault ?? 12}" style="max-width:120px;"></div>`
     +   blocos
     +   `<div class="modal-actions"><button class="btn btn-gold" type="button" onclick="_pdvContabGerar()"><svg class="ic ic-sm"><use href="#ic-clipboard"/></svg> Gerar e copiar</button><button class="btn" type="button" onclick="document.getElementById('pdv-contab-modal').remove();">Cancelar</button></div>`
     + `</div>`;
@@ -21748,16 +21783,60 @@ function _pdvContabGerar() {
   const fechar  = () => { const m = document.getElementById('pdv-contab-modal'); if (m) m.remove(); };
   const sucesso = () => { fechar(); smAlert('Texto copiado — cole no grupo da contabilidade.'); };
   const manual  = () => { fechar(); smPrompt('Não consegui copiar automaticamente. Copie o texto abaixo:', texto); };
+  // Depois de copiar, grava o que foi preenchido no CADASTRO (best-effort, não
+  // bloqueia a cópia): Fabricante/Cor/Motor por produto; garantia por MODELO
+  // (todas as cores do mesmo _modeloBase). Chassi continua só no item do pedido.
+  const okCopiado = () => { sucesso(); _pdvContabPersistir(ctx, dados); };
 
   // HTTPS (futuro): tenta a API moderna primeiro; se falhar, cai no execCommand.
   if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(texto)
-      .then(sucesso)
-      .catch(() => { _pdvCopiarViaExec(texto) ? sucesso() : manual(); });
+      .then(okCopiado)
+      .catch(() => { _pdvCopiarViaExec(texto) ? okCopiado() : manual(); });
     return;
   }
   // HTTP (nosso caso): execCommand('copy') funciona — feito no gesto do clique.
-  _pdvCopiarViaExec(texto) ? sucesso() : manual();
+  _pdvCopiarViaExec(texto) ? okCopiado() : manual();
+}
+
+// Grava no cadastro o que o usuário preencheu no modal de contabilidade.
+// Fabricante/Cor/Motor → produtos (por produto_id, só campos não-vazios pra
+// não apagar cadastro). Garantia → todas as cores do modelo (mesmo _modeloBase).
+async function _pdvContabPersistir(ctx, dados) {
+  try {
+    await Promise.all(ctx.scooters.map((sc, i) => {
+      if (!sc.produtoId) return Promise.resolve();
+      const d = dados.scooters[i] || {};
+      const upd = { atualizado_em: new Date().toISOString() };
+      if (d.fabricante) upd.fabricante = d.fabricante;
+      if (d.cor)        upd.cor        = d.cor;
+      if (d.motor)      upd.motor      = d.motor;
+      if (Object.keys(upd).length === 1) return Promise.resolve();
+      return sb.from('produtos').update(upd).eq('id', sc.produtoId);
+    }));
+
+    // Garantia por modelo: aplica a TODAS as cores do(s) modelo(s) do pedido.
+    if (dados.garantia != null) {
+      const bases = new Set(ctx.scooters.map(s => (s.modeloBase || '').toLowerCase()).filter(Boolean));
+      const ids = (ctx.catalogo || [])
+        .filter(p => bases.has(_modeloBase(p.nome, p.cor).toLowerCase()))
+        .map(p => p.id);
+      if (ids.length) {
+        await sb.from('produtos').update({ garantia_meses: dados.garantia, atualizado_em: new Date().toISOString() }).in('id', ids);
+      }
+    }
+
+    // Mantém o catálogo em memória sincronizado (se já estiver carregado).
+    if (Array.isArray(produtosCatalogo) && produtosCatalogo.length) {
+      ctx.scooters.forEach((sc, i) => {
+        const d = dados.scooters[i] || {};
+        const pc = produtosCatalogo.find(p => p.id === sc.produtoId);
+        if (pc) { if (d.fabricante) pc.fabricante = d.fabricante; if (d.cor) pc.cor = d.cor; if (d.motor) pc.motor = d.motor; }
+      });
+    }
+  } catch (err) {
+    console.warn('contab: falha ao salvar no cadastro (cópia já feita):', err);
+  }
 }
 
 // Copia texto via <textarea> temporário + execCommand('copy'). Funciona em
