@@ -15,6 +15,7 @@ Organizado **por assunto** — cada seção traz o **estado atual** daquele tema
 - **Front-end:** `index.html` monolítico (~26k linhas, JS/CSS inline, sem build) + `portal.html` (portal público do afiliado). **GitHub Pages**, domínio `smartmotorsapp.com.br`, repo `gab2ms/smart-motors-frontend`, branch `main`.
 - **Backend:** **Supabase** (Postgres + Edge Functions), ref `sxmeuqlotjuchslevofv`. + backend Node no **Railway** (`smartmotorsestoque-production.up.railway.app`) p/ estoque, NF-e e resumos de WhatsApp.
 - **Auth:** **Supabase Auth** (migrado em 28/06/2026). Detalhes em "Autenticação & Permissões".
+- **Organização local das pastas (reorg 29/06/2026):** tudo do projeto vive em `~/projetos/Smart Motors/` (junto dos outros projetos do dono — `finapp`, `vida-pratika`): `frontend/` (este repo) · `backend/` (repo `smartmotorsestoque`, Railway) · `documentos/` (docs de negócio) · `arquivo/` (prints de auditoria antiga + protótipo velho do backend, descartáveis). São **2 repos git independentes** — `frontend` e `backend` — só agrupados na mesma pasta-mãe. Caminhos antigos (`~/smart-motors-app`, `~/smartmotorsestoque`) não existem mais.
 
 ---
 
@@ -85,6 +86,9 @@ A 2ª passada cobriu todos os pontos abaixo: Montagens (lista: card montador pad
 - ⏳ Menores (observação): Oficina "Lucro" inflado (OS com custo 0 — backlog #2). Divergência preço cadastro×Tiny. 25 produtos sem FK `produto_precos_id`. Arredondamentos de centavos em empréstimo.
 
 ## Histórico de mudanças
+
+### 2026-06-29 — Reorganização das pastas locais numa pasta-mestre
+Tudo do Smart Motors consolidado em `~/projetos/Smart Motors/` (`frontend`/`backend`/`documentos`/`arquivo`) — antes espalhado em `~/smart-motors-app`, `~/smartmotorsestoque`, `~/smart-motors-review` e `~/Documents/Work  /Smart Motors `. Detalhe na seção **Arquitetura**. Produção intacta (Pages/Railway puxam do GitHub). Worktree reparado (`git worktree repair`); histórico+memória do Claude copiados pros novos caminhos-chave (`-Users-moreira-projetos-Smart-Motors-frontend`/`-backend`) — as pastas-chave antigas seguem como backup.
 
 ### 2026-06-29 — Afiliados: selo de status de PAGAMENTO da comissão (em validação local)
 `index.html` (`renderGrupoAfil` ~18918): cada afiliado na árvore "Vendas & Comissões" passa a mostrar um selo do status de pagamento da comissão, calculado das contas a pagar `afl-*` dele (`_cpTotalPago`): 🟢 comissão paga · 🟡 parcial (falta R$) · 🟠 a pagar (R$) · ⚪ a fechar (comissão liberada mas conta do mês não gerada ainda). Só exibição — não mexe no fluxo de pagamento/Fechamento. `gerarComissoesAfiliados` é idempotente (id `afl-<comp>-<afiliado>`) → clicar "Gerar/atualizar contas do mês" várias vezes NÃO duplica (atualiza; trava se já houve pagamento). Validado: árvore renderiza, selo do Pedro = "a pagar R$100" (conta afl-2026-06 pendente existe).
