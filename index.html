@@ -19157,8 +19157,10 @@ async function gerarComissoesAfiliados(comp) {
   const afilMap = new Map((typeof afiliados !== 'undefined' ? afiliados : []).map(a => [a.id, a]));
 
   const soma = {};
+  let vendasElegiveis = 0; // vendas de afiliado entregues na competência (com ou sem comissão)
   (_aflVendasCache || []).forEach(p => {
     if (_aflCompetenciaDe(p) !== comp) return;
+    vendasElegiveis++;
     const c = _aflComissaoPedido(p, prodMap);
     if (c > 0) soma[p.afiliadoId] = (soma[p.afiliadoId] || 0) + c;
   });
@@ -19191,9 +19193,14 @@ async function gerarComissoesAfiliados(comp) {
   if (typeof renderContasPagar === 'function') { try { renderContasPagar(); } catch (e) {} }
   _aflRenderVendasInner();
   const semComissao = Object.keys(soma).length === 0;
-  smAlert(semComissao
-    ? `Nenhuma comissão a pagar em ${compLabel} (sem vendas entregues com comissão).`
-    : `Comissões de ${compLabel}: ${criadas} criada(s), ${atualizadas} atualizada(s)${travadas ? `, ${travadas} já com pagamento (mantidas)` : ''}. Veja em Financeiro → Contas a Pagar.`);
+  if (semComissao && vendasElegiveis > 0) {
+    // Há vendas de afiliado entregues, mas a comissão calculou zero → config faltando.
+    smAlert(`⚠ Atenção: há ${vendasElegiveis} venda(s) de afiliado entregue(s) em ${compLabel}, mas a comissão calculou R$ 0,00 — provavelmente faltam cadastrar o "preço mínimo do afiliado" ou a "comissão" dos produtos vendidos. Nenhuma conta foi gerada.`);
+  } else {
+    smAlert(semComissao
+      ? `Nenhuma comissão a pagar em ${compLabel} (sem vendas entregues de afiliado).`
+      : `Comissões de ${compLabel}: ${criadas} criada(s), ${atualizadas} atualizada(s)${travadas ? `, ${travadas} já com pagamento (mantidas)` : ''}. Veja em Financeiro → Contas a Pagar.`);
+  }
 }
 
 // ── Cancelar 1 pagamento (com tratamento de lançamento único vs. agregado) ──
