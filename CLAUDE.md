@@ -1,76 +1,73 @@
 # CLAUDE.md
 
-Instruções e contexto do projeto para o Claude Code.
+Instruções e contexto do projeto Smart Motors para o Claude Code.
+Organizado **por assunto** — cada seção traz o **estado atual** daquele tema, pra puxar o contexto rápido quando a gente entrar nele. Mudanças novas: atualizar a seção do assunto + 1 linha no Histórico (no fim).
 
 ## Comunicação
+- **Responda SEMPRE em português do Brasil** — raciocínio, comentários, status, resumos, tudo. Nunca inglês.
 
-- **Responda SEMPRE em português do Brasil** — incluindo raciocínio, comentários de investigação, mensagens de status, resumos e qualquer texto exibido ao usuário. Nunca use inglês na comunicação comigo.
+## Como trabalhar neste projeto (processo)
+- **Documentar toda mudança importante AQUI**, na seção do **assunto** correspondente (e 1 linha no Histórico). O objetivo é não reexplicar contexto: ao entrar num tema, leio a seção dele.
+- **Validar no `localhost:8000` antes de push.** Push direto na `main` (GitHub Pages serve da `main`). Servidor local: `python3 -m http.server 8000`.
+- Converter datas relativas em absolutas. Mudanças de banco = migração nomeada (Supabase).
 
-## Documentação de mudanças (IMPORTANTE)
+## Arquitetura (visão geral)
+- **Front-end:** `index.html` monolítico (~26k linhas, JS/CSS inline, sem build) + `portal.html` (portal público do afiliado). **GitHub Pages**, domínio `smartmotorsapp.com.br`, repo `gab2ms/smart-motors-frontend`, branch `main`.
+- **Backend:** **Supabase** (Postgres + Edge Functions), ref `sxmeuqlotjuchslevofv`. + backend Node no **Railway** (`smartmotorsestoque-production.up.railway.app`) p/ estoque, NF-e e resumos de WhatsApp.
+- **Auth:** **Supabase Auth** (migrado em 28/06/2026). Detalhes em "Autenticação & Permissões".
 
-- **Toda mudança relevante feita no sistema deve ser registrada neste arquivo**, na seção "Histórico de mudanças", para que o contexto não se perca entre sessões — sem precisar reexplicar manualmente o que já foi feito.
-- Registrar: o que mudou, em quais arquivos, por quê, e o que ficou pendente. Converter datas relativas em absolutas.
-- Validar no `localhost:8000` **antes** de cada push; push direto na `main` (GitHub Pages serve da `main`).
+---
 
-## Visão geral da arquitetura
-
-- **Front-end:** `index.html` monolítico (~26k linhas, JS/CSS inline, sem build step) + `portal.html` (portal público do afiliado). Servidos via **GitHub Pages** no domínio `smartmotorsapp.com.br` (repo `gab2ms/smart-motors-frontend`, branch `main`).
-- **Backend:** **Supabase** (Postgres + Edge Functions), projeto ref `sxmeuqlotjuchslevofv`. Edge Functions: `portal-afiliado` (token HMAC próprio), `gerar-resumo-os` (verify_jwt), rotas de NF-e. Há também um backend Node no **Railway** (`smartmotorsestoque-production.up.railway.app`) para estoque/NF-e.
-- **Auth atual:** login caseiro client-side (lê a tabela `usuarios` via anon key; sessão em `localStorage` `sm_user`). **Sem Supabase Auth ainda** (migração prevista — ver Segurança / Frente 2).
-
-## Integrações de WhatsApp (mapa — investigado 2026-06-28)
-
-Há **dois disparadores** que usam a **mesma API (textmebot)** e a **mesma tabela** `whatsapp_destinatarios` (cada destinatário tem `numero` + `api_key`). NÃO são integrações concorrentes com keys diferentes — bebem da mesma fonte:
-
-1. **Railway `resumoWhatsapp.js`** (cron 8h/20h) — manda os **resumos automáticos**. Lê `whatsapp_destinatarios` e envia com `d.api_key` (`resumoWhatsapp.js:615,627`), respeitando `TEXTMEBOT_DELAY_MS = 8000` (8s entre envios, pra não bater no rate limit). **É a que FUNCIONA** (o dono recebe manhã/noite).
-2. **App `index.html`** (disparo manual + notificações de evento: conta vencida, OS pronta, SAC, prévia, teste) — desde 2026-06-28 envia via Edge Function `wa-notify`, que resolve a key na **mesma tabela**. Antes usava a key `6372158` **hardcoded** no front, que é **INVÁLIDA** ("Invalid Premium APIkey" — CallMeBot/era antiga). Essa key morta foi removida; é a "integração desativada cujo registro continuava" mencionada pelo dono.
-
-**Conclusão:** key boa = a de `whatsapp_destinatarios` (textmebot premium, usada pelo Railway). Key `6372158` = lixo legado (removida). O app agora usa a key certa.
-
-**Dedup no servidor (28/06):** os avisos de evento (`checarWhatsApp*` → `_waNotificar`, ex. "conta vencendo"/"OS pronta") tinham dedup só por **localStorage (por navegador)** — com vários funcionários logando no cutover, cada navegador reenviava os mesmos avisos = SPAM. Corrigido movendo o dedup pro servidor: a função `wa-notify` agora grava `wa_dedup(chave = numero|dia|mensagem)` e recusa repetição (mesma msg/numero/dia sai 1x só, independente de quantos navegadores disparem). Se o envio falha, a chave é liberada pra retry. `__ping__` não deduplica.
-
-**Incidente resolvido (28/06):** envio falhou (status 411) porque o **WhatsApp REMETENTE +5521965107705** (vinculado ao textmebot premium via QR, como um WhatsApp Web) estava **"DB Status: Disconnected"**. Não era o destinatário nem rate limit. Como Railway e app usam o mesmo remetente, os dois pararam juntos. **Resolvido revinculando via QR** e confirmado com envio real (`Result: Success!`).
-
-**Como religar se cair de novo (no celular do remetente +5521965107705):** abrir `https://api.textmebot.com/status.php?apikey=<API_KEY_DO_CADASTRO_em_whatsapp_destinatarios>` no navegador → aparece um QR code → no WhatsApp do +5521965107705: Configurações → Dispositivos conectados → Conectar um aparelho → escanear o QR (some quando "DB Status: Connected"). O link de status contém a apikey da conta — não compartilhar. **Recomendado:** ativar "Add Notification" nessa página pra avisar quando cair.
+## Autenticação & Permissões
+- **Login:** Supabase Auth (`signInWithPassword`). Aceita **e-mail OU nome** — login por nome usa a RPC `resolver_email_login(p_ident)` (resolve nome→email mesmo sem estar logado). Sessão gerenciada pelo supabase-js (`getSession`/`onAuthStateChange`). Código: `index.html` `initLogin`/`fazerLogin`/`fazerLogout` + helpers `_carregarPerfilLogado`/`_aplicarSessao`.
+- **Usuários:** tabela `public.usuarios` (perfil/role/status/`modulos_permitidos`) vinculada ao `auth.users` pela coluna `auth_uid`. Vários têm **e-mail sintético** (`@smartmotors.internal`) → logam **só por nome**. Gabriel e Marcos Moisés têm e-mail real.
+- **Perfis:** `admin` (vê tudo), `operacional` (lista fixa, inclui financeiro/custos), `customizado` (usa `modulos_permitidos`). Os "vendedores" (Henrique, Rafael, Samuel) são `customizado` SEM financeiro/custos. Michelle é `customizado` + `contas-receber`.
+- **1º acesso:** senha provisória com `must_change=true` → o app força criar senha nova (modal `abrirTrocarSenha`).
+- **Gestão de usuários (criar/aprovar/bloquear/resetar senha):** Edge Function `admin-usuarios` (service_role). Ações exigem **admin logado**; o `seed` inicial (já usado) exige token em `_admin_setup` e só roda com Auth vazio. `criarConta`/`resetSenha` no app agora orientam procurar o admin (cadastro centralizado).
+- **Permissão por perfil:** vale na **tela** (menus, via `modulosPermitidos`) **e no banco** (RLS por perfil — ver "Segurança"). Mudar os módulos de alguém ajusta os dois automaticamente.
+- **Ocultação de KPIs por perfil (granular, 28/06):** princípio = esconder o KPI/campo específico, não a tela toda. Helpers no front `_temModulo(mod)` / `_podeVerCusto()` (= tem `custos`/`custos-produtos`/`precos`/`financeiro`) + classe CSS `.js-custo` escondida via `body.sem-kpi-custo` (setada em `_aplicarSessao`). Esconde **custo/margem/lucro** de quem não tem o módulo, DENTRO de telas que ele acessa: **Estoque** (lista de Cadastros: colunas Custo/MC R$/MC % + Modal Produto: bloco Custos), **aba Vendas** (Lucro/MC%/Custo Fixo), **Oficina/SAC** (custo mão de obra/peças + Custo/Lucro do resumo), **Montagens** (coluna Preço + total do modal). Receita/preço de venda/ticket continuam visíveis. Validado: vendedor `body.sem-kpi-custo` ativo, operacional/admin não. **Em validação local (não commitado).**
 
 ## Segurança
+**Estado: ~8–9/10** (era 2/10 antes da auditoria de 28/06/2026). Plano original: `~/.claude/plans/quero-atacar-aquela-pendencia-serene-fox.md`.
 
-Auditoria completa feita em **28/06/2026** (5 agentes de varredura + 3 arquitetos cruzando estratégia de RLS). Plano: `~/.claude/plans/quero-atacar-aquela-pendencia-serene-fox.md`. **Nota inicial: 2/10.**
+**Fechado:**
+- **HTTPS/cert** do domínio (cadeado ok) · **segredos fora do front** (senhas, WhatsApp key) · **SRI** nas libs CDN · **CSP** parcial via `<meta>` · `search_path` nas funções.
+- **Banco fechado pra anon:** as ~38 policies `acesso_total` foram de `{public/anon}` → `{authenticated}`. A chave pública (anon) **não lê mais nada** (validado: anon=0, logado=normal). `excluir_produto` revogado de anon/public.
+- **Login real:** Supabase Auth (senhas em bcrypt, não mais base64); hashes antigos apagados de `usuarios`; **Leaked Password Protection** ligado no painel.
+- **RLS por perfil:** função `tem_modulo(modulo)` espelha `modulosPermitidos`. Tabelas financeiras (`contas_bancarias`, `lancamentos`, `emprestimo`, `emprestimo_parcelas`, `categorias_lancamento`, `montagens_pagamentos`) exigem `financeiro`; `custos_fixos`→`custos`; `contas_pagar`→`contas-pagar`; `contas_receber`→`contas-receber`. `config_custos` e `produtos_precos` ficam liberados p/ quem tem `vendas` (cálculo de lucro). Vendedor não acessa financeiro nem pelo console.
+- **Reverter RLS** se algo quebrar: `alter policy acesso_total on <tabela> using (true) with check (true);` (volta ao aberto-pra-logado).
 
-### Estado das frentes
-- **Frente 1 — quick wins (em validação local, 28/06/2026):** ver Histórico abaixo. Não fecha o risco crítico.
-- **Frente 2 — RLS + Auth (EM ANDAMENTO, frente dedicada):** **risco nº 1 ainda aberto** — ~37 tabelas com policy `acesso_total USING(true)` deixam a anon key (pública no front) **ler/escrever/deletar quase todo o banco** (CPF de clientes, financeiro, senhas). **Estratégia decidida (cruzamento 3/3 arquitetos): Híbrido** = migrar para **Supabase Auth + RLS `to authenticated`** no app interno (os ~226 `sb.from()` continuam idênticos, muda só a camada de login) + manter Edge Functions com service_role nas superfícies públicas (portal-afiliado, NF-e). Diagrama: excalidraw.com/#json=QzgiC-YiRyduoIBmQm7CZ,w2JwLZlXV3zXlPHQD2eeRA.
-  - **Decisões (28/06):** RLS = "qualquer logado acessa" (`to authenticated`), sem granular por perfil agora. Senhas: provisória + troca no 1º login. Reaproveitar a tabela `usuarios` (não criar `profiles`) + coluna `auth_uid` vinculando ao `auth.users`. Os 7 usuários têm email real; `auth.users` estava zerado.
-  - **Progresso:** ✅ Fase 0 (search_path) · ✅ Fase 1 (coluna `usuarios.auth_uid`, migração `frente2_usuarios_auth_uid`) · ✅ Fase 2 (Edge Function `admin-usuarios` deployada, verify_jwt=false, inerte/protegida — seed exige token em `_admin_setup` (migração `frente2_admin_setup_control`) e só roda com Auth vazio; demais ações exigem admin logado). Arquivo: `supabase/functions/admin-usuarios/index.ts` (ainda NÃO commitado). Próximas: login no front (Fase 3, = início do cutover), flip RLS (Fase 5).
-  - ✅ **Fase 3 ESCRITA (login no front) — NO WORKING TREE, NÃO COMMITADA, NÃO EM PRODUÇÃO.** `index.html` local: `initLogin`/`fazerLogin`/`fazerLogout` agora usam Supabase Auth (`getSession`/`signInWithPassword`/`signOut`); helpers `_carregarPerfilLogado`/`_aplicarSessao`/`_mostrarLogin`; modal `abrirTrocarSenha`/`confirmarTrocarSenha` (força troca no 1º acesso via `user_metadata.must_change`); `criarConta`/`resetSenha` agora orientam procurar o admin (cadastro centralizado); RPC `resolver_email_login` permite login por nome. Validado no localhost: boot ok, tela de login aparece, RPC resolve nome→email, login inválido rejeitado. **Falta o teste e2e (login real), que só roda com auth.users = é o cutover.**
-  - ✅ **Seed rodado (28/06): os 7 `auth.users` JÁ existem e estão vinculados (`usuarios.auth_uid`).** Vários têm email SINTÉTICO (`@smartmotors.internal` — michelle/Eduardo/Henrique/Samuel/Rafael), então login DELES é só por NOME (a RPC `resolver_email_login` resolve). Gabriel e Marcos Moisés têm email real. Senhas provisórias entregues ao dono pra teste local; `must_change=true` força troca no 1º acesso. **Como já existem, NÃO rodar o seed de novo no cutover** (vai bloquear por Auth não-vazio) — usar `admin-usuarios {acao:reset}` (admin logado) se precisar regenerar senha.
-  - ✅ **Login novo validado pelo dono no localhost (28/06): login + modal de troca de senha + navegação OK.** Falta só o cutover (push + flip RLS).
-  - **⛔ NÃO DAR PUSH do `index.html` antes do cutover** — em produção não há `auth.users` ainda, então o login novo deixaria todos pra fora. A produção atual (commit f42bfbd) tem o login caseiro e está intacta; as mudanças de banco (coluna, RPC, função, `_admin_setup`) são inertes.
-  - **No dia do cutover, ordem:** (1) `insert into _admin_setup(id,token) values(1,'<token>') on conflict ...`; (2) chamar `admin-usuarios {acao:seed, token}` → cria os 7 auth.users + devolve senhas provisórias; (3) avisar dono → mensagem no grupo + senhas; (4) push do `index.html` com login novo; (5) flip RLS `to authenticated`; (6) `excluir_produto` revoke + vitrine pública; (7) testar todos logando + troca de senha.
-  - ✅✅ **CUTOVER FEITO (28/06): login via Supabase Auth EM PRODUÇÃO + RLS FECHADO.** Push commits c4de4d9/2ab2fe2; flip RLS migração `frente2_flip_rls_to_authenticated` (38 policies public→authenticated); `excluir_produto` revogado de anon/public (`frente2_excluir_produto_so_authenticated`). Validado: anon lê 0 / logado lê normal. 7 usuários migrados, senhas provisórias entregues ao dono (must_change força troca no 1º acesso). **O risco nº 1 (banco aberto pela anon key) está RESOLVIDO.** Pendências menores: advisor ainda lista `rls_policy_always_true` mas agora só `authenticated` (intencional — decisão "qualquer logado acessa"); `resolver_email_login` é executável por anon de propósito (login por nome antes de autenticar); ligar "Leaked Password Protection" no painel Auth (recomendado).
-  - **⚠️ PROTOCOLO DO CUTOVER (login novo):** NÃO virar a chave de surpresa. Antes do push do login novo: (1) avisar o dono pra mandar a mensagem de pré-aviso no grupo do WhatsApp (texto pronto: pré-aviso de troca de senha, "é normal/previsto, mando a provisória antes"); (2) gerar e entregar as senhas provisórias dos 7; (3) escolher horário tranquilo (NÃO no pico da manhã). Enquanto o cutover não acontece, login segue 100% igual pros funcionários.
-  - Itens ligados: fechar leitura anon de `usuarios` (hoje vaza hashes), `excluir_produto` SECURITY DEFINER executável por anon, trocar `hashSenha`/btoa por bcrypt do Supabase Auth.
+**Pendências (opcionais, não-críticas):** rate-limit no login do `portal-afiliado` (anti-força-bruta) · rotacionar a anon key (baixo risco agora) · **Cloudflare** na frente p/ headers HTTP fortes (HSTS, X-Frame-Options, CSP completa — GitHub Pages não envia headers) · revisar XSS (`innerHTML` sem `escHtml` em alguns pontos).
 
-### Pendências de infra (ação manual do dono)
-- **"Site não seguro":** ✅ RESOLVIDO 28/06. O GitHub Pages não tinha provisionado o cert do domínio (servia `CN=*.github.io`). Corrigido em **Settings → Pages**: Remove + re-add de `smartmotorsapp.com.br` forçou a emissão do cert Let's Encrypt (`CN=smartmotorsapp.com.br`, válido até 26/set) e **Enforce HTTPS** foi ligado. Confirmado: handshake `ssl_verify=0` e HTTP→HTTPS `301`. Se cair de novo no futuro, repetir o Remove+re-add.
-- **Headers HTTP** (HSTS, X-Frame-Options, CSP completa) só com proxy/CDN (ex.: Cloudflare) na frente — GitHub Pages não envia headers. Hoje há só CSP parcial via `<meta>`.
-- **WhatsApp/CallMeBot key:** ✅ movida pra Edge Function `wa-notify` (key fora do front). Pendência opcional: rotacionar a key no CallMeBot e (se quiser fallback) setar os secrets `WA_APIKEY`/`WA_NUMBER` na função.
+## WhatsApp / Notificações
+- **Provedor:** textmebot (premium). A key boa fica na tabela `whatsapp_destinatarios` (`numero` + `api_key`). O **remetente** é o WhatsApp `+5521965107705` (vinculado via QR, tipo WhatsApp Web).
+- **Dois disparadores, mesma fonte:**
+  1. **Railway `resumoWhatsapp.js`** (cron 8h/20h) — resumos automáticos; espera 8s entre envios.
+  2. **App** (avisos de evento: conta vencendo, OS pronta, SAC; prévia; teste) — via Edge Function **`wa-notify`** (key resolvida no servidor; nunca no front).
+- **Dedup no servidor:** `wa-notify` grava `wa_dedup(chave = numero|dia|mensagem)` e recusa repetição — a mesma msg/numero/dia sai 1x só (não importa quantos navegadores disparem). `__ping__` = healthcheck (não envia/dedup).
+- **Se parar de chegar (remetente desconectado):** abrir `https://api.textmebot.com/status.php?apikey=<api_key do cadastro>` → escanear o QR no WhatsApp do `+5521965107705` (Config → Dispositivos conectados → Conectar aparelho). O link tem a key — não compartilhar. Vale ativar "Add Notification" lá pra avisar quando cair.
+
+## Infra / Deploy
+- **GitHub Pages** serve da `main`. Arquivo `CNAME` = `smartmotorsapp.com.br` (não remover).
+- **Cert HTTPS:** resolvido (Let's Encrypt, `CN=smartmotorsapp.com.br`). Se cair, em **Settings → Pages**: Remove + re-add do domínio força reemissão; depois marcar **Enforce HTTPS**.
+- **Headers HTTP fortes:** só com proxy/CDN (ex.: Cloudflare) na frente — Pages não envia headers (hoje só CSP via `<meta>`).
+- **Supabase CLI** linkado (deploy de Edge Function: `supabase functions deploy <nome> --project-ref sxmeuqlotjuchslevofv`).
+
+## Banco (Supabase — ref `sxmeuqlotjuchslevofv`)
+- **Edge Functions:** `admin-usuarios` (gestão de usuários, service_role), `wa-notify` (WhatsApp, verify_jwt), `portal-afiliado` (token HMAC próprio), `gerar-resumo-os` (verify_jwt). NF-e via Railway/service_role.
+- **Tabelas de controle:** `_admin_setup` (token do seed), `wa_dedup` (dedup WhatsApp) — ambas trancadas (só service_role).
+- **Funções de apoio a RLS:** `tem_modulo(text)`, `resolver_email_login(text)` (SECURITY DEFINER).
+- **Migrações aplicadas (28/06):** `harden_function_search_path`, `frente2_usuarios_auth_uid`, `frente2_admin_setup_control`, `frente2_resolver_email_login`, `frente2_flip_rls_to_authenticated`, `frente2_excluir_produto_so_authenticated`, `frente2_func_tem_modulo`, `frente2_rls_por_perfil`, `frente2_config_custos_libera_vendas`, `wa_dedup_servidor`, `rls_afiliados_por_modulo`.
+- **Check-up de permissões dos vendedores (28/06):** ver "Autenticação & Permissões" → ocultação de KPIs. Bug corrigido: delete de cliente checava `perfil==='vendedor'` (nunca disparava p/ os vendedores `customizado`) → agora só admin/operacional. `afiliados` fechado no banco (`rls_afiliados_por_modulo`). **Pendente (P2, adiado):** custo via console (`produtos_precos`/`estoque_unidades`), comissão em `pdv_vendedores` (precisa column-level — não dá p/ bloquear a tabela, o PDV usa), e mascarar CPF/LGPD.
+- `backup_*` e `notas_fiscais`: RLS ligado sem policy (default-deny); NF-e usa service_role.
+
+---
 
 ## Histórico de mudanças
+*(cronológico e enxuto — o detalhe vive na seção do assunto)*
 
-### 2026-06-28 — Auditoria de segurança, Frente 1 (quick wins)
-Arquivos: `index.html`, `portal.html`, `.gitignore`, migração Supabase. **Em validação local antes do push.**
-- **Senhas hardcoded removidas do fonte** (`index.html`): removido o bypass de login com senha em texto puro `Ma49721106`; senha de reset fixa `smartmotors123` trocada por aleatória (`_senhaAleatoria()`); `garantirAdmin` gera senha aleatória em vez de fixa. *(A senha do admin no banco não muda só com isso, e segue extraível enquanto `usuarios` for legível pela anon — fechamento real na Frente 2.)*
-- **Logs com PII silenciados** (`index.html`): não loga mais `sm_user` completo, email do usuário nem lista de emails (`aplicarPermissoes`, `initLogin`, `renderAdmin`, `criarConta`).
-- **Libs CDN fixadas + SRI** (`index.html`): `@supabase/supabase-js` fixado em `2.108.2` (era `@2` flutuante) e `xlsx-js-style@1.2.0`, ambos com `integrity` (SRI) + `crossorigin`.
-- **CSP via `<meta>`** adicionada em `index.html` e `portal.html` (allowlist de origens; `'unsafe-inline'` necessário pois o JS é inline — valor parcial).
-- **`.gitignore`** reforçado: `*.bak`, `sim_*.js`, `dre_baseline_*.json`, `supabase/.temp/`, `*.local.json`, `.env*`.
-- **Hardening SQL** (migração `harden_function_search_path`, **aplicada em produção**): `SET search_path = public` em `apagar_movimento`, `fn_conta_to_parcela`, `fn_parcela_to_conta`, `registrar_movimento`, `vendas_por_produto` (neutro; advisor `function_search_path_mutable` zerado).
-
-### 2026-06-28 — WhatsApp: key fora do front (Edge Function `wa-notify`)
-Arquivos: `supabase/functions/wa-notify/index.ts` (nova, **deployada**, verify_jwt=true), `index.html`. **Em validação local antes do push.**
-- Removidas as constantes `WA_APIKEY`/`WA_API_URL` do `index.html` (a `WA_APIKEY` era a única key hardcoded; `WA_NUMBER` foi mantida — é só telefone).
-- `_enviarWhatsAppRaw` agora chama `sb.functions.invoke('wa-notify', { body:{ numero, mensagem, apiKey? } })`; a função resolve a key server-side (body do "teste" → tabela `whatsapp_destinatarios` → secret opcional) e dispara o envio. Passou a retornar o status real do textmebot (antes era `no-cors`, sempre true).
-- Healthcheck `__ping__` (não envia zap) testado: sem JWT → 401, com anon key → 200, e via front (`sb.functions.invoke`) → ok.
-- **Descoberta (ver "Integrações de WhatsApp"):** a key `6372158` que estava hardcoded no app é INVÁLIDA; a key boa é a de `whatsapp_destinatarios` (mesma do Railway). A migração alinhou o app à key certa. O `no-cors` antigo mascarava tudo (app dizia "enviado" sem entregar). Erro `recipient disconnected` no teste manual = provável rajada sem o delay de 8s.
-- **v2 da função:** sanitiza a resposta do textmebot (mascara `apikey=***` e remove HTML) — o HTML de erro do serviço ecoava uma apikey, que não deve voltar ao front.
+- **2026-06-28 — Auditoria de segurança completa** (nota 2/10 → ~8–9/10):
+  - Frente 1 (quick wins): senhas hardcoded e WhatsApp key fora do front, SRI, CSP `<meta>`, `.gitignore`, `search_path`, logs sem PII. → ver **Segurança**.
+  - Cert HTTPS do domínio resolvido (sumiu o "site não seguro"). → ver **Infra / Deploy**.
+  - WhatsApp: key migrada p/ Edge Function `wa-notify`; remetente reconectado (QR); dedup no servidor (mata spam de avisos repetidos). → ver **WhatsApp / Notificações**.
+  - Frente 2: migração p/ Supabase Auth + RLS fechado (anon não acessa) + RLS por perfil; leaked password ligado; senhas antigas apagadas. → ver **Autenticação & Permissões** e **Segurança**.

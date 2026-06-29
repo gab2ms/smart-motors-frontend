@@ -22,6 +22,9 @@
      A versao oficial community em cdn.sheetjs.com nao salva estilos. -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" integrity="sha384-OUW9euuUyxyHcAhTqbhI+Iyb8LMssXt/cpz0yXhs9UWG2/R/uaWdakx/4cfww7Vb" crossorigin="anonymous" referrerpolicy="no-referrer" onload="console.log('[head] xlsx-js-style carregou')" onerror="console.error('[head] xlsx-js-style FALHOU')"></script>
 <style>
+/* Visibilidade de KPI/campo sensível (custo/margem/lucro): escondido p/ quem não
+   tem módulo financeiro/custos/preços. Flag setada no <body> em _aplicarSessao. */
+body.sem-kpi-custo .js-custo { display: none !important; }
 :root {
   --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --mono: 'JetBrains Mono', monospace;
@@ -2145,13 +2148,13 @@ select:not(.input-pro):not(.search-input){
               <th class="hide-mobile" onclick="catSort('codigo')" style="cursor:pointer;user-select:none;">Código <span id="catsort-codigo" style="color:var(--text3);">↕</span></th>
               <th class="hide-mobile" onclick="catSort('categoria')" style="cursor:pointer;user-select:none;">Categoria <span id="catsort-categoria" style="color:var(--text3);">↕</span></th>
               <th class="hide-mobile" onclick="catSort('fornecedor')" style="cursor:pointer;user-select:none;">Fornecedor <span id="catsort-fornecedor" style="color:var(--text3);">↕</span></th>
-              <th onclick="catSort('custo')" style="cursor:pointer;user-select:none;">Custo total <span id="catsort-custo" style="color:var(--text3);">↕</span></th>
+              <th class="js-custo" onclick="catSort('custo')" style="cursor:pointer;user-select:none;">Custo total <span id="catsort-custo" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('preco')" style="cursor:pointer;user-select:none;">Preço venda <span id="catsort-preco" style="color:var(--text3);">↕</span></th>
               <th onclick="catSort('estoque')" style="cursor:pointer;user-select:none;">Estoque <span id="catsort-estoque" style="color:var(--text3);">↕</span></th>
               <th class="hide-mobile" onclick="catSort('cob')" style="cursor:pointer;user-select:none;" title="Dias de estoque no ritmo de venda dos últimos 90 dias">Cobertura <span id="catsort-cob" style="color:var(--text3);">↕</span></th>
               <th class="hide-mobile" onclick="catSort('giro')" style="cursor:pointer;user-select:none;" title="Unidades vendidas em 90 dias por unidade em estoque">Giro <span id="catsort-giro" style="color:var(--text3);">↕</span></th>
-              <th class="hide-mobile" onclick="catSort('mc')" style="cursor:pointer;user-select:none;">MC R$ <span id="catsort-mc" style="color:var(--text3);">↕</span></th>
-              <th class="hide-mobile" onclick="catSort('mcp')" style="cursor:pointer;user-select:none;">MC % <span id="catsort-mcp" style="color:var(--text3);">↕</span></th>
+              <th class="hide-mobile js-custo" onclick="catSort('mc')" style="cursor:pointer;user-select:none;">MC R$ <span id="catsort-mc" style="color:var(--text3);">↕</span></th>
+              <th class="hide-mobile js-custo" onclick="catSort('mcp')" style="cursor:pointer;user-select:none;">MC % <span id="catsort-mcp" style="color:var(--text3);">↕</span></th>
             </tr>
           </thead>
           <tbody id="estoque-table-body">
@@ -3755,15 +3758,15 @@ select:not(.input-pro):not(.search-input){
       <div class="form-group"><label>Fornecedor / Fabricante</label><input class="form-input" id="prod-fornecedor" type="text"></div>
       <div class="form-group"><label>Cor</label><input class="form-input" id="prod-cor" type="text"></div>
       <div class="form-group"><label>Motor</label><input class="form-input" id="prod-motor" type="text"></div>
-      <div class="form-group"><label>Comissão afiliado (R$ por unidade)</label><input class="form-input" id="prod-comissao-afiliado" type="number" step="0.01" min="0" placeholder="0,00"></div>
+      <div class="form-group js-custo"><label>Comissão afiliado (R$ por unidade)</label><input class="form-input" id="prod-comissao-afiliado" type="number" step="0.01" min="0" placeholder="0,00"></div>
       <div class="form-group full"><label>Descrição / características</label><textarea class="form-input" id="prod-descricao" rows="2"></textarea></div>
-      <div class="form-group full" style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:4px;">Custos detalhados</div>
-      <div class="form-group"><label>Custo puro (R$)</label><input class="form-input" id="prod-custo-puro" type="number" oninput="prodUpdateComputed()"></div>
-      <div class="form-group"><label>Custo montagem (R$)</label><input class="form-input" id="prod-montagem" type="number" oninput="prodUpdateComputed()"></div>
-      <div class="form-group"><label>Comissão vendedor (R$)</label><input class="form-input" id="prod-comissao" type="number" oninput="prodUpdateComputed()"></div>
+      <div class="form-group full js-custo" style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:4px;">Custos detalhados</div>
+      <div class="form-group js-custo"><label>Custo puro (R$)</label><input class="form-input" id="prod-custo-puro" type="number" oninput="prodUpdateComputed()"></div>
+      <div class="form-group js-custo"><label>Custo montagem (R$)</label><input class="form-input" id="prod-montagem" type="number" oninput="prodUpdateComputed()"></div>
+      <div class="form-group js-custo"><label>Comissão vendedor (R$)</label><input class="form-input" id="prod-comissao" type="number" oninput="prodUpdateComputed()"></div>
       <div class="form-group"><label>Preço de venda (R$)</label><input class="form-input" id="prod-venda-display" type="number" readonly style="opacity:0.55;" oninput="document.getElementById('prod-venda').value=this.value;prodUpdateComputed();"></div>
     </div>
-    <div class="computed-row">
+    <div class="computed-row js-custo">
       <div><div class="computed-label">Custo total (CtReal)</div><div class="computed-value" id="prod-modal-ctreal">R$ —</div></div>
       <div><div class="computed-label">MC R$</div><div class="computed-value" id="prod-modal-mc">R$ —</div></div>
       <div><div class="computed-label">MC %</div><div class="computed-value" id="prod-modal-mcp">—%</div></div>
@@ -10006,13 +10009,13 @@ function renderCatalogoProdutos() {
       <td class="hide-mobile"><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
       <td class="hide-mobile">${_catBadgeProduto(L.categoria)}</td>
       <td class="hide-mobile"><span class="td-supplier">${escHtml(L.fornecedor) || '—'}</span></td>
-      <td class="td-mono" style="font-weight:700;">${L.ctr != null ? fmt(L.ctr) : '—'}</td>
+      <td class="td-mono js-custo" style="font-weight:700;">${L.ctr != null ? fmt(L.ctr) : '—'}</td>
       <td class="td-mono">${fmt(L.venda)}</td>
       <td class="td-mono">${_estoqueCell(p.estoque)}</td>
       <td class="td-mono hide-mobile">${_coberturaCell(L.cob)}</td>
       <td class="td-mono hide-mobile">${_giroCell(L.giro)}</td>
-      <td class="td-mono hide-mobile" style="font-weight:700;color:${mcColor};">${L.mc != null ? fmt(L.mc) : '—'}</td>
-      <td class="hide-mobile" style="font-weight:700;color:${mcColor};">${L.mcp != null ? L.mcp.toFixed(1) + '%' : '—'}</td>
+      <td class="td-mono hide-mobile js-custo" style="font-weight:700;color:${mcColor};">${L.mc != null ? fmt(L.mc) : '—'}</td>
+      <td class="hide-mobile js-custo" style="font-weight:700;color:${mcColor};">${L.mcp != null ? L.mcp.toFixed(1) + '%' : '—'}</td>
     </tr>`;
   }).join('');
   _catAtualizaSetas();
@@ -11131,8 +11134,11 @@ async function renderizarDREVendas(pedidos, mescladas) {
   document.getElementById('vendas-kpis').innerHTML =
     '<div class="kpi"><div class="kpi-label">Receita total</div><div class="kpi-value green">'+fmt(receitaTotal)+'</div><div class="kpi-change">'+qtdPedidos+' pedidos faturados</div></div>'
     +'<div class="kpi"><div class="kpi-label">Ticket médio</div><div class="kpi-value gold">'+fmt(ticketMedio)+'</div><div class="kpi-change">por pedido</div></div>'
-    +'<div class="kpi"><div class="kpi-label">Lucro bruto est.</div><div class="kpi-value '+(lucroBruto>=0?'green':'red')+'">'+fmt(lucroBruto)+'</div><div class="kpi-change">MC média '+(avgMC*100).toFixed(1)+'%</div></div>'
-    +'<div class="kpi"><div class="kpi-label">Custo Fixo Planejado</div><div class="kpi-value red">'+fmt(custoFixo)+'</div><div class="kpi-change">média histórica</div></div>';
+    // Lucro bruto / MC% / Custo Fixo: só p/ quem tem módulo de custo/financeiro.
+    + (_podeVerCusto()
+        ? '<div class="kpi"><div class="kpi-label">Lucro bruto est.</div><div class="kpi-value '+(lucroBruto>=0?'green':'red')+'">'+fmt(lucroBruto)+'</div><div class="kpi-change">MC média '+(avgMC*100).toFixed(1)+'%</div></div>'
+          +'<div class="kpi"><div class="kpi-label">Custo Fixo Planejado</div><div class="kpi-value red">'+fmt(custoFixo)+'</div><div class="kpi-change">média histórica</div></div>'
+        : '');
 }
 
 function renderizarRankingProdutosVendas(pedidos) {
@@ -11276,6 +11282,19 @@ const PERFIS_DEFAULT_MODULOS = {
   operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'localizacao', 'vendas', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'afiliados', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv'],
   customizado: null, // usa user.modulosPermitidos
 };
+// Visibilidade de KPI/campo sensível por módulo (espelha modulosPermitidos do
+// usuário logado). Use para esconder indicadores dentro de telas/modais que o
+// funcionário PODE acessar — admin/operacional veem; quem não tem o módulo não.
+function _temModulo(mod) {
+  try {
+    const u = JSON.parse(localStorage.getItem('sm_user') || 'null');
+    return u ? modulosPermitidos(u).includes(mod) : false;
+  } catch(e) { return false; }
+}
+// "Pode ver custo/margem/lucro?" = tem algum módulo financeiro/custos/preços.
+function _podeVerCusto() {
+  return _temModulo('custos') || _temModulo('custos-produtos') || _temModulo('precos') || _temModulo('financeiro');
+}
 function modulosPermitidos(user) {
   if (!user) return ['dashboard'];
   // role=admin é sempre admin completo (compat com usuario antigo sem perfil)
@@ -11342,6 +11361,8 @@ async function _carregarPerfilLogado(authUser) {
 // ex. _isAdminUser/renderSidebar) e atualiza a UI. A sessao real e do Auth.
 function _aplicarSessao(perfil) {
   try { localStorage.setItem('sm_user', JSON.stringify({ ...perfil, loggedAt: Date.now() })); } catch(e) {}
+  // Flag de visibilidade de KPIs de custo/lucro (escondidos p/ quem não tem módulo).
+  try { document.body.classList.toggle('sem-kpi-custo', !_podeVerCusto()); } catch(e) {}
   hideLoginOverlay();
   atualizarUserDisplay(perfil);
 }
@@ -17105,8 +17126,8 @@ function abrirOfModal(id) {
     +     `<div class="form-group full"><label>Tipo de atendimento ${ofTaRevisar?'<span style="color:#1a1a1a;background:var(--gold-bright);font-weight:800;font-size:10px;border-radius:4px;padding:1px 5px;">⚠ A CLASSIFICAR — confirme e salve</span>':'<span style="color:var(--text3);font-weight:400;font-size:10px;">(serviço pago = cliente paga; garantia/loja = não cobra)</span>'}</label><select class="form-input" id="of-tipo-atend">${ofTaOpts}</select></div>`
     +     `<div class="form-group full"><label>Localização do item <span style="color:var(--text3);font-weight:400;font-size:10px;">(onde está a scooter ou peça)</span></label><select class="form-input" id="of-localizacao">${ofLocOpts}</select></div>`
     +     `<div class="form-group"><label>Valor do serviço (R$)</label><input class="form-input" id="of-valor" type="number" step="0.01" value="${(o&&o.valorServico)||0}" oninput="ofRecalcResumo()"></div>`
-    +     `<div class="form-group"><label>Mão de obra (custo R$)</label><input class="form-input" id="of-custo-mo" type="number" step="0.01" value="${(o&&o.custoMaoObra)||0}" oninput="ofRecalcResumo()"></div>`
-    +     `<div class="form-group full"><label>Peças usadas (custo)</label>`
+    +     `<div class="form-group js-custo"><label>Mão de obra (custo R$)</label><input class="form-input" id="of-custo-mo" type="number" step="0.01" value="${(o&&o.custoMaoObra)||0}" oninput="ofRecalcResumo()"></div>`
+    +     `<div class="form-group full js-custo"><label>Peças usadas (custo)</label>`
     +       `<table style="width:100%;border-collapse:collapse;"><tbody id="of-pecas-tbody"></tbody></table>`
     +       `<button type="button" class="btn" style="margin-top:6px;padding:4px 10px;font-size:13px;" onclick="ofAddPeca()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Peça</button>`
     +     `</div>`
@@ -17214,8 +17235,10 @@ function ofRecalcResumo() {
   const linha = (lbl, val, extra) => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;${extra||''}"><span style="color:var(--text2);">${lbl}</span><b>${val}</b></div>`;
   el.innerHTML =
       linha('Receita', fmt(receita))
-    + linha('Custo (mão de obra + peças)', fmt(custo))
-    + linha('Lucro', `<span style="color:${lucroCor};">${fmtSigned(lucro)}</span>`, 'border-top:1px solid var(--border);margin-top:4px;padding-top:6px;font-size:14px;');
+    + (_podeVerCusto()
+        ? linha('Custo (mão de obra + peças)', fmt(custo))
+          + linha('Lucro', `<span style="color:${lucroCor};">${fmtSigned(lucro)}</span>`, 'border-top:1px solid var(--border);margin-top:4px;padding-top:6px;font-size:14px;')
+        : '');
 }
 
 function _ofToggleExcluidos(casoId) {
@@ -17900,7 +17923,7 @@ function abrirMontagemModal(loteId) {
     +             `<th style="padding:6px 8px;width:26%;">Modelo</th>`
     +             `<th style="padding:6px 8px;width:18%;">Cor</th>`
     +             `<th style="padding:6px 8px;width:30%;">Chassi <span style="font-size:8px;color:var(--text3);text-transform:none;">(opcional)</span></th>`
-    +             `<th style="padding:6px 8px;width:16%;text-align:right;">Preço (R$)</th>`
+    +             `<th class="js-custo" style="padding:6px 8px;width:16%;text-align:right;">Preço (R$)</th>`
     +             `<th style="padding:6px 8px;width:60px;text-align:center;">—</th>`
     +           `</tr>`
     +         `</thead>`
@@ -17908,7 +17931,7 @@ function abrirMontagemModal(loteId) {
     +       `</table>`
     +     `</div>`
     +     `<button class="btn" type="button" onclick="_montagensAddRow()" style="margin-top:10px;">+ Adicionar moto</button>`
-    +     `<div id="mont-modal-total" style="margin-top:12px;font-size:13px;font-weight:700;text-align:right;color:var(--gold);">0 motos · R$ 0,00</div>`
+    +     `<div id="mont-modal-total" class="js-custo" style="margin-top:12px;font-size:13px;font-weight:700;text-align:right;color:var(--gold);">0 motos · R$ 0,00</div>`
     +   `</div>`
     +   `<div class="modal-actions">`
     +     `<button class="btn" type="button" onclick="document.getElementById('mont-modal').remove();">Cancelar</button>`
@@ -17949,7 +17972,7 @@ function _montagensAddRow(item) {
       `<td style="padding:4px;"><input list="mont-modelos-list" class="form-input mont-modal-modelo" type="text" placeholder="Modelo" value="${escHtml(modelo).replace(/"/g,'&quot;')}"></td>`
     + `<td style="padding:4px;"><input class="form-input mont-modal-cor" type="text" placeholder="Cor" value="${escHtml(cor).replace(/"/g,'&quot;')}"></td>`
     + `<td style="padding:4px;"><input class="form-input mont-modal-chassi" type="text" placeholder="(opcional)" value="${escHtml(chassi).replace(/"/g,'&quot;')}" style="font-family:var(--mono,monospace);text-transform:uppercase;"></td>`
-    + `<td style="padding:4px;"><input class="form-input mont-modal-preco" type="number" step="0.01" value="${preco.toFixed(2)}" data-touched="${touched}" oninput="this.dataset.touched='1';_montagensRecalcTotal()" style="text-align:right;"></td>`
+    + `<td class="js-custo" style="padding:4px;"><input class="form-input mont-modal-preco" type="number" step="0.01" value="${preco.toFixed(2)}" data-touched="${touched}" oninput="this.dataset.touched='1';_montagensRecalcTotal()" style="text-align:right;"></td>`
     + `<td style="padding:4px;text-align:center;"><button class="action-btn del-btn" type="button" onclick="_montagensRemoveRow(this)" title="Remover"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button></td>`;
   tbody.appendChild(tr);
   _montagensRecalcTotal();
@@ -23608,7 +23631,9 @@ function renderClientes() {
   if (!el) return;
   let _u = null;
   try { _u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
-  const podeDeletar = !(_u && _u.perfil === 'vendedor');
+  // Só admin/operacional deletam cliente. (Os vendedores são perfil 'customizado',
+  // então a checagem antiga por perfil==='vendedor' nunca disparava.)
+  const podeDeletar = !!(_u && (_u.role === 'admin' || _u.perfil === 'admin' || _u.perfil === 'operacional'));
   const fO = document.getElementById('cli-filtro-origem')?.value || '';
   const q  = (document.getElementById('cli-busca')?.value || '').toLowerCase();
   let lista = clientesAll.slice();
