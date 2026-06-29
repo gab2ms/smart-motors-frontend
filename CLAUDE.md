@@ -84,6 +84,9 @@ A 2ª passada cobriu todos os pontos abaixo: Montagens (lista: card montador pad
 - **Código morto com dados sensíveis** (`renderDRE`/`recalcDRE` ~11203, `renderDashVendedoresInline` ~5161): inalcançável hoje; vale remover.
 
 ## Histórico de mudanças
+
+### 2026-06-29 — Afiliados: selo de status de PAGAMENTO da comissão (em validação local)
+`index.html` (`renderGrupoAfil` ~18918): cada afiliado na árvore "Vendas & Comissões" passa a mostrar um selo do status de pagamento da comissão, calculado das contas a pagar `afl-*` dele (`_cpTotalPago`): 🟢 comissão paga · 🟡 parcial (falta R$) · 🟠 a pagar (R$) · ⚪ a fechar (comissão liberada mas conta do mês não gerada ainda). Só exibição — não mexe no fluxo de pagamento/Fechamento. `gerarComissoesAfiliados` é idempotente (id `afl-<comp>-<afiliado>`) → clicar "Gerar/atualizar contas do mês" várias vezes NÃO duplica (atualiza; trava se já houve pagamento). Validado: árvore renderiza, selo do Pedro = "a pagar R$100" (conta afl-2026-06 pendente existe).
 *(cronológico e enxuto — o detalhe vive na seção do assunto)*
 
 - **2026-06-28 — Auditoria de segurança completa** (nota 2/10 → ~8–9/10):

@@ -18918,6 +18918,20 @@ function _aflRenderVendasInner() {
   const renderGrupoAfil = (g, pos) => {
     const t = totaisAfil[g.id] || { tot: 0, naoEntregue: 0 };
     const icone = t.tot === 0 ? '⚪' : (t.naoEntregue > 0 ? '🟡' : '🟢');
+    // Status de PAGAMENTO da comissão: estado das contas a pagar afl-* do afiliado.
+    const ctsCom    = (typeof contasPagar !== 'undefined' ? contasPagar : []).filter(c => c.categoria === 'Comissão Afiliados' && c.afiliadoId === g.id);
+    const comDevido = ctsCom.reduce((s, c) => s + Number(c.valor || 0), 0);
+    const comPago   = ctsCom.reduce((s, c) => s + (typeof _cpTotalPago === 'function' ? _cpTotalPago(c) : 0), 0);
+    let pagBadge = '';
+    if (comDevido > 0.005 && comPago >= comDevido - 0.005) {
+      pagBadge = `<span class="badge" style="background:var(--green-dim,rgba(46,196,128,0.15));color:var(--green);font-size:9px;">🟢 comissão paga</span>`;
+    } else if (comDevido > 0.005 && comPago > 0.005) {
+      pagBadge = `<span class="badge" style="background:rgba(255,200,0,0.15);color:var(--gold);font-size:9px;">🟡 parcial · falta ${_fmtBRMoney(Math.max(0, comDevido - comPago))}</span>`;
+    } else if (comDevido > 0.005) {
+      pagBadge = `<span class="badge" style="background:rgba(255,140,0,0.16);color:var(--orange,#ff8c00);font-size:9px;">🟠 a pagar ${_fmtBRMoney(comDevido)}</span>`;
+    } else if (g.comLib > 0.005) {
+      pagBadge = `<span class="badge" style="background:var(--surface3);color:var(--text3);font-size:9px;" title="Comissão liberada mas a conta do mês ainda não foi gerada (clique em Gerar/atualizar contas do mês)">⚪ a fechar</span>`;
+    }
     const aberto = _aflExpandidos.has(g.id);
     const pedidos = g.pedidos.slice().sort((a, b) => String(dataOrd(b)).localeCompare(String(dataOrd(a))));
     const linhas = pedidos.map(p => {
@@ -18942,7 +18956,7 @@ function _aflRenderVendasInner() {
       +   `<div style="font-size:11px;color:var(--text3);width:18px;">${pos}</div>`
       +   `<div style="font-size:16px;">${icone}</div>`
       +   `<div style="font-size:13px;flex:1;">${escHtml(g.nome)}</div>`
-      +   `<div style="font-size:11px;color:var(--text3);text-align:right;line-height:1.5;">${g.pedidos.length} venda${g.pedidos.length === 1 ? '' : 's'} · <strong style="color:var(--green);">${_fmtBRMoney(g.comLib)}</strong> liberada${g.comPend > 0 ? ` · <span style="color:var(--gold);">${_fmtBRMoney(g.comPend)} aguard.</span>` : ''}</div>`
+      +   `<div style="font-size:11px;color:var(--text3);text-align:right;line-height:1.5;">${g.pedidos.length} venda${g.pedidos.length === 1 ? '' : 's'} · <strong style="color:var(--green);">${_fmtBRMoney(g.comLib)}</strong> liberada${g.comPend > 0 ? ` · <span style="color:var(--gold);">${_fmtBRMoney(g.comPend)} aguard.</span>` : ''}${pagBadge ? ' · ' + pagBadge : ''}</div>`
       + `</summary>`
       + tabela
       + `</details>`;
