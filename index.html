@@ -5158,52 +5158,6 @@ async function renderDashMargens(){
 // ── Ranking de vendas por modelo ──────────────
 function renderDashEmprestimo() {} // mantém compatibilidade
 
-function renderDashVendedoresInline(ranking, receitaTotal, periodo) {
-  var el  = document.getElementById('dash-vend-inline');
-  var sub = document.getElementById('dash-vend-period');
-  if (!el) return;
-  if (sub && periodo) sub.textContent = '· ' + periodo;
-
-  if (!ranking || !ranking.length) {
-    el.innerHTML = '<div style="font-size:11px;color:var(--text3);">Nenhum dado disponível</div>';
-    return;
-  }
-
-  var maxVal   = ranking[0].totalVendas || 1;
-  var totalGeral = ranking.reduce(function(s,v){return s+v.totalVendas;},0) || 1;
-
-  var html = '';
-  ranking.forEach(function(v, i) {
-    var pct      = Math.round(v.totalVendas / maxVal * 100);
-    var share    = (v.totalVendas / totalGeral * 100).toFixed(0);
-    var isSem    = v.nome === 'Sem vendedor';
-    var cor      = isSem ? 'var(--text3)' : i===0 ? 'var(--gold)' : 'var(--green)';
-    var medal    = i===0&&!isSem ? '🥇 ' : i===1&&!isSem ? '🥈 ' : i===2&&!isSem ? '🥉 ' : '';
-
-    html += '<div style="margin-bottom:10px;'+(isSem?'opacity:.5;':'')+'}">'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
-      + '<span style="font-size:11px;font-weight:700;color:'+(isSem?'var(--text3)':'var(--text)')+';">'
-      + medal + v.nome + '</span>'
-      + '<div style="display:flex;align-items:center;gap:8px;">'
-      + '<span style="font-size:10px;color:var(--text3);">' + v.qtdPedidos + ' ped.</span>'
-      + '<span style="font-size:11px;font-weight:800;color:'+cor+';font-family:var(--mono,monospace);">'
-      + fmt(v.totalVendas) + '</span>'
-      + '<span style="font-size:9px;color:var(--text3);background:var(--surface2);padding:1px 5px;border-radius:3px;font-weight:600;">'
-      + share + '%</span>'
-      + '</div></div>'
-      + '<div style="height:4px;background:var(--surface3);border-radius:2px;overflow:hidden;">'
-      + '<div style="height:100%;width:'+pct+'%;background:'+cor+';border-radius:2px;transition:width .4s;"></div>'
-      + '</div></div>';
-  });
-
-  // Aviso sem vendedor
-  if (ranking.length === 1 && ranking[0].nome === 'Sem vendedor') {
-    html += '<div style="margin-top:8px;padding:8px 10px;background:var(--surface2);border-radius:var(--r-sm);font-size:10px;color:var(--text3);">Atribua vendedores aos pedidos no Tiny para ver o ranking</div>';
-  }
-
-  el.innerHTML = html;
-}
-
 function calcularRankingVendedores(pedidos) {
   var contagem = {};
   pedidos.forEach(function(pedido) {
@@ -11200,44 +11154,6 @@ function renderizarPedidosVendas(pedidos) {
   }).join('');
 }
 
-
-function renderDRE(receita,custoTabela,custoFixo){
-  const mc=receita-custoTabela;
-  const mcPct=receita?mc/receita*100:0;
-  const ll=mc-custoFixo;
-  const llPct=receita?ll/receita*100:0;
-  document.getElementById('dre-content').innerHTML=`
-    <div style="display:flex;flex-direction:column;gap:0;">
-      ${dreRow('Receita bruta',receita,'var(--green)',true)}
-      ${dreRow('(−) Custo dos produtos',custoTabela,'var(--red)')}
-      ${dreRow('= Margem de contribuição',mc,mc>=0?'var(--gold)':'var(--red)',true,'('+mcPct.toFixed(1)+'%)',true)}
-      <div style="border-top:1px dashed var(--border2);margin:10px 0;"></div>
-      ${dreRow('(−) Custo fixo do mês',custoFixo,'var(--red)')}
-      ${dreRow('= Lucro líquido estimado',ll,ll>=0?'var(--green)':'var(--red)',true,'('+llPct.toFixed(1)+'%)',true)}
-    </div>
-  `;
-  document.getElementById('ll-display').textContent=fmtSigned(ll);
-  document.getElementById('ll-display').style.color=ll>=0?'var(--green)':'var(--red)';
-}
-
-function dreRow(label,val,color,bold=false,extra='',signed=false){
-  return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
-    <span style="font-size:12px;color:var(--text2);font-weight:${bold?700:500};">${label}</span>
-    <span style="font-family:var(--mono,monospace);font-size:${bold?14:12}px;font-weight:${bold?800:600};color:${color};">${signed?fmtSigned(val):fmt(val)} <span style="font-size:10px;color:var(--text3);">${extra}</span></span>
-  </div>`;
-}
-
-function recalcDRE(){
-  custoFixoMes=parseFloat(document.getElementById('custo-fixo-mes-input').value)||0;
-  if(!vendasData) return;
-  const linhas=buildVendasRows(vendasData.rows);
-  const byProd={};
-  for(const l of linhas){if(!byProd[l.produto])byProd[l.produto]={qtd:0,receita:0};byProd[l.produto].qtd+=l.qtd;byProd[l.produto].receita+=l.total;}
-  const prodList=Object.values(byProd);
-  const totalReceita=prodList.reduce((s,p)=>s+p.receita,0);
-  const totalCusto=prodList.reduce((s,p)=>{const pr=findCustoByProduto(p.produto);return s+(pr?ct(pr)*p.qtd:0);},0);
-  renderDRE(totalReceita,totalCusto,custoFixoMes);
-}
 
 function switchVTab(name){
   ['resumo','margem','vendedor'].forEach(t=>{
