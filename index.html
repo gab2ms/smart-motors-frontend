@@ -2127,7 +2127,7 @@ select:not(.input-pro):not(.search-input){
     <div id="estoque-bulk-bar" style="display:none;align-items:center;gap:12px;margin-bottom:16px;padding:10px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--gold);flex-wrap:wrap;">
       <span id="estoque-bulk-count" style="font-weight:700;color:var(--text);"></span>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;">
-        <button class="btn" onclick="catCustoLote()"><svg class="ic ic-sm"><use href="#ic-dollar"/></svg> Atualizar custo</button>
+        <button class="btn js-custo" onclick="catCustoLote()"><svg class="ic ic-sm"><use href="#ic-dollar"/></svg> Atualizar custo</button>
         <button class="btn" onclick="catPrecoLote()"><svg class="ic ic-sm"><use href="#ic-tag"/></svg> Atualizar preço</button>
         <button class="btn" onclick="catInativarLote()"><svg class="ic ic-sm"><use href="#ic-eye-off"/></svg> Inativar</button>
         <button class="btn" onclick="catLimparSelecao()"><svg class="ic ic-sm"><use href="#ic-x"/></svg> Limpar seleção</button>
@@ -4813,7 +4813,7 @@ function renderDashboardDynamic() {
 
   // Gate pra não-admin: tira da lista os widgets financeiros antes de renderizar.
   // Mesmo se o builder "Personalizar" tivesse ativo, esses não aparecem.
-  if (!_isAdminUser()) {
+  if (!_podeVerCusto()) {
     layout = layout.filter(function(item){ return DASH_WIDGETS_SO_ADMIN.indexOf(item.id) === -1; });
   }
 
@@ -7739,7 +7739,7 @@ function renderDashboard(){
   if (btnPers) btnPers.style.display = _isAdminUser() ? '' : 'none';
   // Loaders financeiros + empréstimos só rodam pra admin. Não-admin nem
   // recebe os dados — gate em dado, não só em CSS.
-  if (!_isAdminUser()) return;
+  if (!_podeVerCusto()) return;
   setTimeout(function() {
     renderDashInternal();
     renderDashSaldoCaixa();
@@ -10147,6 +10147,7 @@ async function catPrecoLote() {
 // pula só aquele modelo. Só custo_puro muda — montagem/comissão/NF intactos.
 // Serviços ficam fora (serviço não tem custo de produto).
 async function catCustoLote() {
+  if (!_podeVerCusto()) { smAlert('Sem permissão.'); return; }
   const alvo = [...catSelecionados]
     .map(id => produtosCatalogo.find(x => String(x.id) === String(id)))
     .filter(Boolean);
@@ -17517,13 +17518,13 @@ function renderMontagens() {
             <div style="font-size:22px;">${m.principal ? '⭐' : '👷'}</div>
             <div>
               <div style="font-size:13px;font-weight:700;">${escHtml(m.nome)}${inativoBadge}</div>
-              <div style="font-size:10px;color:var(--text3);margin-top:2px;">${m.telefone ? escHtml(m.telefone) : 'sem telefone'} · padrão ${fmtBR(m.precoPadrao)}</div>
+              <div style="font-size:10px;color:var(--text3);margin-top:2px;">${m.telefone ? escHtml(m.telefone) : 'sem telefone'}<span class="js-custo"> · padrão ${fmtBR(m.precoPadrao)}</span></div>
             </div>
             <div style="text-align:right;">
               <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;">Motos</div>
               <div style="font-size:14px;font-weight:800;">${s.motos}</div>
             </div>
-            <div style="text-align:right;">
+            <div class="js-custo" style="text-align:right;">
               <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;">Enviado</div>
               <div style="font-size:14px;font-weight:800;color:var(--gold);">${fmtBR(s.totalEnviado)}</div>
             </div>
@@ -17587,7 +17588,7 @@ function renderMontagens() {
 
   // Sticky bar de seleção múltipla (renderizado quando size > 0).
   let barraSelecaoHTML = '';
-  if (_montagensSelecionados.size > 0) {
+  if (_montagensSelecionados.size > 0 && _podeVerCusto()) {
     const lotesSel = montagensLotes.filter(l => _montagensSelecionados.has(l.id));
     const totalAPagar = lotesSel.reduce((a, l) =>
       a + Math.max(Number(l.valorTotal || 0) - Number(l.valorPago || 0), 0), 0);
@@ -17634,7 +17635,7 @@ function renderMontagens() {
     const resumo = its.length
       ? its.length + ' ' + (its.length===1?'moto':'motos') + (statusCount(its) ? ': ' + statusCount(its) : '')
       : '— sem itens —';
-    const pagoLinha = Number(lote.valorPago) > 0
+    const pagoLinha = (Number(lote.valorPago) > 0 && _podeVerCusto())
       ? `<div style="font-size:10px;color:var(--green);font-weight:600;">pago ${fmtBR(lote.valorPago)}</div>`
       : '';
     const podeEditar = lote.statusPagamento === 'pendente';
@@ -17648,10 +17649,10 @@ function renderMontagens() {
     // bloqueia se houver pagamentos). ✏️ só em pendente.
     const temMotosARRecber = its.some(i => i.statusMontagem !== 'recebida');
     const acoesHTML =
-        `<button class="action-btn" onclick="${stopClick}imprimirMontagemOS('${lote.id}')" title="Imprimir OS (2 vias)">🖨️</button>`
+        (_podeVerCusto() ? `<button class="action-btn" onclick="${stopClick}imprimirMontagemOS('${lote.id}')" title="Imprimir OS (2 vias)">🖨️</button>` : '')
       + (podeEditar ? `<button class="action-btn edit-btn" onclick="${stopClick}abrirMontagemModal('${lote.id}')" title="Editar lote"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>` : '')
       + (temMotosARRecber ? `<button class="action-btn" style="color:var(--green);" onclick="${stopClick}_montagensReceberLoteCompleto('${lote.id}')" title="Marcar todas as motos como recebidas">📦</button>` : '')
-      + (podePagar  ? `<button class="btn btn-gold" style="font-size:10px;padding:4px 10px;line-height:1.2;" onclick="${stopClick}abrirMontagemPagarModal('${lote.id}')" title="Pagar este lote"><svg class="ic ic-sm"><use href="#ic-wallet"/></svg> Pagar</button>` : '')
+      + (podePagar && _podeVerCusto() ? `<button class="btn btn-gold" style="font-size:10px;padding:4px 10px;line-height:1.2;" onclick="${stopClick}abrirMontagemPagarModal('${lote.id}')" title="Pagar este lote"><svg class="ic ic-sm"><use href="#ic-wallet"/></svg> Pagar</button>` : '')
       + `<button class="action-btn del-btn" onclick="${stopClick}_montagensExcluirLote('${lote.id}')" title="Excluir lote"><svg class="ic ic-sm"><use href="#ic-trash"/></svg></button>`;
 
     // Cores de fundo por status (visual diferenciado na coluna Status).
@@ -17671,7 +17672,7 @@ function renderMontagens() {
               <th style="text-align:left;padding:6px 10px;font-weight:700;">Modelo</th>
               <th style="text-align:left;padding:6px 10px;font-weight:700;">Cor</th>
               <th style="text-align:left;padding:6px 10px;font-weight:700;font-family:var(--mono,monospace);">Chassi</th>
-              <th style="text-align:right;padding:6px 10px;font-weight:700;">Preço</th>
+              <th class="js-custo" style="text-align:right;padding:6px 10px;font-weight:700;">Preço</th>
               <th style="text-align:left;padding:6px 10px;font-weight:700;">Status</th>
             </tr>
           </thead>
@@ -17688,7 +17689,7 @@ function renderMontagens() {
                 <td style="padding:6px 10px;">${escHtml(i.modelo)}</td>
                 <td style="padding:6px 10px;">${escHtml(i.cor)}</td>
                 <td style="padding:6px 10px;font-family:var(--mono,monospace);">${i.chassi ? escHtml(i.chassi) : '<span style="color:var(--text3);">—</span>'}</td>
-                <td style="padding:6px 10px;text-align:right;font-family:var(--mono,monospace);">${fmtBR(i.precoMontagem)}</td>
+                <td class="js-custo" style="padding:6px 10px;text-align:right;font-family:var(--mono,monospace);">${fmtBR(i.precoMontagem)}</td>
                 <td style="padding:6px 10px;background:${bg};">
                   <select class="form-input" style="font-size:11px;padding:2px 6px;width:auto;min-width:120px;" onchange="_montagensSetStatus('${i.id}', this.value)">${opts}</select>${dataLbl}
                 </td>
@@ -17698,7 +17699,7 @@ function renderMontagens() {
         </table></div>`
       : '<div style="padding:0 20px 10px 52px;color:var(--text3);font-size:11px;font-style:italic;">Lote sem itens cadastrados.</div>';
 
-    const pagamentosHTML = pgs.length
+    const pagamentosHTML = (pgs.length && _podeVerCusto())
       ? `<div style="padding:0 20px 14px 52px;margin-top:4px;">
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">💰 Histórico de pagamentos</div>
           <table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -17748,7 +17749,7 @@ function renderMontagens() {
         <div style="font-family:var(--mono,monospace);color:var(--gold);font-weight:800;font-size:12px;">${padLote(lote.numeroLote)}</div>
         <div style="min-width:0;font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(resumo)}</div>
         <div style="font-size:11px;color:var(--text3);line-height:1.4;">${labelDatas}</div>
-        <div class="td-mono" style="font-weight:700;color:var(--gold);text-align:right;">${fmtBR(lote.valorTotal)}${pagoLinha}</div>
+        <div class="td-mono" style="font-weight:700;color:var(--gold);text-align:right;"><span class="js-custo">${fmtBR(lote.valorTotal)}</span>${pagoLinha}</div>
         <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:nowrap;"><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span>${acoesHTML}</div>
       </summary>
       ${itensHTML}
@@ -17774,7 +17775,7 @@ function renderMontagens() {
       <summary style="display:flex;gap:10px;align-items:center;padding:14px 20px;cursor:pointer;list-style:none;background:var(--surface2);font-weight:700;">
         <div style="font-size:16px;">${icone}</div>
         <div style="font-size:13px;flex:1;">${escHtml(m.nome)}${m.principal ? ' ⭐' : ''}${inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">inativo</span>' : ''}</div>
-        <div style="font-size:11px;color:var(--text3);">${cntTxt} · <strong style="color:var(--gold);">${fmtBR(valorGrupo)}</strong></div>
+        <div style="font-size:11px;color:var(--text3);">${cntTxt}<span class="js-custo"> · <strong style="color:var(--gold);">${fmtBR(valorGrupo)}</strong></span></div>
       </summary>
       ${childrenHTML}
     </details>`;
@@ -17786,7 +17787,7 @@ function renderMontagens() {
         <summary style="display:flex;gap:10px;align-items:center;padding:14px 20px;cursor:pointer;list-style:none;background:var(--surface2);font-weight:700;">
           <div style="font-size:16px;">⚠️</div>
           <div style="font-size:13px;flex:1;color:var(--text3);">Sem montador</div>
-          <div style="font-size:11px;color:var(--text3);">${lotesOrfaos.length} lote${lotesOrfaos.length===1?'':'s'} · ${fmtBR(lotesOrfaos.reduce((a, l) => a + Number(l.valorTotal||0), 0))}</div>
+          <div style="font-size:11px;color:var(--text3);">${lotesOrfaos.length} lote${lotesOrfaos.length===1?'':'s'}<span class="js-custo"> · ${fmtBR(lotesOrfaos.reduce((a, l) => a + Number(l.valorTotal||0), 0))}</span></div>
         </summary>
         ${lotesOrfaos.map(renderLote).join('')}
       </details>`
@@ -17849,8 +17850,10 @@ function renderMontagensKpis() {
       `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">Em montagem agora</div><div class="kpi-value red">${emMontagem}</div><div class="kpi-change">${fila} fila · ${montd} montando</div></div>`
     + `<div class="kpi"><div class="kpi-label">Enviadas no período</div><div class="kpi-value">${enviadas}</div><div class="kpi-change">${lotesEnv.length} lote${lotesEnv.length===1?'':'s'} no período</div></div>`
     + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Recebidas no período</div><div class="kpi-value green">${recebidas}</div><div class="kpi-change">motos individuais</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Pago no período</div><div class="kpi-value green">${fmtBR(pago)}</div><div class="kpi-change">de lotes enviados</div></div>`
-    + `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">A pagar</div><div class="kpi-value gold">${fmtBR(aPagar)}</div><div class="kpi-change">de lotes enviados</div></div>`;
+    + (_podeVerCusto()
+        ? `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Pago no período</div><div class="kpi-value green">${fmtBR(pago)}</div><div class="kpi-change">de lotes enviados</div></div>`
+          + `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">A pagar</div><div class="kpi-value gold">${fmtBR(aPagar)}</div><div class="kpi-change">de lotes enviados</div></div>`
+        : '');
 }
 
 // ── Modal "Novo lote" / "Editar lote" ──
@@ -18118,6 +18121,7 @@ async function _montagensSalvarLote() {
 // Modelado em ofImprimir. Linha tracejada separa as 2 vias; cada via tem
 // header + tabela de itens + total + linha de assinatura.
 function imprimirMontagemOS(loteId) {
+  if (!_podeVerCusto()) { smAlert('Sem permissão.'); return; }
   const lote = montagensLotes.find(l => l.id === loteId);
   if (!lote) { smAlert('Lote não encontrado.'); return; }
   const itens = montagensItens.filter(i => i.loteId === loteId);
@@ -18254,6 +18258,7 @@ function imprimirMontagemOS(loteId) {
 //         + N pagamentos compartilhando o mesmo lancamento_id. Valor entrado
 //         pode ser parcial — distribuído proporcionalmente entre os lotes.
 function abrirMontagemPagarModal(loteIdOrArray) {
+  if (!_podeVerCusto()) { smAlert('Sem permissão.'); return; }
   const old = document.getElementById('mont-pagar-modal');
   if (old) old.remove();
 
@@ -18463,6 +18468,7 @@ async function _montagensConfirmarPagamento() {
 
 // ── CRUD de Montadores ──
 function abrirMontadorModal(montadorId) {
+  if (!_podeVerCusto()) { smAlert('Sem permissão.'); return; }
   const old = document.getElementById('mont-montador-modal');
   if (old) old.remove();
   const m = montadorId ? montadores.find(x => x.id === montadorId) : null;
@@ -18578,6 +18584,7 @@ function _cancelarSelMontagens() {
 }
 
 function _montPagarSelecionados() {
+  if (!_podeVerCusto()) { smAlert('Sem permissão.'); return; }
   if (!_montagensSelecionados.size) return;
   abrirMontagemPagarModal([..._montagensSelecionados]);
 }
@@ -22961,12 +22968,12 @@ function renderOficinaSacKpis() {
     // Lucro = só serviço pago (tipo de atendimento), não pela tabela.
     const lucroMes = arr.filter(x => x.tipoAtend === 'servico_pago' && !x.aberto && _dataConcl(x).startsWith(prefMes))
       .reduce((s, x) => { const l = ofLucro(x.rec); return s + (l === null ? 0 : l); }, 0);
-    cards += `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Lucro de serviços no mês</div><div class="kpi-value" style="color:${lucroMes>=0?'var(--green)':'var(--red)'};">${fmtSigned(lucroMes)}</div><div class="kpi-change">serviço pago · ${mesNome}</div></div>`;
+    if (_podeVerCusto()) cards += `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Lucro de serviços no mês</div><div class="kpi-value" style="color:${lucroMes>=0?'var(--green)':'var(--red)'};">${fmtSigned(lucroMes)}</div><div class="kpi-change">serviço pago · ${mesNome}</div></div>`;
   } else {
     // Custo de garantias = todos os não-pagos finalizados no mês (qualquer tabela).
     const custoGarMes = arr.filter(x => !x.aberto && _dataConcl(x).startsWith(prefMes))
       .reduce((s, x) => s + custoServico(x.rec), 0);
-    cards += `<div class="kpi" style="border-top:2px solid var(--orange);"><div class="kpi-label">Custo de garantias no mês</div><div class="kpi-value" style="color:var(--orange);">${fmt(custoGarMes)}</div><div class="kpi-change">pós-venda · ${mesNome}</div></div>`;
+    if (_podeVerCusto()) cards += `<div class="kpi" style="border-top:2px solid var(--orange);"><div class="kpi-label">Custo de garantias no mês</div><div class="kpi-value" style="color:var(--orange);">${fmt(custoGarMes)}</div><div class="kpi-change">pós-venda · ${mesNome}</div></div>`;
   }
   el.innerHTML = cards;
 }
@@ -23034,11 +23041,11 @@ function renderOficinaSac() {
     if (ehPago) {
       const v = r.valorServico ? fmt(r.valorServico) : '—';
       const l = ofLucro(r);
-      const lsub = (l === null) ? '' : `<div style="font-size:10px;font-weight:600;margin-top:2px;color:${l>=0?'var(--green)':'var(--red)'};">Lucro ${fmtSigned(l)}</div>`;
+      const lsub = (l === null || !_podeVerCusto()) ? '' : `<div style="font-size:10px;font-weight:600;margin-top:2px;color:${l>=0?'var(--green)':'var(--red)'};">Lucro ${fmtSigned(l)}</div>`;
       valCol = `<div><div class="td-mono" style="font-weight:700;color:var(--green);">${v}${lsub}</div><div style="margin-top:4px;">${locPill}</div></div>`;
     } else {
       const cg = custoServico(r);
-      const custoSub = cg > 0 ? `<div style="font-size:10px;font-weight:600;margin-top:3px;color:var(--orange);">Custo ${fmt(cg)}</div>` : '';
+      const custoSub = (cg > 0 && _podeVerCusto()) ? `<div style="font-size:10px;font-weight:600;margin-top:3px;color:var(--orange);">Custo ${fmt(cg)}</div>` : '';
       valCol = `<div>${locPill}${custoSub}</div>`;
     }
     const editFn = isOf ? `abrirOfModal('${r.id}')` : `abrirSacModal('${r.id}')`;
@@ -23182,8 +23189,8 @@ function abrirSacModal(id) {
     +     `<div class="form-group full"><label>Tipo de atendimento ${sacTaRevisar?'<span style="color:#1a1a1a;background:var(--gold-bright);font-weight:800;font-size:10px;border-radius:4px;padding:1px 5px;">⚠ A CLASSIFICAR — confirme e salve</span>':'<span style="color:var(--text3);font-weight:400;font-size:10px;">(serviço pago = cliente paga; garantia/loja = não cobra)</span>'}</label><select class="form-input" id="sac-tipo-atend">${sacTaOpts}</select></div>`
     +     `<div class="form-group full"><label>Localização do item <span style="color:var(--text3);font-weight:400;font-size:10px;">(onde está a scooter ou peça · "Na loja" mostra também na aba Oficina)</span></label><select class="form-input" id="sac-localizacao">${locOpts}</select></div>`
     +     `<div class="form-group full"><label>Fornecedor</label><input class="form-input" id="sac-forn" value="${escAttr(c&&c.fornecedor)}"></div>`
-    +     `<div class="form-group"><label>Mão de obra (custo R$)</label><input class="form-input" id="sac-custo-mo" type="number" step="0.01" value="${(c&&c.custoMaoObra)||0}" oninput="sacRecalcResumo()"></div>`
-    +     `<div class="form-group full"><label>Peças usadas (custo)</label>`
+    +     `<div class="form-group js-custo"><label>Mão de obra (custo R$)</label><input class="form-input" id="sac-custo-mo" type="number" step="0.01" value="${(c&&c.custoMaoObra)||0}" oninput="sacRecalcResumo()"></div>`
+    +     `<div class="form-group full js-custo"><label>Peças usadas (custo)</label>`
     +       `<table style="width:100%;border-collapse:collapse;"><tbody id="sac-pecas-tbody"></tbody></table>`
     +       `<button type="button" class="btn" style="margin-top:6px;padding:4px 10px;font-size:13px;" onclick="sacAddPeca()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Peça</button>`
     +     `</div>`
@@ -23283,8 +23290,9 @@ function sacRecalcResumo() {
     pecasTot += parseFloat(r.querySelector('.sac-peca-custo')?.value) || 0;
   });
   const custo = mo + pecasTot;
-  el.innerHTML =
-    `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:14px;"><span style="color:var(--text2);">Custo da garantia (mão de obra + peças)</span><b style="color:var(--orange);">${fmt(custo)}</b></div>`;
+  el.innerHTML = _podeVerCusto()
+    ? `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:14px;"><span style="color:var(--text2);">Custo da garantia (mão de obra + peças)</span><b style="color:var(--orange);">${fmt(custo)}</b></div>`
+    : '';
 }
 
 function _sacToggleExcluidos(casoId) {
@@ -23743,7 +23751,8 @@ async function cliSalvar(editId) {
 async function cliExcluir(id) {
   let _u = null;
   try { _u = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
-  if (_u && _u.perfil === 'vendedor') { smAlert('Sem permissão para remover clientes.'); return; }
+  const _podeDel = !!(_u && (_u.role === 'admin' || _u.perfil === 'admin' || _u.perfil === 'operacional'));
+  if (!_podeDel) { smAlert('Sem permissão para remover clientes.'); return; }
   const c = clientesAll.find(x => x.id === id);
   if (!c) return;
   if (!(await smConfirm(`Remover cliente "${c.nome}"?`))) return;

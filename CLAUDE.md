@@ -63,6 +63,26 @@ Organizado **por assunto** — cada seção traz o **estado atual** daquele tema
 
 ---
 
+## Bugs conhecidos / QA (auditoria 4 agentes, 28/06)
+
+### Ocultação de KPIs — ✅ COMPLETADA (2ª passada 28/06, em validação local)
+A 2ª passada cobriu todos os pontos abaixo: Montagens (lista: card montador padrão/Enviado, totais por lote/montador/órfãos, coluna Preço, histórico, linha "pago", barra de seleção; botões Pagar/Imprimir; guards em `abrirMontagemPagarModal`/`_montPagarSelecionados`/`imprimirMontagemOS`/`abrirMontadorModal`) + KPIs de Montagens; Oficina/SAC (KPIs lucro/custo, lista, modal SAC + `sacRecalcResumo`); Estoque (botão "Atualizar custo" + guard em `catCustoLote`); `cliExcluir` agora cobre 'customizado'; Dashboard alinhado a `_podeVerCusto()` (operacional volta a ver os widgets financeiros). Validado: vendedor navega sem erro e 0 KPIs sensíveis visíveis; operacional/admin veem tudo. Referência dos pontos originais que estavam abertos:
+- **Montagens**: a LISTA de lotes (`renderMontagens` ~17520-17789: preços, "Enviado", "Total a pagar", coluna Preço, histórico de pagamentos, totais por montador), os KPIs (`renderMontagensKpis` ~17852-17853), o modal **Pagar** (`abrirMontagemPagarModal` ~18298-18321), a **impressão** (`imprimirMontagemOS` ~18148/18185, abre em `window.open` — CSS `js-custo` não aplica lá) e `abrirMontadorModal` (~18482 preço padrão) NÃO estão protegidos. (Só o modal de criação de lote foi coberto.)
+- **Oficina/SAC**: KPIs do painel (`renderOficinaSacKpis` ~22964/22969 lucro/custo), a lista (`renderOficinaSac` ~23037/23041), e o **modal SAC** (`abrirSacModal` ~23185-23189 mão de obra/peças; `sacRecalcResumo` ~23286 custo) NÃO protegidos. (O modal de OS foi; o de SAC ficou — assimetria.)
+- **Estoque**: botão "Atualizar custo" em massa (`catCustoLote` ~10169) revela custo no prompt — sem `js-custo`.
+- **Montagens — botão "Pagar lote"** (~17654): aparece p/ vendedor mas a escrita é bloqueada por RLS → erro visível. Esconder por módulo financeiro.
+- **`cliExcluir`** (~23743) ainda checa `perfil==='vendedor'` (não cobre 'customizado'); o botão já está ok (`podeDeletar` ~23636), mas a função e o RLS de `clientes` (qual=true) não barram delete via console.
+- **Consistência**: Dashboard usa `_isAdminUser()` (~4816/7742) em vez de `_podeVerCusto()` → **super-restringe o OPERACIONAL** (Eduardo tem financeiro/custos mas não é admin → não vê widgets financeiros do dashboard que deveria ver).
+- **Latente**: perfil PADRÃO `vendedor` (linha ~11281) inclui `afiliados`, e o módulo Afiliados não tem `js-custo`/`_podeVerCusto` (comissões expostas). Não atinge os atuais (são `customizado` sem afiliados), mas atinge se alguém usar o perfil `vendedor` literal. Decidir: tirar `afiliados` do perfil padrão OU proteger as comissões.
+
+### Bugs de DADOS/LÓGICA pré-existentes (não relacionados à segurança)
+- 🔴 **`pagarConta()` (~15157) "Só marcar como paga" NÃO cria lançamento nem debita o caixa** → "Saldo em caixa" superestimado e diverge do Fluxo de Caixa. 12 contas "pago" sem lançamento espelho; 4 sem equivalente (~R$22.869: NF Grupo Veloster R$17.226 + 3 salários R$1.881). O caminho pelo modal de pagamento (`_cpRegistrarPagamento`) faz certo.
+- 🔴 **Comissão de afiliado calcula R$0 p/ todos** (falta `preco_minimo_afiliado`/`comissao_afiliado` cadastrados — 0 de 23 / 0 de 103). "Gerar contas do mês" pagaria zero **silenciosamente**. Casa com a pendência "cadastrar preços mínimos".
+- 🟠 **`custo_puro` não absorve nf_compra/financeiro** (~13 scooters): `ctReal` (~4169) confia no `custo_puro`, que está menor que custo+nf+financeiro → **MC/MC% inflados** (margem parece melhor que a real).
+- 🟠 **Baixa de estoque no PDV — divergência entre agentes a verificar**: um QA disse que a venda NÃO baixa estoque (sem trigger; há estoque negativo); outro disse que baixa via Edge Function `/pdv/pedido-baixar-estoque` (service_role). Conferir se a baixa roda sempre (cobertura/giro/"Parado" dependem de `produtos.estoque`).
+- 🟡 Oficina: "Lucro de serviços" inflado (todas as 41 OS com custo 0). Acessório com `categoria='scooter'` soma R$30 NF indevido. Divergência preço cadastro×Tiny (MC difere por tela). 25 produtos ativos sem FK `produto_precos_id`. Arredondamentos de centavos em empréstimo.
+- **Código morto com dados sensíveis** (`renderDRE`/`recalcDRE` ~11203, `renderDashVendedoresInline` ~5161): inalcançável hoje; vale remover.
+
 ## Histórico de mudanças
 *(cronológico e enxuto — o detalhe vive na seção do assunto)*
 
