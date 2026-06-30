@@ -87,6 +87,9 @@ A 2ª passada cobriu todos os pontos abaixo: Montagens (lista: card montador pad
 
 ## Histórico de mudanças
 
+### 2026-06-30 — Impressão da OS de Montagem liberada pra todos os perfis
+Antes, na blindagem de KPIs de 28/06, o botão 🖨️ de imprimir a OS de montagem (`renderMontagens` ~17568) e a função `imprimirMontagemOS` (~18039) estavam atrelados a `_podeVerCusto()` → **vendedor (Henrique/Rafael/Samuel) não via o botão** (a OS impressa mostra "Preço montagem"/Total e o CSS `js-custo` não pega em `window.open`, então esconderam o botão inteiro). O dono notou na loja: o vendedor precisa imprimir a OS pro **montador assinar**. **Decisão (dono):** liberar a OS **completa** (com preço) pra todos os perfis. Removido o gate do botão (17568) e o guard `if (!_podeVerCusto())` da função (18040, agora com comentário). Custo da montagem fica visível na impressão por opção consciente. Botão "Pagar lote" (17571) segue restrito (financeiro + RLS). **Em validação local (não commitado).**
+
 ### 2026-06-29 — Reorganização das pastas locais numa pasta-mestre
 Tudo do Smart Motors consolidado em `~/projetos/Smart Motors/` (`frontend`/`backend`/`documentos`/`arquivo`) — antes espalhado em `~/smart-motors-app`, `~/smartmotorsestoque`, `~/smart-motors-review` e `~/Documents/Work  /Smart Motors `. Detalhe na seção **Arquitetura**. Produção intacta (Pages/Railway puxam do GitHub). Worktree reparado (`git worktree repair`); histórico+memória do Claude copiados pros novos caminhos-chave (`-Users-moreira-projetos-Smart-Motors-frontend`/`-backend`) — as pastas-chave antigas seguem como backup.
 

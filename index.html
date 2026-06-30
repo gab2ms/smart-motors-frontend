@@ -17565,7 +17565,7 @@ function renderMontagens() {
     // bloqueia se houver pagamentos). ✏️ só em pendente.
     const temMotosARRecber = its.some(i => i.statusMontagem !== 'recebida');
     const acoesHTML =
-        (_podeVerCusto() ? `<button class="action-btn" onclick="${stopClick}imprimirMontagemOS('${lote.id}')" title="Imprimir OS (2 vias)">🖨️</button>` : '')
+        `<button class="action-btn" onclick="${stopClick}imprimirMontagemOS('${lote.id}')" title="Imprimir OS (2 vias)">🖨️</button>`
       + (podeEditar ? `<button class="action-btn edit-btn" onclick="${stopClick}abrirMontagemModal('${lote.id}')" title="Editar lote"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>` : '')
       + (temMotosARRecber ? `<button class="action-btn" style="color:var(--green);" onclick="${stopClick}_montagensReceberLoteCompleto('${lote.id}')" title="Marcar todas as motos como recebidas">📦</button>` : '')
       + (podePagar && _podeVerCusto() ? `<button class="btn btn-gold" style="font-size:10px;padding:4px 10px;line-height:1.2;" onclick="${stopClick}abrirMontagemPagarModal('${lote.id}')" title="Pagar este lote"><svg class="ic ic-sm"><use href="#ic-wallet"/></svg> Pagar</button>` : '')
@@ -18037,7 +18037,9 @@ async function _montagensSalvarLote() {
 // Modelado em ofImprimir. Linha tracejada separa as 2 vias; cada via tem
 // header + tabela de itens + total + linha de assinatura.
 function imprimirMontagemOS(loteId) {
-  if (!_podeVerCusto()) { smAlert('Sem permissão.'); return; }
+  // Liberado p/ todos os perfis (inclusive vendedor): a OS de montagem precisa
+  // ser impressa no balcão pro montador assinar. A OS mostra o preço da montagem
+  // (decisão do dono em 30/06/2026 — antes era restrito a quem via custo).
   const lote = montagensLotes.find(l => l.id === loteId);
   if (!lote) { smAlert('Lote não encontrado.'); return; }
   const itens = montagensItens.filter(i => i.loteId === loteId);
