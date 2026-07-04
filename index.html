@@ -3462,6 +3462,17 @@ select:not(.input-pro):not(.search-input){
     </div>
   </div>
 
+  <!-- MODAL: DETALHES DA CONTA / BOLETO (arquivo, código de barras, linha digitável, Pix, comprovante, histórico) -->
+  <div class="modal-overlay" id="cp-detalhe-modal">
+    <div class="modal" style="width:640px;max-width:96vw;max-height:92vh;overflow:auto;">
+      <div class="modal-title">Detalhes da <span>conta</span></div>
+      <div id="cp-detalhe-body"></div>
+      <div class="modal-actions" style="margin-top:16px;">
+        <button class="btn" onclick="closeCpDetalhe()" style="width:100%;">Fechar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: enviar/editar moto no parceiro/local (Localização — Lado A) -->
   <div class="modal-overlay" id="loc-modal">
     <div class="modal" style="width:560px;max-width:96vw;">
@@ -14687,6 +14698,9 @@ function renderContasPagar() {
     const obsIcone = c.obs
       ? ` <span style="cursor:pointer;opacity:0.55;margin-left:4px;font-size:11px;" onclick="event.stopPropagation();_cpToggleObs('${c.id}')" title="Ver observação">📝</span>`
       : '';
+    const anexoIcone = c.boletoPath
+      ? ` <span style="opacity:0.7;margin-left:4px;font-size:11px;" title="Boleto anexado">📎</span>`
+      : '';
     const waNum = c.whatsapp||'';
     const waMsg = encodeURIComponent(`⚡ Smart Motors
 
@@ -14698,7 +14712,7 @@ function renderContasPagar() {
     return `
       <div class="cp-row" style="border-bottom:1px solid var(--border);">
         <div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1fr minmax(150px, auto);gap:12px;align-items:center;padding:13px 20px;font-size:13px;">
-          <div style="font-weight:700;color:${stColors[st]};min-width:0;overflow:hidden;text-overflow:ellipsis;">${empBadge}${escHtml(c.nome)}${empIcone}${obsIcone}</div>
+          <div style="font-weight:700;color:${stColors[st]};min-width:0;overflow:hidden;text-overflow:ellipsis;">${empBadge}${escHtml(c.nome)}${empIcone}${obsIcone}${anexoIcone}</div>
           <div class="hide-mobile" style="font-size:11px;color:var(--text3);min-width:0;">${escHtml(c.categoria)||'—'} · ${escHtml(periodoLabel[c.periodicidade]||c.periodicidade)}</div>
           <div class="td-mono" style="font-weight:700;text-align:right;">${fmt(c.valor)}${(!c.paga && _cpTotalPago(c) > 0.005) ? `<div style="font-size:10px;font-weight:600;color:#5aa9ff;">saldo ${fmt(_cpSaldo(c))}</div>` : ''}</div>
           <div>
@@ -14712,6 +14726,7 @@ function renderContasPagar() {
               ? '<button class="btn btn-gold" onclick="pagarContaModal(\'' + c.id + '\')" style="font-size:10px;padding:5px 10px;"><svg class="ic ic-sm"><use href="#ic-check"/></svg></button>'
               : '<button class="action-btn" onclick="despagarConta(\'' + c.id + '\')" style="font-size:10px;">↩</button>'}
             <a href="${waLink}" target="_blank" class="action-btn" style="background:#25D366;border-color:#25D366;color:#fff;text-decoration:none;padding:5px 8px;font-size:10px;font-weight:700;">📲</a>
+            <button class="action-btn" onclick="abrirCpDetalhe('${c.id}')" title="Detalhes / boleto" style="font-size:11px;padding:5px 8px;">📄</button>
             <button class="action-btn edit-btn" onclick="editarContaPagar('${c.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
             <button class="action-btn del-btn" onclick="deletarContaPagar('${c.id}')"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
           </div>
@@ -14902,6 +14917,215 @@ function salvarContaPagar() {
   renderContasPagar();
   atualizarDotContasPagar();
   salvarDados();
+}
+
+// ══════════════════════════════════════════
+//  BOLETO / ANEXOS — dossiê da conta a pagar
+//  Guarda arquivo (bucket "boletos"), código de barras, linha digitável,
+//  Pix, comprovante e histórico. Colunas add na migração
+//  contas_pagar_boleto_anexos; arquivos no bucket privado "boletos"
+//  (signed URL). Mapeamento snake↔camel é automático (toSnake/toCamel).
+// ══════════════════════════════════════════
+const CP_BUCKET = 'boletos';
+let _cpDetalheId = null;
+
+function _cpUsuarioAtual() {
+  try { const u = JSON.parse(localStorage.getItem('sm_user')||'null'); return u ? (u.nome || u.email || 'usuário') : 'usuário'; }
+  catch(e) { return 'usuário'; }
+}
+
+// Converte a linha digitável (47 díg.) no código de barras (44 díg.) — Febraban.
+function _cpLinhaParaBarras(linha) {
+  const d = (linha||'').replace(/\D/g,'');
+  if (d.length !== 47) return '';
+  const c1=d.slice(0,10), c2=d.slice(10,21), c3=d.slice(21,32), c4=d.slice(32,33), c5=d.slice(33,47);
+  return c1.slice(0,4)+c4+c5+c1.slice(4,9)+c2.slice(0,10)+c3.slice(0,10);
+}
+
+// Desenha o código de barras (44 díg.) como SVG escaneável — padrão dos
+// boletos: Interleaved 2 of 5 (ITF). Sem lib externa. Cada par de dígitos
+// vira 5 barras (do 1º díg.) intercaladas com 5 espaços (do 2º). 1=largo, 0=estreito.
+function _cpBarrasSVG(code) {
+  const d = (code||'').replace(/\D/g,'');
+  if (d.length < 2 || d.length % 2 !== 0) return '';
+  const P = {'0':[0,0,1,1,0],'1':[1,0,0,0,1],'2':[0,1,0,0,1],'3':[1,1,0,0,0],'4':[0,0,1,0,1],
+             '5':[1,0,1,0,0],'6':[0,1,1,0,0],'7':[0,0,0,1,1],'8':[1,0,0,1,0],'9':[0,1,0,1,0]};
+  const N=2, W=6, H=54, QUIET=20;
+  const els=[];
+  els.push([N,1],[N,0],[N,1],[N,0]);           // start: N N N N
+  for (let i=0;i<d.length;i+=2){
+    const a=P[d[i]], b=P[d[i+1]]; if(!a||!b) return '';
+    for(let k=0;k<5;k++){ els.push([a[k]?W:N,1]); els.push([b[k]?W:N,0]); }
+  }
+  els.push([W,1],[N,0],[N,1]);                  // stop: W N N
+  let x=QUIET, rects='';
+  for(const [w,bar] of els){ if(bar) rects+=`<rect x="${x}" y="0" width="${w}" height="${H}"/>`; x+=w; }
+  const totalW=x+QUIET;
+  return `<svg viewBox="0 0 ${totalW} ${H}" preserveAspectRatio="none" width="100%" height="64" role="img" aria-label="Código de barras do boleto"><rect x="0" y="0" width="${totalW}" height="${H}" fill="#fff"/><g fill="#000">${rects}</g></svg>`;
+}
+
+function _cpCopiar(texto, btn) {
+  const t = (texto||'').trim();
+  if (!t) { smAlert('Nada pra copiar.'); return; }
+  const ok = () => { if (btn) { const o = btn.innerHTML; btn.innerHTML = '✓'; setTimeout(()=>{ btn.innerHTML = o; }, 1300); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(ok).catch(()=> smAlert('Não consegui copiar. Selecione e copie manualmente.'));
+  } else { smAlert('Copie manualmente: ' + t); }
+}
+
+// Append no histórico (jsonb) + persiste só essa coluna.
+async function _cpLogHistorico(c, acao, detalhe) {
+  const entry = { ts: new Date().toISOString(), usuario: _cpUsuarioAtual(), acao, detalhe: detalhe||'' };
+  c.historico = Array.isArray(c.historico) ? c.historico : [];
+  c.historico.push(entry);
+  try { await sb.from('contas_pagar').update({ historico: c.historico }).eq('id', c.id); }
+  catch(e) { console.error('[cp] historico', e.message||e); }
+}
+
+async function _cpUploadArquivo(c, file, kind) {
+  const ext = (file.name.split('.').pop()||'bin').toLowerCase().replace(/[^a-z0-9]/g,'') || 'bin';
+  const path = c.id + '/' + kind + '-' + Date.now() + '.' + ext;
+  const { error } = await sb.storage.from(CP_BUCKET).upload(path, file, { upsert: true, contentType: file.type || undefined });
+  if (error) throw error;
+  return path;
+}
+
+async function _cpAbrirArquivo(kind) {
+  const c = contasPagar.find(x=>x.id===_cpDetalheId); if (!c) return;
+  const path = kind==='boleto' ? c.boletoPath : c.comprovantePath;
+  if (!path) { smAlert('Nenhum arquivo anexado.'); return; }
+  const { data, error } = await sb.storage.from(CP_BUCKET).createSignedUrl(path, 60*60);
+  if (error || !data?.signedUrl) { smAlert('Não consegui gerar o link do arquivo.'); return; }
+  window.open(data.signedUrl, '_blank');
+}
+
+async function _cpAnexar(kind, inputEl) {
+  const file = inputEl.files && inputEl.files[0]; if (!file) return;
+  const c = contasPagar.find(x=>x.id===_cpDetalheId); if (!c) { inputEl.value=''; return; }
+  const stEl = document.getElementById('cp-det-status');
+  if (stEl) { stEl.textContent = 'Enviando ' + file.name + '…'; stEl.style.display='block'; }
+  try {
+    const path = await _cpUploadArquivo(c, file, kind);
+    if (kind==='boleto') {
+      await sb.from('contas_pagar').update({ boleto_path: path, boleto_nome: file.name }).eq('id', c.id);
+      c.boletoPath = path; c.boletoNome = file.name;
+      await _cpLogHistorico(c, 'anexo_boleto', file.name);
+    } else {
+      await sb.from('contas_pagar').update({ comprovante_path: path }).eq('id', c.id);
+      c.comprovantePath = path;
+      await _cpLogHistorico(c, 'anexo_comprovante', file.name);
+    }
+    _cpRenderDetalhe(c);
+    renderContasPagar();
+  } catch(e) {
+    smAlert('Falha ao enviar o arquivo: ' + (e.message||e));
+  } finally { inputEl.value=''; if (stEl) stEl.style.display='none'; }
+}
+
+function _cpDerivarBarras() {
+  const linha = document.getElementById('cp-det-linha')?.value || '';
+  const b = _cpLinhaParaBarras(linha);
+  if (!b) { smAlert('Linha digitável inválida (precisa ter 47 dígitos).'); return; }
+  const el = document.getElementById('cp-det-barras'); if (el) el.value = b;
+  const img = document.getElementById('cp-det-barras-img'); if (img) img.innerHTML = _cpBarrasSVG(b) || '';
+}
+
+async function _cpSalvarDadosBoleto() {
+  const c = contasPagar.find(x=>x.id===_cpDetalheId); if (!c) return;
+  const g = id => (document.getElementById(id)?.value||'').trim();
+  const novo = {
+    linhaDigitavel: g('cp-det-linha'), codigoBarras: g('cp-det-barras'),
+    beneficiario: g('cp-det-benef'), nossoNumero: g('cp-det-nn'), documento: g('cp-det-doc'),
+    chavePix: g('cp-det-pixkey'), qrPix: g('cp-det-pixqr'),
+  };
+  Object.assign(c, novo);
+  try {
+    await sb.from('contas_pagar').update({
+      linha_digitavel: novo.linhaDigitavel||null, codigo_barras: novo.codigoBarras||null,
+      beneficiario: novo.beneficiario||null, nosso_numero: novo.nossoNumero||null, documento: novo.documento||null,
+      chave_pix: novo.chavePix||null, qr_pix: novo.qrPix||null,
+    }).eq('id', c.id);
+    await _cpLogHistorico(c, 'edicao_dados', 'Dados do boleto atualizados');
+    _cpRenderDetalhe(c); renderContasPagar();
+    const stEl = document.getElementById('cp-det-status');
+    if (stEl) { stEl.textContent = 'Dados salvos ✓'; stEl.style.display='block'; setTimeout(()=>{ stEl.style.display='none'; }, 1600); }
+  } catch(e) { smAlert('Falha ao salvar: ' + (e.message||e)); }
+}
+
+function abrirCpDetalhe(id) {
+  const c = contasPagar.find(x=>x.id===id); if (!c) return;
+  _cpDetalheId = id;
+  _cpRenderDetalhe(c);
+  document.getElementById('cp-detalhe-modal').classList.add('open');
+}
+function closeCpDetalhe() { document.getElementById('cp-detalhe-modal').classList.remove('open'); _cpDetalheId = null; }
+
+function _cpRenderDetalhe(c) {
+  const body = document.getElementById('cp-detalhe-body'); if (!body) return;
+  const dataBR = (c.vencimento||'').split('-').reverse().join('/');
+  const st = statusConta(c);
+  const v = s => escHtml(s||'');
+  const bloco = (titulo, inner) =>
+    `<div style="margin-top:14px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text3);margin-bottom:6px;">${titulo}</div>${inner}</div>`;
+  const campoCopia = (id, label, val, mono) =>
+    `<div class="form-group full" style="margin-bottom:8px;"><label>${label}</label>
+       <div style="display:flex;gap:6px;align-items:center;">
+         <input class="form-input${mono?' td-mono':''}" id="${id}" value="${v(val)}"${mono?' style="flex:1;font-size:12px;"':' style="flex:1;"'}>
+         <button class="btn" type="button" onclick="_cpCopiar(document.getElementById('${id}').value, this)" style="font-size:11px;padding:6px 12px;">Copiar</button>
+       </div></div>`;
+
+  const inputFile = (kind, label) => `<label class="btn" style="font-size:11px;cursor:pointer;">${label}<input type="file" accept="application/pdf,image/*" style="display:none;" onchange="_cpAnexar('${kind}', this)"></label>`;
+  const boletoArea = c.boletoPath
+    ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+         <button class="btn btn-gold" type="button" onclick="_cpAbrirArquivo('boleto')" style="font-size:11px;">📄 Ver / baixar boleto</button>
+         <span style="font-size:11px;color:var(--text3);">${v(c.boletoNome)||'arquivo anexado'}</span>${inputFile('boleto','Trocar')}</div>`
+    : inputFile('boleto','📎 Anexar boleto (PDF/imagem)');
+  const compArea = c.comprovantePath
+    ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+         <button class="btn btn-gold" type="button" onclick="_cpAbrirArquivo('comprovante')" style="font-size:11px;">🧾 Ver / baixar comprovante</button>${inputFile('comprovante','Trocar')}</div>`
+    : inputFile('comprovante','🧾 Anexar comprovante de pagamento');
+
+  const hist = (Array.isArray(c.historico)?c.historico:[]).slice().reverse();
+  const histHtml = hist.length
+    ? hist.map(h => {
+        const d = (h.ts||'').replace('T',' ').slice(0,16);
+        return `<div style="font-size:11px;padding:5px 2px;border-bottom:1px solid var(--border);"><b>${v(h.acao||'')}</b> <span style="color:var(--text3);">· ${v(d)} · ${v(h.usuario||'')}</span>${h.detalhe?`<div style="color:var(--text2);">${v(h.detalhe)}</div>`:''}</div>`;
+      }).join('')
+    : '<div style="font-size:11px;color:var(--text3);">Sem histórico ainda.</div>';
+
+  body.innerHTML =
+    `<div style="padding:10px 12px;background:var(--surface2);border-radius:8px;">
+       <div style="font-weight:700;">${v(c.nome)}</div>
+       <div style="font-size:11px;color:var(--text3);margin-top:3px;">Vence ${v(dataBR)} · ${fmt(c.valor)} · ${v(c.categoria)||'sem categoria'} · ${_cpStatusBadge(st)}</div>
+     </div>`
+    + `<div id="cp-det-status" style="display:none;margin-top:10px;font-size:11px;color:var(--gold);"></div>`
+    + bloco('Arquivo do boleto', boletoArea)
+    + bloco('Linha digitável — copie e cole no banco pra pagar',
+        campoCopia('cp-det-linha','Linha digitável', c.linhaDigitavel, true))
+    + bloco('Código de barras — aponte a câmera do banco', (() => {
+        const barrasCode = c.codigoBarras || _cpLinhaParaBarras(c.linhaDigitavel);
+        const svg = _cpBarrasSVG(barrasCode);
+        return `<input type="hidden" id="cp-det-barras" value="${v(barrasCode)}">
+          <div id="cp-det-barras-img" style="padding:10px;background:#fff;border-radius:6px;">${svg || '<span style="font-size:11px;color:#888;">Sem código de barras — preencha a linha digitável e clique em atualizar.</span>'}</div>
+          <div style="display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap;">
+            <button class="btn" type="button" onclick="_cpDerivarBarras()" style="font-size:10px;padding:4px 8px;">↻ Atualizar da linha digitável</button>
+            <button class="btn" type="button" onclick="_cpCopiar(document.getElementById('cp-det-barras').value, this)" style="font-size:10px;padding:4px 8px;">Copiar números</button>
+          </div>`;
+      })())
+    + bloco('Pix (quando houver)',
+        campoCopia('cp-det-pixkey','Chave Pix', c.chavePix, false)
+        + `<div class="form-group full"><label>Pix copia-e-cola (QR)</label>
+             <div style="display:flex;gap:6px;align-items:flex-start;">
+               <textarea class="form-input td-mono" id="cp-det-pixqr" rows="2" style="flex:1;font-size:11px;">${v(c.qrPix)}</textarea>
+               <button class="btn" type="button" onclick="_cpCopiar(document.getElementById('cp-det-pixqr').value, this)" style="font-size:11px;padding:6px 12px;">Copiar</button>
+             </div></div>`)
+    + bloco('Identificação',
+        campoCopia('cp-det-benef','Beneficiário', c.beneficiario, false)
+        + campoCopia('cp-det-nn','Nosso número', c.nossoNumero, false)
+        + campoCopia('cp-det-doc','Documento / NF', c.documento, false))
+    + `<div style="margin-top:6px;"><button class="btn btn-gold" type="button" onclick="_cpSalvarDadosBoleto()" style="font-size:11px;">Salvar dados do boleto</button></div>`
+    + bloco('Comprovante de pagamento', compArea)
+    + bloco('Histórico de alterações', `<div style="max-height:180px;overflow:auto;">${histHtml}</div>`);
 }
 
 // Entrypoint da UI: abre modal de 2 passos. Permite "só marcar como paga"
