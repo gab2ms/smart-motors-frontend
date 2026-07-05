@@ -4384,6 +4384,25 @@ function renderBreadcrumb(id) {
 // permissão 'oficina-sac' — o modelo de permissão não muda.
 function _osAreaModo(id){ return id === 'posvenda' ? 'posvenda' : (id === 'oficina' ? 'oficina' : null); }
 function _permModulo(id){ return _osAreaModo(id) ? 'oficina-sac' : id; }
+
+// ── CRM / Atendimento (app dedicado na Vercel) ──
+// Mesmo projeto Supabase → mesmo login. O SSO passa a sessão no FRAGMENT (#)
+// da URL: fragment não é enviado ao servidor nem aparece em logs; o app CRM
+// consome e limpa a URL na hora (history.replaceState).
+const CRM_URL = 'https://smart-motors-crm.vercel.app';
+async function abrirCRM() {
+  if (!_temModulo('crm')) { smAlert('Você não tem acesso ao CRM. Fale com o admin.'); return; }
+  let destino = CRM_URL;
+  try {
+    const { data } = await sb.auth.getSession();
+    const s = data && data.session;
+    if (s && s.access_token && s.refresh_token) {
+      destino = CRM_URL + '/#sso=' + encodeURIComponent(s.access_token)
+              + '&r=' + encodeURIComponent(s.refresh_token);
+    }
+  } catch (e) { console.warn('[abrirCRM] sem sessão pro SSO:', e.message); }
+  window.open(destino, '_blank', 'noopener');
+}
 function _pageDomId(id){ return _osAreaModo(id) ? 'oficina-sac' : id; }
 // opts.fromHistory=true → veio do popstate, NÃO empilha (evita loop)
 // opts.replace=true     → primeira navegação, replaceState em vez de pushState
@@ -4396,6 +4415,9 @@ function showPage(id, opts){
     id = 'custos-produtos';
     setTimeout(() => smAlert('O Simulador de Preços foi substituído pela aba Custos de Produtos.'), 150);
   }
+  // CRM / Atendimento: app dedicado (Vercel), mesmo login (Supabase Auth).
+  // Abre em nova aba já logado via SSO (sessão no fragment — não vai pro servidor).
+  if (id === 'crm') { abrirCRM(); return; }
   // Controle de acesso: redireciona para dashboard se sem permissao
   let _user = null;
   try { _user = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
@@ -9202,6 +9224,7 @@ const NAV_TREE = [
       { id:'custos',         label:'Custos Operacionais',  icon:'ic-receipt' },
   ]},
   { kind:'solo', id:'relatorios', label:'Relatórios', icon:'ic-bar-chart' },
+  { kind:'solo', id:'crm', label:'CRM / Atendimento', icon:'ic-phone' },
   { kind:'sep' },
   { kind:'solo', id:'admin', label:'Admin', icon:'ic-shield', adminOnly:true, dotId:'admin-pending-dot' },
 ];
@@ -11203,11 +11226,13 @@ const TODOS_MODULOS = [
   { id: 'custos-produtos', nome: 'Custos de Produtos' },
   { id: 'pdv',             nome: 'PDV — Operação' },
   { id: 'relatorios',      nome: 'Relatórios' },
+  { id: 'crm',             nome: 'CRM / Atendimento' },
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
   vendedor:    ['dashboard', 'vendas', 'estoque', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'afiliados', 'clientes', 'contratos', 'pdv'],
-  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'localizacao', 'vendas', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'afiliados', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv'],
+  // 'crm' no operacional espelha a função tem_modulo do banco (migração crm_modulo_permissoes)
+  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'localizacao', 'vendas', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'afiliados', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv', 'crm'],
   customizado: null, // usa user.modulosPermitidos
 };
 // Visibilidade de KPI/campo sensível por módulo (espelha modulosPermitidos do
