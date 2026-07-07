@@ -2635,6 +2635,7 @@ select:not(.input-pro):not(.search-input){
       <button class="fin-tab-btn"        data-fintab="dre"         onclick="switchFinTab('dre')" id="fin-tab-btn-dre" style="display:none;"><svg class="ic ic-sm"><use href="#ic-bar-chart"/></svg> DRE</button>
       <button class="fin-tab-btn"        data-fintab="fluxo"       onclick="switchFinTab('fluxo')" id="fin-tab-btn-fluxo" style="display:none;"><svg class="ic ic-sm"><use href="#ic-trending-up"/></svg> Fluxo de Caixa</button>
       <button class="fin-tab-btn"        data-fintab="emprestimos" onclick="switchFinTab('emprestimos')">Empréstimos</button>
+      <button class="fin-tab-btn"        data-fintab="custos"      onclick="switchFinTab('custos')" id="fin-tab-btn-custos" style="display:none;"><svg class="ic ic-sm"><use href="#ic-receipt"/></svg> Custos Operacionais</button>
       <button class="fin-tab-btn"        data-fintab="ia"          onclick="switchFinTab('ia')">Análise IA</button>
     </div>
 
@@ -2817,6 +2818,44 @@ select:not(.input-pro):not(.search-input){
         </div>
         <div id="emp-fin-content" style="padding:18px 20px;"></div>
       </div>
+    </div>
+
+    <!-- ════════ ABA: CUSTOS OPERACIONAIS ════════ -->
+    <div class="fin-tab-content" id="fin-tab-custos" style="display:none;">
+      <!-- Banner de análise em construção (histórico < 3 meses) -->
+      <div id="custos-banner" style="display:none;background:rgba(245,197,24,0.1);border:1px solid rgba(245,197,24,0.32);border-radius:var(--r-sm);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--text2);line-height:1.5;"></div>
+      <!-- Seletor de período -->
+      <div id="custos-periodos" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;"></div>
+      <!-- 4 cards -->
+      <div class="kpi-grid" style="margin-bottom:22px;">
+        <div class="kpi">
+          <div class="kpi-label">Custos Fixos</div>
+          <div class="kpi-value" id="co-card-fixo" style="color:#3a86ff;">R$ 0</div>
+          <div class="kpi-change" id="co-card-fixo-sub"></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Custos Variáveis</div>
+          <div class="kpi-value" id="co-card-var" style="color:var(--orange);">R$ 0</div>
+          <div class="kpi-change" id="co-card-var-sub"></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Total Operacional</div>
+          <div class="kpi-value red" id="co-card-total">R$ 0</div>
+          <div class="kpi-change" id="co-card-total-sub"></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Custo por Venda</div>
+          <div class="kpi-value gold" id="co-card-cpv">R$ 0</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
+            <span style="font-size:10px;color:var(--text3);font-weight:600;">Vendas/mês:</span>
+            <input type="number" id="vendas-mes-input" value="40" min="1" max="999"
+              style="width:60px;background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:3px 6px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;text-align:center;outline:none;"
+              oninput="vendasMesChanged()">
+          </div>
+        </div>
+      </div>
+      <!-- Seções (Fixos / Variáveis / Inativos) -->
+      <div id="custos-secoes"></div>
     </div>
 
     <!-- ════════ ABA: ANÁLISE IA ════════ -->
@@ -3626,42 +3665,9 @@ select:not(.input-pro):not(.search-input){
   </div>
 
     <!-- ══════════════ CUSTOS ══════════════ -->
-  <div class="page content" id="page-custos">
-    <!-- Banner de análise em construção (histórico < 3 meses) -->
-    <div id="custos-banner" style="display:none;background:rgba(245,197,24,0.1);border:1px solid rgba(245,197,24,0.32);border-radius:var(--r-sm);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--text2);line-height:1.5;"></div>
-    <!-- Seletor de período -->
-    <div id="custos-periodos" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;"></div>
-    <!-- 4 cards -->
-    <div class="kpi-grid" style="margin-bottom:22px;">
-      <div class="kpi">
-        <div class="kpi-label">Custos Fixos</div>
-        <div class="kpi-value" id="co-card-fixo" style="color:#3a86ff;">R$ 0</div>
-        <div class="kpi-change" id="co-card-fixo-sub"></div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Custos Variáveis</div>
-        <div class="kpi-value" id="co-card-var" style="color:var(--orange);">R$ 0</div>
-        <div class="kpi-change" id="co-card-var-sub"></div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Total Operacional</div>
-        <div class="kpi-value red" id="co-card-total">R$ 0</div>
-        <div class="kpi-change" id="co-card-total-sub"></div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Custo por Venda</div>
-        <div class="kpi-value gold" id="co-card-cpv">R$ 0</div>
-        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
-          <span style="font-size:10px;color:var(--text3);font-weight:600;">Vendas/mês:</span>
-          <input type="number" id="vendas-mes-input" value="40" min="1" max="999"
-            style="width:60px;background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:3px 6px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;text-align:center;outline:none;"
-            oninput="vendasMesChanged()">
-        </div>
-      </div>
-    </div>
-    <!-- Seções (Fixos / Variáveis / Inativos) -->
-    <div id="custos-secoes"></div>
-  </div>
+  <!-- Custos Operacionais foi movido pra dentro do Financeiro como sub-aba
+       (#fin-tab-custos, entre Empréstimos e Análise IA). O item de menu
+       "custos" agora redireciona pra essa aba — ver showPage(). -->
 
   <!-- ══════════════ PDV — TELA PRINCIPAL (painel + wizard) ══════════════ -->
   <div class="page content" id="page-pdv">
@@ -4359,6 +4365,7 @@ const FIN_SUBTAB_META = {
   dre:         { title: 'DRE',         sub: 'Fechamento do período — mesma fonte do Excel', crumb: ['Financeiro', 'DRE'] },
   fluxo:       { title: 'Fluxo de Caixa', sub: 'Projeção 12 meses, semáforo de crédito e saúde do caixa', crumb: ['Financeiro', 'Fluxo de Caixa'] },
   emprestimos: { title: 'Empréstimos', sub: 'Controle de financiamentos e parcelas',   crumb: ['Financeiro', 'Empréstimos'] },
+  custos:      { title: 'Custos Operacionais', sub: 'Análise inteligente baseada em lançamentos reais', crumb: ['Financeiro', 'Custos Operacionais'] },
   ia:          { title: 'Análise IA',  sub: 'Insights automáticos sobre seu caixa',    crumb: ['Financeiro', 'Análise IA'] },
 };
 function renderBreadcrumbItems(items) {
@@ -4414,6 +4421,21 @@ function showPage(id, opts){
   if (id === 'simulador') {
     id = 'custos-produtos';
     setTimeout(() => smAlert('O Simulador de Preços foi substituído pela aba Custos de Produtos.'), 150);
+  }
+  // Custos Operacionais deixou de ser página própria — virou sub-aba do
+  // Financeiro (#fin-tab-custos). O item de menu / KPIs que ainda chamam
+  // showPage('custos') abrem o Financeiro já nessa aba. Mantém a checagem
+  // do módulo 'custos' (não do 'financeiro') pra não regredir a permissão.
+  if (id === 'custos') {
+    let _uc = null;
+    try { _uc = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
+    if (_uc && !modulosPermitidos(_uc).includes('custos')) { id = 'dashboard'; }
+    else {
+      try { localStorage.setItem('sm_fin_tab', 'custos'); } catch(e) {}
+      showPage('financeiro', opts);
+      try { switchFinTab('custos'); } catch(e) {}
+      return;
+    }
   }
   // CRM / Atendimento: app dedicado (Vercel), mesmo login (Supabase Auth).
   // Abre em nova aba já logado via SSO (sessão no fragment — não vai pro servidor).
@@ -9221,7 +9243,8 @@ const NAV_TREE = [
       { id:'financeiro',     label:'Financeiro',           icon:'ic-wallet'  },
       { id:'contas-pagar',   label:'Contas a Pagar',       icon:'ic-calendar', dotId:'dot-contas-pagar' },
       { id:'contas-receber', label:'Contas a Receber',     icon:'ic-inbox'   },
-      { id:'custos',         label:'Custos Operacionais',  icon:'ic-receipt' },
+      // "Custos Operacionais" saiu do menu — agora é sub-aba do Financeiro
+      // (#fin-tab-custos). showPage('custos') ainda redireciona pra lá (KPI do dashboard).
   ]},
   { kind:'solo', id:'relatorios', label:'Relatórios', icon:'ic-bar-chart' },
   { kind:'solo', id:'crm', label:'CRM / Atendimento', icon:'ic-phone' },
@@ -12377,9 +12400,13 @@ async function initFinanceiro() {
   if (btnDre) btnDre.style.display = _isAdminUser() ? '' : 'none';
   const btnFluxo = document.getElementById('fin-tab-btn-fluxo');
   if (btnFluxo) btnFluxo.style.display = _isAdminUser() ? '' : 'none';
-  // Restaura aba salva (default: caixa). Se non-admin tinha aba admin salva, cai pra caixa.
+  // Custos Operacionais só aparece pra quem tem o módulo 'custos'.
+  const btnCustos = document.getElementById('fin-tab-btn-custos');
+  if (btnCustos) btnCustos.style.display = _temModulo('custos') ? '' : 'none';
+  // Restaura aba salva (default: caixa). Se o perfil não tem a aba salva, cai pra caixa.
   let savedTab = localStorage.getItem('sm_fin_tab') || 'caixa';
   if ((savedTab === 'dre' || savedTab === 'fluxo') && !_isAdminUser()) savedTab = 'caixa';
+  if (savedTab === 'custos' && !_temModulo('custos')) savedTab = 'caixa';
   switchFinTab(savedTab);
 }
 
@@ -12414,12 +12441,16 @@ function switchAdminUserTab(status) {
 
 // Troca a aba ativa do módulo Financeiro
 function switchFinTab(tabId) {
-  const tabs   = ['caixa', 'dre', 'fluxo', 'emprestimos', 'ia'];
+  const tabs   = ['caixa', 'dre', 'fluxo', 'emprestimos', 'custos', 'ia'];
   if (!tabs.includes(tabId)) tabId = 'caixa';
   // DRE e Fluxo de Caixa são só admin — protege contra acesso direto
   // (console/localStorage stale).
   if ((tabId === 'dre' || tabId === 'fluxo') && !_isAdminUser()) {
     smAlert('Esta aba é restrita ao admin.');
+    tabId = 'caixa';
+  }
+  // Custos Operacionais exige o módulo 'custos' — protege acesso direto.
+  if (tabId === 'custos' && !_temModulo('custos')) {
     tabId = 'caixa';
   }
   tabs.forEach(t => {
@@ -12458,6 +12489,10 @@ function switchFinTab(tabId) {
   // Fluxo de Caixa recalcula a cada entrada — tudo em memória, barato.
   if (tabId === 'fluxo') {
     try { renderFinFluxo(); } catch(e) { console.warn('[fin-fluxo] render falhou:', e.message); }
+  }
+  // Custos Operacionais — render a partir dos lançamentos em memória.
+  if (tabId === 'custos') {
+    try { renderCustos(); } catch(e) { console.warn('[fin-custos] render falhou:', e.message); }
   }
 }
 
