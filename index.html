@@ -16306,9 +16306,8 @@ async function salvarAcesso(mode, originalEmail) {
     }
   }
 
-  let user;
   if (mode === 'edit') {
-    user = users.find(u => u.email === originalEmail);
+    const user = users.find(u => u.email === originalEmail);
     if (!user) return smAlert('Usuário não encontrado.');
     // Se o nome mudou, valida unicidade contra os outros usuarios
     if (nome.toLowerCase() !== (user.nome||'').toLowerCase()) {
@@ -16325,35 +16324,45 @@ async function salvarAcesso(mode, originalEmail) {
     // Supabase Auth — o login usa signInWithPassword). O reset real é feito via
     // Edge Function admin-usuarios (service_role) logo após salvar o perfil.
     if (senha && senha.length < 6) return smAlert('Senha deve ter no mínimo 6 caracteres.');
+
+    const salvo = await saveUser(user);
+    if (!salvo) return smAlert('Erro ao salvar no servidor. Tente novamente.');
+
+    // Redefinição de senha: o login valida contra o Supabase Auth, não contra
+    // usuarios.senha. A troca real passa pela Edge Function admin-usuarios
+    // (service_role, exige admin logado). Sem isto, a "nova senha" era gravada
+    // numa coluna morta e nunca funcionava no login.
+    if (senha) {
+      const { data: rr, error: re } = await sb.functions.invoke('admin-usuarios', {
+        body: { acao: 'reset', email: originalEmail, senha }
+      });
+      if (re || !rr || !rr.ok) {
+        document.getElementById('acesso-modal')?.remove();
+        await renderAdmin();
+        return smAlert('Perfil salvo, mas a SENHA não foi redefinida: '
+          + ((rr && rr.erro) || (re && re.message) || 'falha')
+          + '.\n\nO login usa o servidor de autenticação — tente de novo.');
+      }
+    }
   } else {
+    // CRIAÇÃO: passa pela Edge Function admin-usuarios (acao=criar), que cria o
+    // auth.users (service_role) E insere em usuarios de uma vez. NÃO usar saveUser
+    // aqui — ele só inseria em usuarios, sem criar a conta no Auth, e o usuário
+    // novo não conseguia logar (o login usa signInWithPassword). Corrigido 07/07/2026.
     if (email && users.find(u => (u.email||'').toLowerCase() === email)) return smAlert('E-mail já cadastrado.');
-    user = {
-      nome, email, senha: hashSenha(senha),
-      role: perfil === 'admin' ? 'admin' : 'usuario',
-      perfil,
-      modulosPermitidos: perfil === 'customizado' ? modulos : [],
-      status: 'aprovado',
-      criadoEm: new Date().toISOString(),
-    };
-  }
-
-  const salvo = await saveUser(user);
-  if (!salvo) return smAlert('Erro ao salvar no servidor. Tente novamente.');
-
-  // Redefinição de senha (só no modo edit): o login valida contra o Supabase
-  // Auth, não contra usuarios.senha. Então a troca real passa pela Edge Function
-  // admin-usuarios (service_role, exige admin logado). Sem isto, a "nova senha"
-  // era gravada numa coluna morta e nunca funcionava no login.
-  if (mode === 'edit' && senha) {
     const { data: rr, error: re } = await sb.functions.invoke('admin-usuarios', {
-      body: { acao: 'reset', email: originalEmail, senha }
+      body: {
+        acao: 'criar',
+        email, nome, senha,
+        role: perfil === 'admin' ? 'admin' : 'usuario',
+        perfil,
+        modulos_permitidos: perfil === 'customizado' ? modulos : [],
+      }
     });
     if (re || !rr || !rr.ok) {
-      document.getElementById('acesso-modal')?.remove();
-      await renderAdmin();
-      return smAlert('Perfil salvo, mas a SENHA não foi redefinida: '
+      return smAlert('Erro ao criar o acesso: '
         + ((rr && rr.erro) || (re && re.message) || 'falha')
-        + '.\n\nO login usa o servidor de autenticação — tente de novo.');
+        + '.\n\nTente de novo.');
     }
   }
 

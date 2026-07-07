@@ -97,16 +97,30 @@ Deno.serve(async (req) => {
       const email = String(body.email || "").toLowerCase();
       const nome = String(body.nome || email);
       if (!email) return json({ ok: false, erro: "email obrigatorio" }, 400);
-      const senha = senhaProvisoria();
+      // Senha custom (o admin digitou uma no modal) OU provisoria aleatoria.
+      // Custom -> vale direto (must_change=false). Provisoria -> forca a troca
+      // no 1o acesso. Mesma logica da acao 'reset'.
+      const custom = typeof body.senha === "string" && body.senha.length >= 6 ? body.senha : null;
+      const senha = custom || senhaProvisoria();
+      const mustChange = custom ? body.must_change === true : true;
       const { data: created, error } = await sb.auth.admin.createUser({
-        email, password: senha, email_confirm: true, user_metadata: { nome, must_change: true },
+        email, password: senha, email_confirm: true, user_metadata: { nome, must_change: mustChange },
       });
       if (error || !created?.user) return json({ ok: false, erro: error?.message || "falha" }, 400);
-      await sb.from("usuarios").insert({
+      // modulos_permitidos: coluna TEXT com JSON (perfil customizado). Front manda array.
+      const modulos = Array.isArray(body.modulos_permitidos) ? JSON.stringify(body.modulos_permitidos) : null;
+      const { error: insErr } = await sb.from("usuarios").insert({
         nome, email, senha: "auth", role: body.role || "usuario", perfil: body.perfil || null,
+        modulos_permitidos: modulos,
         status: "aprovado", auth_uid: created.user.id, criado_em: new Date().toISOString(),
       });
-      return json({ ok: true, email, senha });
+      if (insErr) {
+        // Rollback: sem a linha em usuarios, o auth.users viraria orfao (e travaria
+        // recriar com o mesmo email). Desfaz o createUser.
+        await sb.auth.admin.deleteUser(created.user.id);
+        return json({ ok: false, erro: insErr.message }, 400);
+      }
+      return json({ ok: true, email, senha, provisoria: !custom });
     }
 
     if (acao === "aprovar" || acao === "bloquear") {
