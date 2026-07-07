@@ -123,6 +123,23 @@ Deno.serve(async (req) => {
       return json({ ok: true, email, senha, provisoria: !custom });
     }
 
+    if (acao === "deletar") {
+      const email = String(body.email || "").toLowerCase();
+      if (!email) return json({ ok: false, erro: "email obrigatorio" }, 400);
+      // Remove a conta no Auth (se existir) E a linha em usuarios. O front nao
+      // tem service_role pra apagar o auth.users; deletar so a linha deixaria a
+      // conta orfa no Auth e travaria recriar com o mesmo e-mail.
+      const { data: list } = await sb.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      const alvo = (list?.users || []).find((x) => (x.email || "").toLowerCase() === email);
+      if (alvo) {
+        const { error: delErr } = await sb.auth.admin.deleteUser(alvo.id);
+        if (delErr) return json({ ok: false, erro: delErr.message }, 400);
+      }
+      const { error } = await sb.from("usuarios").delete().eq("email", email);
+      if (error) return json({ ok: false, erro: error.message }, 400);
+      return json({ ok: true, email });
+    }
+
     if (acao === "aprovar" || acao === "bloquear") {
       const email = String(body.email || "").toLowerCase();
       const status = acao === "aprovar" ? "aprovado" : "rejeitado";

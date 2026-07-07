@@ -16423,8 +16423,16 @@ async function tornarAdmin(email) {
 
 async function deletarUser(email) {
   if (!(await smConfirm(`Remover permanentemente o usuário ${email}?`))) return;
-  const { error } = await sb.from('usuarios').delete().eq('email', email);
-  if (error) console.warn('Erro deletarUser:', error.message);
+  // Remove a conta no Auth E a linha em usuarios via Edge Function admin-usuarios
+  // (service_role). O front não tem service_role pra apagar o auth.users; deletar
+  // só a linha deixaria a conta órfã no Auth e travaria recriar o mesmo e-mail.
+  const { data: rr, error: re } = await sb.functions.invoke('admin-usuarios', {
+    body: { acao: 'deletar', email }
+  });
+  if (re || !rr || !rr.ok) {
+    return smAlert('Erro ao remover o usuário: '
+      + ((rr && rr.erro) || (re && re.message) || 'falha') + '.');
+  }
   await renderAdmin();
 }
 
