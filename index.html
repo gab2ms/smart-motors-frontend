@@ -16321,10 +16321,10 @@ async function salvarAcesso(mode, originalEmail) {
     user.perfil = perfil;
     user.role   = perfil === 'admin' ? 'admin' : 'usuario';
     user.modulosPermitidos = perfil === 'customizado' ? modulos : [];
-    if (senha) {
-      if (senha.length < 6) return smAlert('Senha deve ter no mínimo 6 caracteres.');
-      user.senha = hashSenha(senha);
-    }
+    // A senha NÃO vai mais pra coluna usuarios.senha (morta desde a migração pro
+    // Supabase Auth — o login usa signInWithPassword). O reset real é feito via
+    // Edge Function admin-usuarios (service_role) logo após salvar o perfil.
+    if (senha && senha.length < 6) return smAlert('Senha deve ter no mínimo 6 caracteres.');
   } else {
     if (email && users.find(u => (u.email||'').toLowerCase() === email)) return smAlert('E-mail já cadastrado.');
     user = {
@@ -16339,9 +16339,28 @@ async function salvarAcesso(mode, originalEmail) {
 
   const salvo = await saveUser(user);
   if (!salvo) return smAlert('Erro ao salvar no servidor. Tente novamente.');
+
+  // Redefinição de senha (só no modo edit): o login valida contra o Supabase
+  // Auth, não contra usuarios.senha. Então a troca real passa pela Edge Function
+  // admin-usuarios (service_role, exige admin logado). Sem isto, a "nova senha"
+  // era gravada numa coluna morta e nunca funcionava no login.
+  if (mode === 'edit' && senha) {
+    const { data: rr, error: re } = await sb.functions.invoke('admin-usuarios', {
+      body: { acao: 'reset', email: originalEmail, senha }
+    });
+    if (re || !rr || !rr.ok) {
+      document.getElementById('acesso-modal')?.remove();
+      await renderAdmin();
+      return smAlert('Perfil salvo, mas a SENHA não foi redefinida: '
+        + ((rr && rr.erro) || (re && re.message) || 'falha')
+        + '.\n\nO login usa o servidor de autenticação — tente de novo.');
+    }
+  }
+
   document.getElementById('acesso-modal')?.remove();
   await renderAdmin();
-  smAlert('Acesso ' + (mode === 'edit' ? 'atualizado' : 'criado') + '!');
+  smAlert('Acesso ' + (mode === 'edit' ? 'atualizado' : 'criado')
+    + (mode === 'edit' && senha ? ' — senha redefinida' : '') + '!');
 }
 
 async function alterarCodigo() {

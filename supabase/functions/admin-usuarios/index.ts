@@ -79,9 +79,18 @@ Deno.serve(async (req) => {
       const { data: list } = await sb.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const alvo = (list?.users || []).find((x) => (x.email || "").toLowerCase() === email);
       if (!alvo) return json({ ok: false, erro: "usuario nao encontrado" }, 404);
-      const senha = senhaProvisoria();
-      await sb.auth.admin.updateUserById(alvo.id, { password: senha, user_metadata: { ...(alvo.user_metadata || {}), must_change: true } });
-      return json({ ok: true, email, senha });
+      // Senha custom (o admin digitou uma) OU provisoria aleatoria.
+      // Custom -> vale direto (must_change=false, a nao ser que peca true).
+      // Provisoria -> forca a troca no proximo acesso (fluxo de 1o acesso).
+      const custom = typeof body.senha === "string" && body.senha.length >= 6 ? body.senha : null;
+      const senha = custom || senhaProvisoria();
+      const mustChange = custom ? body.must_change === true : true;
+      const { error } = await sb.auth.admin.updateUserById(alvo.id, {
+        password: senha,
+        user_metadata: { ...(alvo.user_metadata || {}), must_change: mustChange },
+      });
+      if (error) return json({ ok: false, erro: error.message }, 400);
+      return json({ ok: true, email, senha, provisoria: !custom });
     }
 
     if (acao === "criar") {
