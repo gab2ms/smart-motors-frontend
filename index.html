@@ -2854,6 +2854,8 @@ select:not(.input-pro):not(.search-input){
           </div>
         </div>
       </div>
+      <!-- Ponto de equilíbrio (custo fixo mensal + quantas vendas cobrem a estrutura) -->
+      <div id="co-equilibrio" style="margin-bottom:22px;"></div>
       <!-- Seções (Fixos / Variáveis / Inativos) -->
       <div id="custos-secoes"></div>
     </div>
@@ -8114,13 +8116,23 @@ function _periodoRange(p) {
   }
 }
 
-// Agregador principal — consumido pela aba Custos Operacionais (Sub-commit C).
-// Lê lancamentos, exclui categorias não-operacionais (_DRE_CATEGORIAS_FORA_
-// DESPESA), agrupa por categoria, classifica fixo/variável/indefinido e
-// separa as inativas (sem lançamento nos últimos 2 meses).
+// Lookup categoria(nome) → natureza de custo (classificação MANUAL do cadastro
+// categorias_lancamento.natureza). É a fonte da verdade da aba desde 08/07/2026,
+// no lugar da antiga heurística de variância — que agora só gera ALARME.
+function _naturezaDaCategoria(nome) {
+  const c = (categoriasLancamento || []).find(x => (x.nome || '') === nome);
+  return c?.natureza || null;   // 'fixo'|'semifixo'|'variavel'|'nao_recorrente'|null
+}
+
+// Agregador principal — consumido pela aba Custos Operacionais.
+// Lê lancamentos, exclui não-operacionais (_DRE_CATEGORIAS_FORA_DESPESA), agrupa
+// por categoria e classifica pela NATUREZA cadastrada (fixo/semifixo/variável/
+// não-recorrente). A variância mensal NÃO classifica mais — vira só um alerta de
+// anomalia (ex.: categoria fixa que oscilou → pode faltar lançamento). Categoria
+// sem natureza cai em 'semNatureza' (a classificar). Não-recorrente fica FORA do
+// total recorrente. Inativas = sem lançamento há 2+ meses.
 function calcularCustosOperacionais(periodo) {
   // Aceita preset string ('mes-atual'/'mes-anterior'/...) OU range {iniISO, fimISO}.
-  // Compat: chamadas existentes continuam funcionando.
   let ini, fim;
   if (periodo && typeof periodo === 'object' && periodo.iniISO && periodo.fimISO) {
     ini = periodo.iniISO; fim = periodo.fimISO;
@@ -8144,28 +8156,38 @@ function calcularCustosOperacionais(periodo) {
     if ((l.data || '') >= ini && (l.data || '') <= fim) c.doPeriodo.push(l);
   }
 
-  const fixos = [], variaveis = [], indefinidos = [], inativos = [];
+  const fixos = [], semifixos = [], variaveis = [], naoRecorrentes = [], semNatureza = [], inativos = [];
   for (const c of Object.values(cats)) {
     if (c.ultimaData < limISO) {
       inativos.push({ categoria: c.categoria, ultimoLancamento: c.ultimaData || null });
       continue;
     }
     const total = c.doPeriodo.reduce((s, l) => s + (l.valor || 0), 0);
+    const natureza = _naturezaDaCategoria(c.categoria);
+    // Alarme (não classifica): categoria FIXA cujos totais mensais oscilam >5%
+    // sinaliza possível lançamento faltante ou valor atípico — só pra conferência.
     const totaisMensais = Object.keys(c.meses).sort().slice(-3).map(m => c.meses[m]);
-    const classe = classificarFixoVariavel(totaisMensais);
+    const alerta = (natureza === 'fixo' && classificarFixoVariavel(totaisMensais) === 'variavel');
     const item = { categoria: c.categoria, total, n: c.doPeriodo.length,
-      subitens: agruparPorDescricao(c.doPeriodo), classificacao: classe };
-    (classe === 'fixo' ? fixos : classe === 'variavel' ? variaveis : indefinidos).push(item);
+      subitens: agruparPorDescricao(c.doPeriodo), classificacao: natureza || 'indefinido', alerta };
+    if      (natureza === 'fixo')           fixos.push(item);
+    else if (natureza === 'semifixo')       semifixos.push(item);
+    else if (natureza === 'variavel')       variaveis.push(item);
+    else if (natureza === 'nao_recorrente') naoRecorrentes.push(item);
+    else                                    semNatureza.push(item);
   }
   const ordena = a => a.sort((x, y) => y.total - x.total);
   const soma = a => a.reduce((s, x) => s + x.total, 0);
-  ordena(fixos); ordena(variaveis); ordena(indefinidos);
+  [fixos, semifixos, variaveis, naoRecorrentes, semNatureza].forEach(ordena);
   return {
     periodo: { iniISO: ini, fimISO: fim },
-    fixos, variaveis, indefinidos, inativos,
-    totalFixo: soma(fixos), totalVariavel: soma(variaveis),
-    totalIndefinido: soma(indefinidos),
-    total: soma(fixos) + soma(variaveis) + soma(indefinidos),
+    fixos, semifixos, variaveis, naoRecorrentes, semNatureza, inativos,
+    indefinidos: semNatureza,   // compat com o export (aba 4 do Fechamento)
+    totalFixo: soma(fixos), totalSemifixo: soma(semifixos),
+    totalVariavel: soma(variaveis), totalNaoRecorrente: soma(naoRecorrentes),
+    totalSemNatureza: soma(semNatureza), totalIndefinido: soma(semNatureza),
+    // 'total' = custo recorrente do período (NÃO inclui não-recorrente).
+    total: soma(fixos) + soma(semifixos) + soma(variaveis) + soma(semNatureza),
   };
 }
 
@@ -9109,7 +9131,7 @@ function _coLinhaCategoria(item, selo){
   return `<div>
       <div class="co-cat-row" data-cat="${escHtml(item.categoria)}" onclick="toggleCustoCat(this.dataset.cat)"
         style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 8px;cursor:pointer;border-bottom:1px solid var(--border);">
-        <span style="font-size:13px;font-weight:600;">${selo} ${escHtml(item.categoria)}</span>
+        <span style="font-size:13px;font-weight:600;">${selo} ${escHtml(item.categoria)}${item.alerta ? ` <span title="Categoria fixa cujo total oscilou entre os meses — confira se faltou lançar algo ou houve valor atípico." style="cursor:help;">⚠️</span>` : ''}</span>
         <span style="display:flex;align-items:center;gap:12px;">
           <span class="td-mono" style="font-weight:700;">${fmt(item.total)}</span>
           <span style="font-size:10px;color:var(--text3);">${aberto ? '▲' : '▼'}</span>
@@ -9120,13 +9142,13 @@ function _coLinhaCategoria(item, selo){
 function renderCustos(){
   const co = calcularCustosOperacionais(_custosPeriodo);
 
-  // Banner de "análise em construção" (histórico < 3 meses completos)
-  const nMeses = _despPlanejadoHistorico().nMeses;
+  // Banner: avisa só quando há categoria operacional SEM natureza definida.
   const banner = document.getElementById('custos-banner');
   if (banner){
-    if (nMeses < 3){
+    const nSem = co.semNatureza.length;
+    if (nSem){
       banner.style.display = '';
-      banner.innerHTML = `<b>Análise inteligente em construção</b> — base de ${nMeses} mês${nMeses===1?'':'es'} completo${nMeses===1?'':'s'}, precisão limitada. Mais histórico melhora a classificação fixo/variável (estimativa: ~agosto/2026 pra análise robusta).`;
+      banner.innerHTML = `<b>${nSem} categoria${nSem===1?'':'s'} sem classificação</b> — defina a natureza (fixo · semifixo · variável · não-recorrente) no cadastro de categorias pra ${nSem===1?'ela entrar':'elas entrarem'} certo na análise.`;
     } else banner.style.display = 'none';
   }
 
@@ -9146,19 +9168,22 @@ function renderCustos(){
       }).join('');
   }
 
-  // Cards — o card Variável inclui os Indefinidos (Fixo + Variável = Total)
-  const variavelCard = co.totalVariavel + co.totalIndefinido;
-  const nVarCats = co.variaveis.length + co.indefinidos.length;
+  // Cards: Fixos+Semifixos (estrutura comprometida) | Variáveis+A classificar |
+  // Total recorrente | Custo por venda. Soma dos dois primeiros = Total.
+  const fixoCard = co.totalFixo + co.totalSemifixo;
+  const varCard  = co.totalVariavel + co.totalSemNatureza;
+  const nVarCats = co.variaveis.length + co.semNatureza.length;
   const inp = document.getElementById('vendas-mes-input');
   if (inp && document.activeElement !== inp) inp.value = vendasMesConfig.valor;
   const vm = parseInt(inp?.value) || vendasMesConfig.valor || 40;
   const set = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
-  set('co-card-fixo', fmt(co.totalFixo));
-  set('co-card-fixo-sub', `${co.fixos.length} categoria${co.fixos.length===1?'':'s'}`);
-  set('co-card-var', fmt(variavelCard));
+  set('co-card-fixo', fmt(fixoCard));
+  set('co-card-fixo-sub', `${co.fixos.length} fixo${co.fixos.length===1?'':'s'}${co.semifixos.length?` · ${co.semifixos.length} semifixo${co.semifixos.length===1?'':'s'}`:''}`);
+  set('co-card-var', fmt(varCard));
   set('co-card-var-sub', `${nVarCats} categoria${nVarCats===1?'':'s'}`);
   set('co-card-total', fmt(co.total));
-  set('co-card-total-sub', _CO_PERIODOS.find(p=>p.id===_custosPeriodo)?.label || '');
+  const perLbl = _CO_PERIODOS.find(p=>p.id===_custosPeriodo)?.label || '';
+  set('co-card-total-sub', perLbl + (co.totalNaoRecorrente>0 ? ` · +${fmt(co.totalNaoRecorrente)} não-recorrente` : ''));
   set('co-card-cpv', fmt(vm > 0 ? co.total / vm : 0));
 
   // Seções
@@ -9166,18 +9191,18 @@ function renderCustos(){
     + `letter-spacing:0.8px;color:${cor};margin:18px 0 4px;">${txt}</div>`;
   const cardWrap = h => `<div class="card" style="padding:8px 14px;">${h}</div>`;
   const vazio = txt => `<div style="font-size:12px;color:var(--text3);padding:12px 8px;">${txt}</div>`;
+  const bloco = (titulo, cor, selo, arr) => arr.length
+    ? tituloSec(titulo, cor) + cardWrap(arr.map(it => _coLinhaCategoria(it, selo)).join('')) : '';
 
   let html = '';
-  html += tituloSec('🟦 Custos Fixos (mesmo valor todo mês)', '#3a86ff');
-  html += cardWrap(co.fixos.length
-    ? co.fixos.map(it => _coLinhaCategoria(it, '🟦')).join('')
-    : vazio('Nenhum custo fixo identificado neste período.'));
-  html += tituloSec('🟧 Custos Variáveis (escala com a atividade)', 'var(--orange)');
-  const varRows = co.variaveis.map(it => _coLinhaCategoria(it, '🟧'))
-    .concat(co.indefinidos.map(it => _coLinhaCategoria(it, '⬜')));
-  html += cardWrap(varRows.length
-    ? varRows.join('')
-    : vazio('Nenhum custo variável neste período.'));
+  html += bloco('🟦 Custos Fixos (estrutura comprometida)', '#3a86ff', '🟦', co.fixos);
+  html += bloco('🟨 Semifixos (parte fixa + parte variável)', '#f5c518', '🟨', co.semifixos);
+  html += bloco('🟧 Custos Variáveis (escala com a atividade)', 'var(--orange)', '🟧', co.variaveis);
+  html += bloco('⬜ A classificar (defina a natureza no cadastro de categorias)', 'var(--text3)', '⬜', co.semNatureza);
+  if (!co.fixos.length && !co.semifixos.length && !co.variaveis.length && !co.semNatureza.length)
+    html += cardWrap(vazio('Nenhum custo operacional neste período.'));
+  // Não-recorrentes: FORA do total do mês (gasto único/eventual).
+  html += bloco('🟪 Não-recorrentes (gasto único — fora do custo do mês)', '#a855f7', '🟪', co.naoRecorrentes);
   if (co.inativos.length){
     html += tituloSec('Inativos (sem lançamento há 2+ meses)', 'var(--text3)');
     html += cardWrap(co.inativos.map(i =>
@@ -9187,6 +9212,90 @@ function renderCustos(){
   }
   const sec = document.getElementById('custos-secoes');
   if (sec) sec.innerHTML = html;
+
+  renderPontoEquilibrio();   // painel async — LÊ o DRE, não altera nada
+}
+
+// Custo fixo mensal médio (fixos + semifixos) dos últimos ≤3 meses COMPLETOS —
+// exclui o mês corrente parcial (senão subestima). Base do ponto de equilíbrio.
+function _custoFixoMensalMedio() {
+  const ehFixoSemi = cat => {
+    const n = _naturezaDaCategoria(cat);
+    return n === 'fixo' || n === 'semifixo';
+  };
+  const totaisPorMes = {};
+  for (const l of (lancamentos || [])) {
+    if (l.tipo !== 'saida' || l.transferenciaId) continue;
+    if (_DRE_CATEGORIAS_FORA_DESPESA.includes(l.categoria)) continue;
+    if (!ehFixoSemi(l.categoria)) continue;
+    const mes = (l.data || '').slice(0, 7);
+    if (!mes) continue;
+    totaisPorMes[mes] = (totaisPorMes[mes] || 0) + (l.valor || 0);
+  }
+  const mesCorrente = new Date().toISOString().slice(0, 7);
+  const meses = Object.keys(totaisPorMes).filter(m => m < mesCorrente).sort().reverse().slice(0, 3);
+  if (!meses.length) return { media: 0, nMeses: 0, meses: [] };
+  const soma = meses.reduce((s, m) => s + totaisPorMes[m], 0);
+  return { media: soma / meses.length, nMeses: meses.length, meses };
+}
+
+// Painel do ponto de equilíbrio: quantas vendas/mês cobrem a estrutura fixa.
+// Custo fixo = média mensal (fixos+semifixos); margem de contribuição e ticket
+// vêm do DRE dos MESMOS meses completos (read-only — não altera o DRE).
+async function renderPontoEquilibrio() {
+  const wrap = document.getElementById('co-equilibrio');
+  if (!wrap) return;
+  const cf = _custoFixoMensalMedio();
+  if (!cf.nMeses) { wrap.innerHTML = ''; return; }
+  const cfMeses = cf.meses.slice().sort();
+  const ini = cfMeses[0] + '-01';
+  const [fy, fm] = cfMeses[cfMeses.length - 1].split('-').map(Number);
+  const fim = new Date(fy, fm, 0).toISOString().slice(0, 10);   // último dia do último mês
+  let dre;
+  try { dre = await calcularDRE(ini, fim); } catch (e) { wrap.innerHTML = ''; return; }
+
+  const receita  = dre.receita || 0;
+  const nVendas  = (dre.pedidos || []).length;
+  const mcPct    = receita > 0 ? (dre.lucroBruto / receita) : 0;   // margem de contribuição (margem bruta)
+  const ticket   = nVendas > 0 ? receita / nVendas : 0;
+  const vendasMes = nVendas / cf.nMeses;
+  const cfMensal  = cf.media;
+  const mcPorVenda = ticket * mcPct;
+
+  const mini = (lbl, val, cor) =>
+      `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;">`
+    + `<div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">${lbl}</div>`
+    + `<div style="font-size:16px;font-weight:800;color:${cor || 'var(--text)'};margin-top:3px;font-family:'JetBrains Mono',monospace;">${val}</div></div>`;
+
+  let corpo;
+  if (mcPct <= 0 || ticket <= 0) {
+    corpo = `<div style="font-size:12px;color:var(--text3);">Custo fixo mensal de <b style="color:var(--text);">${fmt(cfMensal)}</b>, `
+      + `mas não há vendas suficientes nesses ${cf.nMeses === 1 ? 'meses' : cf.nMeses + ' meses'} pra calcular a margem e o ponto de equilíbrio.</div>`;
+  } else {
+    const peVendas = mcPorVenda > 0 ? cfMensal / mcPorVenda : 0;
+    const peFat    = cfMensal / mcPct;
+    const acima    = vendasMes >= peVendas;
+    const folga    = Math.abs(vendasMes - peVendas);
+    corpo = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px;">`
+      + mini('Custo fixo mensal', fmt(cfMensal), '#3a86ff')
+      + mini('Margem de contribuição', (mcPct * 100).toFixed(1) + '%', 'var(--gold)')
+      + mini('Ticket médio', fmt(ticket))
+      + mini('Vendas hoje', '≈ ' + vendasMes.toFixed(1) + '/mês')
+      + `</div>`
+      + `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px 16px;line-height:1.6;font-size:13px;">`
+      +   `Pra cobrir a estrutura fixa você precisa vender <b style="color:var(--gold);font-size:15px;">≈ ${Math.ceil(peVendas)} scooters/mês</b> `
+      +   `(${fmt(peFat)} de faturamento). Cada venda acima disso contribui <b style="color:var(--green);">${fmt(mcPorVenda)}</b> de lucro.`
+      +   `<div style="margin-top:8px;font-size:12px;color:${acima ? 'var(--green)' : 'var(--red)'};font-weight:700;">`
+      +     (acima
+              ? `✅ No ritmo atual (≈ ${vendasMes.toFixed(1)}/mês) você está ~${folga.toFixed(1)} vendas/mês ACIMA do equilíbrio.`
+              : `⚠️ No ritmo atual (≈ ${vendasMes.toFixed(1)}/mês) faltam ~${folga.toFixed(1)} vendas/mês pra cobrir a estrutura.`)
+      +   `</div></div>`;
+  }
+
+  wrap.innerHTML = `<div class="card" style="padding:16px 18px;">`
+    + `<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.8px;color:var(--gold);margin-bottom:12px;">`
+    +   `⚖️ Ponto de equilíbrio <span style="color:var(--text3);font-weight:600;text-transform:none;letter-spacing:0;">· base: ${cf.nMeses} ${cf.nMeses === 1 ? 'mês completo' : 'meses completos'}</span></div>`
+    + corpo + `</div>`;
 }
 
 // Persiste o valor de "vendas/mês" em config_custos (chave 'vendas_mes').
@@ -25160,6 +25269,7 @@ function abrirCategoriaModal(catId) {
   const isEdit = !!c;
   const tipo = c?.tipo || 'saida';
   const corSel = c?.cor || '';
+  const nat = c?.natureza || '';
   const shell = document.createElement('div');
   shell.id = 'cat-modal';
   shell.className = 'modal-overlay open';
@@ -25173,6 +25283,15 @@ function abrirCategoriaModal(catId) {
     +     `<div class="form-group full"><label>Nome</label><input class="form-input" id="cat-nome" type="text" value="${escHtml(c?.nome||'').replace(/"/g,'&quot;')}" placeholder="Nome da categoria"></div>`
     +     `<div class="form-group full"><label>Tipo</label><div style="display:flex;gap:18px;padding-top:5px;">${radio('entrada','Entrada')}${radio('saida','Saída')}${radio('ambos','Ambos')}</div></div>`
     +     `<div class="form-group full"><label>Cor (opcional)</label><div id="cat-cores" style="display:flex;gap:8px;flex-wrap:wrap;padding-top:5px;">${swatch('',true)}${CAT_CORES.map(cor => swatch(cor,false)).join('')}</div><input type="hidden" id="cat-cor" value="${escHtml(corSel)}"></div>`
+    +     `<div class="form-group full"><label>Natureza do custo (aba Custos Operacionais)</label>`
+    +       `<select class="form-input" id="cat-natureza">`
+    +         `<option value=""${nat===''?' selected':''}>— não classificar —</option>`
+    +         `<option value="fixo"${nat==='fixo'?' selected':''}>Fixo — mesmo compromisso todo mês (aluguel, salário)</option>`
+    +         `<option value="semifixo"${nat==='semifixo'?' selected':''}>Semifixo — parte fixa + parte variável (energia, veículo)</option>`
+    +         `<option value="variavel"${nat==='variavel'?' selected':''}>Variável — escala com a atividade (comissão, peças)</option>`
+    +         `<option value="nao_recorrente"${nat==='nao_recorrente'?' selected':''}>Não-recorrente — gasto único/eventual (obra, evento)</option>`
+    +       `</select>`
+    +       `<div style="font-size:11px;color:var(--text3);margin-top:4px;">Classifica a categoria na aba Custos Operacionais. Não altera o DRE.</div></div>`
     +     `<div class="form-group full" style="font-size:12px;"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="cat-ativa"${c?.ativa!==false?' checked':''}> Ativa (aparece em novos lançamentos)</label></div>`
     +   `</div>`
     +   `<div class="modal-actions">`
@@ -25204,6 +25323,7 @@ async function _salvarCategoria() {
   const tipo  = document.querySelector('#cat-modal input[name="cat-tipo"]:checked')?.value || 'saida';
   const ativa = !!document.getElementById('cat-ativa')?.checked;
   const cor   = (document.getElementById('cat-cor')?.value || '') || null;
+  const natureza = (document.getElementById('cat-natureza')?.value || '') || null;
 
   if (!nome) { smAlert('Informe o nome da categoria.'); return; }
   const dup = categoriasLancamento.find(x => x.id !== catId && (x.nome||'').toLowerCase() === nome.toLowerCase());
@@ -25221,7 +25341,7 @@ async function _salvarCategoria() {
   if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
   try {
     if (isEdit) {
-      const { error } = await sb.from('categorias_lancamento').update({ nome, tipo, ativa, cor }).eq('id', catId);
+      const { error } = await sb.from('categorias_lancamento').update({ nome, tipo, ativa, cor, natureza }).eq('id', catId);
       if (error) throw new Error(error.code === '23505' ? `Já existe uma categoria "${nome}".` : 'Erro ao salvar: ' + error.message);
       // Edição de nome é retroativa: propaga pra todos os lançamentos antigos.
       if (renomeando) {
@@ -25230,7 +25350,7 @@ async function _salvarCategoria() {
         (lancamentos || []).forEach(l => { if (l.categoria === c.nome) l.categoria = nome; });
       }
     } else {
-      const { error } = await sb.from('categorias_lancamento').insert({ nome, tipo, ativa, cor });
+      const { error } = await sb.from('categorias_lancamento').insert({ nome, tipo, ativa, cor, natureza });
       if (error) throw new Error(error.code === '23505' ? `Já existe uma categoria "${nome}".` : 'Erro ao criar: ' + error.message);
     }
     document.getElementById('cat-modal')?.remove();
