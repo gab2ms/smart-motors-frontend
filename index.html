@@ -8054,22 +8054,32 @@ async function calcularDRE(iniISO, fimISO) {
 // ══════════════════════════════════════════
 // Substitui o cadastro estático custos_fixos: a fonte é lancamentos.
 
-// Custo Fixo Planejado do DRE: média da despesa operacional dos últimos
-// ≤3 meses-calendário COMPLETOS (o mês corrente parcial fica fora, senão
-// subestima). Retorna { media, nMeses } — nMeses alimenta o aviso "base: N".
+// Custo Fixo Planejado do DRE: média mensal do custo RECORRENTE dos últimos ≤3
+// meses-calendário completos. Exclui: não-operacionais (lista do DRE), o mês
+// corrente parcial, os custos NÃO-RECORRENTES (natureza 'nao_recorrente' — obra,
+// eventos: gasto único não infla a projeção) e o mês de início do sistema quando
+// ele é parcial (1º lançamento depois do dia 5 → meia folha subestima).
+// É só uma linha de REFERÊNCIA — não entra no cálculo do resultado/lucro do DRE.
 function _despPlanejadoHistorico() {
   const totaisPorMes = {};
+  let primeiraData = '';
   for (const l of (lancamentos || [])) {
     if (l.tipo !== 'saida' || l.transferenciaId) continue;
+    const data = l.data || '';
+    if (data && (!primeiraData || data < primeiraData)) primeiraData = data;
     if (_DRE_CATEGORIAS_FORA_DESPESA.includes(l.categoria)) continue;
-    const mes = (l.data || '').slice(0, 7);
+    if (_naturezaDaCategoria(l.categoria) === 'nao_recorrente') continue;
+    const mes = data.slice(0, 7);
     if (!mes) continue;
     totaisPorMes[mes] = (totaisPorMes[mes] || 0) + (l.valor || 0);
   }
   const mesCorrente = new Date().toISOString().slice(0, 7);
+  // Mês de início do sistema é parcial se o 1º lançamento caiu depois do dia 5.
+  const mesInicioParcial = (primeiraData && parseInt(primeiraData.slice(8, 10), 10) > 5)
+    ? primeiraData.slice(0, 7) : null;
   const meses = Object.keys(totaisPorMes)
-    .filter(m => m < mesCorrente)        // exclui o mês corrente parcial
-    .sort().reverse().slice(0, 3);       // últimos ≤3 meses completos com dado
+    .filter(m => m < mesCorrente && m !== mesInicioParcial)
+    .sort().reverse().slice(0, 3);       // últimos ≤3 meses completos e recorrentes
   if (!meses.length) return { media: 0, nMeses: 0 };
   const soma = meses.reduce((s, m) => s + totaisPorMes[m], 0);
   return { media: soma / meses.length, nMeses: meses.length };
