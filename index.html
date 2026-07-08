@@ -11378,7 +11378,10 @@ const TODOS_MODULOS = [
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
-  vendedor:    ['dashboard', 'vendas', 'estoque', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'afiliados', 'clientes', 'contratos', 'pdv'],
+  // Perfil padrão de Vendedor — DEVE ficar idêntico ao ramo 'vendedor' da função
+  // tem_modulo no banco (migração tem_modulo_perfil_vendedor). Mudou aqui, muda lá.
+  // Sem financeiro/custos/preços/afiliados (não vê comissão/custo/margem/lucro).
+  vendedor:    ['dashboard', 'vendas', 'estoque', 'localizacao', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'clientes', 'contratos', 'pdv', 'crm'],
   // 'crm' no operacional espelha a função tem_modulo do banco (migração crm_modulo_permissoes)
   operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'localizacao', 'vendas', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'afiliados', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv', 'crm'],
   customizado: null, // usa user.modulosPermitidos
@@ -16406,7 +16409,7 @@ function _abrirAcessoModal({ mode, user }) {
     +   '<div class="form-group full"><label>Perfil</label>'
     +     '<select class="form-input" id="acm-perfil" onchange="document.getElementById(\'acm-modulos-wrap\').style.display=this.value===\'customizado\'?\'block\':\'none\';">'
     +       '<option value="admin"' + (perfilSel==='admin'?' selected':'') + '>Admin — todos os módulos</option>'
-    +       '<option value="vendedor"' + (perfilSel==='vendedor'?' selected':'') + '>Vendedor — Dashboard, Pedidos, Oficina, SAC, Clientes</option>'
+    +       '<option value="vendedor"' + (perfilSel==='vendedor'?' selected':'') + '>Vendedor — vendas, estoque, pedidos, oficina/SAC, montagens, clientes, PDV, CRM (sem financeiro/custo)</option>'
     +       '<option value="operacional"' + (perfilSel==='operacional'?' selected':'') + '>Operacional — tudo menos Admin</option>'
     +       '<option value="customizado"' + (perfilSel==='customizado'?' selected':'') + '>Customizado — escolher módulos</option>'
     +     '</select>'
