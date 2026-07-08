@@ -172,6 +172,12 @@ função antiga). Migração `afiliados_materiais_ficha_tecnica` APLICADA em pro
 - **Edge Function v2 (`?acao=dados` estendida + `?acao=materiais` nova):** vitrine ganha id,
   precoSugerido, comissaoMinimo/Sugerido, fichaTecnica, condicoesPagamento, qtdImagens/qtdArquivos;
   resposta ganha `gerais` + `escala`. Allowlist mantida (nada de custo/lucro).
+- **Acesso rápido ao portal na tela de Afiliados (08/07/2026, ✅ no ar):** bloco fixo no topo do
+  módulo Afiliados (`index.html`, dentro de `#page-afiliados`, **antes** das `.fin-tabs` → visível
+  em todas as 4 abas) com o link `https://smartmotorsapp.com.br/portal.html`, botão **Abrir** (nova
+  aba) e **Copiar link** (reusa `_cpCopiar`, mesmo padrão dos boletos). Objetivo: a loja copiar e
+  mandar pros afiliados vinculados no WhatsApp. **O link é único/genérico** (login do portal é por
+  nome-ou-e-mail + telefone cadastrados; não há URL por afiliado/token na mão do vendedor).
 - **Validação (08/07):** banco conferido via MCP (colunas/tabela/bucket/4 policies/seed);
   portal com dados mock (cards/copiar/indisponíveis, 0 erro de console); admin ao vivo com a sessão
   do dono (salvar textos → upload PNG → signed URL HTTP 200 → remover → tudo revertido); advisors
@@ -192,6 +198,9 @@ função antiga). Migração `afiliados_materiais_ficha_tecnica` APLICADA em pro
 - **Auditoria original (3 agentes):** `~/projetos/Smart Motors/documentos/auditoria-custos-fixo-variavel-2026-07.md`. Contexto de negócio (obra = prejuízo esporádico; quiosque = escambo por venda de moto) em `~/projetos/Smart Motors/_memoria/empresa.md`.
 
 ## Histórico de mudanças
+
+### 2026-07-08 — Afiliados: botão de acesso rápido ao portal na própria tela
+A pedido do dono, a tela **Afiliados** ganhou um bloco de **acesso rápido ao portal** no topo (acima das abas, visível em todas): link `https://smartmotorsapp.com.br/portal.html` + botão **Abrir** (nova aba) e **Copiar link** (reusa `_cpCopiar`). Objetivo: a loja copiar e mandar pros afiliados vinculados no WhatsApp sem sair do sistema. Só front (12 linhas em `index.html`, dentro de `#page-afiliados`), sem banco/Edge Function. Validado no localhost via DevTools (bloco renderiza, href/target/rel/onclick corretos, ícones `ic-link`/`ic-clipboard` no sprite, 0 erro de console; screenshot na sessão logada do dono). **✅ Commit `bf4371f` pushed → GitHub Pages (no ar).** Ver seção **"Painel de Afiliados"**.
 
 ### 2026-07-08 — "Vendedor" vira perfil padrão de verdade (era `customizado` por workaround)
 O dono personalizou o acesso do **Henrique** (perfil `customizado`) e pediu pra isso virar o **perfil padrão de Vendedor** aplicado a todos os vendedores. **Causa de estarem em `customizado`:** a função de RLS `tem_modulo` só tinha ramos `admin`/`operacional`/`customizado` — perfil `vendedor` caía no `else false` (RLS negava tudo), então usar o perfil literal quebrava o banco; a UI de acesso já tinha a opção "Vendedor", só faltava o banco reconhecer. **Fix (completa a arquitetura):** (1) migração **`tem_modulo_perfil_vendedor`** adiciona o ramo `when u.perfil='vendedor' then p_modulo = any(array[...12 módulos...])` (demais ramos intactos); (2) **`PERFIS_DEFAULT_MODULOS.vendedor`** (index.html ~11381) atualizado pros mesmos 12 módulos (**adicionou `localizacao` e `crm`, removeu `afiliados`** — o default antigo tinha afiliados, risco latente de expor comissão que o QA de 28/06 apontou → resolvido) + rótulo do selector corrigido; (3) **Henrique, Rafael, Samuel e Michelle** → `perfil='vendedor'`, `role='usuario'`, `modulos_permitidos='[]'` (via MCP). **Rafael e Samuel GANHARAM o módulo `localizacao`** (o Henrique tinha, eles não) — intencional, "todos idênticos". **Michelle** (o dono corrigiu logo depois: ela também é vendedora — antes `customizado` + `contas-receber`, email `operacional_michelle@`) virou `vendedor` padrão e **PERDEU o `contas-receber`** (decisão do dono: todos exatamente iguais). Eduardo (operacional/rejeitado) **não foi tocado**. **Fonte única:** mudar o perfil de vendedor agora = editar `PERFIS_DEFAULT_MODULOS.vendedor` + o array do `tem_modulo` (manter os dois iguais). **Validado:** RLS testado com o contexto de auth real do Henrique (libera dashboard/vendas/estoque/localizacao/oficina-sac/crm/pdv; **bloqueia** financeiro/afiliados/contas-receber/custos/precos); front no localhost (`modulosPermitidos` do vendedor == banco, `_podeVerCusto()=false`, 0 erro de console). **✅ Banco em produção (MCP) + front commit pushed → GitHub Pages.**
