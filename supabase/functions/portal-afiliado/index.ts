@@ -7,8 +7,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Nada de custo, fornecedor, quantidade de estoque, outros afiliados ou outras tabelas.
 //
 // Endpoints (via ?acao=):
-//   login  — body { identificador, telefone } → { token, afiliado:{id,nome} }
-//   dados  — header Authorization: Bearer <token> → { vitrine[], pedidos[], totais }
+//   login     — body { identificador, telefone } → { token, afiliado:{id,nome} }
+//   dados     — header Authorization: Bearer <token> → { vitrine[], pedidos[], totais, gerais }
+//   materiais — header Authorization + ?modelo=<produto_precos_id> OU ?geral=1
+//               → { materiais: [{id,tipo,titulo,nome,tamanho,url}] } (signed URLs 1h)
 //
 // Secrets necessários (Settings → Edge Functions):
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (default nas functions) e PORTAL_SECRET.
@@ -72,10 +74,12 @@ async function readToken(secret: string, token: string): Promise<{ afiliadoId: s
 
 // ── Comissão escalonada por unidade (réplica de _aflComissaoEscalonadaUnit no
 //    index.html — mantenha as duas em sincronia). Vendeu no/abaixo do mínimo →
-//    faixas=0 → comissão = base. ──
-function comissaoUnit(valorUnit: number, precoMin: number, cfg: { base: number; incremento: number; passo: number }): number {
+//    faixas=0 → comissão = base. Teto (quando configurado) trava a comissão. ──
+type CfgComissao = { base: number; incremento: number; passo: number; teto: number | null };
+function comissaoUnit(valorUnit: number, precoMin: number, cfg: CfgComissao): number {
   const faixas = Math.max(0, Math.floor(((valorUnit || 0) - (precoMin || 0)) / (cfg.passo || 100)));
-  return cfg.base + cfg.incremento * faixas;
+  const c = cfg.base + cfg.incremento * faixas;
+  return cfg.teto != null ? Math.min(c, cfg.teto) : c;
 }
 
 const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
@@ -124,17 +128,35 @@ Deno.serve(async (req: Request) => {
 
       // Escala global da comissão.
       const { data: ccRows } = await sb.from("config_custos").select("chave,valor")
-        .in("chave", ["afiliado_comissao_base", "afiliado_comissao_incremento", "afiliado_comissao_passo"]);
-      const ccMap = new Map((ccRows || []).map((r) => [r.chave, Number(r.valor)]));
-      const cfg = {
+        .in("chave", ["afiliado_comissao_base", "afiliado_comissao_incremento", "afiliado_comissao_passo", "afiliado_comissao_teto"]);
+      const ccMap = new Map((ccRows || []).map((r) => [r.chave, r.valor == null ? null : Number(r.valor)]));
+      const tetoRaw = ccMap.get("afiliado_comissao_teto");
+      const cfg: CfgComissao = {
         base: ccMap.get("afiliado_comissao_base") || 100,
         incremento: ccMap.get("afiliado_comissao_incremento") || 50,
         passo: ccMap.get("afiliado_comissao_passo") || 100,
+        teto: tetoRaw != null && tetoRaw > 0 ? tetoRaw : null, // 0/NULL = sem teto (espelha _aflCfgEscala)
       };
+      // Delta do preço sugerido automático: quanto acima do mínimo a comissão atinge o teto.
+      const deltaSugerido = cfg.teto != null && cfg.teto > cfg.base && cfg.incremento > 0
+        ? Math.ceil((cfg.teto - cfg.base) / cfg.incremento) * cfg.passo
+        : null;
 
-      // produtos_precos: modelo + preço mínimo (id é a FK alvo de produtos.produto_precos_id).
-      const { data: precos } = await sb.from("produtos_precos").select("id,modelo,preco_minimo_afiliado");
+      // produtos_precos: modelo + preços + conteúdo comercial (allowlist — nada de custo).
+      const { data: precos } = await sb.from("produtos_precos")
+        .select("id,modelo,preco_minimo_afiliado,preco_sugerido_afiliado,ficha_tecnica,condicoes_pagamento");
       const precoById = new Map((precos || []).map((p) => [p.id, p]));
+
+      // Contagem de materiais ativos por modelo (NULL = materiais gerais da loja).
+      const { data: mats } = await sb.from("afiliados_materiais")
+        .select("produto_precos_id,tipo").eq("ativo", true);
+      const matCount = new Map<string, { imagens: number; arquivos: number }>();
+      for (const m of mats || []) {
+        const key = m.produto_precos_id == null ? "__geral__" : String(m.produto_precos_id);
+        const c = matCount.get(key) || { imagens: 0, arquivos: 0 };
+        if (m.tipo === "imagem") c.imagens++; else c.arquivos++;
+        matCount.set(key, c);
+      }
 
       // produtos: estoque/categoria por variante, ligados ao modelo pela FK.
       const { data: prods } = await sb.from("produtos")
@@ -142,7 +164,7 @@ Deno.serve(async (req: Request) => {
       const prodById = new Map((prods || []).map((p) => [p.id, p]));
 
       // ── Vitrine: agrega scooters por modelo (FK exata). Sem quantidade/custo. ──
-      const vitMap = new Map<string, { modelo: string; disponivel: boolean; precoMinimo: number | null }>();
+      const vitMap = new Map<string, { id: string; modelo: string; disponivel: boolean; precoMinimo: number | null }>();
       for (const p of prods || []) {
         if (p.ativo === false) continue;
         if (!isScooter(p.categoria)) continue;
@@ -151,6 +173,7 @@ Deno.serve(async (req: Request) => {
         if (!pp) continue;
         const key = String(p.produto_precos_id);
         const cur = vitMap.get(key) || {
+          id: key,
           modelo: pp.modelo || "Modelo",
           disponivel: false,
           precoMinimo: pp.preco_minimo_afiliado != null ? Number(pp.preco_minimo_afiliado) : null,
@@ -158,11 +181,32 @@ Deno.serve(async (req: Request) => {
         if (Number(p.estoque) > 0) cur.disponivel = true;
         vitMap.set(key, cur);
       }
-      const comissaoBaseTexto = `Base R$ ${cfg.base} + R$ ${cfg.incremento} a cada R$ ${cfg.passo} acima do mínimo`;
+      const comissaoBaseTexto = `Base R$ ${cfg.base} + R$ ${cfg.incremento} a cada R$ ${cfg.passo} acima do mínimo`
+        + (cfg.teto != null ? ` (teto R$ ${cfg.teto})` : "");
       const vitrine = [...vitMap.values()]
         // disponíveis primeiro; depois indisponíveis. Dentro de cada grupo, por nome.
         .sort((a, b) => (Number(b.disponivel) - Number(a.disponivel)) || a.modelo.localeCompare(b.modelo))
-        .map((v) => ({ ...v, comissaoBaseTexto }));
+        .map((v) => {
+          const pp = precoById.get(v.id) || {};
+          // Preço sugerido: manual do modelo vence; senão automático = mínimo + delta do teto.
+          const manual = pp.preco_sugerido_afiliado != null ? Number(pp.preco_sugerido_afiliado) : null;
+          const auto = v.precoMinimo != null && deltaSugerido != null ? v.precoMinimo + deltaSugerido : null;
+          const precoSugerido = manual ?? auto;
+          const mc = matCount.get(v.id) || { imagens: 0, arquivos: 0 };
+          return {
+            ...v,
+            comissaoBaseTexto,
+            comissaoMinimo: v.precoMinimo != null ? cfg.base : null,
+            precoSugerido,
+            comissaoSugerido: precoSugerido != null && v.precoMinimo != null
+              ? comissaoUnit(precoSugerido, v.precoMinimo, cfg) : null,
+            fichaTecnica: pp.ficha_tecnica || null,
+            condicoesPagamento: pp.condicoes_pagamento || null,
+            qtdImagens: mc.imagens,
+            qtdArquivos: mc.arquivos,
+          };
+        });
+      const gerais = matCount.get("__geral__") || { imagens: 0, arquivos: 0 };
 
       // ── Pedidos do próprio afiliado (status != cancelado). ──
       const { data: peds } = await sb.from("pdv_pedidos")
@@ -217,7 +261,48 @@ Deno.serve(async (req: Request) => {
         comissaoTotal: round2(comissaoLiberada + comissaoPendente),
       };
 
-      return json({ vitrine, pedidos, totais });
+      return json({
+        vitrine, pedidos, totais,
+        gerais: { qtdImagens: gerais.imagens, qtdArquivos: gerais.arquivos },
+        escala: { base: cfg.base, incremento: cfg.incremento, passo: cfg.passo, teto: cfg.teto },
+      });
+    }
+
+    // ───────────────────────── MATERIAIS ─────────────────────────
+    // Lista os materiais de um modelo (ou os gerais) com signed URL de 1h.
+    // Gerado sob demanda pra não inflar o payload do `dados`.
+    if (acao === "materiais") {
+      const auth = req.headers.get("authorization") || "";
+      const tok = await readToken(SECRET, auth.replace(/^Bearer\s+/i, "").trim());
+      if (!tok) return json({ error: "Sessão inválida ou expirada." }, 401);
+
+      const modelo = url.searchParams.get("modelo") || "";
+      const geral = url.searchParams.get("geral") === "1";
+      if (!modelo && !geral) return json({ error: "Informe o modelo." }, 400);
+
+      let q = sb.from("afiliados_materiais")
+        .select("id,tipo,titulo,arquivo_path,arquivo_nome,tamanho")
+        .eq("ativo", true)
+        .order("ordem").order("criado_em");
+      q = geral ? q.is("produto_precos_id", null) : q.eq("produto_precos_id", modelo);
+      const { data: rows, error } = await q.limit(100);
+      if (error) return json({ error: "Falha ao listar materiais." }, 500);
+
+      const materiais: Array<Record<string, unknown>> = [];
+      for (const m of rows || []) {
+        const { data: signed } = await sb.storage.from("afiliados-materiais")
+          .createSignedUrl(m.arquivo_path, 60 * 60);
+        if (!signed?.signedUrl) continue; // arquivo sumiu do bucket → não lista quebrado
+        materiais.push({
+          id: m.id,
+          tipo: m.tipo,
+          titulo: m.titulo || null,
+          nome: m.arquivo_nome || null,
+          tamanho: m.tamanho != null ? Number(m.tamanho) : null,
+          url: signed.signedUrl,
+        });
+      }
+      return json({ materiais });
     }
 
     return json({ error: "Ação desconhecida." }, 400);

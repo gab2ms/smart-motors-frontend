@@ -142,10 +142,45 @@ A 2ª passada cobriu todos os pontos abaixo: Montagens (lista: card montador pad
 - ✅ **REMOVIDO (29/06, commit em main) — código morto que exibia custo/lucro sem proteção**: `renderDRE`/`dreRow`/`recalcDRE` e `renderDashVendedoresInline` eram inalcançáveis (0 chamadas, sem ref dinâmica). Montavam DRE/ranking com custo/margem/lucro fora dos gates de permissão. Removidos; boot sem erro no localhost; sem mudança de comportamento.
 - ⏳ Menores (observação): Oficina "Lucro" inflado (OS com custo 0 — backlog #2). Divergência preço cadastro×Tiny. 25 produtos sem FK `produto_precos_id`. Arredondamentos de centavos em empréstimo.
 
-## Painel de Afiliados — backlog de melhorias (pedido do dono 07/07/2026)
-Ordem de prioridade definida pelo dono: **1º** resolver 100% usuários/acessos (em andamento) → **2º** precificação dos afiliados → **3º** UX do painel. Não começar antes de fechar usuários/acessos.
-1. **Precificação dos afiliados (análise antes de aplicar).** Levantar TODOS os produtos **com estoque** e montar tabela: Produto · Custo atual · Preço de venda sugerido · Comissão do afiliado · Lucro líquido estimado da empresa. **Meta: lucro líquido mínimo de R$ 1.500,00 por venda**, já considerando todos os custos da operação (custo puro + NF + custo financeiro etc. — cuidado com o `custo_puro` desalinhado, ver bug pendente acima). Entregar a tabela pro dono **validar com o sócio ANTES** de gravar em `produtos_precos` (`preco_minimo_afiliado`/`comissao` — hoje 0 de 23 c/ preço mínimo, 0 de 103 c/ comissão). Só aplicar após ok.
-2. **UX do painel — esconder indisponíveis.** Hoje motos sem estoque ocupam muito espaço. Por padrão exibir só os **disponíveis**; os **sem estoque** ficam numa seção recolhida com botão tipo **"Ver produtos indisponíveis" / "Expandir produtos sem estoque"**. Navegação principal mais limpa; quem precisar expande. (Painel do afiliado = `portal.html` / área de afiliados.)
+## Painel de Afiliados — preço sugerido, ficha técnica e banco de materiais (08/07/2026)
+**Estado atual:** portal e admin reformados; **falta só o deploy da Edge Function `portal-afiliado`**
+(bloqueado pelo classificador — precisa aprovação explícita do dono; front no ar degrada bem com a
+função antiga). Migração `afiliados_materiais_ficha_tecnica` APLICADA em produção.
+- **Preço sugerido (decisão do dono):** automático = **preço mínimo + delta do teto** (delta =
+  `(teto − base)/incremento × passo` = R$ 800 com a escala atual), com **override manual** em
+  `produtos_precos.preco_sugerido_afiliado` (preenchido vence o automático; vazio = auto). Teto da
+  comissão em `config_custos.afiliado_comissao_teto` (**seed = 500**; 0/NULL = sem teto). O teto agora
+  **capa a comissão** em `_aflComissaoEscalonadaUnit` (index.html) e `comissaoUnit` (Edge Function) —
+  manter as DUAS em sincronia. Sem efeito retroativo (nenhum modelo tinha preço mínimo gravado).
+- **Conteúdo comercial por modelo (texto livre, copiado literalmente no portal):**
+  `produtos_precos.ficha_tecnica` e `.condicoes_pagamento` (formato do exemplo Cytron do dono:
+  título + bullets de specs; parcelamentos com totais + valor à vista). NUNCA mencionar
+  financiamento/crediário nesses textos.
+- **Banco de materiais:** tabela `afiliados_materiais` (tipo imagem|arquivo, `produto_precos_id`
+  NULL = material geral da loja, ordem, ativo) + bucket privado `afiliados-materiais` (50MB,
+  policies `tem_modulo('afiliados')`). Portal só recebe **signed URL 1h** via Edge Function.
+- **Admin (`index.html`):** 4ª aba **"Materiais de venda"** no módulo Afiliados
+  (`renderAfiliadosMateriais`/`abrirAflMateriaisModal`/`_aflmUpload`/`_aflmRemover` — replica o
+  padrão `_cp*` de Storage) + aba "Preço mínimo & comissão" com colunas **Preço sugerido** (input
+  manual, placeholder mostra o auto) e **Comissão no sugerido**, e campo **Teto** na escala
+  (`_aflSalvarTeto`). Helpers: `_aflDeltaSugerido`/`_aflPrecoSugerido`.
+- **Portal (`portal.html`):** vitrine virou **cards expansíveis** (preço mínimo→comissão base,
+  ⭐ preço sugerido→comissão com "(máx)"), ficha/condições com **📋 Copiar** (clipboard + fallback),
+  imagens/arquivos com download por signed URL (`?acao=materiais`, lazy), **indisponíveis
+  recolhidos** por padrão (backlog UX item 2 ✅), seção "Materiais da loja" (materiais gerais).
+- **Edge Function v2 (`?acao=dados` estendida + `?acao=materiais` nova):** vitrine ganha id,
+  precoSugerido, comissaoMinimo/Sugerido, fichaTecnica, condicoesPagamento, qtdImagens/qtdArquivos;
+  resposta ganha `gerais` + `escala`. Allowlist mantida (nada de custo/lucro).
+- **Validação (08/07):** banco conferido via MCP (colunas/tabela/bucket/4 policies/seed);
+  portal com dados mock (cards/copiar/indisponíveis, 0 erro de console); admin ao vivo com a sessão
+  do dono (salvar textos → upload PNG → signed URL HTTP 200 → remover → tudo revertido); advisors
+  sem alerta novo.
+
+### Backlog restante (pedido do dono 07/07/2026)
+1. **Precificação dos afiliados** — política definida (ver `_memoria/empresa.md`), aguardando
+   reunião dono+sócio pra gravar `preco_minimo_afiliado` (hoje 0 de 36 modelos) — o portal/admin
+   novos já estão prontos pra receber os valores.
+2. ✅ ~~UX esconder indisponíveis~~ (entregue 08/07 no portal novo).
 
 ## Custos Operacionais (sub-aba do Financeiro) — classificação de custos
 **Estado (08/07/2026):** a aba classifica cada categoria de despesa por **natureza MANUAL**, não mais por variância estatística (que rotulava quase tudo como "variável" — 0 categorias fixas). Fonte da verdade = coluna **`categorias_lancamento.natureza`** (`fixo|semifixo|variavel|nao_recorrente`, nullable; NULL = "a classificar"). Editável no **modal de cadastro de categorias** (seletor "Natureza do custo").
@@ -156,6 +191,15 @@ Ordem de prioridade definida pelo dono: **1º** resolver 100% usuários/acessos 
 - **Auditoria original (3 agentes):** `~/projetos/Smart Motors/documentos/auditoria-custos-fixo-variavel-2026-07.md`. Contexto de negócio (obra = prejuízo esporádico; quiosque = escambo por venda de moto) em `~/projetos/Smart Motors/_memoria/empresa.md`.
 
 ## Histórico de mudanças
+
+### 2026-07-08 — Painel de Afiliados: preço sugerido + ficha técnica + banco de materiais
+Portal (`portal.html`) e admin (módulo Afiliados do `index.html`) reformados — ver seção **"Painel de
+Afiliados"**. Migração `afiliados_materiais_ficha_tecnica` aplicada via Supabase MCP (3 colunas em
+`produtos_precos`, tabela `afiliados_materiais`, bucket privado `afiliados-materiais` + policies,
+seed `afiliado_comissao_teto=500`; espelho em `afiliados_materiais_ficha_tecnica.sql`). Edge Function
+`portal-afiliado` v2 escrita (cap do teto, campos novos no `dados`, ação `materiais` com signed URLs)
+— **deploy pendente de aprovação do dono**. Validado no localhost com sessão real (fluxo completo de
+upload/signed URL/remoção) e portal com mock (0 erro de console).
 
 ### 2026-07-08 — Custos Operacionais: heurística → classificação manual + ponto de equilíbrio (reforma pós-auditoria)
 Após auditoria com 3 agentes independentes, a aba deixou de classificar fixo/variável por variância estatística (rotulava ~tudo como variável) e passou a usar **classificação manual por categoria**. Ver seção **"Custos Operacionais (sub-aba do Financeiro)"**. Banco: coluna `categorias_lancamento.natureza` (migração `categorias_natureza_custo`) + 16 categorias pré-classificadas + **higiene de dados** via MCP (pró-labore unificado em `Sócios`, antes fragmentado em `SÓCIOS`/`Outros`; Verisure→`Segurança`; seguro PagBank→`Seguro`, tirado de `Rendimento Conta` — reagrupamentos neutros p/ total/DRE). `index.html`: aba lê a natureza (4 baldes + alarme ⚠️ + não-recorrente FORA do total), seletor de natureza no cadastro, e **painel ⚖️ ponto de equilíbrio** (`_custoFixoMensalMedio`/`renderPontoEquilibrio`, lê o DRE sem alterá-lo). **NÃO** mexe no DRE/lucro. Validado no localhost (classificação com dados reais + testes de lógica do PE). **✅ Commit `c671564` pushed → GitHub Pages.** **Follow-up (mesmo dia, aprovado pelo dono):** `_despPlanejadoHistorico` (o "Custo Fixo Planejado" de referência do DRE) passou a excluir não-recorrentes + mês de início parcial (~R$ 39,2k → ~R$ 33,6k). NÃO altera o resultado/lucro (que usa `despReal`). Validado no localhost (função retorna média certa; console limpo).

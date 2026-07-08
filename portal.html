@@ -60,10 +60,43 @@
     padding:10px 12px;border-bottom:1px solid var(--border);font-weight:600;}
   td{padding:11px 12px;border-bottom:1px solid var(--border);}
   .num{text-align:right;font-variant-numeric:tabular-nums;}
-  .vit{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border);}
-  .vit:last-child{border-bottom:none;}
-  .vit .nome{font-weight:700;}
-  .vit .sub{font-size:12px;color:var(--text3);margin-top:2px;}
+  /* vitrine — cards expansíveis por modelo */
+  .vcard{border-bottom:1px solid var(--border);}
+  .vcard:last-child{border-bottom:none;}
+  .vhead{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+    padding:14px;background:none;border:none;color:var(--text);font-family:var(--ui);cursor:pointer;text-align:left;}
+  .vhead .nome{font-weight:700;font-size:15px;}
+  .vhead .chev{color:var(--text3);font-size:11px;transition:transform .15s;}
+  .vcard.open .chev{transform:rotate(180deg);}
+  .vprecos{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 14px 14px;}
+  .pbox{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;}
+  .pbox .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);}
+  .pbox .val{font-family:var(--display);font-weight:800;font-size:16px;margin-top:2px;}
+  .pbox .com{font-size:12px;color:var(--text2);margin-top:2px;}
+  .pbox .com b{color:var(--green);}
+  .pbox.star{border-color:rgba(246,164,28,.45);}
+  .pbox.star .val{color:var(--gold);}
+  .vbody{padding:0 14px 16px;display:none;}
+  .vcard.open .vbody{display:block;}
+  .blk{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-top:10px;}
+  .blk h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);
+    display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .blk pre{margin:0;white-space:pre-wrap;word-break:break-word;font-family:var(--ui);font-size:14px;color:var(--text);line-height:1.55;}
+  .copy{background:transparent;border:1px solid var(--border2);color:var(--gold);border-radius:8px;
+    padding:5px 10px;font-size:12px;font-weight:700;font-family:var(--ui);cursor:pointer;white-space:nowrap;}
+  .copy.ok{color:var(--green);border-color:rgba(53,194,129,.4);}
+  .matgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:4px;}
+  .thumb{position:relative;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--surface3);}
+  .thumb img{width:100%;height:96px;object-fit:cover;display:block;}
+  .thumb a.dl{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.65);color:#fff;border-radius:6px;
+    padding:2px 7px;font-size:11px;font-weight:700;text-decoration:none;}
+  .filerow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .filerow:last-child{border-bottom:none;}
+  .filerow .fn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .filerow a{font-weight:700;font-size:12px;white-space:nowrap;}
+  details.indisp summary{padding:13px 14px;cursor:pointer;color:var(--text3);font-size:13px;font-weight:600;list-style:none;border-top:1px solid var(--border);}
+  details.indisp summary::-webkit-details-marker{display:none;}
+  details.indisp[open] summary{border-bottom:1px solid var(--border);}
   .sel{font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;}
   .sel.on{color:var(--green);background:rgba(53,194,129,.12);}
   .sel.off{color:var(--text3);background:rgba(255,255,255,.05);}
@@ -73,7 +106,7 @@
   .muted{color:var(--text3);text-align:center;padding:20px;}
   .scroll{overflow-x:auto;}
   .hidden{display:none;}
-  @media(max-width:520px){ td,th{padding:9px 8px;} h1{font-size:20px;} }
+  @media(max-width:520px){ td,th{padding:9px 8px;} h1{font-size:20px;} .vprecos{grid-template-columns:1fr;} }
 </style>
 </head>
 <body>
@@ -111,6 +144,8 @@
 
     <h2 style="margin-left:2px;">Vitrine de modelos</h2>
     <div class="card" id="vitrine" style="margin-bottom:24px;"></div>
+
+    <div id="gerais" class="hidden" style="margin-bottom:24px;"></div>
 
     <h2 style="margin-left:2px;">Meus pedidos</h2>
     <div class="card scroll" id="pedidos"></div>
@@ -191,6 +226,9 @@
     }
   }
 
+  let VITRINE = [];
+  let ESCALA = {};
+
   function render(data) {
     const t = data.totais || {};
     $('kpis').innerHTML =
@@ -199,18 +237,13 @@
       + kpi('Comissão pendente', money(t.comissaoPendente), '')
       + kpi('Comissão a receber', money(t.comissaoTotal), 'gold');
 
-    const vit = data.vitrine || [];
-    const how = vit[0] && vit[0].comissaoBaseTexto ? vit[0].comissaoBaseTexto : 'Comissão base ao vender no preço mínimo, com adicional por faixa acima dele.';
+    VITRINE = data.vitrine || [];
+    ESCALA = data.escala || {};
+    const how = VITRINE[0] && VITRINE[0].comissaoBaseTexto ? VITRINE[0].comissaoBaseTexto : 'Comissão base ao vender no preço mínimo, com adicional por faixa acima dele.';
     $('how').innerHTML = esc(how) + '. <span style="color:var(--text3);">Quanto melhor o preço acima do mínimo, maior sua comissão.</span>';
 
-    $('vitrine').innerHTML = vit.length
-      ? vit.map((v) => {
-          const on = !!v.disponivel;
-          const pm = v.precoMinimo != null ? ('Preço mínimo: ' + money(v.precoMinimo)) : 'Preço mínimo a definir';
-          return `<div class="vit"><div><div class="nome">${esc(v.modelo)}</div><div class="sub">${esc(pm)}</div></div>`
-            + `<div class="sel ${on ? 'on' : 'off'}">${on ? '🟢 Disponível' : '⛔ Indisponível'}</div></div>`;
-        }).join('')
-      : '<div class="muted">Nenhum modelo disponível no momento.</div>';
+    renderVitrine();
+    renderGerais(data.gerais || {});
 
     const peds = data.pedidos || [];
     $('pedidos').innerHTML = peds.length
@@ -228,6 +261,130 @@
 
   function kpi(lbl, val, cls) {
     return `<div class="kpi ${cls}"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(val)}</div></div>`;
+  }
+
+  // ── Vitrine: cards expansíveis (disponíveis abertos; indisponíveis recolhidos) ──
+  function renderVitrine() {
+    const el = $('vitrine');
+    if (!VITRINE.length) { el.innerHTML = '<div class="muted">Nenhum modelo disponível no momento.</div>'; return; }
+    const disp = [], indisp = [];
+    VITRINE.forEach((v, i) => (v.disponivel ? disp : indisp).push(cardHTML(v, i)));
+    let h = disp.join('') || '<div class="muted">Nenhum modelo disponível no momento.</div>';
+    if (indisp.length) {
+      h += `<details class="indisp"><summary>⛔ Ver modelos indisponíveis (${indisp.length}) ▾</summary>${indisp.join('')}</details>`;
+    }
+    el.innerHTML = h;
+  }
+
+  function cardHTML(v, i) {
+    const on = !!v.disponivel;
+    const pmin = v.precoMinimo != null
+      ? `<div class="pbox"><div class="lbl">Preço mínimo</div><div class="val">${money(v.precoMinimo)}</div>`
+        + (v.comissaoMinimo != null ? `<div class="com">comissão ${money(v.comissaoMinimo)}</div>` : '') + `</div>`
+      : `<div class="pbox"><div class="lbl">Preço mínimo</div><div class="val" style="font-size:13px;color:var(--text3);">a definir</div></div>`;
+    const isMax = v.comissaoSugerido != null && ESCALA.teto != null && v.comissaoSugerido >= ESCALA.teto;
+    const psug = v.precoSugerido != null
+      ? `<div class="pbox star"><div class="lbl">⭐ Preço sugerido</div><div class="val">${money(v.precoSugerido)}</div>`
+        + (v.comissaoSugerido != null ? `<div class="com">sua comissão <b>${money(v.comissaoSugerido)}</b>${isMax ? ' (máx)' : ''}</div>` : '') + `</div>`
+      : '';
+    return `<div class="vcard" id="vcard-${i}">
+      <button class="vhead" onclick="toggleCard(${i})">
+        <span class="nome">${esc(v.modelo)}</span>
+        <span style="display:flex;align-items:center;gap:10px;">
+          <span class="sel ${on ? 'on' : 'off'}">${on ? '🟢 Disponível' : '⛔ Indisponível'}</span>
+          <span class="chev">▼</span>
+        </span>
+      </button>
+      <div class="vprecos">${pmin}${psug}</div>
+      <div class="vbody" id="vbody-${i}"></div>
+    </div>`;
+  }
+
+  function toggleCard(i) {
+    const card = $('vcard-' + i);
+    if (card.classList.toggle('open')) fillBody(i);
+  }
+
+  function fillBody(i) {
+    const v = VITRINE[i];
+    const body = $('vbody-' + i);
+    if (!body || body.dataset.filled) return;
+    body.dataset.filled = '1';
+    const temMats = (v.qtdImagens || 0) + (v.qtdArquivos || 0) > 0;
+    const parts = [];
+    if (v.fichaTecnica) parts.push(blkTexto('Ficha técnica', v.fichaTecnica, i, 'fichaTecnica'));
+    if (v.condicoesPagamento) parts.push(blkTexto('Formas de pagamento', v.condicoesPagamento, i, 'condicoesPagamento'));
+    if (temMats) parts.push(`<div class="blk" id="mats-${i}"><h3>Imagens & materiais</h3><div style="color:var(--text3);font-size:13px;">Carregando materiais...</div></div>`);
+    body.innerHTML = parts.length ? parts.join('')
+      : '<div class="blk" style="color:var(--text3);font-size:13px;">Ficha técnica e materiais deste modelo em breve.</div>';
+    if (temMats) carregarMateriais('mats-' + i, 'modelo=' + encodeURIComponent(v.id));
+  }
+
+  function blkTexto(titulo, texto, i, campo) {
+    return `<div class="blk"><h3>${esc(titulo)}<button class="copy" onclick="copiarCampo(${i},'${campo}',this)">📋 Copiar</button></h3><pre>${esc(texto)}</pre></div>`;
+  }
+
+  // ── Copiar (clipboard + fallback pra contexto não-seguro) ──
+  function copiarCampo(i, campo, btn) { copiarTexto(String((VITRINE[i] || {})[campo] || ''), btn); }
+  function copiarTexto(t, btn) {
+    const ok = () => {
+      btn.classList.add('ok'); const orig = btn.textContent; btn.textContent = '✓ Copiado';
+      setTimeout(() => { btn.classList.remove('ok'); btn.textContent = orig; }, 1600);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(ok).catch(() => _copiarFallback(t, ok));
+    } else _copiarFallback(t, ok);
+  }
+  function _copiarFallback(t, ok) {
+    const ta = document.createElement('textarea');
+    ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); ok(); } catch (e) { alert('Copie manualmente:\n\n' + t); }
+    ta.remove();
+  }
+
+  // ── Materiais (imagens/arquivos) — signed URLs sob demanda via Edge Function ──
+  async function carregarMateriais(boxId, qs) {
+    const box = $(boxId);
+    if (!box) return;
+    const token = localStorage.getItem(LS_TOKEN);
+    try {
+      const r = await fetch(API + '?acao=materiais&' + qs, { headers: { authorization: 'Bearer ' + token } });
+      if (r.status === 401) { logout(); return; }
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || 'erro');
+      box.innerHTML = matsHTML(data.materiais || [], box.querySelector('h3') ? box.querySelector('h3').textContent : 'Imagens & materiais');
+    } catch (e) {
+      box.innerHTML = '<h3>Imagens & materiais</h3><div style="color:var(--red);font-size:13px;">Falha ao carregar materiais. Recarregue a página.</div>';
+    }
+  }
+
+  function matsHTML(mats, titulo) {
+    const imgs = mats.filter((m) => m.tipo === 'imagem');
+    const files = mats.filter((m) => m.tipo !== 'imagem');
+    let h = '<h3>' + esc(titulo) + '</h3>';
+    if (imgs.length) {
+      h += '<div class="matgrid">' + imgs.map((m) =>
+        `<div class="thumb"><a href="${esc(m.url)}" target="_blank" rel="noopener"><img src="${esc(m.url)}" alt="${esc(m.titulo || m.nome || 'imagem')}" loading="lazy"></a>`
+        + `<a class="dl" href="${esc(m.url)}&download=" target="_blank" rel="noopener">⬇ Baixar</a></div>`).join('') + '</div>';
+    }
+    if (files.length) {
+      h += files.map((m) =>
+        `<div class="filerow"><span class="fn">📄 ${esc(m.titulo || m.nome || 'arquivo')}</span>`
+        + `<span><a href="${esc(m.url)}" target="_blank" rel="noopener">Abrir</a> · <a href="${esc(m.url)}&download=" target="_blank" rel="noopener">Baixar</a></span></div>`).join('');
+    }
+    if (!mats.length) h += '<div style="color:var(--text3);font-size:13px;">Nenhum material ainda.</div>';
+    return h;
+  }
+
+  // ── Materiais gerais da loja (logo, institucional etc.) ──
+  function renderGerais(g) {
+    const tot = (g.qtdImagens || 0) + (g.qtdArquivos || 0);
+    const box = $('gerais');
+    if (!tot) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    box.classList.remove('hidden');
+    box.innerHTML = '<div class="blk" id="mats-geral" style="margin-top:0;"><h3>Materiais da loja</h3><div style="color:var(--text3);font-size:13px;">Carregando materiais...</div></div>';
+    carregarMateriais('mats-geral', 'geral=1');
   }
 
   // ── Eventos ──
