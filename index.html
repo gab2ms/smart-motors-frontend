@@ -17377,6 +17377,155 @@ function ofImprimir(id) {
   w.document.close();
 }
 
+// Documento imprimível de um caso de PÓS-VENDA / GARANTIA (sac_casos).
+// Modelado no ofImprimir (mesma folha A4). NÃO mostra custo — é comprovante
+// de atendimento/garantia (o próprio caso diz "não é serviço pago"); traz os
+// campos de garantia (fornecedor, tipo de problema, localização) + assinatura.
+function sacImprimir(id) {
+  const c = sacCasos.find(x => x.id === id);
+  if (!c) { smAlert('Atendimento não encontrado.'); return; }
+  const cliente = (c.clienteId && clientesAll) ? clientesAll.find(x => x.id === c.clienteId) : null;
+  const cpf = c.clienteCpf || (cliente && (cliente.cpfCnpj || cliente.cpf)) || '';
+  const esc = s => String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const fmtData = iso => {
+    if (!iso) return '—';
+    const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? (m[3]+'/'+m[2]+'/'+m[1]) : iso;
+  };
+  const numeroStr = String(c.numero || '').padStart(3, '0');
+  const ta = TIPO_ATENDIMENTO[c.tipoAtendimento] || TIPO_ATENDIMENTO.pos_venda;
+  const statusLabel = (SAC_STATUS[c.status] || {}).label || (c.status || '—');
+  const prioLabel   = (SAC_PRIO[c.prioridade] || {}).label || '—';
+  const locLabel    = (SAC_LOCALIZACAO[c.localizacao] || {}).label || '—';
+  const tipoProb    = tipoProblemaLabel(c);
+  const agora = new Date();
+  const dd = String(agora.getDate()).padStart(2,'0');
+  const mm = String(agora.getMonth()+1).padStart(2,'0');
+  const yy = agora.getFullYear();
+  const hh = String(agora.getHours()).padStart(2,'0');
+  const mi = String(agora.getMinutes()).padStart(2,'0');
+  const impressoEm = `${dd}/${mm}/${yy} ${hh}:${mi}`;
+
+  const probTxt   = (c.problemaRelatado || '').trim();
+  const itensTxt  = (c.itensDeixados || '').trim();
+  const resumoTxt = (c.resumoIa || '').trim();
+  const blocoItens = itensTxt
+    ? `<div class="block"><div class="lbl">Itens deixados</div><div class="body">${esc(itensTxt)}</div></div>` : '';
+  const blocoResumo = resumoTxt
+    ? `<div class="block shaded"><div class="lbl">Resumo do atendimento</div><div class="body">${esc(resumoTxt)}</div></div>` : '';
+
+  const html = `<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<title>Pós-venda #${esc(numeroStr)} — Smart Motors</title>
+<style>
+  @page { size: A4 portrait; margin: 18mm; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:#fff; color:#111; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 12pt; line-height: 1.4; }
+  .sheet { width: 100%; }
+  .header { display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 6px; }
+  .brand { display:flex; align-items:center; gap:10px; }
+  .brand-logo { width: 28px; height: 36px; }
+  .brand-name { font-size: 13pt; font-weight: 800; letter-spacing: 0.4px; }
+  .brand-name span { color:#b8860b; }
+  .os-num { font-size: 30pt; font-weight: 900; line-height:1; letter-spacing: -0.5px; text-align:right; }
+  .os-num small { display:block; font-size: 10pt; font-weight: 800; color:#b8860b; letter-spacing:0.5px; }
+  .tipo-line { font-size: 10.5pt; font-weight: 700; color:#333; text-transform:uppercase; letter-spacing:0.5px; margin-bottom: 12px; }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1.5px solid #111; border-radius: 3px; margin-bottom: 10px; }
+  .grid2 .col { padding: 10px 12px; }
+  .grid2 .col + .col { border-left: 1.5px solid #111; }
+  .row4 { display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; border: 1.5px solid #111; border-radius: 3px; margin-bottom: 10px; }
+  .row4 .cell { padding: 9px 12px; }
+  .row4 .cell + .cell { border-left: 1.5px solid #111; }
+  .lbl { font-size: 10.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color:#555; margin-bottom: 2px; }
+  .val { font-size: 13.5pt; font-weight: 600; word-break: break-word; }
+  .val.big { font-size: 15pt; font-weight: 800; }
+  .block { border: 1.5px solid #111; border-radius: 3px; padding: 10px 12px; margin-bottom: 10px; }
+  .block.shaded { background: #ececec; }
+  .block .lbl { margin-bottom: 5px; }
+  .block .body { font-size: 12pt; min-height: 22px; white-space: pre-wrap; }
+  .assina { display:grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 26px; }
+  .assina .line { border-top: 1px solid #111; padding-top: 5px; font-size: 10pt; color:#555; text-align:center; }
+  .footer { display:flex; justify-content:space-between; align-items:center; font-size: 9pt; color:#666; border-top: 1px solid #999; padding-top: 6px; margin-top: 16px; }
+  .footer .center { flex:1; text-align:center; font-weight: 700; color:#333; letter-spacing: 0.5px; }
+  .status-pill { display:inline-block; padding: 2px 10px; border:1.2px solid #111; border-radius: 999px; font-weight:700; font-size: 11pt; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="header">
+      <div class="brand">
+        <svg class="brand-logo" viewBox="0 0 40 50" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M24 2L4 28h14l-4 20L36 22H22L26 2z" stroke="#b8860b" stroke-width="2.5" stroke-linejoin="round" fill="#f5c518"/>
+        </svg>
+        <div class="brand-name">Smart <span>Motors</span></div>
+      </div>
+      <div class="os-num"><small>${esc(ta.tag)}</small>#${esc(numeroStr)}</div>
+    </div>
+    <div class="tipo-line">🛡️ ${esc(ta.label)} — atendimento sem custo pro cliente</div>
+
+    <div class="grid2">
+      <div class="col">
+        <div class="lbl">Cliente</div>
+        <div class="val big">${esc(c.clienteNome) || '—'}</div>
+        <div style="margin-top:4px;"><span class="lbl" style="display:inline;">Telefone:</span> <span class="val">${esc(c.clienteTelefone) || '—'}</span></div>
+        <div style="margin-top:2px;"><span class="lbl" style="display:inline;">CPF/CNPJ:</span> <span class="val">${esc(cpf) || '—'}</span></div>
+      </div>
+      <div class="col">
+        <div class="lbl">Scooter</div>
+        <div class="val big">${esc(c.modeloScooter) || '—'}</div>
+        <div style="margin-top:4px;"><span class="lbl" style="display:inline;">Cor:</span> <span class="val">${esc(c.cor) || '—'}</span></div>
+        <div style="margin-top:2px;"><span class="lbl" style="display:inline;">Chassi:</span> <span class="val">${esc(c.chassi) || '—'}</span></div>
+      </div>
+    </div>
+
+    <div class="row4">
+      <div class="cell"><div class="lbl">Abertura</div><div class="val">${esc(fmtData(c.dataAbertura))}</div></div>
+      <div class="cell"><div class="lbl">Próximo contato</div><div class="val">${esc(fmtData(c.dataProximoContato))}</div></div>
+      <div class="cell"><div class="lbl">Prioridade</div><div class="val">${esc(prioLabel)}</div></div>
+      <div class="cell"><div class="lbl">Status</div><div class="val"><span class="status-pill">${esc(statusLabel)}</span></div></div>
+    </div>
+
+    <div class="row4" style="grid-template-columns:1fr 1fr 1fr;">
+      <div class="cell"><div class="lbl">Tipo de problema</div><div class="val">${esc(tipoProb)}</div></div>
+      <div class="cell"><div class="lbl">Localização do item</div><div class="val">${esc(locLabel)}</div></div>
+      <div class="cell"><div class="lbl">Fornecedor (garantia)</div><div class="val">${esc(c.fornecedor) || '—'}</div></div>
+    </div>
+
+    <div class="block shaded">
+      <div class="lbl">Problema relatado</div>
+      <div class="body">${esc(probTxt) || '—'}</div>
+    </div>
+
+    ${blocoItens}${blocoResumo}
+
+    <div class="assina">
+      <div class="line">Assinatura do cliente</div>
+      <div class="line">Responsável — Smart Motors</div>
+    </div>
+
+    <div class="footer">
+      <div>Impresso em ${esc(impressoEm)}</div>
+      <div class="center">SMART MOTORS</div>
+      <div>${esc(ta.tag)} #${esc(numeroStr)}</div>
+    </div>
+  </div>
+  <script>
+    window.addEventListener('load', function(){
+      setTimeout(function(){ try { window.focus(); window.print(); } catch(e){} }, 250);
+    });
+  <\/script>
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { smAlert('Permita pop-ups para imprimir o atendimento.'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
 function abrirOfModal(id) {
   const o = id ? oficinaOrdens.find(x => x.id === id) : null;
   const isEdit = !!o;
@@ -23714,6 +23863,11 @@ function renderOficinaSac() {
       + valCol
       + `<div><span class="badge" style="background:${st.bg};color:${st.cor};">${st.label}</span></div>`
       + `<div style="display:flex;gap:5px;justify-content:flex-end;">`
+        // Imprimir — liberado a TODOS os perfis (o doc mostra só preço, nunca
+        // custo/lucro; mesma decisão da OS de montagem, 30/06). O painel unificado
+        // (23/06) tinha esquecido este botão, que existia no painel antigo da oficina.
+        // OS de oficina → ofImprimir (oficina_ordens); caso de garantia → sacImprimir (sac_casos).
+        + `<button class="action-btn" onclick="${isOf ? `ofImprimir('${r.id}')` : `sacImprimir('${r.id}')`}" title="Imprimir ${isOf ? 'OS' : 'atendimento'}">🖨️</button>`
         + `<button class="action-btn edit-btn" onclick="${editFn}" title="Abrir"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
         + `<button class="action-btn del-btn" onclick="${delFn}" title="Excluir"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>`
       + `</div>`
