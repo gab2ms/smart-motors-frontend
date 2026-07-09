@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Motors · Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#141414; --surface:#1c1c1c; --surface2:#202020; --border:#2a2a2a; --border-soft:#242424;
+    --text:#f5f5f5; --muted:#9a9a9a; --muted2:#6f6f6f;
+    --gold:#f5c518; --green:#3ecf8e; --red:#f26e6e; --orange:#f59e0b; --blue:#3a86ff;
+    --radius:10px;
+    --pad:14px;
+    --sans:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:"Geist Mono","SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:15px}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:var(--sans);
+    line-height:1.45; letter-spacing:-.003em;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  .num{font-variant-numeric:tabular-nums}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+
+  /* ---------- shell ---------- */
+  .app{display:grid;grid-template-columns:222px 1fr;min-height:100vh}
+
+  /* ---------- sidebar ---------- */
+  .sidebar{
+    background:var(--surface);border-right:1px solid var(--border);
+    display:flex;flex-direction:column;padding:16px 12px;gap:4px;
+    position:sticky;top:0;height:100vh;overflow-y:auto;
+  }
+  .brand{display:flex;align-items:center;gap:10px;padding:4px 8px 14px}
+  .brand .mark{
+    width:30px;height:30px;border-radius:8px;background:var(--gold);
+    display:grid;place-items:center;color:#141414;font-weight:700;font-size:17px;flex:none;
+  }
+  .brand .name{font-size:14px;font-weight:600;line-height:1.15;letter-spacing:-.01em}
+  .brand .name small{display:block;color:var(--muted);font-size:11px;font-weight:400;letter-spacing:0}
+  .nav-group{padding:8px 0 2px}
+  .nav-label{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted2);padding:6px 10px 4px}
+  .nav-item{
+    display:flex;align-items:center;gap:9px;padding:6px 10px;border-radius:7px;
+    color:var(--muted);font-size:13px;font-weight:500;text-decoration:none;cursor:pointer;
+    transition:background .12s ease,color .12s ease;line-height:1;
+  }
+  .nav-item svg{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;opacity:.85}
+  .nav-item:hover{background:var(--surface2);color:var(--text)}
+  .nav-item:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+  .nav-item.active{color:var(--text);background:#242117;position:relative}
+  .nav-item.active svg{color:var(--gold);opacity:1}
+  .nav-item.active::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:2px;border-radius:2px;background:var(--gold)}
+  .nav-item.pdv{color:var(--text);border:1px solid var(--border)}
+  .nav-item.pdv svg{color:var(--green);opacity:1}
+
+  /* ---------- main ---------- */
+  .main{display:flex;flex-direction:column;min-width:0}
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:14px 22px;border-bottom:1px solid var(--border);
+    position:sticky;top:0;background:rgba(20,20,20,.86);backdrop-filter:blur(8px);z-index:5;
+  }
+  .topbar h1{font-size:17px;font-weight:600;letter-spacing:-.015em}
+  .topbar .sub{font-size:12.5px;color:var(--muted);font-weight:400;margin-top:1px}
+  .periods{display:flex;gap:3px;flex-wrap:wrap}
+  .chip{
+    font-size:12px;font-weight:500;color:var(--muted);background:transparent;
+    border:1px solid transparent;border-radius:6px;padding:5px 9px;cursor:pointer;
+    font-family:inherit;transition:background .12s,color .12s;
+  }
+  .chip:hover{color:var(--text);background:var(--surface2)}
+  .chip:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+  .chip.active{color:#141414;background:var(--gold);font-weight:600}
+
+  .content{padding:18px 22px 32px;display:flex;flex-direction:column;gap:14px}
+
+  /* ---------- KPI strip ---------- */
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+  .kpi{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:12px 13px;display:flex;flex-direction:column;gap:7px;min-width:0;
+  }
+  .kpi.hero{border-color:#3a3415;background:linear-gradient(180deg,#1f1c10 0%,var(--surface) 70%)}
+  .kpi-label{font-size:11px;font-weight:500;color:var(--muted);letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .kpi-val{font-size:23px;font-weight:600;letter-spacing:-.02em;line-height:1;white-space:nowrap}
+  .kpi.hero .kpi-val{color:var(--gold);font-size:25px}
+  .kpi-meta{display:flex;align-items:center;gap:6px;font-size:11px;min-height:14px}
+  .delta{display:inline-flex;align-items:center;gap:2px;font-weight:600;font-variant-numeric:tabular-nums}
+  .delta.up{color:var(--green)} .delta.down{color:var(--red)} .delta.flat{color:var(--muted)}
+  .delta svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+  .kpi-meta .ref{color:var(--muted2);font-size:11px}
+
+  /* ---------- cards / grid ---------- */
+  .card{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    display:flex;flex-direction:column;min-width:0;overflow:hidden;
+  }
+  .card-h{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:11px var(--pad) 10px;border-bottom:1px solid var(--border-soft);
+  }
+  .card-h h2{font-size:12.5px;font-weight:600;letter-spacing:.005em;color:var(--text)}
+  .card-h .meta{font-size:11px;color:var(--muted);font-weight:400}
+  .card-b{padding:var(--pad);flex:1;display:flex;flex-direction:column;gap:11px}
+
+  .grid{display:grid;gap:12px}
+  .row-1{grid-template-columns:1.55fr 1fr 1fr}
+  .row-2{grid-template-columns:1fr 1fr 1fr 1fr}
+  .row-3{grid-template-columns:1.55fr 1fr 1fr}
+
+  /* ---------- chart (faturamento por dia) ---------- */
+  .chart{display:flex;flex-direction:column;gap:8px}
+  .chart-bars{display:flex;align-items:flex-end;gap:3px;height:118px;padding-top:4px}
+  .bar{flex:1;background:var(--blue);border-radius:2px 2px 0 0;min-height:2px;opacity:.82;position:relative}
+  .bar.zero{background:var(--border);opacity:1;min-height:2px}
+  .bar.peak{background:var(--gold);opacity:1}
+  .chart-axis{display:flex;justify-content:space-between;font-size:10px;color:var(--muted2);border-top:1px solid var(--border-soft);padding-top:6px}
+  .chart-legend{display:flex;gap:16px;font-size:11px;color:var(--muted)}
+  .chart-legend b{color:var(--text);font-weight:600}
+
+  /* ---------- definition rows ---------- */
+  .drows{display:flex;flex-direction:column}
+  .drow{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border-soft)}
+  .drow:last-child{border-bottom:none}
+  .drow .k{font-size:12.5px;color:var(--muted)}
+  .drow .v{font-size:13px;font-weight:600;letter-spacing:-.01em}
+  .drow.total{margin-top:2px;padding-top:9px;border-top:1px solid var(--border)}
+  .drow.total .k{color:var(--text);font-weight:600;font-size:13px}
+  .drow.total .v{font-size:15px}
+
+  /* ---------- contas a pagar (4 estados) ---------- */
+  .states{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .state{border:1px solid var(--border);border-radius:8px;padding:9px 10px;display:flex;flex-direction:column;gap:3px}
+  .state .lbl{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px}
+  .state .lbl .dot{width:6px;height:6px;border-radius:50%;flex:none}
+  .state .amt{font-size:16px;font-weight:600;letter-spacing:-.01em}
+  .bar-track{height:5px;border-radius:3px;background:var(--border);overflow:hidden;display:flex;margin-top:2px}
+  .bar-track span{height:100%}
+
+  /* ---------- saldo em caixa ---------- */
+  .saldo-top{display:flex;align-items:baseline;gap:8px}
+  .saldo-top .big{font-size:24px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .saldo-list{display:flex;flex-direction:column}
+
+  /* ---------- canal bars ---------- */
+  .canal{display:flex;flex-direction:column;gap:10px}
+  .canal-row{display:flex;flex-direction:column;gap:5px}
+  .canal-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .canal-head .nm{font-size:12.5px;font-weight:500}
+  .canal-head .nm small{color:var(--muted);font-weight:400;margin-left:6px}
+  .canal-head .vl{font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums}
+  .canal-head .vl small{color:var(--muted);font-weight:500;margin-left:6px}
+  .ctrack{height:6px;border-radius:3px;background:var(--border);overflow:hidden}
+  .ctrack span{display:block;height:100%;border-radius:3px}
+
+  /* ---------- ranking / lists ---------- */
+  .rank{display:flex;flex-direction:column}
+  .rank-row{display:grid;grid-template-columns:18px 1fr auto;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--border-soft)}
+  .rank-row:last-child{border-bottom:none}
+  .rank-pos{font-size:11px;font-weight:600;color:var(--muted2);text-align:center;font-variant-numeric:tabular-nums}
+  .rank-main{min-width:0}
+  .rank-main .nm{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rank-main .sub{font-size:11px;color:var(--muted);margin-top:2px}
+  .rank-main .mtrack{height:3px;border-radius:2px;background:var(--border);margin-top:5px;overflow:hidden}
+  .rank-main .mtrack span{display:block;height:100%;background:var(--green);border-radius:2px;opacity:.7}
+  .rank-amt{text-align:right;white-space:nowrap}
+  .rank-amt .a{font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums}
+  .rank-amt .p{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  /* ---------- pedidos table ---------- */
+  .tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+  .tbl th{
+    text-align:left;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--muted2);padding:0 0 8px;border-bottom:1px solid var(--border-soft);
+  }
+  .tbl td{padding:8px 0;border-bottom:1px solid var(--border-soft);vertical-align:middle}
+  .tbl tr:last-child td{border-bottom:none}
+  .tbl .r{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  .tbl .id{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .tbl .cli{font-weight:500}
+  .tbl .dt{color:var(--muted);font-variant-numeric:tabular-nums}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;white-space:nowrap}
+  .badge .d{width:5px;height:5px;border-radius:50%}
+  .badge.fat{color:var(--green);background:rgba(62,207,142,.1)}
+  .badge.fat .d{background:var(--green)}
+  .badge.mon{color:var(--orange);background:rgba(245,158,11,.1)}
+  .badge.mon .d{background:var(--orange)}
+
+  /* ---------- estoque ---------- */
+  .estoque{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .est-cell{border:1px solid var(--border);border-radius:8px;padding:10px 11px}
+  .est-cell .n{font-size:24px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1}
+  .est-cell .l{font-size:11px;color:var(--muted);margin-top:5px}
+
+  /* mini meta strip in caixa real */
+  .mini-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .mini{border:1px solid var(--border);border-radius:8px;padding:9px 10px;display:flex;flex-direction:column;gap:3px}
+  .mini .l{font-size:10.5px;color:var(--muted)}
+  .mini .v{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+
+  /* ---------- responsive ---------- */
+  @media (max-width:1180px){
+    .kpis{grid-template-columns:repeat(3,1fr)}
+    .row-1,.row-3{grid-template-columns:1fr 1fr}
+    .row-2{grid-template-columns:1fr 1fr}
+  }
+  @media (max-width:860px){
+    .app{grid-template-columns:1fr}
+    .sidebar{display:none}
+    .kpis{grid-template-columns:repeat(2,1fr)}
+    .row-1,.row-2,.row-3{grid-template-columns:1fr}
+    .topbar{flex-direction:column;align-items:flex-start}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark">⚡</div>
+      <div class="name">Smart Motors<small>mobilidade inteligente</small></div>
+    </div>
+
+    <a class="nav-item active" href="#"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</a>
+    <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Calendário</a>
+    <a class="nav-item pdv" href="#"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M7 21h10M12 17v4"/></svg>PDV</a>
+
+    <div class="nav-group">
+      <div class="nav-label">Vendas</div>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>Pedidos</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/></svg>Vendas do Mês</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1M16 3.1a4 4 0 0 1 0 7.8"/></svg>Clientes</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>Contrato</a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">Produtos</div>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4 8 4 8-4z"/><path d="M4 7v10l8 4 8-4V7M12 11v10"/></svg>Cadastros</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 11h18M8 7V4h8v3"/></svg>Consignação & Estoque</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 14.5c.4 1 1.4 1.5 2.5 1.5 1.5 0 2.5-.7 2.5-1.8 0-2.5-4.8-1.4-4.8-3.6 0-1 .9-1.6 2.3-1.6 1 0 1.9.4 2.3 1.2"/></svg>Custos de Produtos</a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">Operação</div>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-2.5z"/></svg>Oficina</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-9A8.4 8.4 0 1 1 21 11.5z"/></svg>SAC</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a7.9 7.9 0 0 0 .1-3l1.9-1.5-2-3.4-2.3.9a8 8 0 0 0-2.6-1.5L14 2h-4l-.5 2.5a8 8 0 0 0-2.6 1.5l-2.3-.9-2 3.4L4.5 10.5a7.9 7.9 0 0 0 0 3l-1.9 1.5 2 3.4 2.3-.9a8 8 0 0 0 2.6 1.5L10 22h4l.5-2.5a8 8 0 0 0 2.6-1.5l2.3.9 2-3.4z"/></svg>Montagens</a>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-label">Financeiro</div>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Financeiro</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Contas a Pagar</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M12 1v22M7 19h7.5a3.5 3.5 0 0 0 0-7h-5a3.5 3.5 0 0 1 0-7H18"/></svg>Contas a Receber</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="13" y="7" width="3" height="11"/></svg>Custos Operacionais</a>
+    </div>
+
+    <div class="nav-group">
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>Relatórios</a>
+      <a class="nav-item" href="#"><svg viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"/></svg>Admin</a>
+    </div>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h1>Dashboard</h1>
+        <div class="sub">Junho 2026 · Este mês</div>
+      </div>
+      <div class="periods" role="tablist" aria-label="Atalhos de período">
+        <button class="chip active" aria-selected="true">Este mês</button>
+        <button class="chip">Mês anterior</button>
+        <button class="chip">7 dias</button>
+        <button class="chip">15 dias</button>
+        <button class="chip">30 dias</button>
+        <button class="chip">Trimestre</button>
+        <button class="chip">Ano</button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ===== KPI strip ===== -->
+      <section class="kpis">
+        <div class="kpi hero">
+          <div class="kpi-label">Faturamento do mês</div>
+          <div class="kpi-val num">R$ 187.400</div>
+          <div class="kpi-meta">
+            <span class="delta up"><svg viewBox="0 0 24 24"><path d="M7 17L17 7M9 7h8v8"/></svg>12%</span>
+            <span class="ref">meta R$ 200.000</span>
+          </div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Resultado do mês</div>
+          <div class="kpi-val num">+R$ 31.700</div>
+          <div class="kpi-meta"><span class="ref">DRE · margem 16,9%</span></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Scooters vendidas</div>
+          <div class="kpi-val num">23</div>
+          <div class="kpi-meta"><span class="delta up"><svg viewBox="0 0 24 24"><path d="M7 17L17 7M9 7h8v8"/></svg>4</span><span class="ref">vs mês anterior</span></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Ticket médio</div>
+          <div class="kpi-val num">R$ 8.150</div>
+          <div class="kpi-meta"><span class="delta down"><svg viewBox="0 0 24 24"><path d="M7 7l10 10M15 17H7V9"/></svg>3%</span><span class="ref">por venda</span></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Lucro bruto</div>
+          <div class="kpi-val num">R$ 41.200</div>
+          <div class="kpi-meta"><span class="delta up"><svg viewBox="0 0 24 24"><path d="M7 17L17 7M9 7h8v8"/></svg>8%</span><span class="ref">receita − CPV</span></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">MC% média bruta</div>
+          <div class="kpi-val num">22%</div>
+          <div class="kpi-meta"><span class="ref">margem de contribuição</span></div>
+        </div>
+      </section>
+
+      <!-- ===== Row 1: gráfico · saldo · caixa real ===== -->
+      <section class="grid row-1">
+        <!-- Faturamento por dia -->
+        <div class="card">
+          <div class="card-h">
+            <h2>Faturamento por dia</h2>
+            <span class="meta">Junho · R$ 187.400</span>
+          </div>
+          <div class="card-b">
+            <div class="chart">
+              <div class="chart-bars" id="bars" aria-hidden="true"></div>
+              <div class="chart-axis"><span>01</span><span>08</span><span>15</span><span>22</span><span>30</span></div>
+            </div>
+            <div class="chart-legend">
+              <span><b>Maior dia</b> R$ 17.200 · 22/06</span>
+              <span><b>Média/dia útil</b> R$ 8.520</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Saldo em caixa -->
+        <div class="card">
+          <div class="card-h"><h2>Saldo em caixa</h2><span class="meta">agora</span></div>
+          <div class="card-b">
+            <div class="saldo-top"><span class="big">R$ 73.900</span></div>
+            <div class="drows saldo-list">
+              <div class="drow"><span class="k">Itaú</span><span class="v num">R$ 52.100</span></div>
+              <div class="drow"><span class="k">Dinheiro</span><span class="v num">R$ 8.300</span></div>
+              <div class="drow"><span class="k">Mercado Pago</span><span class="v num">R$ 13.500</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Caixa real do mês -->
+        <div class="card">
+          <div class="card-h"><h2>Caixa real do mês</h2><span class="meta">entradas − saídas</span></div>
+          <div class="card-b">
+            <div class="mini-grid">
+              <div class="mini"><span class="l">Entradas</span><span class="v" style="color:var(--green)">164.200</span></div>
+              <div class="mini"><span class="l">Saídas</span><span class="v" style="color:var(--red)">121.800</span></div>
+              <div class="mini"><span class="l">Resultado</span><span class="v num">+42.400</span></div>
+            </div>
+            <div class="drows">
+              <div class="drow"><span class="k">Empréstimo em aberto</span><span class="v num">R$ 64.300</span></div>
+              <div class="drow"><span class="k">Próxima parcela · vence 28/06</span><span class="v num" style="color:var(--orange)">R$ 5.200</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Row 2: contas a pagar · DRE · vendas por canal · estoque ===== -->
+      <section class="grid row-2">
+        <!-- Contas a pagar -->
+        <div class="card">
+          <div class="card-h"><h2>Contas a pagar</h2><span class="meta">total R$ 38.400</span></div>
+          <div class="card-b">
+            <div class="bar-track">
+              <span style="width:57.6%;background:var(--green)"></span>
+              <span style="width:29.4%;background:var(--orange)"></span>
+              <span style="width:13%;background:var(--red)"></span>
+            </div>
+            <div class="states">
+              <div class="state">
+                <span class="lbl"><span class="dot" style="background:var(--muted2)"></span>Total</span>
+                <span class="amt num">R$ 38.400</span>
+              </div>
+              <div class="state">
+                <span class="lbl"><span class="dot" style="background:var(--green)"></span>Pago</span>
+                <span class="amt num" style="color:var(--green)">R$ 22.100</span>
+              </div>
+              <div class="state">
+                <span class="lbl"><span class="dot" style="background:var(--orange)"></span>Pendente</span>
+                <span class="amt num" style="color:var(--orange)">R$ 11.300</span>
+              </div>
+              <div class="state">
+                <span class="lbl"><span class="dot" style="background:var(--red)"></span>Atrasado</span>
+                <span class="amt num" style="color:var(--red)">R$ 5.000</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DRE do mês -->
+        <div class="card">
+          <div class="card-h"><h2>DRE do mês</h2><span class="meta">resultado +R$ 31.700</span></div>
+          <div class="card-b">
+            <div class="drows">
+              <div class="drow"><span class="k">Receita</span><span class="v num">R$ 187.400</span></div>
+              <div class="drow"><span class="k">(−) CPV</span><span class="v num" style="color:var(--red)">R$ 132.000</span></div>
+              <div class="drow"><span class="k">(−) Despesas</span><span class="v num" style="color:var(--red)">R$ 23.700</span></div>
+              <div class="drow total"><span class="k">Resultado</span><span class="v num" style="color:var(--green)">+R$ 31.700</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Vendas por canal -->
+        <div class="card">
+          <div class="card-h"><h2>Vendas por canal</h2><span class="meta">23 pedidos</span></div>
+          <div class="card-b">
+            <div class="canal">
+              <div class="canal-row">
+                <div class="canal-head"><span class="nm">Matriz<small>14 ped</small></span><span class="vl num">R$ 118.000<small>63%</small></span></div>
+                <div class="ctrack"><span style="width:63%;background:var(--blue)"></span></div>
+              </div>
+              <div class="canal-row">
+                <div class="canal-head"><span class="nm">Quiosque<small>6 ped</small></span><span class="vl num">R$ 41.000<small>22%</small></span></div>
+                <div class="ctrack"><span style="width:22%;background:var(--blue)"></span></div>
+              </div>
+              <div class="canal-row">
+                <div class="canal-head"><span class="nm">Tráfego pago<small>3 ped</small></span><span class="vl num">R$ 28.400<small>15%</small></span></div>
+                <div class="ctrack"><span style="width:15%;background:var(--blue)"></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Estoque -->
+        <div class="card">
+          <div class="card-h"><h2>Estoque</h2><span class="meta">Custo fixo R$ 28.600</span></div>
+          <div class="card-b">
+            <div class="estoque">
+              <div class="est-cell"><div class="n">47</div><div class="l">scooters</div></div>
+              <div class="est-cell"><div class="n">312</div><div class="l">acessórios</div></div>
+            </div>
+            <div class="drows">
+              <div class="drow"><span class="k">Custo fixo planejado</span><span class="v num">R$ 28.600</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Row 3: pedidos · vendedores · scooters ===== -->
+      <section class="grid row-3">
+        <!-- Últimos pedidos -->
+        <div class="card">
+          <div class="card-h"><h2>Últimos pedidos</h2><span class="meta">ver todos</span></div>
+          <div class="card-b">
+            <table class="tbl">
+              <thead><tr><th>Pedido</th><th>Cliente</th><th>Data</th><th>Status</th><th class="r">Valor</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="id">#1042</td><td class="cli">João Silva</td><td class="dt">22/06</td>
+                  <td><span class="badge fat"><span class="d"></span>Faturado</span></td><td class="r num">R$ 8.200</td>
+                </tr>
+                <tr>
+                  <td class="id">#1041</td><td class="cli">Marina Costa</td><td class="dt">21/06</td>
+                  <td><span class="badge fat"><span class="d"></span>Faturado</span></td><td class="r num">R$ 7.900</td>
+                </tr>
+                <tr>
+                  <td class="id">#1040</td><td class="cli">Pedro Alves</td><td class="dt">21/06</td>
+                  <td><span class="badge mon"><span class="d"></span>Montagem</span></td><td class="r num">R$ 9.100</td>
+                </tr>
+                <tr>
+                  <td class="id">#1039</td><td class="cli">Ana Souza</td><td class="dt">20/06</td>
+                  <td><span class="badge fat"><span class="d"></span>Faturado</span></td><td class="r num">R$ 6.800</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Ranking de vendedores -->
+        <div class="card">
+          <div class="card-h"><h2>Ranking de vendedores</h2><span class="meta">por receita</span></div>
+          <div class="card-b">
+            <div class="rank">
+              <div class="rank-row">
+                <span class="rank-pos">1</span>
+                <div class="rank-main"><div class="nm">Rafael</div><div class="sub">9 pedidos</div><div class="mtrack"><span style="width:100%"></span></div></div>
+                <div class="rank-amt"><div class="a num">R$ 74.000</div><div class="p">39%</div></div>
+              </div>
+              <div class="rank-row">
+                <span class="rank-pos">2</span>
+                <div class="rank-main"><div class="nm">Bruna</div><div class="sub">7 pedidos</div><div class="mtrack"><span style="width:78%"></span></div></div>
+                <div class="rank-amt"><div class="a num">R$ 58.000</div><div class="p">31%</div></div>
+              </div>
+              <div class="rank-row">
+                <span class="rank-pos">3</span>
+                <div class="rank-main"><div class="nm">Diego</div><div class="sub">5 pedidos</div><div class="mtrack"><span style="width:55%"></span></div></div>
+                <div class="rank-amt"><div class="a num">R$ 41.000</div><div class="p">22%</div></div>
+              </div>
+              <div class="rank-row">
+                <span class="rank-pos">4</span>
+                <div class="rank-main"><div class="nm">Carlos</div><div class="sub">2 pedidos</div><div class="mtrack"><span style="width:19%"></span></div></div>
+                <div class="rank-amt"><div class="a num">R$ 14.400</div><div class="p">8%</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scooters mais vendidas -->
+        <div class="card">
+          <div class="card-h"><h2>Scooters mais vendidas</h2><span class="meta">por receita</span></div>
+          <div class="card-b">
+            <div class="rank">
+              <div class="rank-row">
+                <span class="rank-pos">1</span>
+                <div class="rank-main"><div class="nm">X14 Branca</div><div class="sub">6 unidades</div><div class="mtrack"><span style="width:100%"></span></div></div>
+                <div class="rank-amt"><div class="a num">R$ 49.200</div></div>
+              </div>
+              <div class="rank-row">
+                <span class="rank-pos">2</span>
+                <div class="rank-main"><div class="nm">X11 Carbono</div><div class="sub">5 unidades</div><div class="mtrack"><span style="width:89%"></span></div></div>
+                <div class="rank-amt"><div class="a num">R$ 44.000</div></div>
+              </div>
+              <div class="rank-row">
+                <span class="rank-pos">3</span>
+                <div class="rank-main"><div class="nm">MC20 2000W</div><div class="sub">4 unidades</div><div class="mtrack"><span style="width:65%"></span></div></div>
+                <div class="rank-amt"><div class="a num">R$ 32.000</div></div>
+              </div>
+              <div class="rank-row">
+                <span class="rank-pos">4</span>
+                <div class="rank-main"><div class="nm">Eco Bike S</div><div class="sub">3 unidades</div><div class="mtrack"><span style="width:37%"></span></div></div>
+                <div class="rank-amt"><div class="a num">R$ 18.300</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  // Faturamento por dia — série plausível de 30 dias (R$ mil), alguns dias zero.
+  (function(){
+    var data=[6.2,9.1,0,11.4,8.3,12.7,5.6,0,7.9,10.2,13.5,9.8,0,6.4,11.1,
+             14.2,8.7,0,10.9,7.3,12.1,17.2,9.5,0,8.1,11.8,6.7,13.2,9.4,5.1];
+    var max=Math.max.apply(null,data);
+    var bars=document.getElementById('bars');
+    var frag=document.createDocumentFragment();
+    data.forEach(function(v){
+      var b=document.createElement('div');
+      if(v===0){ b.className='bar zero'; b.style.height='2px'; }
+      else { b.className='bar'+(v===max?' peak':''); b.style.height=Math.round((v/max)*100)+'%'; }
+      b.title='R$ '+(v*1000).toLocaleString('pt-BR');
+      frag.appendChild(b);
+    });
+    bars.appendChild(frag);
+
+    // Period chips — toggle visual active state only (mockup).
+    document.querySelectorAll('.periods .chip').forEach(function(c){
+      c.addEventListener('click',function(){
+        document.querySelectorAll('.periods .chip').forEach(function(x){x.classList.remove('active');x.setAttribute('aria-selected','false');});
+        c.classList.add('active');c.setAttribute('aria-selected','true');
+      });
+    });
+  })();
+</script>
+</body>
+</html>

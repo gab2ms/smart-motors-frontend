@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Motors · Estudos de dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#141414; --surface:#1c1c1c; --surface2:#202020; --border:#2a2a2a;
+    --text:#f5f5f5; --muted:#9a9a9a; --gold:#f5c518; --green:#3ecf8e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    min-height:100vh; padding:clamp(28px,6vw,72px) clamp(20px,6vw,72px); line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1000px;margin:0 auto}
+  .brand{display:flex;align-items:center;gap:11px;margin-bottom:6px}
+  .bolt{width:30px;height:30px;border-radius:8px;background:var(--gold);
+    display:grid;place-items:center;color:#141414;font-size:17px;font-weight:700}
+  .brand h1{font-size:14px;font-weight:600;letter-spacing:-.01em}
+  .brand span{color:var(--muted);font-size:12px;display:block;font-weight:400}
+  .lead{margin:30px 0 34px;max-width:600px}
+  .lead h2{font-size:clamp(22px,3.2vw,30px);line-height:1.2;letter-spacing:-.02em;margin-bottom:12px;font-weight:600}
+  .lead p{color:var(--muted);font-size:14.5px}
+  .note{margin-top:10px;font-size:13px;color:var(--muted);background:var(--surface);
+    border:1px solid var(--border);border-radius:8px;padding:10px 13px;display:inline-block}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px;margin-top:6px}
+  a.card{
+    display:flex;flex-direction:column;text-decoration:none;color:inherit;
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:22px 20px; transition:border-color .16s ease, background .16s ease;
+  }
+  a.card:hover{border-color:#3a3a3a;background:var(--surface2)}
+  a.card:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+  .klabel{font-size:11px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;margin-bottom:10px;font-weight:600}
+  .card h3{font-size:18px;font-weight:600;letter-spacing:-.01em;margin-bottom:7px}
+  .card p{color:var(--muted);font-size:13px;line-height:1.55;flex:1}
+  .open{margin-top:15px;font-size:13px;color:var(--text);font-weight:500;display:flex;align-items:center;gap:6px}
+  .open .arrow{color:var(--gold)}
+  .foot{margin-top:34px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--border);padding-top:18px;max-width:640px;line-height:1.6}
+  code{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:1px 5px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <div class="bolt">⚡</div>
+    <div><h1>Smart Motors <span>estudos de dashboard · v2 (sóbrio)</span></h1></div>
+  </div>
+
+  <div class="lead">
+    <h2>Três formas sérias de organizar os mesmos dados.</h2>
+    <p>Refeito com foco em seriedade e clareza: fontes profissionais, cor só com significado e hierarquia bem definida. Mesma paleta da marca, mesmos números — muda só como a informação é organizada.</p>
+    <div class="note">Nada está no ar. São estudos locais para você comparar e escolher.</div>
+  </div>
+
+  <div class="grid">
+    <a class="card" href="./resumo-executivo.html">
+      <div class="klabel">Opção A · Priorização</div>
+      <h3>Resumo Executivo</h3>
+      <p>O essencial primeiro, com muito ar. Quatro indicadores-chave no topo, um gráfico limpo, e o detalhe subordinado abaixo. Menos é mais.</p>
+      <span class="open">Abrir estudo <span class="arrow">→</span></span>
+    </a>
+    <a class="card" href="./por-areas.html">
+      <div class="klabel">Opção B · Organização</div>
+      <h3>Painel por Áreas</h3>
+      <p>A mesma informação separada em seções rotuladas — Vendas, Caixa &amp; Financeiro, Operação. Você sempre sabe em que mundo está olhando.</p>
+      <span class="open">Abrir estudo <span class="arrow">→</span></span>
+    </a>
+    <a class="card" href="./compacto.html">
+      <div class="klabel">Opção C · Visão única</div>
+      <h3>Painel Compacto</h3>
+      <p>Tudo num olhar, sem rolar. Densidade disciplinada por alinhamento rigoroso e um padrão de card repetido — muita informação, zero confusão.</p>
+      <span class="open">Abrir estudo <span class="arrow">→</span></span>
+    </a>
+  </div>
+
+  <p class="foot">Como abrir: clique nos cartões, ou abra cada arquivo <code>.html</code> direto no navegador; use o botão voltar para comparar. Os atalhos de período e o menu são visuais (mockup) — ainda não puxam dados reais. Pode misturar: gostar do layout de um e de um detalhe de outro.</p>
+</div>
+</body>
+</html>
