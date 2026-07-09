@@ -12539,7 +12539,7 @@ function _fcPicoParcelaFutura() {
 // responder "posso assumir mais?". Diferente do DRE: aqui a compra de estoque
 // PESA (o dinheiro sai/vence), mesmo antes de virar custo na venda.
 // Reserva de segurança = 1 mês de custo fixo (default, configurável).
-const FC_RAIOX_MESES = 6;
+const FC_RAIOX_MESES = 12;
 
 // Expectativa de vendas ativa (fração do ritmo histórico de maio+junho).
 // null = usa o cenário pessimista (50%). Setada pelo controle do card.
@@ -12582,11 +12582,26 @@ function fcMesCorrenteParcial(medias) {
   };
 }
 
+// MOTOR DO RAIO-X DE VIABILIDADE (12 meses). Modelo de caixa calibrado:
+//   saldo(m) = saldo(m−1) + vendas esperadas − variáveis (proporcionais à venda)
+//              − custo fixo − REPOSIÇÃO de estoque − boletos fornecedor (datas
+//              reais) − parcelas de empréstimo (datas reais) − simulação.
+// REPOSIÇÃO (a correção central): vender moto exige repor moto. O estoque ATUAL
+// já foi comprado (os boletos de fornecedor em aberto são o pagamento dele →
+// contá-los + reposição do estoque atual seria dupla contagem). Então: enquanto
+// as vendas consomem o estoque existente, NÃO há custo de reposição (só os
+// boletos reais); esgotado o estoque, cada moto vendida paga o custo médio de
+// reposição no mês (à vista — conservador). Antes dessa correção a projeção
+// somava a receita quase inteira como sobra e o "cabe assumir" dava R$ 109k/mês
+// (irreal); o sustentável é a margem (~R$ 14-20k/mês, consistente com o DRE).
 function fcRaioXObrigacoes(opts) {
   opts = opts || {};
-  const simMensal = Math.max(0, opts.simMensal || 0);   // valor de cada parcela nova
-  const simAVista = Math.max(0, opts.simAVista || 0);   // entrada / desembolso imediato (à vista)
-  const simParcelas = Math.max(0, Math.floor(opts.simParcelas || 0)); // nº de parcelas (0 = recorrente/fixo)
+  const simMensal = Math.max(0, opts.simMensal || 0);   // legado (fcEspacoObrigacaoMensal): parcela recorrente a partir do mês 1
+  const simAVista = Math.max(0, opts.simAVista || 0);
+  const simParcelas = Math.max(0, Math.floor(opts.simParcelas || 0));
+  // Simulação de viabilidade: { tipo:'emprestimo'|'compra', valorTotal, entrada,
+  //   parcela, nParcelas, inicioIdx (0-11, mês da 1ª parcela), unidades }
+  const sim = opts.sim || null;
   const vendasPct = (opts.vendasPct != null) ? opts.vendasPct
     : (_fcVendasPct != null ? _fcVendasPct : FC_PESSIMISTA_PCT);   // expectativa (fração do ritmo)
   const hoje = new Date();
@@ -12597,40 +12612,74 @@ function fcRaioXObrigacoes(opts) {
   const comp = _fcCompromissosAbertos();
   const diasMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
   const fracaoRestante = Math.max(0, (diasMes - hoje.getDate()) / diasMes);
-  // Geração líquida do mês = vendas esperadas − custo fixo − variáveis. `vendasPct`
-  // é o quanto do ritmo de maio+junho a loja espera vender; guardo o pessimista
-  // fixo (50%) como referência de alerta.
   // Mês corrente afinado pelo ritmo real (com trava); meses futuros usam a média.
   const mc = fcMesCorrenteParcial(medias);
+  // Giro em R$: pool = custo do estoque já comprado (consome antes de repor);
+  // ratio = custo de repor por R$ vendido. Pools separados (pessimista vende menos).
+  const giro = _fcGiroInfo(medias);
+  let poolBRL = giro.poolBRL, poolBRLPess = giro.poolBRL;
   const linhas = [];
   let saldo = saldo0 - simAVista, saldoPess = saldo0 - simAVista;
   for (let i = 0; i < FC_RAIOX_MESES; i++) {
     const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
     const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
     const fator = i === 0 ? fracaoRestante : 1;   // custo fixo/variáveis pro-rata no mês corrente
-    // Entradas esperadas do mês: no mês corrente projeta só o RESTO (o realizado já está no
-    // saldo0), pelo ritmo real quando há amostra; nos meses futuros, a média cheia.
-    const entradasMes = i === 0 ? mc.entradasRestoMes : medias.entradasOp;
-    const custoMes = (fixo + medias.variaveis) * fator;
-    const geraExpMes  = entradasMes * vendasPct         - custoMes;
-    const geraPessMes = entradasMes * FC_PESSIMISTA_PCT - custoMes;
+    // Entradas do mês: mês corrente projeta só o RESTO (o realizado já está no saldo0).
+    const baseMes = i === 0 ? mc.entradasRestoMes : medias.entradasOp;
+    const entradasMes  = baseMes * vendasPct;
+    const entradasPess = baseMes * FC_PESSIMISTA_PCT;
+    // Variáveis (comissão/NF/montagem) escalam com a venda; fixo não.
+    const varMes  = medias.variaveis * vendasPct * fator;
+    const varPess = medias.variaveis * FC_PESSIMISTA_PCT * fator;
+    const fixoMes = fixo * fator;
+    // Simulação: fluxos do mês (entrada de empréstimo / desembolsos / chegada de motos).
+    let simIn = 0, simOut = 0;
+    if (sim) {
+      if (i === 0) {
+        if (sim.tipo === 'emprestimo') simIn += (sim.valorTotal || 0);
+        else {
+          simOut += (sim.entrada || 0);
+          // Compra de estoque: o lote comprado entra no pool pelo CUSTO real
+          // (valor total da compra) — estende a cobertura antes de repor.
+          poolBRL += (sim.valorTotal || 0); poolBRLPess += (sim.valorTotal || 0);
+        }
+      }
+      const ini = (sim.inicioIdx != null) ? sim.inicioIdx : 1;
+      const nP = Math.max(1, Math.floor(sim.nParcelas || 1));
+      if ((sim.parcela || 0) > 0 && i >= ini && i < ini + nP) simOut += sim.parcela;
+    }
+    const simLegado = (i >= 1 && (simParcelas <= 0 || i <= simParcelas)) ? simMensal : 0;
+    simOut += simLegado;
+    // Reposição: o custo das motos vendidas consome primeiro o estoque já
+    // comprado (pool); o excedente é recomprado à vista no mês (conservador).
+    const consumo  = entradasMes  * giro.ratio;
+    const consumoP = entradasPess * giro.ratio;
+    const doPool  = Math.min(poolBRL, consumo);      poolBRL     -= doPool;
+    const doPoolP = Math.min(poolBRLPess, consumoP); poolBRLPess -= doPoolP;
+    const repor     = consumo  - doPool;
+    const reporPess = consumoP - doPoolP;
     const forn = comp.boletos[ym] || 0;
     const empr = comp.parcelas[ym] || 0;
     const outros = comp.semCat[ym] || 0;
-    // Parcela nova começa no próximo mês (i≥1); dura simParcelas meses (0 = recorrente).
-    const simDoMes = (i >= 1 && (simParcelas <= 0 || i <= simParcelas)) ? simMensal : 0;
-    saldo     += geraExpMes  - forn - empr - outros - simDoMes;
-    saldoPess += geraPessMes - forn - empr - outros - simDoMes;
+    saldo     += entradasMes  - varMes  - fixoMes - repor     - forn - empr - outros - simOut + simIn;
+    saldoPess += entradasPess - varPess - fixoMes - reporPess - forn - empr - outros - simOut + simIn;
     const lbl = d.toLocaleString('pt-BR', { month: 'short' }).replace('.', '') + '/'
       + String(d.getFullYear()).slice(2) + (i === 0 ? ' (resto)' : '');
-    linhas.push({ ym, lbl, forn, empr, outros, sim: simDoMes, fixo: fixo * fator,
-      gera: geraExpMes, saldo, saldoPess });
+    linhas.push({ ym, lbl, forn, empr, outros, sim: simOut, simIn, repor,
+      fixo: fixoMes, custos: fixoMes + varMes, vendas: entradasMes,
+      gera: entradasMes - varMes - fixoMes - repor, saldo, saldoPess, poolFim: poolBRL });
   }
   const vale = Math.min(...linhas.map(l => l.saldo));
   const valePess = Math.min(...linhas.map(l => l.saldoPess));
   const critico = linhas.find(l => l.saldo === vale) || linhas[0];
+  // Cobertura: quantos meses o estoque JÁ COMPRADO sustenta o ritmo escolhido.
+  const consumoRegime = medias.entradasOp * vendasPct * giro.ratio;
+  const coberturaMeses = (giro.estCarregado && consumoRegime > 0) ? giro.poolBRL / consumoRegime : null;
   return { linhas, saldo0, fixo, reserva, vendasPct, medias, comp,
-    vale, valePess, critico, furaReserva: vale < reserva, negativo: vale < 0, mesCorrente: mc };
+    vale, valePess, critico, furaReserva: vale < reserva, negativo: vale < 0, mesCorrente: mc,
+    custoUnit: giro.custoUnit, custoRatio: giro.ratio, vendasMesN: giro.vendasMesN,
+    estoqueUn0: giro.unidades, estCarregado: giro.estCarregado, coberturaMeses,
+    geraSust: fcGeraSustentavel(vendasPct), geraSust100: fcGeraSustentavel(1) };
 }
 
 // Quanto de obrigação mensal NOVA ainda cabe mantendo o vale ≥ reserva, na
@@ -12661,7 +12710,11 @@ async function fcCarregarVendasMedia() {
   try {
     const medias = fcMediasOperacao();
     const meses = medias.mesesUsados || [];
-    if (!meses.length) { _fcVendasMedia = { vendasMes: 0, entradasOp: medias.entradasOp }; return; }
+    if (!meses.length) {
+      _fcVendasMedia = { vendasMes: 0, entradasOp: medias.entradasOp };
+      try { renderFinFluxo(); } catch (e) {}
+      return;
+    }
     const ini = meses[0] + '-01';
     const [fy, fm] = meses[meses.length - 1].split('-').map(Number);
     const fim = new Date(fy, fm, 0).toISOString().slice(0, 10);
@@ -12686,6 +12739,69 @@ function _fcVendasPorQtd() {
   const vm = (_fcVendasMedia && typeof _fcVendasMedia === 'object') ? _fcVendasMedia.vendasMes : 0;
   if (!(vm > 0)) return;
   _fcSetVendas((parseFloat((el.value || '').replace(',', '.')) || 0) / vm);
+}
+
+// ── ESTOQUE DE SCOOTERS (capital imobilizado + giro) ─────────────────────────
+// Carregado 1× ao abrir o Fluxo (mesmo padrão do fcCarregarVendasMedia). Fonte:
+// produtos com estoque > 0 categoria scooter (a categoria pode estar no produto
+// OU no produtos_precos vinculado). Custo com fallback: produtos_precos.custo →
+// produtos.custo. null = não carregado; {unidades:0} = carregou e não há.
+let _fcEstoque = null;
+async function fcCarregarEstoque() {
+  try {
+    const { data, error } = await sb.from('produtos')
+      .select('estoque,custo,preco_venda,categoria,produto_precos_id')
+      .gt('estoque', 0);
+    if (error) throw new Error(error.message);
+    const precosById = {};
+    for (const pr of (products || [])) precosById[pr.id] = pr;
+    let unidades = 0, custoTotal = 0, vendaTotal = 0;
+    for (const p of (data || [])) {
+      const pr = p.produto_precos_id ? precosById[p.produto_precos_id] : null;
+      const cat = (pr && pr.categoria) || p.categoria;
+      if (cat !== 'scooter') continue;
+      const q = p.estoque || 0;
+      unidades   += q;
+      custoTotal += q * ((pr && pr.custo) || p.custo || 0);
+      vendaTotal += q * ((pr && pr.venda) || p.preco_venda || 0);
+    }
+    _fcEstoque = { unidades, custoTotal, vendaTotal,
+      custoUnit: unidades > 0 ? custoTotal / unidades : 0 };
+  } catch (e) {
+    console.warn('[fcEstoque] falhou:', e.message);
+    _fcEstoque = { unidades: 0, custoTotal: 0, vendaTotal: 0, custoUnit: 0, erro: true };
+  }
+  try { renderFinFluxo(); } catch (e) {}
+}
+
+// Parâmetros do GIRO: quanto custa repor o que se vende (por R$ vendido) e
+// quanto de estoque JÁ COMPRADO existe pra consumir antes de precisar repor.
+// ratio preferencial = (vendas/mês × custo médio da moto em estoque) ÷ entradas
+// médias (auto-calibrado, ~69%). Fallback (dados async ainda não carregados):
+// 68% — relação CPV-produto/receita do DRE de maio+junho, consistente com o
+// mix do estoque a preço de tabela (66,7%). NUNCA retorna reposição desligada:
+// sem dado de estoque, pool=0 → reposição desde o 1º mês (conservador).
+const FC_CUSTO_RATIO_FALLBACK = 0.68;
+function _fcGiroInfo(medias) {
+  const vm = (_fcVendasMedia && typeof _fcVendasMedia === 'object') ? (_fcVendasMedia.vendasMes || 0) : 0;
+  const est = (_fcEstoque && typeof _fcEstoque === 'object') ? _fcEstoque : null;
+  const custoUnit = (est && est.unidades > 0 && est.custoUnit > 0) ? est.custoUnit : 0;
+  const ratio = (vm > 0 && custoUnit > 0 && medias.entradasOp > 0)
+    ? Math.min(0.9, vm * custoUnit / medias.entradasOp)
+    : FC_CUSTO_RATIO_FALLBACK;
+  return { ratio, poolBRL: est ? (est.custoTotal || 0) : 0, vendasMesN: vm,
+    custoUnit, unidades: est ? (est.unidades || 0) : 0, estCarregado: !!est };
+}
+
+// Geração operacional SUSTENTÁVEL por mês (regime: cada moto vendida é repos-
+// ta): vendas × (1 − custo de reposição) − variáveis − custo fixo, na expecta-
+// tiva `pct`. É o que sobra DE VERDADE pra pagar dívida/assumir compromisso —
+// a régua honesta do "posso assumir mais?".
+function fcGeraSustentavel(pct) {
+  const medias = fcMediasOperacao();
+  const fixo = _despPlanejadoHistorico().media;
+  const giro = _fcGiroInfo(medias);
+  return medias.entradasOp * pct * (1 - giro.ratio) - medias.variaveis * pct - fixo;
 }
 
 // ── PROJEÇÃO DE CURTO PRAZO POR DATA (timing) ─────────────────
@@ -12754,38 +12870,120 @@ let _fcRaioReserva = null;
 // valor de cada parcela e nº de parcelas (0 = recorrente/fixo). Cobre qualquer
 // caso: compra à vista (só entrada), compra a prazo (entrada + parcelas),
 // empréstimo (parcela × nº) ou boleto fixo recorrente (parcela, nº=0).
-function _fcSimularCompra() {
+// Número em formato brasileiro OU americano, sem ambiguidade destrutiva:
+// vírgula presente → pt-BR (pontos são milhar: "1.234,56"); só ponto com 1-2
+// dígitos depois → decimal ("97000.50"); senão ponto é milhar ("1.500").
+function _fcNumBR(v) {
+  let s = String(v == null ? '' : v).trim().replace(/\s|R\$/gi, '');
+  if (!s) return 0;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else {
+    const p = s.split('.');
+    if (!(p.length === 2 && p[1].length <= 2)) s = p.join('');
+  }
+  return Math.max(0, parseFloat(s) || 0);
+}
+
+// Mês digitado → índice na janela (0 = mês corrente). Aceita AAAA-MM (input
+// month nativo) e MM/AAAA ou MM-AAAA (Safari renderiza type=month como texto
+// livre — sem isso a parcela seria silenciosamente ignorada). null = inválido.
+function _fcParseMesIdx(v) {
+  v = String(v || '').trim();
+  let y = 0, m = 0, mm = v.match(/^(\d{4})-(\d{1,2})$/);
+  if (mm) { y = +mm[1]; m = +mm[2]; }
+  else { mm = v.match(/^(\d{1,2})[\/\-](\d{4})$/); if (mm) { y = +mm[2]; m = +mm[1]; } }
+  if (!y || m < 1 || m > 12) return null;
+  const hoje = new Date();
+  return (y - hoje.getFullYear()) * 12 + (m - 1 - hoje.getMonth());
+}
+
+// Simulador de viabilidade de NOVA DÍVIDA (compra de estoque ou empréstimo).
+// Lê o form, roda a projeção COM a dívida e compara com a base (sem). Parcela
+// auto pra compra = (total − entrada) ÷ nº; empréstimo exige a parcela do banco
+// (tem juros — chutar total÷n subestimaria).
+function _fcSimularViabilidade() {
   const out = document.getElementById('fc-sim-resultado');
   if (!out) return;
-  const num = id => { const el = document.getElementById(id); return el ? Math.max(0, parseFloat((el.value || '').replace(/\./g, '').replace(',', '.')) || 0) : 0; };
-  const entrada = num('fc-sim-entrada');
-  const parcela = num('fc-sim-parcela');
+  const num = id => { const el = document.getElementById(id); return el ? _fcNumBR(el.value) : 0; };
+  const tipoEl = document.getElementById('fc-sim-tipo');
+  const tipo = tipoEl ? tipoEl.value : 'compra';
+  const total = num('fc-sim-total');
+  const entrada = tipo === 'compra' ? Math.min(num('fc-sim-entrada'), total || Infinity) : 0;
   const nEl = document.getElementById('fc-sim-nparc');
   const nparc = nEl ? Math.max(0, Math.floor(parseFloat((nEl.value || '').replace(',', '.')) || 0)) : 0;
-  if (entrada <= 0 && parcela <= 0) {
-    out.innerHTML = '<span style="color:var(--text3);">Preencha a entrada e/ou a parcela pra ver o efeito no caixa.</span>';
+  const unidades = num('fc-sim-unidades');
+  let parcela = num('fc-sim-parcela');
+  if (total <= 0) {
+    out.innerHTML = '<span style="color:var(--text3);">Preencha o valor total (e a parcela, se for empréstimo) pra ver se cabe no caixa.</span>';
     return;
   }
-  const opts = { reserva: _fcRaioReserva, simAVista: entrada, simMensal: parcela, simParcelas: nparc };
-  const partes = [];
-  if (entrada > 0) partes.push(fmt(entrada) + ' de entrada (sai agora)');
-  if (parcela > 0) partes.push(fmt(parcela) + '/mês' + (nparc > 0 ? ' × ' + nparc + ' parcelas' : ' fixo (recorrente)'));
-  const total = entrada + parcela * (nparc > 0 ? nparc : 0);
-  const desc = partes.join(' + ') + (nparc > 0 && parcela > 0 ? ' · total ' + fmt(total) : '');
-  const r = fcRaioXObrigacoes(opts);
+  const n = Math.max(1, nparc);
+  const financiado = Math.max(0, total - entrada);
+  if (parcela <= 0) {
+    if (tipo === 'compra') parcela = financiado / n;   // sem juros embutidos: parcelamento do fornecedor
+    else {
+      out.innerHTML = '<span style="color:var(--gold);">Empréstimo: digite a <b>parcela que o banco cobra</b> (ela embute os juros — não dá pra deduzir do valor total).</span>';
+      return;
+    }
+  }
+  // Mês da 1ª parcela → índice na projeção (0 = mês corrente). Parsing
+  // tolerante (Safari não tem input month nativo); inválido → mês que vem,
+  // com aviso — NUNCA ignora a parcela silenciosamente.
+  const iniEl = document.getElementById('fc-sim-inicio');
+  let inicioIdx = 1, mesInvalido = false;
+  if (iniEl && iniEl.value) {
+    const idx = _fcParseMesIdx(iniEl.value);
+    if (idx == null) mesInvalido = true; else inicioIdx = idx;
+  }
+  const inicioClamp = Math.max(0, Math.min(FC_RAIOX_MESES - 1, inicioIdx));
+  const foraJanela = inicioIdx > FC_RAIOX_MESES - 1;
+  const mesPassado = inicioIdx < 0;
+  const parcAlem = Math.max(0, (inicioClamp + n) - FC_RAIOX_MESES);   // parcelas além da janela de 12m
+  const sim = { tipo, valorTotal: total, entrada, parcela, nParcelas: n, inicioIdx: inicioClamp,
+    unidades: tipo === 'compra' ? unidades : 0 };
+  const base = fcRaioXObrigacoes({ reserva: _fcRaioReserva });
+  const r = fcRaioXObrigacoes({ reserva: _fcRaioReserva, sim });
   const cor = r.vale < 0 ? 'var(--red)' : r.vale < r.reserva ? 'var(--gold)' : 'var(--green)';
   const emoji = r.vale < 0 ? '🔴' : r.vale < r.reserva ? '🟡' : '🟢';
+  const desc = (tipo === 'emprestimo'
+      ? 'Empréstimo de <b>' + fmt(total) + '</b> (cai no caixa agora) · devolve ' + fmt(parcela) + '/mês × ' + n
+        + ' = <b>' + fmt(parcela * n) + '</b> (juros embutidos: ' + fmt(Math.max(0, parcela * n - total)) + ')'
+      : 'Compra de estoque de <b>' + fmt(total) + '</b>' + (unidades > 0 ? ' (' + Math.round(unidades) + ' motos)' : '')
+        + ' — entra no giro e adia a reposição'
+        + (entrada > 0 ? ' · entrada ' + fmt(entrada) : '') + (financiado > 0 ? ' · ' + fmt(parcela) + '/mês × ' + n : ''))
+    + ' · 1ª parcela em ' + (r.linhas[inicioClamp] ? r.linhas[inicioClamp].lbl.replace(' (resto)', '') : '—');
   const veredito = r.vale < 0
-    ? '<b>NÃO.</b> O caixa fica NEGATIVO em ' + r.critico.lbl + ' (' + fmt(r.vale) + ') — você não teria como pagar.'
+    ? '<b>NÃO CABE.</b> O caixa fica NEGATIVO em ' + r.critico.lbl + ' (' + fmt(r.vale) + ') — você não teria como pagar.'
     : r.vale < r.reserva
       ? '<b>CUIDADO.</b> O caixa cai pra ' + fmt(r.vale) + ' em ' + r.critico.lbl
-        + ', abaixo da reserva de ' + fmt(r.reserva) + '. Arriscado.'
-      : '<b>PODE.</b> Mesmo no pior mês (' + r.critico.lbl + ') o caixa fica em ' + fmt(r.vale)
+        + ', abaixo da reserva de ' + fmt(r.reserva) + '. Arriscado — qualquer imprevisto fura.'
+      : '<b>CABE.</b> Mesmo no pior mês (' + r.critico.lbl + ') o caixa fica em ' + fmt(r.vale)
         + ', acima da reserva de ' + fmt(r.reserva) + '.';
+  // Comparação com/sem + regime (a nova parcela vs geração sustentável).
+  const svcNovo = (r.geraSust100 > 0) ? (parcela + (_fcPicoParcelaFutura().pico || 0)) / r.geraSust100 : null;
+  const linhasSim = r.linhas.map((l, i) => ({ l, b: base.linhas[i] }))
+    .filter(x => x.l.sim > 0 || x.l.simIn > 0);
+  const mini = linhasSim.length
+    ? '<div style="margin-top:8px;overflow-x:auto;"><table style="border-collapse:collapse;font-size:11px;">'
+      + '<tr><td style="padding:3px 10px 3px 0;color:var(--text3);">Meses com a nova dívida:</td>'
+      + linhasSim.slice(0, 12).map(x => '<td style="padding:3px 8px;text-align:center;">'
+        + '<div style="color:var(--text3);">' + x.l.lbl.replace(' (resto)', '') + '</div>'
+        + '<div style="font-family:\'JetBrains Mono\',monospace;font-weight:700;color:'
+        + (x.l.saldo < 0 ? 'var(--red)' : x.l.saldo < r.reserva ? 'var(--gold)' : 'var(--green)') + ';">' + fmt(x.l.saldo) + '</div></td>').join('')
+      + '</tr></table></div>' : '';
   out.innerHTML =
-      '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;">Simulando: ' + desc
+      '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;">' + desc
     + ' <span style="color:var(--text3);">· vendas a ' + Math.round(r.vendasPct * 100) + '% do ritmo</span></div>'
-    + '<div style="font-size:13.5px;font-weight:700;color:' + cor + ';line-height:1.5;">' + emoji + ' ' + veredito + '</div>';
+    + '<div style="font-size:13.5px;font-weight:700;color:' + cor + ';line-height:1.5;">' + emoji + ' ' + veredito + '</div>'
+    + '<div style="font-size:11.5px;color:var(--text2);margin-top:6px;">Sem essa dívida o pior mês seria ' + fmt(base.vale)
+    + ' → com ela, ' + fmt(r.vale) + ' (' + fmtSigned(r.vale - base.vale) + ').'
+    + (svcNovo != null ? ' Parcelas totais (' + fmt(parcela + (_fcPicoParcelaFutura().pico || 0)) + '/mês no pico) = <b>'
+      + Math.round(svcNovo * 100) + '%</b> da geração no ritmo normal' + (svcNovo > FC_SERVICO_AMARELO ? ' 🔴' : svcNovo > FC_SERVICO_VERDE ? ' 🟡' : ' 🟢') + '.' : '')
+    + (mesInvalido ? ' <b style="color:var(--gold);">⚠ Não entendi o mês da 1ª parcela ("' + ((iniEl && iniEl.value) || '') + '") — usei o mês que vem. Formatos aceitos: AAAA-MM ou MM/AAAA.</b>' : '')
+    + (mesPassado ? ' <b style="color:var(--gold);">⚠ Mês da 1ª parcela já passou — trazido pro mês corrente.</b>' : '')
+    + (foraJanela ? ' <b style="color:var(--gold);">⚠ 1ª parcela além de 12 meses — trazida pro último mês da janela (conservador).</b>' : '')
+    + (parcAlem > 0 ? ' <b style="color:var(--gold);">⚠ ' + parcAlem + ' de ' + n + ' parcelas caem DEPOIS da janela de 12 meses — o compromisso continua além do quadro; olhe a % da geração acima.</b>' : '')
+    + '</div>' + mini;
 }
 
 // Cor do semáforo de crédito a partir da projeção + serviço da dívida.
@@ -12800,16 +12998,34 @@ function renderFinFluxo() {
   if (!_isAdminUser()) return;
   // Carrega o nº de vendas médio 1× (async) pra converter % ↔ quantidade.
   if (_fcVendasMedia === null) { _fcVendasMedia = 'loading'; fcCarregarVendasMedia(); }
+  if (_fcEstoque === null) { _fcEstoque = 'loading'; fcCarregarEstoque(); }
   const proj = fcProjecao();
   const { medias, fixo, saldo0 } = proj;
   const ymCorrente = new Date().toISOString().slice(0, 7);
   const fMes = medias.fluxo[ymCorrente];
   const caixaOpMes = fMes ? (fMes.operacao.ent - fMes.operacao.sai) : 0;
   const servico = fcServicoDividaMes();
-  const servicoPct = medias.caixaOp > 0 ? servico / medias.caixaOp : null;
-  const cobertura = servico > 0 ? medias.caixaOp / servico : null;
+  // % do serviço da dívida sobre a GERAÇÃO SUSTENTÁVEL (vendas − reposição −
+  // variáveis − fixo, ritmo 100%) — não sobre o caixa operacional bruto, que
+  // ignora a reposição de estoque e inflava a folga (dava 2,6% quando o real
+  // é ~50%+). Régua 30/40 mantida. Pico futuro avaliado junto (parcela sobe).
+  const geraSust100 = fcGeraSustentavel(1);
+  const picoParc = _fcPicoParcelaFutura();
+  const servicoPct = geraSust100 > 0 ? servico / geraSust100 : null;
+  const picoPct = (geraSust100 > 0 && picoParc && picoParc.pico > 0) ? picoParc.pico / geraSust100 : null;
+  // Pro semáforo geral vale o PIOR caso conhecido (pico futuro da parcela).
+  const servicoPctSemaforo = (picoPct != null && servicoPct != null) ? Math.max(servicoPct, picoPct) : (picoPct != null ? picoPct : servicoPct);
+  const cobertura = servico > 0 && geraSust100 > 0 ? geraSust100 / servico : null;
   const folego = fixo > 0 ? saldo0 / fixo : null;
-  const cor = fcSemaforo(proj, servicoPct);
+  // Vales do card = Raio-X de Viabilidade (COM reposição de estoque) — a
+  // projeção legada (fcProjecao) não desconta reposição e contaria outra
+  // história na mesma tela. A cor usa os mesmos vales.
+  const _rxSem = fcRaioXObrigacoes({});
+  const _critPessLbl = (_rxSem.linhas.find(l => l.saldoPess === _rxSem.valePess) || _rxSem.linhas[0]).lbl;
+  const cor = fcSemaforo({ fixo,
+    zeraR: _rxSem.negativo ? _rxSem.critico.lbl : null,
+    valeR: { saldo: _rxSem.vale },
+    zeraP: _rxSem.valePess < 0 ? _critPessLbl : null }, servicoPctSemaforo);
 
   // ── Heróis: as duas respostas principais da tela, com vendas paradas ──
   // A: quanto tempo o caixa paga só a operação. B: idem pagando também
@@ -12854,17 +13070,24 @@ function renderFinFluxo() {
     : '<span style="color:var(--red);font-weight:700;">✗</span>';
   const pct1 = v => (v * 100).toFixed(1).replace('.', ',') + '%';
   const crit = [];
-  crit.push(chk(proj.valeR.saldo >= fixo * FC_VALE_MIN_FIXO) + ' Vale do caixa (realista): <b>'
-    + fmtSigned(proj.valeR.saldo) + '</b> em ' + proj.valeR.lbl
+  crit.push(chk(_rxSem.vale >= fixo * FC_VALE_MIN_FIXO) + ' Vale do caixa (na sua expectativa de vendas, '
+    + Math.round(_rxSem.vendasPct * 100) + '% do ritmo, com reposição de estoque): <b>'
+    + fmtSigned(_rxSem.vale) + '</b> em ' + _rxSem.critico.lbl
     + ' — mínimo p/ verde: ' + fmt(fixo * FC_VALE_MIN_FIXO) + ' (' + FC_VALE_MIN_FIXO + '× custo fixo)'
-    + (proj.zeraR ? ' · <b style="color:var(--red);">zera em ' + proj.zeraR + '</b>' : ''));
-  crit.push(chk(!proj.zeraP) + ' Cenário pessimista (entradas a ' + Math.round(FC_PESSIMISTA_PCT * 100)
-    + '%): vale <b>' + fmtSigned(proj.valeP.saldo) + '</b> em ' + proj.valeP.lbl
-    + (proj.zeraP ? ' · <b style="color:var(--red);">zera em ' + proj.zeraP + '</b>' : ' — não zera em ' + FC_PROJECAO_MESES + 'm'));
-  crit.push((servicoPct == null ? chk(false) + ' Serviço da dívida: caixa op. médio ≤ 0 — sem base p/ %'
+    + (_rxSem.negativo ? ' · <b style="color:var(--red);">fica negativo</b>' : ''));
+  crit.push(chk(_rxSem.valePess >= 0) + ' Cenário pessimista (vendas a ' + Math.round(FC_PESSIMISTA_PCT * 100)
+    + '% do ritmo): vale <b>' + fmtSigned(_rxSem.valePess) + '</b> em ' + _critPessLbl
+    + (_rxSem.valePess < 0 ? ' · <b style="color:var(--red);">o caixa NÃO aguenta — vendas caindo pela metade quebram o caixa</b>'
+      : ' — não zera em ' + FC_RAIOX_MESES + 'm'));
+  crit.push((servicoPct == null ? chk(false) + ' Serviço da dívida: geração operacional ≤ 0 — sem base p/ %'
     : chk(servicoPct <= FC_SERVICO_VERDE) + ' Serviço da dívida: <b>' + fmt(servico) + '/mês = '
-    + pct1(servicoPct) + '</b> do caixa op. médio (verde ≤' + Math.round(FC_SERVICO_VERDE * 100)
+    + pct1(servicoPct) + '</b> da geração líquida no ritmo normal (vendas − reposição de estoque − custos: '
+    + fmt(geraSust100) + '/mês; verde ≤' + Math.round(FC_SERVICO_VERDE * 100)
     + '%, amarelo ≤' + Math.round(FC_SERVICO_AMARELO * 100) + '%)'));
+  if (picoPct != null && picoParc.pico > servico)
+    crit.push(chk(picoPct <= FC_SERVICO_VERDE) + ' Pico futuro da parcela: <b>' + fmt(picoParc.pico)
+      + '/mês</b> a partir de ' + (picoParc.picoYm || '—') + ' = <b>' + pct1(picoPct)
+      + '</b> da geração líquida — é essa % que vale pro semáforo.');
   document.getElementById('fin-fluxo-semaforo').innerHTML =
     '<div class="card" style="border-left:4px solid ' + c.css + ';">'
     + '<div style="padding:16px 20px;display:flex;gap:16px;align-items:flex-start;">'
@@ -12875,7 +13098,7 @@ function renderFinFluxo() {
     + crit.map(x => '<div>' + x + '</div>').join('') + '</div></div></div></div>';
 
   // ── Raio-X de Obrigações: tudo que sai do caixa + veredito "posso assumir mais?" ──
-  const _rx = fcRaioXObrigacoes({});
+  const _rx = _rxSem;   // já computado pro semáforo (mesmos opts)
   const _div = fcDividaTotal();
   const _espaco = fcEspacoObrigacaoMensal(_rx.reserva);
   _fcRaioReserva = _rx.reserva;
@@ -12891,7 +13114,7 @@ function renderFinFluxo() {
     const sc = l.saldo < 0 ? 'var(--red)' : l.saldo < _rx.reserva ? 'var(--gold)' : 'var(--green)';
     return '<tr style="border-top:1px solid var(--border);">'
       + '<td style="padding:5px 8px;font-size:11px;white-space:nowrap;">' + l.lbl + '</td>'
-      + _cel(l.gera) + _cel(l.forn, true) + _cel(l.empr, true)
+      + _cel(l.vendas) + _cel(l.custos, true) + _cel(l.repor, true) + _cel(l.forn, true) + _cel(l.empr + l.outros, true)
       + '<td style="padding:5px 8px;text-align:right;font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:' + sc + ';">' + fmt(l.saldo) + '</td></tr>';
   }).join('');
   // Controle de expectativa de vendas — presets relativos + input em % ou em
@@ -12944,10 +13167,66 @@ function renderFinFluxo() {
         ? '✓ O resto do mês está sendo projetado por esse ritmo real (não pela média).'
         : 'Poucos dias ainda — o resto do mês segue a média (trava anti-ruído até o dia ' + FC_MC_DIAS_MIN + '; o valor acima é só referência).')
     + '</div></div>';
+  // ── Saúde financeira de hoje (capital de giro) ──
+  const _est = (_fcEstoque && typeof _fcEstoque === 'object') ? _fcEstoque : null;
+  const _receber = (contasReceber || []).filter(c => !c.recebidoEm && c.status !== 'recebido')
+    .reduce((s, c) => s + (c.valor || 0), 0);
+  const _semCatAb = _rx.comp.semCatTot || 0;
+  // Parcelas de empréstimo dos próximos 12 meses (passivo de giro).
+  const _ym12 = (() => { const d = new Date(); d.setMonth(d.getMonth() + 12); return d.toISOString().slice(0, 7); })();
+  const _parc12m = Object.entries(_rx.comp.parcelas).reduce((s, [ym, v]) => s + (ym <= _ym12 ? v : 0), 0);
+  const _passivoGiro = _fornAberto + _semCatAb + _parc12m;
+  const _cgl = _rx.saldo0 + (_est ? _est.custoTotal : 0) + _receber - _passivoGiro;
+  const _liqSeca = _passivoGiro > 0 ? _rx.saldo0 / _passivoGiro : null;
+  const _gs = _rx.geraSust, _gs100 = _rx.geraSust100;
+  const _picoP = _fcPicoParcelaFutura();
+  const _svcPct100 = (_gs100 > 0 && _picoP.pico > 0) ? _picoP.pico / _gs100 : null;
+  const _kpiS = (lbl, val, cor, sub) => '<div style="flex:1;min-width:150px;padding:10px 12px;background:var(--surface2);border-radius:var(--r-sm);">'
+    + '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:3px;">' + lbl + '</div>'
+    + '<div style="font-size:15px;font-weight:800;font-family:\'JetBrains Mono\',monospace;color:' + (cor || 'var(--text)') + ';">' + val + '</div>'
+    + (sub ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;">' + sub + '</div>' : '') + '</div>';
+  const _saudeBloco = '<div style="margin-bottom:14px;">'
+    + '<div style="font-size:12px;font-weight:700;margin-bottom:8px;">🩺 Saúde financeira de hoje</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">'
+    + _kpiS('Caixa', fmt(_rx.saldo0), null, null)
+    + _kpiS('Estoque (motos)',
+        _est && _est.erro ? '⚠ falhou' : _est && _est.unidades > 0 ? Math.round(_est.unidades) + ' un. · ' + fmt(_est.custoTotal) : (_est ? '0' : 'carregando…'),
+        _est && _est.erro ? 'var(--gold)' : null,
+        _est && _est.erro ? 'não carregou — recarregue a página' : _est && _est.vendaTotal > 0 ? 'a preço de venda: ' + fmt(_est.vendaTotal) : 'custo do estoque')
+    + _kpiS('A receber', fmt(_receber), null, null)
+    + _kpiS('Fornecedor a pagar', fmt(_fornAberto), 'var(--red)', 'compras já feitas')
+    + _kpiS('Dívida (empréstimo)', fmt(_div.saldoDevedor), 'var(--red)', fmt(_parc12m) + ' vence em 12m')
+    + '</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+    + _kpiS('Capital de giro líquido', fmtSigned(_cgl), _cgl >= 0 ? 'var(--green)' : 'var(--red)',
+        'caixa + estoque + a receber − fornecedor − parcelas 12m')
+    + _kpiS('Liquidez seca', _liqSeca == null ? '—' : _liqSeca.toFixed(2).replace('.', ','),
+        _liqSeca == null ? null : _liqSeca >= 1 ? 'var(--green)' : _liqSeca >= 0.5 ? 'var(--gold)' : 'var(--red)',
+        'caixa ÷ dívidas de giro (sem contar estoque). ≥1 = confortável')
+    + _kpiS('Geração líquida/mês', fmtSigned(_gs100), _gs100 >= 0 ? 'var(--green)' : 'var(--red)',
+        'ritmo normal: vendas − reposição − custos. Na expectativa atual: ' + fmtSigned(_gs))
+    + _kpiS('Serviço da dívida (pico)', _svcPct100 == null ? '—' : Math.round(_svcPct100 * 100) + '%',
+        _svcPct100 == null ? null : _svcPct100 <= FC_SERVICO_VERDE ? 'var(--green)' : _svcPct100 <= FC_SERVICO_AMARELO ? 'var(--gold)' : 'var(--red)',
+        _picoP.pico > 0 ? fmt(_picoP.pico) + '/mês (' + (_picoP.picoYm || '') + ') ÷ geração no ritmo normal' : 'sem parcelas futuras')
+    + '</div></div>';
+  // Cobertura do estoque no ritmo escolhido.
+  const _cobTxt = (_est && _est.erro)
+    ? '📦 <b style="color:var(--gold);">O estoque não carregou</b> — por segurança a projeção está descontando a reposição '
+      + 'desde o 1º mês (' + Math.round(_rx.custoRatio * 100) + '% de cada R$ vendido), SEM o crédito das '
+      + 'motos já compradas. O resultado está mais pessimista que o real — recarregue a página.'
+    : _rx.coberturaMeses != null
+    ? ('📦 Estoque atual (' + Math.round(_rx.estoqueUn0) + ' motos, custo ' + fmt(_est ? _est.custoTotal : 0) + ') cobre <b>'
+      + _rx.coberturaMeses.toFixed(1).replace('.', ',')
+      + ' meses</b> de venda nesse ritmo — já comprado (os boletos de fornecedor acima são as parcelas dele). Depois disso, a projeção '
+      + 'desconta a <b>reposição</b> (' + Math.round(_rx.custoRatio * 100) + '% de cada R$ vendido'
+      + (_rx.custoUnit > 0 ? ' ≈ ' + fmt(_rx.custoUnit) + '/moto' : '') + ' — coluna "− Repor").')
+    : '📦 Estoque ainda carregando — por segurança a reposição está sendo descontada desde o 1º mês ('
+      + Math.round(_rx.custoRatio * 100) + '% de cada R$ vendido). O número final aparece em instantes.';
   document.getElementById('fin-fluxo-alavancagem').innerHTML =
     '<div class="card" style="border-left:4px solid ' + _rxCor + ';"><div style="padding:16px 20px;">'
-    + '<div style="font-size:15px;font-weight:800;margin-bottom:2px;">⚖️ Raio-X de Obrigações — posso assumir mais?</div>'
-    + '<div style="font-size:11.5px;color:var(--text3);margin-bottom:12px;">Tudo que sai do caixa (custo fixo + boletos de fornecedor + parcelas de empréstimo) contra as vendas que você espera. Reserva de segurança: ' + fmt(_rx.reserva) + ' (1 mês de custo fixo).</div>'
+    + '<div style="font-size:15px;font-weight:800;margin-bottom:2px;">🔍 Raio-X de Viabilidade — posso assumir novas dívidas?</div>'
+    + '<div style="font-size:11.5px;color:var(--text3);margin-bottom:12px;">Caixa projetado 12 meses: vendas esperadas − reposição de estoque − custos − boletos de fornecedor − parcelas de empréstimo (datas reais). Reserva de segurança: ' + fmt(_rx.reserva) + ' (1 mês de custo fixo).</div>'
+    + _saudeBloco
     + _mcBloco
     + _controleVendas
     + '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:14px;padding:12px 14px;background:var(--surface2);border-radius:var(--r-sm);">'
@@ -12958,32 +13237,38 @@ function renderFinFluxo() {
     + (_rx.negativo ? 'Já não fecha nem com o que você deve hoje — não dá pra assumir mais nada.'
         : _rx.furaReserva ? 'Fica abaixo da reserva de segurança — evite novos compromissos.'
         : 'Cabe assumir até <b>' + fmt(_espaco) + '/mês</b> de novo compromisso mantendo a reserva.')
+    + (_gs100 > 0 && _gs < 0 ? ' <b style="color:var(--gold);">Atenção:</b> nessa expectativa de vendas a operação roda no negativo (' + fmtSigned(_gs) + '/mês em regime) — a folga vem do estoque já pago, não é permanente.' : '')
     + (_vp > FC_PESSIMISTA_PCT + 0.001 ? ' <span style="color:var(--text3);">No pior caso (vendas pela metade), o vale cairia pra ' + fmt(_rx.valePess) + '.</span>' : '')
     + '</div></div></div>'
-    + '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;">'
-    + '<span style="color:var(--text2);">Empréstimo (saldo devedor): <b style="color:var(--red);">' + fmt(_div.saldoDevedor) + '</b></span>'
-    + '<span style="color:var(--text2);">Boletos de fornecedor em aberto: <b style="color:var(--red);">' + fmt(_fornAberto) + '</b></span>'
-    + '</div>'
-    + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:440px;">'
+    + '<div style="font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.5;">' + _cobTxt + '</div>'
+    + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:560px;">'
     + '<thead><tr><th style="padding:5px 8px;text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);">Mês</th>'
-    + _th('+ Gera') + _th('− Fornec.') + _th('− Empr.') + _th('= Caixa fim')
+    + _th('+ Vendas') + _th('− Custos') + _th('− Repor') + _th('− Fornec.') + _th('− Empr.') + _th('= Caixa fim')
     + '</tr></thead><tbody>' + _quadroRows + '</tbody></table></div>'
-    + '<div style="font-size:10.5px;color:var(--text3);margin-top:4px;">"Gera" = as vendas esperadas (' + Math.round(_vp * 100) + '% do ritmo) já menos o custo fixo e os variáveis. Cor do caixa: 🟢 acima da reserva · 🟡 abaixo · 🔴 negativo.</div>'
+    + '<div style="font-size:10.5px;color:var(--text3);margin-top:4px;">"Custos" = fixo + variáveis (proporcionais à venda). "Repor" = recompra das motos vendidas depois que o estoque atual acaba. Cor do caixa: 🟢 acima da reserva · 🟡 abaixo · 🔴 negativo.</div>'
     + '<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">'
-    + '<div style="font-size:13px;font-weight:700;margin-bottom:2px;">🧮 Simular novo compromisso <span style="font-weight:500;color:var(--text3);">(antes de assinar)</span></div>'
-    + '<div style="font-size:11px;color:var(--text3);margin-bottom:10px;">Preencha entrada e/ou parcelas. Ex.: compra de moto R$ 100k com 50% de entrada = <b>50.000</b> de entrada + <b>12.500</b>/mês × <b>4</b>. Empréstimo = só parcela × nº. Boleto fixo mensal = parcela com nº = 0.</div>'
+    + '<div style="font-size:13px;font-weight:700;margin-bottom:2px;">🧮 Simular nova dívida <span style="font-weight:500;color:var(--text3);">(antes de assinar)</span></div>'
+    + '<div style="font-size:11px;color:var(--text3);margin-bottom:10px;"><b>Compra de estoque:</b> valor total + entrada + parcelas (as motos entram no giro). <b>Empréstimo:</b> o valor cai no caixa e as parcelas saem (digite a parcela do banco — ela inclui juros).</div>'
     + (() => {
         const inpCss = 'padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:\'JetBrains Mono\',monospace;font-size:13px;';
-        const campo = (lbl, id, ph, w) => '<div style="display:flex;flex-direction:column;gap:3px;">'
+        const campo = (lbl, id, ph, w, tipo) => '<div style="display:flex;flex-direction:column;gap:3px;">'
           + '<label for="' + id + '" style="font-size:11px;color:var(--text2);">' + lbl + '</label>'
-          + '<input id="' + id + '" type="text" inputmode="decimal" placeholder="' + ph + '" oninput="_fcSimularCompra()" style="width:' + w + ';' + inpCss + '"></div>';
+          + '<input id="' + id + '" type="' + (tipo || 'text') + '" inputmode="decimal" placeholder="' + ph + '" oninput="_fcSimularViabilidade()" style="width:' + w + ';' + inpCss + '"></div>';
+        const proxMes = (() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d.toISOString().slice(0, 7); })();
         return '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">'
-          + campo('Entrada (à vista, R$)', 'fc-sim-entrada', '0,00', '140px')
-          + campo('Cada parcela (R$/mês)', 'fc-sim-parcela', '0,00', '140px')
-          + campo('Nº de parcelas', 'fc-sim-nparc', '0 = fixo', '110px')
+          + '<div style="display:flex;flex-direction:column;gap:3px;"><label for="fc-sim-tipo" style="font-size:11px;color:var(--text2);">Tipo</label>'
+          + '<select id="fc-sim-tipo" onchange="_fcSimularViabilidade()" style="' + inpCss + 'width:170px;">'
+          + '<option value="compra">Compra de estoque</option><option value="emprestimo">Empréstimo</option></select></div>'
+          + campo('Valor total (R$)', 'fc-sim-total', '0,00', '130px')
+          + campo('Entrada à vista (R$)', 'fc-sim-entrada', 'só compra', '130px')
+          + campo('Nº de parcelas', 'fc-sim-nparc', '1', '95px')
+          + '<div style="display:flex;flex-direction:column;gap:3px;"><label for="fc-sim-inicio" style="font-size:11px;color:var(--text2);">1ª parcela em</label>'
+          + '<input id="fc-sim-inicio" type="month" value="' + proxMes + '" onchange="_fcSimularViabilidade()" style="' + inpCss + 'width:150px;"></div>'
+          + campo('Parcela (R$/mês)', 'fc-sim-parcela', 'auto', '125px')
+          + campo('Motos (un.)', 'fc-sim-unidades', 'opcional', '100px')
           + '</div>';
       })()
-    + '<div id="fc-sim-resultado" style="margin-top:12px;font-size:12.5px;color:var(--text3);">Preencha a entrada e/ou a parcela pra ver se cabe no caixa.</div>'
+    + '<div id="fc-sim-resultado" style="margin-top:12px;font-size:12.5px;color:var(--text3);">Preencha o valor total (e a parcela, se for empréstimo) pra ver se cabe no caixa.</div>'
     + '</div></div></div>';
 
   // ── Projeção de curto prazo por data (timing das próximas 8 semanas) ──
@@ -13100,7 +13385,8 @@ function renderFinFluxo() {
     + '</tbody></table>';
   document.getElementById('fin-fluxo-proj-sub').textContent =
     'Saldo hoje ' + fmt(saldo0) + ' · vale realista ' + fmtSigned(proj.valeR.saldo) + ' (' + proj.valeR.lbl
-    + ') · vale pessimista ' + fmtSigned(proj.valeP.saldo) + ' (' + proj.valeP.lbl + ')';
+    + ') · vale pessimista ' + fmtSigned(proj.valeP.saldo) + ' (' + proj.valeP.lbl + ')'
+    + ' · ⚠ esta tabela NÃO desconta reposição de estoque — pra decidir dívida/compra use o Raio-X de Viabilidade';
 
   // ── Premissas ──
   const fluxoTot = Object.values(medias.fluxo);
@@ -13113,7 +13399,13 @@ function renderFinFluxo() {
     '<b>Dívida:</b> só de emprestimo_parcelas; contas a pagar vinculadas a parcela são ignoradas (sem dupla contagem).',
     '<b>Boletos operacionais em aberto:</b> ' + fmt(proj.boletosOverlap) + ' (' + proj.boletosOverlapN
       + ') não são descontados — já cobertos pelo custo fixo projetado.',
-    '<b>Compra de estoque nova</b> (além dos boletos já assumidos) está fora da projeção.',
+    '<b>Reposição de estoque (Raio-X de Viabilidade):</b> o estoque atual já foi comprado (os boletos de '
+      + 'fornecedor em aberto são o pagamento dele — contar boleto + reposição seria dupla contagem). Enquanto '
+      + 'as vendas consomem esse estoque, não há custo novo; esgotado, cada moto vendida paga o custo médio de '
+      + 'reposição à vista (conservador). Variáveis (comissão/NF/montagem) escalam com a venda.',
+    '<b>Fora da projeção (fôlego extra não contado):</b> vendas de ATACADO (ex.: container já pago — quando '
+      + 'vender, é caixa a mais) e chegadas de estoque não simuladas. Projeção de 8 semanas não desconta '
+      + 'reposição (coberta pelo estoque atual).',
   ];
   if (proj.boletosSemCat > 0) prem.push('<b style="color:var(--gold);">⚠ Boletos sem categoria:</b> '
     + fmt(proj.boletosSemCat) + ' (' + proj.boletosSemCatN + ') em aberto no Contas a Pagar — contam no '
