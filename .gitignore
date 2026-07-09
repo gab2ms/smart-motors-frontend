@@ -10,3 +10,6 @@ supabase/.temp/
 *.local.json
 .env
 .env.*
+
+# Config local do Claude/worktrees — não versionar neste repo
+.claude/
