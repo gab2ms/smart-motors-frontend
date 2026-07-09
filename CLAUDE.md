@@ -249,7 +249,71 @@ mostra nenhum produto até o dono selecionar. Só então mandar o link da campan
 - **Pendências conhecidas:** (1) **Export Excel** (aba 4 do Fechamento, ~7036) ainda usa o shape antigo (`fixos/variaveis/indefinidos`) — roda, mas não mostra semifixo/não-recorrente. (2) `Comissão Afiliados` (R$ 100) cai em "a classificar" (não está no cadastro; destino = `Comissão Indicação`). (3) aluguel do quiosque some nos meses de compensação/escambo (custo fixo invisível) — ver `empresa.md`. *(Resolvido 08/07: "Custo Fixo Planejado" do DRE deixou de somar não-recorrentes + mês parcial — ver acima.)*
 - **Auditoria original (3 agentes):** `~/projetos/Smart Motors/documentos/auditoria-custos-fixo-variavel-2026-07.md`. Contexto de negócio (obra = prejuízo esporádico; quiosque = escambo por venda de moto) em `~/projetos/Smart Motors/_memoria/empresa.md`.
 
+## DRE + Raio-X Financeiro (Fluxo de Caixa) — análise de risco/alavancagem (09/07/2026)
+Origem: sócio alegou "DRE toda errada". Auditoria (3 agentes) achou base sólida (receita competência + CPV
+real por item) com 2 erros conceituais; reforma feita + módulo novo de risco de caixa. **Tudo em `index.html`.**
+
+### DRE — `calcularDRE(iniISO,fimISO)` (~7980) e os 4 renders (aba DRE `_finDreRenderResumo` ~7257, widget Dashboard `renderDashDreMes`, Excel `gerarFechamentoMes`, conciliação DRE×Caixa `fcCarregarFechamento`)
+- **Empréstimo só JUROS** (correção contábil): `_empDecomporPeriodo(ini,fim)` decompõe cada parcela paga em
+  juros vs principal pela fração `(totalComJuros−valorOriginal)/totalComJuros`. Só os juros entram no
+  resultado; o **principal é amortização de dívida** (sai no Fluxo de Caixa, não na DRE). Vale retroativo.
+- **Extraordinários separados:** despesa dividida em `despRecorrente` vs `despNaoRecorrente` (pela coluna
+  `categorias_lancamento.natureza='nao_recorrente'`, via `_naturezaDaCategoria`). Estrutura: Receita→CPV→
+  Margem→Despesas(operação normal)→Juros→**RESULTADO DA OPERAÇÃO**→[Extraordinários]→**RESULTADO DO MÊS**.
+  Campos novos no retorno: `despRecorrente`,`despNaoRecorrente`,`naoRecorrentes`,`empJuros`,`empPrincipal`,
+  `resultadoOperacao`,`pctOperacao`,`mesParcial`,`mesParcialDesde`.
+- **Aviso de mês parcial:** `_mesInicioParcial()` — se o 1º lançamento caiu depois do dia 5 (abril: 19/04),
+  o mês tem despesa incompleta mas receita/CPV completos → resultado inflado; faixa de aviso na DRE.
+- Ex. junho: operação **+14.544 (7,5%)**; mês (com extraordinários Eventos+Obra −20.735) **−6.191**. Antes
+  o sistema mostrava −15.484 (a diferença era o principal do empréstimo).
+
+### Raio-X de Obrigações (card `#fin-fluxo-alavancagem`) — "posso assumir mais dívida/estoque?"
+Substituiu o simulador de dívida isolado (que usava caixa operacional, otimista demais).
+- **`fcRaioXObrigacoes(opts)`** — projeta 6 meses: caixa hoje (Σ `contas.saldo`) + geração líquida esperada
+  (vendas×`vendasPct` − custo fixo médio − variáveis) − boletos de fornecedor/estoque/inv/dívida (`comp.boletos`,
+  por mês) − parcelas de empréstimo (`comp.parcelas`). Opts: `vendasPct`, `simAVista`, `simMensal`,
+  `simParcelas`, `reserva`. Retorna `vale` (pior saldo), `critico`, `furaReserva`, `negativo`, `valePess`.
+  **Reserva de segurança = 1 mês de custo fixo** (~R$ 34k). Régua: 🟢 acima / 🟡 abaixo / 🔴 negativo.
+- **`fcEspacoObrigacaoMensal(reserva)`** — busca binária: quanto de obrigação mensal nova ainda cabe.
+- **Simulador `_fcSimularCompra()`** — 3 campos livres: entrada (à vista) + parcela + nº de parcelas (0=fixo).
+  Cobre empréstimo, compra à vista, compra a prazo. Parcela começa no mês i≥1.
+- **Expectativa de vendas ajustável:** global `_fcVendasPct` (default pessimista 50%); presets ½/−30%/−20%/
+  Normal/+20% (`_fcSetVendas`); input em **% OU nº de vendas** (`_fcVendasPorPct`/`_fcVendasPorQtd`, onchange).
+  Média-base visível (ritmo maio+junho ≈ 23 vendas ≈ R$ 218k = 100%); `fcCarregarVendasMedia()` conta os
+  pedidos via `calcularDRE().pedidos.length` (async, 1× ao abrir; global `_fcVendasMedia`).
+- **Base de vendas:** `fcMediasOperacao()` passou a EXCLUIR o mês de início parcial (`_mesInicioParcial`) —
+  usa maio+junho, não abril (que puxava a média pra baixo). Propaga p/ projeção 12m, fôlego, semáforo, Raio-X.
+
+### Projeção de curto prazo por DATA (card `#fin-fluxo-curtoprazo`) — timing intra-mês
+- **`fcProjecaoSemanal(opts)`** — 8 semanas calculadas DIA A DIA: rotina (vendas−fixo−variáveis)/30 espalhada,
+  mas boletos de fornecedor (`contas_pagar` balde estoque/inv/dívida) e parcelas de empréstimo caem na DATA
+  REAL de vencimento (vencido→hoje). Retorna `semanas` (saldo ao fim) + `vale`/`valeData` (menor saldo diário).
+  Captura o risco do boleto grande vencer antes das vendas entrarem (que a visão mensal esconde).
+
+### Semáforo de crédito preexistente (mantido, régua 30/40) — `renderFinFluxo`, `fcSemaforo`, `fcServicoDividaMes`
+Serviço da dívida ÷ caixa op médio (🟢≤30% 🟡≤40% 🔴>40%), fôlego, projeção 12m. A parcela inteira já entrava
+certa no caixa (fontes independentes da DRE). Dono confirmou manter conservador (30/40).
+
+### Premissas / limites conhecidos
+- Custos fixos entram pela MÉDIA (não soma cada boleto de funcionário/aluguel — evita dupla contagem com os
+  boletos operacionais, que viram `overlap`). Fornecedor/investimento/dívida entram individualizados.
+- **Boletos SEM categoria no Contas a Pagar ficam FORA** da projeção principal (avisado). Regra: categorizar
+  todo boleto. Base de vendas de só 2 meses (maio+junho) — folga depende de manter o ritmo.
+- Contexto de negócio (fornecedor 50%+50% em 4 meses; discórdia dono×sócio sobre alavancagem) em `_memoria/empresa.md`.
+
 ## Histórico de mudanças
+
+### 2026-07-09 — DRE corrigida + Raio-X Financeiro (análise de risco/alavancagem)
+Sócio alegou "DRE toda errada"; auditoria (3 agentes) mostrou base sólida com 2 erros. **DRE:** empréstimo
+passou a entrar só pelos JUROS (principal é amortização, vai pro caixa); despesa separada em operação normal
+vs gastos extraordinários (não-recorrentes); aviso de mês parcial (abril). **Raio-X de Obrigações** (card novo
+no Fluxo de Caixa): consolida caixa de hoje + tudo que já vence (fornecedor pelas datas, empréstimo, custo
+fixo pela média) contra vendas projetadas → veredito "posso assumir mais dívida/estoque?" com reserva de
+segurança (1 mês de fixo). Simulador de 3 campos (entrada+parcela+nº). Expectativa de vendas ajustável (% ou
+nº de vendas, média-base visível). **Projeção por data** (card novo): 8 semanas dia-a-dia, boletos nas datas
+reais, mostra o vale intra-mês. Base de vendas passou a excluir abril parcial (usa maio+junho). Ver seção
+**"DRE + Raio-X Financeiro"**. Validado: sintaxe, lógica com dados reais (junho: operação +14.544 / mês −6.191),
+boot sem erro, render por screenshot. **✅ Commit pushed → GitHub Pages.**
 
 ### 2026-07-08 — Afiliados: aba única "Produtos & materiais" + auto-cadastro pela campanha
 Dois pedidos do dono na sequência, mesma frente. **(1) Unificação + seleção-primeiro:** as abas

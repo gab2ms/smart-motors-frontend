@@ -2771,6 +2771,8 @@ select:not(.input-pro):not(.search-input){
     <div class="fin-tab-content" id="fin-tab-fluxo" style="display:none;">
       <div id="fin-fluxo-heroes" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;"></div>
       <div id="fin-fluxo-semaforo" style="margin-bottom:20px;"></div>
+      <div id="fin-fluxo-alavancagem" style="margin-bottom:20px;"></div>
+      <div id="fin-fluxo-curtoprazo" style="margin-bottom:20px;"></div>
       <div style="margin-bottom:20px;">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:10px;">Indicadores do mês</div>
         <div class="kpi-grid" id="fin-fluxo-kpis"></div>
@@ -6930,6 +6932,8 @@ async function gerarFechamentoMes(iniArg, fimArg) {
     // (sublinha), não dedução — alinhado com o regime de competência
     // adotado pelo widget.
     const planejadoFmt = dre.despPlanejado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const principalFmt = (dre.empPrincipal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const temNaoRecX = (dre.despNaoRecorrente || 0) > 0;
     const resumoRows = [
       [{ v: '⚡ SMART MOTORS', s: TITLE_BIG }],
       [{ v: 'Fechamento — ' + periodoLabel, s: SUBTITLE }],
@@ -6954,27 +6958,43 @@ async function gerarFechamentoMes(iniArg, fimArg) {
       ],
       [],
       [
-        '(−) Despesas operacionais (real)',
-        { v: -dre.despReal, t: 'n', z: BRL, s: NEG },
-        { v: dre.receita > 0 ? -dre.despReal/dre.receita : 0, t: 'n', z: PCT }
+        temNaoRecX ? '(−) Despesas do mês (operação normal)' : '(−) Despesas operacionais',
+        { v: -dre.despRecorrente, t: 'n', z: BRL, s: NEG },
+        { v: dre.receita > 0 ? -dre.despRecorrente/dre.receita : 0, t: 'n', z: PCT }
       ],
-      [{ v: `    ${dre.despCount} lançamento${dre.despCount !== 1 ? 's' : ''} no período`, s: SUBTITLE }],
-      [{ v: `    R$ ${planejadoFmt} planejados em custos fixos (referência)`, s: SUBTITLE }],
+      [{ v: `    ${dre.despCount} lançamento${dre.despCount !== 1 ? 's' : ''} no período · R$ ${planejadoFmt} planejados em custos fixos (referência)`, s: SUBTITLE }],
       [
-        '(−) Empréstimos pagos',
-        { v: -dre.empValor, t: 'n', z: BRL, s: NEG },
-        { v: dre.receita > 0 ? -dre.empValor/dre.receita : 0, t: 'n', z: PCT }
+        '(−) Juros de empréstimo',
+        { v: -dre.empJuros, t: 'n', z: BRL, s: NEG },
+        { v: dre.receita > 0 ? -dre.empJuros/dre.receita : 0, t: 'n', z: PCT }
       ],
-      [{ v: `    ${dre.empCount} parcela${dre.empCount !== 1 ? 's' : ''} paga${dre.empCount !== 1 ? 's' : ''} no período`, s: SUBTITLE }],
+      [{ v: `    ${dre.empCount} parcela${dre.empCount !== 1 ? 's' : ''} — só juros na DRE; principal R$ ${principalFmt} vai pro Fluxo de Caixa`, s: SUBTITLE }],
       (() => {
-        const block = dre.resultado >= 0 ? BLOCK_GREEN : BLOCK_RED;
+        const block = dre.resultadoOperacao >= 0 ? BLOCK_GREEN : BLOCK_RED;
         return [
-          { v: ' = RESULTADO DO MÊS', t: 's', s: block },
-          { v: dre.resultado, t: 'n', z: BRL, s: block },
-          { v: dre.pctRes/100, t: 'n', z: PCT, s: block }
+          { v: temNaoRecX ? ' = RESULTADO DA OPERAÇÃO' : ' = RESULTADO DO MÊS', t: 's', s: block },
+          { v: dre.resultadoOperacao, t: 'n', z: BRL, s: block },
+          { v: dre.pctOperacao/100, t: 'n', z: PCT, s: block }
         ];
       })(),
     ];
+    // Gastos extraordinários (não-recorrentes) numa seção à parte + resultado do mês.
+    if (temNaoRecX) {
+      resumoRows.push([], [{ v: '⚠️ Gastos extraordinários do mês (pontuais — não se repetem)', s: SECTION }]);
+      for (const nr of (dre.naoRecorrentes || [])) {
+        resumoRows.push([
+          nr.categoria,
+          { v: -nr.valor, t: 'n', z: BRL, s: NEG },
+          { v: dre.receita > 0 ? -nr.valor/dre.receita : 0, t: 'n', z: PCT }
+        ]);
+      }
+      const blockM = dre.resultado >= 0 ? BLOCK_GREEN : BLOCK_RED;
+      resumoRows.push([
+        { v: ' = RESULTADO DO MÊS', t: 's', s: blockM },
+        { v: dre.resultado, t: 'n', z: BRL, s: blockM },
+        { v: dre.pctRes/100, t: 'n', z: PCT, s: blockM }
+      ]);
+    }
     // Aviso de resultado parcial do Tiny — mesma sinalização do widget DRE.
     if (dre.tinyEstabilidade && !dre.tinyEstabilidade.estavel) {
       const [c1, c2] = dre.tinyEstabilidade.contagens || [0, 0];
@@ -7275,26 +7295,67 @@ function _finDreRenderResumo(dre) {
     + `<span class="num-tab">${_fmtBRMoney(dre.lucroBruto)}<span style="margin-left:10px;font-weight:500;opacity:.85;">${fmtPct(dre.pctLB)}</span></span>`
     + `</div>`;
 
-  const isPos = dre.resultado >= 0;
-  const resultadoHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:18px 18px;margin-top:14px;border-radius:var(--r-lg);background:${isPos?'var(--green)':'var(--red)'};color:#fff;font-weight:800;font-size:16px;">`
-    + `<span>= RESULTADO DO MÊS</span>`
-    + `<span class="num-tab">${_fmtBRMoney(dre.resultado)}<span style="margin-left:12px;opacity:.85;font-weight:600;">${fmtPct(dre.pctRes)}</span></span>`
-    + `</div>`;
+  // Bloco de resultado em destaque (verde/vermelho). big = card grande final.
+  const blocoResultado = (label, valor, pct, big) => {
+    const bg = valor >= 0 ? 'var(--green)' : 'var(--red)';
+    const pad = big ? '18px' : '13px 16px';
+    const fs  = big ? '16px' : '14.5px';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:${pad};margin-top:14px;border-radius:var(--r-lg);background:${bg};color:#fff;font-weight:800;font-size:${fs};">`
+      + `<span>${escHtml(label)}</span>`
+      + `<span class="num-tab">${_fmtBRMoney(valor)}<span style="margin-left:12px;opacity:.85;font-weight:600;">${fmtPct(pct)}</span></span>`
+      + `</div>`;
+  };
 
+  const temNaoRec = (dre.despNaoRecorrente || 0) > 0;
   const planejadoFmt = (dre.despPlanejado || 0).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 });
+  const principalFmt = (dre.empPrincipal || 0).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 });
+
+  // Aviso de mês parcial (só no mês de início do sistema, com despesas incompletas).
+  let avisoParcialHTML = '';
+  if (dre.mesParcial && dre.mesParcialDesde) {
+    const [, mm, dd] = dre.mesParcialDesde.split('-');
+    avisoParcialHTML = `<div style="margin:0 0 10px;padding:9px 12px;background:rgba(230,170,40,.12);border:1px solid var(--gold);border-radius:var(--r-sm);font-size:11.5px;color:var(--gold);line-height:1.5;">`
+      + `⚠️ <b>Mês parcial.</b> O sistema só começou a registrar despesas em ${dd}/${mm}. A receita e o CPV vêm completos (arquivo Tiny), mas as despesas não — então o resultado deste mês fica <b>superestimado</b>. Use <b>maio/2026 em diante</b> pra leitura real.`
+      + `</div>`;
+  }
+
+  // Seção de gastos extraordinários (só aparece se houver não-recorrentes).
+  let extraordinariosHTML = '';
+  if (temNaoRec) {
+    const itens = (dre.naoRecorrentes || []).map(nr =>
+        `<div style="display:flex;justify-content:space-between;padding:6px 14px 6px 26px;font-size:12.5px;color:var(--text2);">`
+      + `<span>• ${escHtml(nr.categoria)}</span>`
+      + `<span class="num-tab">${_fmtBRMoney(-nr.valor)}</span></div>`
+    ).join('');
+    extraordinariosHTML =
+        `<div style="margin-top:16px;padding:10px 14px 6px;font-size:12.5px;font-weight:700;color:var(--gold);">⚠️ Gastos extraordinários do mês <span class="text-mute" style="font-weight:500;">(pontuais — não se repetem todo mês)</span></div>`
+      + itens
+      + linha('(−) Total extraordinários', -dre.despNaoRecorrente, -safePct(dre.despNaoRecorrente, dre.receita), { neg: true });
+  }
+
+  // Se há extraordinários, mostra os DOIS resultados (operação + mês);
+  // se não, o resultado da operação é o próprio resultado do mês.
+  const resultadosHTML = temNaoRec
+    ? blocoResultado('= RESULTADO DA OPERAÇÃO (o que se repete)', dre.resultadoOperacao, dre.pctOperacao, false)
+      + extraordinariosHTML
+      + blocoResultado('= RESULTADO DO MÊS (com extraordinários)', dre.resultado, dre.pctRes, true)
+    : blocoResultado('= RESULTADO DO MÊS', dre.resultado, dre.pctRes, true);
 
   el.innerHTML =
       `<div class="card">`
-    +   `<div class="card-header"><div><div class="card-title">DRE — Demonstrativo de Resultado</div><div class="card-sub">Receita (nosso banco) − CPV real − Despesas operacionais − Empréstimos pagos = Resultado</div></div></div>`
+    +   `<div class="card-header"><div><div class="card-title">DRE — Demonstrativo de Resultado</div><div class="card-sub">Receita − CPV real − Despesas − Juros = Resultado da operação; menos gastos extraordinários = Resultado do mês</div></div></div>`
     +   `<div style="padding:14px 18px;">`
+    +     avisoParcialHTML
     +     linha('Receita (faturamento)', dre.receita, dre.receita > 0 ? 100 : 0, { pos: true })
     +     linha('(−) CPV — custo real dos produtos vendidos', -dre.cpv, -safePct(dre.cpv, dre.receita), { neg: true })
     +     margemHTML
-    +     linha('(−) Despesas operacionais (real)', -dre.despReal, -safePct(dre.despReal, dre.receita), { neg: true })
+    +     linha(temNaoRec ? '(−) Despesas do mês (operação normal)' : '(−) Despesas operacionais', -dre.despRecorrente, -safePct(dre.despRecorrente, dre.receita), { neg: true })
     +     subnota(`${dre.despCount} lançamento${dre.despCount !== 1 ? 's' : ''} no período · R$ ${planejadoFmt} planejados em custos fixos (referência)`)
-    +     linha('(−) Empréstimos pagos', -dre.empValor, -safePct(dre.empValor, dre.receita), { neg: true })
-    +     subnota(`${dre.empCount} parcela${dre.empCount !== 1 ? 's' : ''} paga${dre.empCount !== 1 ? 's' : ''} no período`)
-    +     resultadoHTML
+    +     linha('(−) Juros de empréstimo', -dre.empJuros, -safePct(dre.empJuros, dre.receita), { neg: true })
+    +     subnota(dre.empCount > 0
+        ? `${dre.empCount} parcela${dre.empCount !== 1 ? 's' : ''} — na DRE entram só os juros; o principal (R$ ${principalFmt}) é amortização de dívida e sai no Fluxo de Caixa`
+        : 'Nenhuma parcela paga no período')
+    +     resultadosHTML
     +   `</div>`
     + `</div>`;
 }
@@ -7974,6 +8035,46 @@ const _DRE_CATEGORIAS_FORA_DESPESA = [
   'Comissão de Vendas', 'Investimento em Ponto',
 ];
 
+// Decompõe as parcelas de empréstimo pagas num período em JUROS vs PRINCIPAL.
+// Regra contábil: só os JUROS são despesa/resultado (entram na DRE); a
+// amortização do PRINCIPAL é devolução de dívida (fluxo de financiamento) —
+// sai no Fluxo de Caixa, NÃO no resultado. Juros por parcela = fração
+// proporcional do custo de juros do empréstimo: (total_com_juros − valor_original)
+// / total_com_juros. Usada pela DRE (só juros), pelo Fluxo de Caixa (parcela
+// inteira) e pelo painel de alavancagem. `total` = parcela cheia (principal+juros).
+function _empDecomporPeriodo(iniISO, fimISO) {
+  const inPer = d => d && d >= iniISO && d <= fimISO;
+  let juros = 0, principal = 0, total = 0, count = 0;
+  for (const e of (emprestimos || [])) {
+    const orig = e.valorOriginal || 0, tot = e.totalComJuros || 0;
+    const fracJuros = tot > 0 ? Math.max(0, Math.min(1, (tot - orig) / tot)) : 0;
+    for (const p of (e.pagamentos || [])) {
+      if (p.status !== 'pago' || !inPer(p.dataPagamento)) continue;
+      const pago = (p.valorPago || p.valor || 0);
+      juros     += pago * fracJuros;
+      principal += pago * (1 - fracJuros);
+      total     += pago;
+      count++;
+    }
+  }
+  return { juros, principal, total, count };
+}
+
+// Mês de início do sistema quando é PARCIAL: se o 1º lançamento de saída caiu
+// depois do dia 5, aquele mês registrou só PARTE das despesas — mas a receita e
+// o CPV vêm completos do arquivo Tiny. Resultado: o mês fica SUPERESTIMADO
+// (parece lucro alto irreal). Retorna { mes:'YYYY-MM', desde:'YYYY-MM-DD' } ou null.
+function _mesInicioParcial() {
+  let primeira = '';
+  for (const l of (lancamentos || [])) {
+    if (l.tipo !== 'saida' || l.transferenciaId) continue;
+    const d = l.data || '';
+    if (d && (!primeira || d < primeira)) primeira = d;
+  }
+  if (!primeira) return null;
+  return parseInt(primeira.slice(8, 10), 10) > 5 ? { mes: primeira.slice(0, 7), desde: primeira } : null;
+}
+
 // Cálculo puro do DRE pra um período arbitrário. Não toca DOM. Consumido
 // pelo widget renderDashDreMes (mês corrente) e por gerarFechamentoMes
 // (range escolhido no selector do Dashboard).
@@ -8037,27 +8138,61 @@ async function calcularDRE(iniISO, fimISO) {
   const despReal = desp.reduce((s,l) => s + (l.valor || 0), 0);
   const despCount = desp.length;
 
+  // Separa a despesa em RECORRENTE (operação normal) vs NÃO-RECORRENTE
+  // (gasto pontual/extraordinário — obra, eventos), pela natureza cadastrada.
+  // O não-recorrente sai numa seção à parte pra não sujar o "resultado da
+  // operação"; continua no "resultado do mês" (aconteceu de verdade).
+  const despNaoRecArr = desp.filter(l => _naturezaDaCategoria(l.categoria) === 'nao_recorrente');
+  const despNaoRecorrente = despNaoRecArr.reduce((s,l) => s + (l.valor || 0), 0);
+  const despRecorrente = despReal - despNaoRecorrente;
+  // Detalhe agrupado por categoria pro render da seção de extraordinários.
+  const _nrPorCat = {};
+  for (const l of despNaoRecArr) _nrPorCat[l.categoria] = (_nrPorCat[l.categoria] || 0) + (l.valor || 0);
+  const naoRecorrentes = Object.entries(_nrPorCat)
+    .map(([categoria, valor]) => ({ categoria, valor }))
+    .sort((a,b) => b.valor - a.valor);
+  const naoRecCount = despNaoRecArr.length;
+
   // Custo Fixo Planejado: média da despesa operacional dos últimos ≤3
   // meses-calendário completos (estrutura nova — não usa mais custos_fixos).
   const _planej = _despPlanejadoHistorico();
   const despPlanejado = _planej.media;
   const despPlanejadoBaseMeses = _planej.nMeses;
 
-  const todasParc = (emprestimos || []).flatMap(e => e.pagamentos || []);
-  const empPagos = todasParc.filter(p => p.status === 'pago' && inPeriodo(p.dataPagamento));
-  const empValor = empPagos.reduce((s,p) => s + (p.valorPago || p.valor || 0), 0);
-  const empCount = empPagos.length;
+  // Empréstimo: na DRE entram SÓ os juros (o principal é amortização de dívida,
+  // vai pro Fluxo de Caixa — ver _empDecomporPeriodo). empValor = parcela cheia
+  // (mantido p/ o Fluxo de Caixa e compatibilidade).
+  const _emp = _empDecomporPeriodo(iniISO, fimISO);
+  const empValor     = _emp.total;      // parcela inteira (principal + juros)
+  const empJuros     = _emp.juros;      // só isto entra no resultado
+  const empPrincipal = _emp.principal;  // amortização — fora do resultado
+  const empCount     = _emp.count;
 
-  const resultado = lucroBruto - despReal - empValor;
+  // Resultado da OPERAÇÃO (o que se repete todo mês): margem − despesas
+  // recorrentes − juros. É a saúde real do negócio, sem gastos pontuais.
+  const resultadoOperacao = lucroBruto - despRecorrente - empJuros;
+  const pctOperacao = receita > 0 ? (resultadoOperacao / receita * 100) : 0;
+  // Resultado DO MÊS (com os extraordinários): desconta os não-recorrentes.
+  // Não inclui o principal do empréstimo (só juros) — correção contábil.
+  const resultado = resultadoOperacao - despNaoRecorrente;
   const pctRes = receita > 0 ? (resultado / receita * 100) : 0;
+
+  // Aviso de mês parcial: o período intersecta o mês de início do sistema, em que
+  // as despesas foram lançadas só a partir do meio do mês → resultado inflado.
+  const _mp = _mesInicioParcial();
+  const mesParcial = !!(_mp && (_mp.mes + '-31') >= iniISO && (_mp.mes + '-01') <= fimISO);
+  const mesParcialDesde = mesParcial ? _mp.desde : null;
 
   return {
     periodo: { iniISO, fimISO },
     receita, pedidos,
     avgMCpct, cpv, lucroBruto, pctLB,
     despReal, despCount, despPlanejado, despPlanejadoBaseMeses,
-    empValor, empCount,
+    despRecorrente, despNaoRecorrente, naoRecorrentes, naoRecCount,
+    empValor, empJuros, empPrincipal, empCount,
+    resultadoOperacao, pctOperacao,
     resultado, pctRes,
+    mesParcial, mesParcialDesde,
     tinyEstabilidade,
   };
 }
@@ -8231,7 +8366,9 @@ async function renderDashDreMes() {
   const dre = await calcularDRE(iniISO, fimISO);
   const { receita, cpv, lucroBruto, pctLB, despReal, despCount,
           despPlanejado: planejado, despPlanejadoBaseMeses, empValor, empCount,
-          resultado, pctRes, tinyEstabilidade } = dre;
+          despRecorrente, despNaoRecorrente, naoRecorrentes, empJuros, empPrincipal,
+          resultadoOperacao, pctOperacao, resultado, pctRes, tinyEstabilidade } = dre;
+  const temNaoRec = (despNaoRecorrente || 0) > 0;
 
   // Subtítulo do widget + badge de resultado parcial do Tiny.
   const subEl = document.getElementById('dash-dre-mes-sub');
@@ -8286,6 +8423,21 @@ async function renderDashDreMes() {
     const sublinha = (texto) => `<div style="font-size:11px;color:var(--text3);margin:-4px 0 6px 0;padding-left:12px;">${escHtml(texto)}</div>`;
     const sep = '<div style="height:1px;background:var(--border);margin:6px 0;"></div>';
 
+    // Seção de extraordinários (só se houver não-recorrentes no mês).
+    const extraHTML = temNaoRec ? (
+        `<div style="margin-top:10px;font-size:12px;font-weight:700;color:var(--gold);">⚠️ Gastos extraordinários <span style="color:var(--text3);font-weight:500;">(pontuais)</span></div>`
+      + (naoRecorrentes || []).map(nr =>
+          `<div style="display:flex;justify-content:space-between;padding:5px 0 5px 12px;font-size:12px;color:var(--text2);"><span>• ${escHtml(nr.categoria)}</span><span class="td-mono">− ${fmt(nr.valor)}</span></div>`
+        ).join('')
+      + linha('(−) Total extraordinários', despNaoRecorrente, {
+          onclick: `_dashDreIrDespesas('${mesAtual}')`,
+          title: 'Gastos não-recorrentes do mês (natureza "não-recorrente" no cadastro de categorias) — não fazem parte da operação normal.'
+        })
+    ) : '';
+
+    const opIcon = resultadoOperacao > 0 ? '🟢' : resultadoOperacao < 0 ? '🔴' : '⚪';
+    const opLabel = resultadoOperacao > 0 ? 'margem' : resultadoOperacao < 0 ? 'prejuízo' : 'equilíbrio';
+
     det.innerHTML = `
       ${linha('Receita (faturamento)', receita, { onclick: `_dashDreIrPedidos()` })}
       ${linha('(−) CPV — custo real dos produtos vendidos', cpv, {
@@ -8298,28 +8450,41 @@ async function renderDashDreMes() {
         title: 'Receita − CPV.'
       })}
       <div style="height:8px;"></div>
-      ${linha('(−) Despesas operacionais', despReal, {
+      ${linha(temNaoRec ? '(−) Despesas do mês (operação normal)' : '(−) Despesas operacionais', despRecorrente, {
         onclick: `_dashDreIrDespesas('${mesAtual}')`,
-        title: 'Lançamentos de saída do mês, exceto: custo de produto já no CPV (Fornecedores, Venda Scooter, Montagem, NF), empréstimos (linha própria) e não-operacionais (Acerto de Caixa, Estorno, transferências).'
+        title: 'Lançamentos de saída do mês (recorrentes), exceto: custo de produto já no CPV (Fornecedores, Venda Scooter, Montagem, NF), empréstimos (linha própria), não-operacionais (Acerto de Caixa, Estorno, transferências) e gastos extraordinários (linha própria).'
       })}
       ${sublinha(`real do mês (${despCount} lançamento${despCount!==1?'s':''})`)}
       ${sublinha(`Custo Fixo Planejado: ${fmt(planejado)}`
         + (despPlanejadoBaseMeses < 3
             ? `  base: ${despPlanejadoBaseMeses} ${despPlanejadoBaseMeses === 1 ? 'mês' : 'meses'}`
             : ''))}
-      ${linha('(−) Empréstimos pagos', empValor, {
+      ${linha('(−) Juros de empréstimo', empJuros, {
         onclick: `_dashDreIrEmprestimos()`,
-        title: 'Parcelas de empréstimo pagas no mês (de emprestimo_parcelas). Linha própria — não duplica com as despesas operacionais.'
+        title: 'Só os JUROS das parcelas pagas no mês entram no resultado. O principal (amortização de dívida) sai no Fluxo de Caixa, não na DRE.'
       })}
-      ${sublinha(`${empCount} parcela${empCount!==1?'s':''} paga${empCount!==1?'s':''} em ${mesLabel.split(' ')[0]}`)}
+      ${sublinha(empCount > 0
+        ? `${empCount} parcela${empCount!==1?'s':''} — principal de ${fmt(empPrincipal)} vai pro caixa`
+        : `nenhuma parcela em ${mesLabel.split(' ')[0]}`)}
       ${sep}
-      ${linha('= RESULTADO DO MÊS', resultado, {
+      ${linha(temNaoRec ? '= RESULTADO DA OPERAÇÃO' : '= RESULTADO DO MÊS',
+        temNaoRec ? resultadoOperacao : resultado, {
+        bold: true,
+        sign: (temNaoRec ? resultadoOperacao : resultado) > 0 ? '+ ' : (temNaoRec ? resultadoOperacao : resultado) < 0 ? '− ' : '',
+        color: (temNaoRec ? resultadoOperacao : resultado) > 0 ? 'var(--green)' : (temNaoRec ? resultadoOperacao : resultado) < 0 ? 'var(--red)' : 'var(--text2)',
+        pct: receita > 0 ? (temNaoRec
+          ? `${opIcon} ${Math.abs(pctOperacao).toFixed(0)}% ${opLabel}`
+          : `${resIcon} ${Math.abs(pctRes).toFixed(0)}% ${resLabel}`) : '',
+        title: temNaoRec ? 'Margem bruta − Despesas recorrentes − Juros. O que a operação normal gera, sem os gastos pontuais.' : 'Margem bruta − Despesas − Juros.'
+      })}
+      ${extraHTML}
+      ${temNaoRec ? sep + linha('= RESULTADO DO MÊS', resultado, {
         bold: true,
         sign: resSign,
         color: resultado > 0 ? 'var(--green)' : resultado < 0 ? 'var(--red)' : 'var(--text2)',
         pct: receita > 0 ? `${resIcon} ${Math.abs(pctRes).toFixed(0)}% ${resLabel}` : '',
-        title: 'Margem bruta − Despesas operacionais − Empréstimos.'
-      })}
+        title: 'Resultado da operação menos os gastos extraordinários do mês.'
+      }) : ''}
     `;
   }
 
@@ -11991,10 +12156,16 @@ function fcFluxoPorMes() {
 }
 
 // Médias dos meses COMPLETOS (≤3, mesma convenção do _despPlanejadoHistorico).
+// Exclui o mês de início parcial do sistema (ex.: abril, 1º lançamento em 19/04):
+// como o caixa daquele mês só foi registrado a partir do meio, as entradas ficam
+// subestimadas e puxariam a média de vendas pra baixo indevidamente.
 function fcMediasOperacao() {
   const fluxo = fcFluxoPorMes();
   const mesCorrente = new Date().toISOString().slice(0, 7);
-  const completos = Object.keys(fluxo).filter(m => m < mesCorrente).sort().reverse().slice(0, 3);
+  const parcial = (_mesInicioParcial() || {}).mes || null;
+  const completos = Object.keys(fluxo)
+    .filter(m => m < mesCorrente && m !== parcial)
+    .sort().reverse().slice(0, 3);
   const n = completos.length || 1;
   const soma = f => completos.reduce((s, m) => s + f(fluxo[m]), 0);
   let variaveis = 0;
@@ -12255,6 +12426,7 @@ async function fcCarregarFechamento(ym) {
     return;
   }
   if (_fcFechMes !== ym) return;   // usuário trocou o mês durante o await
+  const temNaoRec = (dre.despNaoRecorrente || 0) > 0;
 
   const f = fcFluxoPorMes()[ym];
   const baldes = f ? ['operacao', 'estoque', 'investimento', 'divida', 'neutro', 'semBalde']
@@ -12286,8 +12458,9 @@ async function fcCarregarFechamento(ym) {
     linha('Receita', fmt(dre.receita), { extra: dre.pedidos.length + ' pedidos' })
     + linha('CPV', '− ' + fmt(dre.cpv))
     + linha('Lucro bruto', fmtSigned(dre.lucroBruto), { extra: pctTxt(dre.pctLB) })
-    + linha('Despesas operacionais', '− ' + fmt(dre.despReal), { extra: dre.despCount + ' lanç.' })
-    + linha('Parcelas de empréstimo pagas', '− ' + fmt(dre.empValor))
+    + linha(temNaoRec ? 'Despesas (operação normal)' : 'Despesas operacionais', '− ' + fmt(dre.despRecorrente), { extra: dre.despCount + ' lanç.' })
+    + linha('Juros de empréstimo', '− ' + fmt(dre.empJuros), { extra: 'só juros' })
+    + (temNaoRec ? linha('Gastos extraordinários', '− ' + fmt(dre.despNaoRecorrente)) : '')
     + linha('Resultado', fmtSigned(dre.resultado), { total: true, cor: corRes(dre.resultado), extra: pctTxt(dre.pctRes) }));
   const blCaixa = bloco('Caixa (entrou − saiu)',
     linha('Entrou', fmt(ent))
@@ -12310,7 +12483,8 @@ async function fcCarregarFechamento(ym) {
     + '<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);">'
     + 'Resultado (DRE) − caixa do mês = <b style="color:var(--text2);">' + fmtSigned(delta) + '</b>. '
     + 'Diferença esperada: a DRE é competência (CPV calculado por venda); o caixa carrega compra de estoque, '
-    + 'investimento e movimentos neutros no mês em que o dinheiro de fato se move.</div>';
+    + 'investimento, a amortização do principal dos empréstimos (na DRE entram só os juros) e movimentos '
+    + 'neutros no mês em que o dinheiro de fato se move.</div>';
 }
 
 // Parcelas DEVIDAS no mês corrente (pagas + abertas) — serviço da dívida.
@@ -12320,6 +12494,255 @@ function fcServicoDividaMes() {
   for (const e of (emprestimos || [])) for (const p of (e.pagamentos || []))
     if (_fcYm(p.vencimento) === ym) total += (p.valor || 0);
   return total;
+}
+
+// ── ALAVANCAGEM ──────────────────────────────────────────────
+// Saldo devedor total = soma das parcelas AINDA NÃO PAGAS de todos os
+// empréstimos abertos (parcela cheia: principal + juros que falta pagar).
+function fcDividaTotal() {
+  let saldoDevedor = 0, parcelasAbertas = 0, nAtivos = 0, jurosAPagar = 0;
+  for (const e of (emprestimos || [])) {
+    const pend = (e.pagamentos || []).filter(p => p.status !== 'pago');
+    if (!pend.length) continue;
+    nAtivos++;
+    const orig = e.valorOriginal || 0, tot = e.totalComJuros || 0;
+    const fracJuros = tot > 0 ? Math.max(0, Math.min(1, (tot - orig) / tot)) : 0;
+    for (const p of pend) {
+      saldoDevedor += (p.valor || 0);
+      jurosAPagar  += (p.valor || 0) * fracJuros;
+      parcelasAbertas++;
+    }
+  }
+  return { saldoDevedor, parcelasAbertas, nAtivos, jurosAPagar };
+}
+
+// Maior compromisso MENSAL de empréstimo à frente (pico das parcelas abertas
+// somadas por mês de vencimento). A parcela da Importação sobe ao longo do
+// tempo — o pico mostra o aperto que ainda vem.
+function _fcPicoParcelaFutura() {
+  const porMes = {};
+  for (const e of (emprestimos || [])) for (const p of (e.pagamentos || [])) {
+    if (p.status === 'pago') continue;
+    const ym = _fcYm(p.vencimento); if (!ym) continue;
+    porMes[ym] = (porMes[ym] || 0) + (p.valor || 0);
+  }
+  let pico = 0, picoYm = null;
+  for (const [ym, v] of Object.entries(porMes)) if (v > pico) { pico = v; picoYm = ym; }
+  return { pico, picoYm };
+}
+
+// ── RAIO-X DE OBRIGAÇÕES ──────────────────────────────────────
+// Projeta o caixa mês a mês pagando TUDO que impacta o caixa (custo fixo +
+// boletos de fornecedor/estoque + parcelas de empréstimo), contra as vendas
+// esperadas (por padrão o cenário PESSIMISTA — mais conservador). Opcionalmente
+// soma uma NOVA obrigação (simMensal recorrente + simAVista imediato) pra
+// responder "posso assumir mais?". Diferente do DRE: aqui a compra de estoque
+// PESA (o dinheiro sai/vence), mesmo antes de virar custo na venda.
+// Reserva de segurança = 1 mês de custo fixo (default, configurável).
+const FC_RAIOX_MESES = 6;
+
+// Expectativa de vendas ativa (fração do ritmo histórico de maio+junho).
+// null = usa o cenário pessimista (50%). Setada pelo controle do card.
+let _fcVendasPct = null;
+
+function fcRaioXObrigacoes(opts) {
+  opts = opts || {};
+  const simMensal = Math.max(0, opts.simMensal || 0);   // valor de cada parcela nova
+  const simAVista = Math.max(0, opts.simAVista || 0);   // entrada / desembolso imediato (à vista)
+  const simParcelas = Math.max(0, Math.floor(opts.simParcelas || 0)); // nº de parcelas (0 = recorrente/fixo)
+  const vendasPct = (opts.vendasPct != null) ? opts.vendasPct
+    : (_fcVendasPct != null ? _fcVendasPct : FC_PESSIMISTA_PCT);   // expectativa (fração do ritmo)
+  const hoje = new Date();
+  const saldo0 = (contas || []).reduce((s, c) => s + (c.saldo || 0), 0);
+  const fixo = _despPlanejadoHistorico().media;
+  const reserva = (opts.reserva != null) ? opts.reserva : fixo;   // segurança = 1 mês de fixo
+  const medias = fcMediasOperacao();
+  const comp = _fcCompromissosAbertos();
+  const diasMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+  const fracaoRestante = Math.max(0, (diasMes - hoje.getDate()) / diasMes);
+  // Geração líquida do mês = vendas esperadas − custo fixo − variáveis. `vendasPct`
+  // é o quanto do ritmo de maio+junho a loja espera vender; guardo o pessimista
+  // fixo (50%) como referência de alerta.
+  const geraExp  = medias.entradasOp * vendasPct - fixo - medias.variaveis;
+  const geraPess = medias.entradasOp * FC_PESSIMISTA_PCT - fixo - medias.variaveis;
+  const linhas = [];
+  let saldo = saldo0 - simAVista, saldoPess = saldo0 - simAVista;
+  for (let i = 0; i < FC_RAIOX_MESES; i++) {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
+    const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const fator = i === 0 ? fracaoRestante : 1;
+    const forn = comp.boletos[ym] || 0;
+    const empr = comp.parcelas[ym] || 0;
+    const outros = comp.semCat[ym] || 0;
+    // Parcela nova começa no próximo mês (i≥1); dura simParcelas meses (0 = recorrente).
+    const simDoMes = (i >= 1 && (simParcelas <= 0 || i <= simParcelas)) ? simMensal : 0;
+    saldo     += geraExp  * fator - forn - empr - outros - simDoMes;
+    saldoPess += geraPess * fator - forn - empr - outros - simDoMes;
+    const lbl = d.toLocaleString('pt-BR', { month: 'short' }).replace('.', '') + '/'
+      + String(d.getFullYear()).slice(2) + (i === 0 ? ' (resto)' : '');
+    linhas.push({ ym, lbl, forn, empr, outros, sim: simDoMes, fixo: fixo * fator,
+      gera: geraExp * fator, saldo, saldoPess });
+  }
+  const vale = Math.min(...linhas.map(l => l.saldo));
+  const valePess = Math.min(...linhas.map(l => l.saldoPess));
+  const critico = linhas.find(l => l.saldo === vale) || linhas[0];
+  return { linhas, saldo0, fixo, reserva, vendasPct, medias, comp,
+    vale, valePess, critico, furaReserva: vale < reserva, negativo: vale < 0 };
+}
+
+// Quanto de obrigação mensal NOVA ainda cabe mantendo o vale ≥ reserva, na
+// expectativa de vendas ativa. Busca binária (barata, roda no cliente).
+function fcEspacoObrigacaoMensal(reserva) {
+  const base = fcRaioXObrigacoes({ reserva });
+  if (base.vale < base.reserva) return 0;   // já está no limite
+  let lo = 0, hi = 200000;
+  for (let i = 0; i < 26; i++) {
+    const mid = (lo + hi) / 2;
+    const r = fcRaioXObrigacoes({ simMensal: mid, reserva });
+    if (r.vale >= r.reserva) lo = mid; else hi = mid;
+  }
+  return lo;
+}
+
+// Controle do card: muda a expectativa de vendas e re-renderiza o Fluxo.
+function _fcSetVendas(pct) {
+  _fcVendasPct = Math.max(0, pct || 0);
+  try { renderFinFluxo(); } catch (e) {}
+}
+
+// Média de vendas (nº) dos meses-base, pra converter % ↔ quantidade. É a
+// referência do "ritmo normal" (100%). Carregada 1× ao abrir o Fluxo (usa
+// calcularDRE, que conta os pedidos). null = ainda não carregado.
+let _fcVendasMedia = null;
+async function fcCarregarVendasMedia() {
+  try {
+    const medias = fcMediasOperacao();
+    const meses = medias.mesesUsados || [];
+    if (!meses.length) { _fcVendasMedia = { vendasMes: 0, entradasOp: medias.entradasOp }; return; }
+    const ini = meses[0] + '-01';
+    const [fy, fm] = meses[meses.length - 1].split('-').map(Number);
+    const fim = new Date(fy, fm, 0).toISOString().slice(0, 10);
+    const dre = await calcularDRE(ini, fim);
+    const nVendas = (dre.pedidos || []).length;
+    _fcVendasMedia = { vendasMes: nVendas / meses.length, entradasOp: medias.entradasOp };
+  } catch (e) {
+    console.warn('[fcVendasMedia] falhou:', e.message);
+    _fcVendasMedia = { vendasMes: 0, entradasOp: 0 };
+  }
+  try { renderFinFluxo(); } catch (e) {}
+}
+
+// Handlers dos inputs livres do controle de vendas (onchange = ao sair do campo,
+// pra o re-render não cortar a digitação).
+function _fcVendasPorPct() {
+  const el = document.getElementById('fc-vendas-pct'); if (!el) return;
+  _fcSetVendas((parseFloat((el.value || '').replace(',', '.')) || 0) / 100);
+}
+function _fcVendasPorQtd() {
+  const el = document.getElementById('fc-vendas-qtd'); if (!el) return;
+  const vm = (_fcVendasMedia && typeof _fcVendasMedia === 'object') ? _fcVendasMedia.vendasMes : 0;
+  if (!(vm > 0)) return;
+  _fcSetVendas((parseFloat((el.value || '').replace(',', '.')) || 0) / vm);
+}
+
+// ── PROJEÇÃO DE CURTO PRAZO POR DATA (timing) ─────────────────
+// As próximas 8 semanas, calculadas DIA A DIA. A rotina (vendas esperadas −
+// custo fixo − variáveis) é espalhada uniformemente pelos dias; já os boletos
+// de fornecedor/estoque e as parcelas de empréstimo caem na DATA EXATA de
+// vencimento (vencidos entram hoje). Isso revela o risco intra-mês que a visão
+// mensal esconde — um boleto grande que vence antes das vendas entrarem derruba
+// o caixa naquele dia, mesmo que o mês feche positivo. Retorna as semanas (saldo
+// ao fim de cada uma) e o MENOR saldo diário (o vale) com a data.
+const FC_CURTOPRAZO_SEMANAS = 8;
+function fcProjecaoSemanal(opts) {
+  opts = opts || {};
+  const vendasPct = (opts.vendasPct != null) ? opts.vendasPct
+    : (_fcVendasPct != null ? _fcVendasPct : FC_PESSIMISTA_PCT);
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const saldo0 = (contas || []).reduce((s, c) => s + (c.saldo || 0), 0);
+  const fixo = _despPlanejadoHistorico().media;
+  const reserva = (opts.reserva != null) ? opts.reserva : fixo;
+  const medias = fcMediasOperacao();
+  // Rotina espalhada por dia: (vendas esperadas − fixo − variáveis) ÷ 30.
+  const rotinaDia = (medias.entradasOp * vendasPct - fixo - medias.variaveis) / 30;
+  // Eventos datados (saídas): boletos de fornecedor/estoque/investimento/dívida
+  // em aberto + parcelas de empréstimo não pagas. Custo fixo NÃO entra aqui
+  // (já está espalhado na rotina) pra não duplicar. Vencido → cai hoje.
+  const evPorDia = {};
+  const diaKey = v => {
+    const x = v ? new Date(v) : new Date(hoje); x.setHours(0, 0, 0, 0);
+    return (x.getTime() < hoje.getTime() ? hoje.getTime() : x.getTime());
+  };
+  for (const c of (contasPagar || [])) {
+    if (c.paga || c.pagaEm || c.emprestimoParcelaId) continue;
+    const b = fcBalde(c.categoria, 'saida');
+    if (b !== 'estoque' && b !== 'investimento' && b !== 'divida') continue;
+    const t = diaKey(c.vencimento);
+    evPorDia[t] = (evPorDia[t] || 0) + (c.valor || 0);
+  }
+  for (const e of (emprestimos || [])) for (const p of (e.pagamentos || [])) {
+    if (p.status === 'pago') continue;
+    const t = diaKey(p.vencimento);
+    evPorDia[t] = (evPorDia[t] || 0) + (p.valor || 0);
+  }
+  const totalDias = FC_CURTOPRAZO_SEMANAS * 7;
+  let saldo = saldo0, vale = saldo0, valeData = new Date(hoje);
+  const semanas = [];
+  let semSaidas = 0, semIni = new Date(hoje);
+  for (let i = 0; i < totalDias; i++) {
+    const d = new Date(hoje); d.setDate(hoje.getDate() + i);
+    saldo += rotinaDia;
+    const ev = evPorDia[d.getTime()] || 0;
+    if (ev) { saldo -= ev; semSaidas += ev; }
+    if (saldo < vale) { vale = saldo; valeData = new Date(d); }
+    if (i % 7 === 6 || i === totalDias - 1) {
+      semanas.push({ ini: new Date(semIni), fim: new Date(d), saldo, saidas: semSaidas });
+      semSaidas = 0; semIni = new Date(d); semIni.setDate(semIni.getDate() + 1);
+    }
+  }
+  return { semanas, saldo0, reserva, vale, valeData, rotinaDia,
+    furaReserva: vale < reserva, negativo: vale < 0 };
+}
+
+// Reserva de segurança ativa (setada no render), usada pelo simulador.
+let _fcRaioReserva = null;
+
+// Simulador de novo compromisso — 3 campos livres: entrada (à vista agora),
+// valor de cada parcela e nº de parcelas (0 = recorrente/fixo). Cobre qualquer
+// caso: compra à vista (só entrada), compra a prazo (entrada + parcelas),
+// empréstimo (parcela × nº) ou boleto fixo recorrente (parcela, nº=0).
+function _fcSimularCompra() {
+  const out = document.getElementById('fc-sim-resultado');
+  if (!out) return;
+  const num = id => { const el = document.getElementById(id); return el ? Math.max(0, parseFloat((el.value || '').replace(/\./g, '').replace(',', '.')) || 0) : 0; };
+  const entrada = num('fc-sim-entrada');
+  const parcela = num('fc-sim-parcela');
+  const nEl = document.getElementById('fc-sim-nparc');
+  const nparc = nEl ? Math.max(0, Math.floor(parseFloat((nEl.value || '').replace(',', '.')) || 0)) : 0;
+  if (entrada <= 0 && parcela <= 0) {
+    out.innerHTML = '<span style="color:var(--text3);">Preencha a entrada e/ou a parcela pra ver o efeito no caixa.</span>';
+    return;
+  }
+  const opts = { reserva: _fcRaioReserva, simAVista: entrada, simMensal: parcela, simParcelas: nparc };
+  const partes = [];
+  if (entrada > 0) partes.push(fmt(entrada) + ' de entrada (sai agora)');
+  if (parcela > 0) partes.push(fmt(parcela) + '/mês' + (nparc > 0 ? ' × ' + nparc + ' parcelas' : ' fixo (recorrente)'));
+  const total = entrada + parcela * (nparc > 0 ? nparc : 0);
+  const desc = partes.join(' + ') + (nparc > 0 && parcela > 0 ? ' · total ' + fmt(total) : '');
+  const r = fcRaioXObrigacoes(opts);
+  const cor = r.vale < 0 ? 'var(--red)' : r.vale < r.reserva ? 'var(--gold)' : 'var(--green)';
+  const emoji = r.vale < 0 ? '🔴' : r.vale < r.reserva ? '🟡' : '🟢';
+  const veredito = r.vale < 0
+    ? '<b>NÃO.</b> O caixa fica NEGATIVO em ' + r.critico.lbl + ' (' + fmt(r.vale) + ') — você não teria como pagar.'
+    : r.vale < r.reserva
+      ? '<b>CUIDADO.</b> O caixa cai pra ' + fmt(r.vale) + ' em ' + r.critico.lbl
+        + ', abaixo da reserva de ' + fmt(r.reserva) + '. Arriscado.'
+      : '<b>PODE.</b> Mesmo no pior mês (' + r.critico.lbl + ') o caixa fica em ' + fmt(r.vale)
+        + ', acima da reserva de ' + fmt(r.reserva) + '.';
+  out.innerHTML =
+      '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;">Simulando: ' + desc
+    + ' <span style="color:var(--text3);">· vendas a ' + Math.round(r.vendasPct * 100) + '% do ritmo</span></div>'
+    + '<div style="font-size:13.5px;font-weight:700;color:' + cor + ';line-height:1.5;">' + emoji + ' ' + veredito + '</div>';
 }
 
 // Cor do semáforo de crédito a partir da projeção + serviço da dívida.
@@ -12332,6 +12755,8 @@ function fcSemaforo(proj, servicoPct) {
 
 function renderFinFluxo() {
   if (!_isAdminUser()) return;
+  // Carrega o nº de vendas médio 1× (async) pra converter % ↔ quantidade.
+  if (_fcVendasMedia === null) { _fcVendasMedia = 'loading'; fcCarregarVendasMedia(); }
   const proj = fcProjecao();
   const { medias, fixo, saldo0 } = proj;
   const ymCorrente = new Date().toISOString().slice(0, 7);
@@ -12405,6 +12830,130 @@ function renderFinFluxo() {
     + '<div style="font-size:15px;font-weight:800;margin-bottom:8px;">' + c.titulo + '</div>'
     + '<div style="display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--text2);">'
     + crit.map(x => '<div>' + x + '</div>').join('') + '</div></div></div></div>';
+
+  // ── Raio-X de Obrigações: tudo que sai do caixa + veredito "posso assumir mais?" ──
+  const _rx = fcRaioXObrigacoes({});
+  const _div = fcDividaTotal();
+  const _espaco = fcEspacoObrigacaoMensal(_rx.reserva);
+  _fcRaioReserva = _rx.reserva;
+  const _fornAberto = Object.values(_rx.comp.boletos).reduce((s, v) => s + v, 0);
+  const _rxCor = _rx.negativo ? 'var(--red)' : _rx.furaReserva ? 'var(--gold)' : 'var(--green)';
+  const _rxEmoji = _rx.negativo ? '🔴' : _rx.furaReserva ? '🟡' : '🟢';
+  const _rxTitulo = _rx.negativo ? 'APERTADO — não assuma mais compromissos'
+    : _rx.furaReserva ? 'NO LIMITE — cuidado com novos compromissos' : 'HÁ FOLGA';
+  const _cel = (v, neg) => '<td style="padding:5px 8px;text-align:right;font-family:\'JetBrains Mono\',monospace;font-size:11px;'
+    + (v < 0 ? 'color:var(--red);' : '') + '">' + (Math.round(v) === 0 ? '—' : (neg ? '−' : '') + fmt(Math.abs(v))) + '</td>';
+  const _th = t => '<th style="padding:5px 8px;text-align:right;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);white-space:nowrap;">' + t + '</th>';
+  const _quadroRows = _rx.linhas.map(l => {
+    const sc = l.saldo < 0 ? 'var(--red)' : l.saldo < _rx.reserva ? 'var(--gold)' : 'var(--green)';
+    return '<tr style="border-top:1px solid var(--border);">'
+      + '<td style="padding:5px 8px;font-size:11px;white-space:nowrap;">' + l.lbl + '</td>'
+      + _cel(l.gera) + _cel(l.forn, true) + _cel(l.empr, true)
+      + '<td style="padding:5px 8px;text-align:right;font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:' + sc + ';">' + fmt(l.saldo) + '</td></tr>';
+  }).join('');
+  // Controle de expectativa de vendas — presets relativos + input em % ou em
+  // quantidade. A média-base (100%) fica sempre visível como referência.
+  const _vp = _rx.vendasPct;
+  const _vm = (_fcVendasMedia && typeof _fcVendasMedia === 'object') ? _fcVendasMedia : null;
+  const _vMes = _vm ? _vm.vendasMes : 0;                 // vendas/mês do ritmo normal
+  const _temMotos = _vMes > 0;
+  const _motosAtual = _temMotos ? (Math.round(_vp * _vMes * 10) / 10) : null;
+  const _btnV = (pct, lbl) => {
+    const at = Math.abs(_vp - pct) < 0.005;
+    return '<button onclick="_fcSetVendas(' + pct + ')" style="padding:6px 11px;border-radius:var(--r-sm);border:1px solid '
+      + (at ? 'var(--gold)' : 'var(--border)') + ';background:' + (at ? 'rgba(230,170,40,.15)' : 'var(--surface2)')
+      + ';color:' + (at ? 'var(--gold)' : 'var(--text2)') + ';font-size:12px;font-weight:' + (at ? '700' : '500') + ';cursor:pointer;">' + lbl + '</button>';
+  };
+  const _inpCssV = 'width:70px;padding:5px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:\'JetBrains Mono\',monospace;font-size:12.5px;text-align:right;';
+  const _controleVendas = '<div style="margin-bottom:14px;padding:12px 14px;background:var(--surface2);border-radius:var(--r-sm);">'
+    // referência da média (sempre visível)
+    + '<div style="font-size:11.5px;color:var(--text2);margin-bottom:8px;">📊 <b>Ritmo normal</b> (média de maio+junho): '
+    + (_temMotos ? '<b>' + (Math.round(_vMes * 10) / 10) + ' vendas/mês</b> ≈ ' : (_vm ? '' : '<span style="color:var(--text3);">calculando vendas… </span>'))
+    + '<b>' + fmt(_rx.medias.entradasOp) + '/mês</b> entrando no caixa = <b>100%</b></div>'
+    // presets
+    + '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">'
+    + '<span style="font-size:11px;color:var(--text3);">Espero vender:</span>'
+    + _btnV(0.5, '½ (−50%)') + _btnV(0.7, '−30%') + _btnV(0.8, '−20%') + _btnV(1.0, 'Normal') + _btnV(1.2, '+20%')
+    + '</div>'
+    // inputs livres (% ou quantidade)
+    + '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--text2);">'
+    + '<span>ou direto: <input id="fc-vendas-pct" type="text" inputmode="decimal" value="' + Math.round(_vp * 100) + '" onchange="_fcVendasPorPct()" style="' + _inpCssV + '"> %</span>'
+    + (_temMotos ? '<span><input id="fc-vendas-qtd" type="text" inputmode="decimal" value="' + _motosAtual + '" onchange="_fcVendasPorQtd()" style="' + _inpCssV + '"> vendas/mês</span>' : '')
+    + '<span style="color:var(--text3);">= <b style="color:var(--text2);">' + fmt(_rx.medias.entradasOp * _vp) + '/mês</b></span>'
+    + '</div></div>';
+  document.getElementById('fin-fluxo-alavancagem').innerHTML =
+    '<div class="card" style="border-left:4px solid ' + _rxCor + ';"><div style="padding:16px 20px;">'
+    + '<div style="font-size:15px;font-weight:800;margin-bottom:2px;">⚖️ Raio-X de Obrigações — posso assumir mais?</div>'
+    + '<div style="font-size:11.5px;color:var(--text3);margin-bottom:12px;">Tudo que sai do caixa (custo fixo + boletos de fornecedor + parcelas de empréstimo) contra as vendas que você espera. Reserva de segurança: ' + fmt(_rx.reserva) + ' (1 mês de custo fixo).</div>'
+    + _controleVendas
+    + '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:14px;padding:12px 14px;background:var(--surface2);border-radius:var(--r-sm);">'
+    + '<div style="font-size:26px;line-height:1;">' + _rxEmoji + '</div><div style="flex:1;">'
+    + '<div style="font-size:14px;font-weight:800;color:' + _rxCor + ';">' + _rxTitulo + '</div>'
+    + '<div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.5;">'
+    + 'Caixa hoje <b>' + fmt(_rx.saldo0) + '</b>. No pior mês (' + _rx.critico.lbl + ') o caixa projetado fica em <b style="color:' + _rxCor + ';">' + fmt(_rx.vale) + '</b>. '
+    + (_rx.negativo ? 'Já não fecha nem com o que você deve hoje — não dá pra assumir mais nada.'
+        : _rx.furaReserva ? 'Fica abaixo da reserva de segurança — evite novos compromissos.'
+        : 'Cabe assumir até <b>' + fmt(_espaco) + '/mês</b> de novo compromisso mantendo a reserva.')
+    + (_vp > FC_PESSIMISTA_PCT + 0.001 ? ' <span style="color:var(--text3);">No pior caso (vendas pela metade), o vale cairia pra ' + fmt(_rx.valePess) + '.</span>' : '')
+    + '</div></div></div>'
+    + '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;">'
+    + '<span style="color:var(--text2);">Empréstimo (saldo devedor): <b style="color:var(--red);">' + fmt(_div.saldoDevedor) + '</b></span>'
+    + '<span style="color:var(--text2);">Boletos de fornecedor em aberto: <b style="color:var(--red);">' + fmt(_fornAberto) + '</b></span>'
+    + '</div>'
+    + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:440px;">'
+    + '<thead><tr><th style="padding:5px 8px;text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);">Mês</th>'
+    + _th('+ Gera') + _th('− Fornec.') + _th('− Empr.') + _th('= Caixa fim')
+    + '</tr></thead><tbody>' + _quadroRows + '</tbody></table></div>'
+    + '<div style="font-size:10.5px;color:var(--text3);margin-top:4px;">"Gera" = as vendas esperadas (' + Math.round(_vp * 100) + '% do ritmo) já menos o custo fixo e os variáveis. Cor do caixa: 🟢 acima da reserva · 🟡 abaixo · 🔴 negativo.</div>'
+    + '<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">'
+    + '<div style="font-size:13px;font-weight:700;margin-bottom:2px;">🧮 Simular novo compromisso <span style="font-weight:500;color:var(--text3);">(antes de assinar)</span></div>'
+    + '<div style="font-size:11px;color:var(--text3);margin-bottom:10px;">Preencha entrada e/ou parcelas. Ex.: compra de moto R$ 100k com 50% de entrada = <b>50.000</b> de entrada + <b>12.500</b>/mês × <b>4</b>. Empréstimo = só parcela × nº. Boleto fixo mensal = parcela com nº = 0.</div>'
+    + (() => {
+        const inpCss = 'padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:\'JetBrains Mono\',monospace;font-size:13px;';
+        const campo = (lbl, id, ph, w) => '<div style="display:flex;flex-direction:column;gap:3px;">'
+          + '<label for="' + id + '" style="font-size:11px;color:var(--text2);">' + lbl + '</label>'
+          + '<input id="' + id + '" type="text" inputmode="decimal" placeholder="' + ph + '" oninput="_fcSimularCompra()" style="width:' + w + ';' + inpCss + '"></div>';
+        return '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">'
+          + campo('Entrada (à vista, R$)', 'fc-sim-entrada', '0,00', '140px')
+          + campo('Cada parcela (R$/mês)', 'fc-sim-parcela', '0,00', '140px')
+          + campo('Nº de parcelas', 'fc-sim-nparc', '0 = fixo', '110px')
+          + '</div>';
+      })()
+    + '<div id="fc-sim-resultado" style="margin-top:12px;font-size:12.5px;color:var(--text3);">Preencha a entrada e/ou a parcela pra ver se cabe no caixa.</div>'
+    + '</div></div></div>';
+
+  // ── Projeção de curto prazo por data (timing das próximas 8 semanas) ──
+  const _sem = fcProjecaoSemanal({});
+  const _semCor = _sem.negativo ? 'var(--red)' : _sem.furaReserva ? 'var(--gold)' : 'var(--green)';
+  const _semEmoji = _sem.negativo ? '🔴' : _sem.furaReserva ? '🟡' : '🟢';
+  const _dfmt = d => String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+  const _semRows = _sem.semanas.map(s => {
+    const sc = s.saldo < 0 ? 'var(--red)' : s.saldo < _sem.reserva ? 'var(--gold)' : 'var(--green)';
+    const ehVale = s.fim >= _sem.valeData && s.ini <= _sem.valeData;
+    return '<tr style="border-top:1px solid var(--border);">'
+      + '<td style="padding:5px 8px;font-size:11px;white-space:nowrap;">' + _dfmt(s.ini) + '–' + _dfmt(s.fim) + '</td>'
+      + '<td style="padding:5px 8px;text-align:right;font-family:\'JetBrains Mono\',monospace;font-size:11px;color:' + (s.saidas > 0 ? 'var(--red)' : 'var(--text3)') + ';">' + (s.saidas > 0 ? '−' + fmt(s.saidas) : '—') + '</td>'
+      + '<td style="padding:5px 8px;text-align:right;font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:' + sc + ';">' + fmt(s.saldo) + '</td></tr>';
+  }).join('');
+  document.getElementById('fin-fluxo-curtoprazo').innerHTML =
+    '<div class="card" style="border-left:4px solid ' + _semCor + ';"><div style="padding:16px 20px;">'
+    + '<div style="font-size:15px;font-weight:800;margin-bottom:2px;">📅 Próximas 8 semanas — o caixa aguenta as datas?</div>'
+    + '<div style="font-size:11.5px;color:var(--text3);margin-bottom:12px;">As vendas e o custo fixo se espalham no dia a dia, mas os <b>boletos de fornecedor e as parcelas caem na data real de vencimento</b>. Mostra o menor saldo em <b>qualquer dia</b> — não só no fim do mês.</div>'
+    + '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px;padding:12px 14px;background:var(--surface2);border-radius:var(--r-sm);">'
+    + '<div style="font-size:24px;line-height:1;">' + _semEmoji + '</div><div style="flex:1;">'
+    + '<div style="font-size:13.5px;font-weight:800;color:' + _semCor + ';">'
+    + (_sem.negativo ? 'Fica NEGATIVO no caminho' : _sem.furaReserva ? 'Fura a reserva no caminho' : 'Passa pelas datas com folga') + '</div>'
+    + '<div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.5;">O menor saldo é <b style="color:' + _semCor + ';">' + fmt(_sem.vale) + '</b> em <b>' + _dfmt(_sem.valeData) + '</b>'
+    + (_sem.negativo ? ' — nesse dia falta dinheiro pra pagar os boletos. Precisa antecipar venda ou renegociar prazo.'
+        : _sem.furaReserva ? ' — abaixo da reserva de ' + fmt(_sem.reserva) + '. Fica no talo nessa data.'
+        : ', acima da reserva de ' + fmt(_sem.reserva) + '.') + '</div></div></div>'
+    + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:360px;">'
+    + '<thead><tr><th style="padding:5px 8px;text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);">Semana</th>'
+    + '<th style="padding:5px 8px;text-align:right;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);">Boletos/parcelas</th>'
+    + '<th style="padding:5px 8px;text-align:right;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);">Caixa no fim</th>'
+    + '</tr></thead><tbody>' + _semRows + '</tbody></table></div>'
+    + '<div style="font-size:10.5px;color:var(--text3);margin-top:4px;">Usa os boletos de fornecedor e parcelas cadastrados (nas datas de vencimento) + vendas esperadas na expectativa escolhida acima. Custos que saem sem boleto (débito automático) entram diluídos na rotina.</div>'
+    + '</div></div>';
 
   // ── KPIs ──
   const kpi = (label, valor, extra, corV, opts) =>
