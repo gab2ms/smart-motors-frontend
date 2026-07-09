@@ -86,7 +86,6 @@ function comissaoUnit(valorUnit: number, precoMin: number, cfg: CfgComissao): nu
 
 const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
 const digits = (s: unknown) => String(s ?? "").replace(/\D/g, "");
-const isScooter = (cat: unknown) => /scooter|motoneta|triciclo/i.test(String(cat ?? ""));
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
