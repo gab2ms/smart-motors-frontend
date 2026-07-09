@@ -124,6 +124,48 @@
       <input id="in-tel" type="tel" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000">
       <button class="btn" id="btn-login">Entrar</button>
       <div class="msg" id="login-msg"></div>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);font-size:13px;color:var(--text2);text-align:center;">
+        Ainda não é afiliado? <a href="#" id="link-cadastro" style="font-weight:700;">Quero me cadastrar</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────────── CADASTRO (auto-cadastro da campanha) ───────────── -->
+  <div id="cadastro" class="hidden">
+    <div class="brand"><b>Smart Motors</b><span>Portal do Afiliado</span></div>
+    <div class="card pad" style="max-width:480px;margin:0 auto;">
+      <h1>Seja um afiliado</h1>
+      <div style="color:var(--text2);font-size:13px;">Preencha seus dados pra começar a revender os produtos da Smart Motors. A loja analisa e libera seu acesso.</div>
+
+      <label for="in-c-nome">Nome completo *</label>
+      <input id="in-c-nome" type="text" autocomplete="name" placeholder="Seu nome completo">
+      <label for="in-c-tel">WhatsApp *</label>
+      <input id="in-c-tel" type="tel" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000">
+      <label for="in-c-email">E-mail *</label>
+      <input id="in-c-email" type="email" autocomplete="email" placeholder="voce@email.com">
+      <label for="in-c-cpf">CPF</label>
+      <input id="in-c-cpf" type="text" inputmode="numeric" placeholder="000.000.000-00">
+      <div style="display:grid;grid-template-columns:1fr 88px;gap:10px;">
+        <div><label for="in-c-cidade">Cidade</label><input id="in-c-cidade" type="text" placeholder="Sua cidade"></div>
+        <div><label for="in-c-uf">UF</label><input id="in-c-uf" type="text" maxlength="2" placeholder="RJ" style="text-transform:uppercase;"></div>
+      </div>
+      <label for="in-c-pix">Chave PIX (pra receber comissão)</label>
+      <input id="in-c-pix" type="text" placeholder="CPF, telefone, e-mail ou chave aleatória">
+      <label for="in-c-insta">Instagram ou como pretende divulgar</label>
+      <input id="in-c-insta" type="text" placeholder="@seuperfil, grupos de WhatsApp, loja física...">
+
+      <label style="margin-top:18px;">Termo de uso</label>
+      <div id="c-termo-box" style="max-height:150px;overflow-y:auto;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px 14px;font-size:12.5px;color:var(--text2);line-height:1.55;white-space:pre-wrap;"></div>
+      <label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;cursor:pointer;color:var(--text);font-size:13px;">
+        <input id="in-c-termo" type="checkbox" style="width:auto;margin-top:2px;flex:0 0 auto;">
+        <span>Li e concordo com o termo de uso do programa de afiliados.</span>
+      </label>
+
+      <button class="btn" id="btn-cadastro">Enviar cadastro</button>
+      <div class="msg" id="cad-msg"></div>
+      <div style="margin-top:14px;text-align:center;font-size:13px;color:var(--text2);">
+        Já tem cadastro? <a href="#" id="link-voltar-login" style="font-weight:700;">Entrar</a>
+      </div>
     </div>
   </div>
 
@@ -168,8 +210,29 @@
 
   function show(view) {
     $('login').classList.toggle('hidden', view !== 'login');
+    $('cadastro').classList.toggle('hidden', view !== 'cadastro');
     $('dash').classList.toggle('hidden', view !== 'dash');
   }
+
+  // Termo de uso do programa (rascunho — a loja pode ajustar o texto).
+  const TERMO_TEXTO =
+`TERMO DE USO — PROGRAMA DE AFILIADOS SMART MOTORS
+
+1. Esta é uma relação de parceria comercial para revenda/indicação de produtos da Smart Motors. Não gera vínculo empregatício, societário nem exclusividade.
+
+2. O afiliado se compromete a respeitar o preço mínimo informado para cada produto e a não prometer condições, descontos ou prazos que a loja não tenha autorizado.
+
+3. A comissão é devida por venda efetivamente concluída, entregue e paga, conforme a tabela vigente. Vendas canceladas, estornadas ou não pagas não geram comissão.
+
+4. O uso do nome, da marca, das imagens e dos materiais da Smart Motors é permitido apenas para divulgar os produtos da loja, sem alterar os preços oficiais nem criar comunicações enganosas.
+
+5. O afiliado é responsável pela veracidade dos dados informados neste cadastro e por manter sigilo sobre informações internas que receber.
+
+6. Os dados fornecidos serão usados apenas para a gestão do programa de afiliados e o pagamento de comissões, conforme a LGPD.
+
+7. A loja pode aprovar, recusar ou encerrar a participação de um afiliado a qualquer momento, sem gerar qualquer obrigação além do pagamento de comissões já devidas.
+
+Ao marcar a caixa de aceite, você declara que leu e concorda com este termo.`;
 
   // ── Login ──
   async function fazerLogin() {
@@ -204,6 +267,58 @@
     localStorage.removeItem(LS_TOKEN);
     localStorage.removeItem(LS_NOME);
     show('login');
+  }
+
+  // ── Cadastro (campanha) ──
+  function irParaCadastro() {
+    $('c-termo-box').textContent = TERMO_TEXTO;
+    $('cad-msg').textContent = '';
+    show('cadastro');
+    window.scrollTo(0, 0);
+  }
+
+  async function fazerCadastro() {
+    const msg = $('cad-msg');
+    msg.className = 'msg'; msg.textContent = '';
+    const payload = {
+      nome: $('in-c-nome').value.trim(),
+      telefone: $('in-c-tel').value.trim(),
+      email: $('in-c-email').value.trim(),
+      documento: $('in-c-cpf').value.trim(),
+      cidade: $('in-c-cidade').value.trim(),
+      uf: $('in-c-uf').value.trim(),
+      chavePix: $('in-c-pix').value.trim(),
+      instagram: $('in-c-insta').value.trim(),
+      termoAceito: $('in-c-termo').checked,
+    };
+    // Validação amigável no cliente (o servidor revalida tudo).
+    if (payload.nome.length < 3) { msg.className = 'msg err'; msg.textContent = 'Informe seu nome completo.'; return; }
+    if (payload.telefone.replace(/\D/g, '').length < 10) { msg.className = 'msg err'; msg.textContent = 'Informe um WhatsApp válido com DDD.'; return; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(payload.email)) { msg.className = 'msg err'; msg.textContent = 'Informe um e-mail válido.'; return; }
+    if (!payload.termoAceito) { msg.className = 'msg err'; msg.textContent = 'É preciso aceitar o termo de uso pra continuar.'; return; }
+
+    $('btn-cadastro').disabled = true;
+    $('btn-cadastro').textContent = 'Enviando...';
+    try {
+      const r = await fetch(API + '?acao=cadastro', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || !data.ok) { msg.className = 'msg err'; msg.textContent = data.error || 'Não foi possível enviar. Tente de novo.'; return; }
+      // Sucesso: mostra a confirmação no card e limpa o formulário.
+      $('cadastro').querySelector('.card').innerHTML =
+        `<h1>Cadastro enviado! ✅</h1>`
+        + `<div style="color:var(--text2);font-size:14px;line-height:1.6;margin-top:8px;">Recebemos seus dados. A loja vai analisar e liberar seu acesso ao portal. Assim que aprovado, você entra com <b>nome ou e-mail + telefone</b> aqui mesmo.</div>`
+        + `<button class="btn" id="btn-ok-cad">Voltar ao início</button>`;
+      $('btn-ok-cad').addEventListener('click', () => location.reload());
+    } catch (e) {
+      msg.className = 'msg err'; msg.textContent = 'Falha de conexão. Tente de novo.';
+    } finally {
+      const b = $('btn-cadastro');
+      if (b) { b.disabled = false; b.textContent = 'Enviar cadastro'; }
+    }
   }
 
   // ── Dashboard ──
@@ -391,6 +506,9 @@
   $('btn-login').addEventListener('click', fazerLogin);
   $('in-tel').addEventListener('keydown', (e) => { if (e.key === 'Enter') fazerLogin(); });
   $('btn-logout').addEventListener('click', logout);
+  $('link-cadastro').addEventListener('click', (e) => { e.preventDefault(); irParaCadastro(); });
+  $('link-voltar-login').addEventListener('click', (e) => { e.preventDefault(); show('login'); window.scrollTo(0, 0); });
+  $('btn-cadastro').addEventListener('click', fazerCadastro);
 
   // Auto-login se já houver token salvo.
   if (localStorage.getItem(LS_TOKEN)) carregarDashboard(); else show('login');

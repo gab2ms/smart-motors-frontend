@@ -143,10 +143,17 @@ A 2ª passada cobriu todos os pontos abaixo: Montagens (lista: card montador pad
 - ✅ **REMOVIDO (29/06, commit em main) — código morto que exibia custo/lucro sem proteção**: `renderDRE`/`dreRow`/`recalcDRE` e `renderDashVendedoresInline` eram inalcançáveis (0 chamadas, sem ref dinâmica). Montavam DRE/ranking com custo/margem/lucro fora dos gates de permissão. Removidos; boot sem erro no localhost; sem mudança de comportamento.
 - ⏳ Menores (observação): Oficina "Lucro" inflado (OS com custo 0 — backlog #2). Divergência preço cadastro×Tiny. 25 produtos sem FK `produto_precos_id`. Arredondamentos de centavos em empréstimo.
 
-## Painel de Afiliados — preço sugerido, ficha técnica e banco de materiais (08/07/2026)
-**Estado atual:** portal e admin reformados; **falta só o deploy da Edge Function `portal-afiliado`**
-(bloqueado pelo classificador — precisa aprovação explícita do dono; front no ar degrada bem com a
-função antiga). Migração `afiliados_materiais_ficha_tecnica` APLICADA em produção.
+## Painel de Afiliados — seleção de produtos, materiais e auto-cadastro (08/07/2026)
+**Estado atual:** aba única "Produtos & materiais" (seleção-primeiro + visibilidade) e **auto-cadastro
+pela campanha** construídos e validados no localhost + round-trips reais no banco. Migrações
+`afiliados_materiais_ficha_tecnica`, `afiliados_visivel_no_programa` e `afiliados_cadastro_portal`
+APLICADAS em produção. **Front (index.html + portal.html) e a nova Edge Function ainda NÃO publicados/
+deployados** — checkpoints locais `41caec1` (catálogo) + o commit do cadastro. **Sequência de go-live
+(pendente do dono):** (1) publicar o front; (2) o dono marca no admin quais produtos entram no
+programa (senão a vitrine fica vazia após o deploy); (3) **1 deploy** da `portal-afiliado` (gate de
+visibilidade + `?acao=cadastro` + login com status). Só aí o portal filtra por visível e o cadastro
+da campanha fica ativo. **Descoberta:** a função no ar já é a v4 completa (materiais/precoSugerido) —
+a nota antiga de "deploy pendente" estava desatualizada.
 - **Preço sugerido (decisão do dono):** automático = **preço mínimo + delta do teto** (delta =
   `(teto − base)/incremento × passo` = R$ 800 com a escala atual), com **override manual** em
   `produtos_precos.preco_sugerido_afiliado` (preenchido vence o automático; vazio = auto). Teto da
@@ -160,18 +167,45 @@ função antiga). Migração `afiliados_materiais_ficha_tecnica` APLICADA em pro
 - **Banco de materiais:** tabela `afiliados_materiais` (tipo imagem|arquivo, `produto_precos_id`
   NULL = material geral da loja, ordem, ativo) + bucket privado `afiliados-materiais` (50MB,
   policies `tem_modulo('afiliados')`). Portal só recebe **signed URL 1h** via Edge Function.
-- **Admin (`index.html`):** 4ª aba **"Materiais de venda"** no módulo Afiliados
-  (`renderAfiliadosMateriais`/`abrirAflMateriaisModal`/`_aflmUpload`/`_aflmRemover` — replica o
-  padrão `_cp*` de Storage) + aba "Preço mínimo & comissão" com colunas **Preço sugerido** (input
-  manual, placeholder mostra o auto) e **Comissão no sugerido**, e campo **Teto** na escala
-  (`_aflSalvarTeto`). Helpers: `_aflDeltaSugerido`/`_aflPrecoSugerido`.
+- **Admin (`index.html`) — aba única "Produtos & materiais" (reforma 08/07/2026):** as duas abas
+  antigas ("Preço mínimo & comissão" + "Materiais de venda") foram **fundidas numa só**
+  (`renderAfiliadosCatalogo`/`_aflRenderCatalogoInner`). Fluxo **seleção-primeiro**: cada modelo tem
+  toggle **"No programa"** (`_aflSalvarVisivel` → `produtos_precos.visivel_afiliado`); **só os
+  incluídos** mostram o checklist do que falta (`_aflItemFalta`: preço mín · foto · ficha · formas) —
+  produto fora do programa não cobra preenchimento. Tabela por modelo: toggle · situação · preço de
+  venda · **preço mínimo/sugerido inline** · comissão no sugerido · resumo de materiais · botão
+  Preencher/Editar (abre o modal). Modal (`abrirAflMateriaisModal`) virou **editor do produto**:
+  cabeçalho com toggle + "o que falta" (`_aflmRenderCabecalho`/`_aflmSetVisivel`), campos de preço
+  mínimo/sugerido, ficha/descrição, formas de pagamento e upload de fotos/arquivos. Filtro de
+  categoria **Scooters (padrão) / Acessórios / Todos** (`_aflCatalogoFiltrados`; scooter sempre
+  inclui os já-visíveis pra acessório liberado não sumir). Escala global vira `<details>` recolhido.
+  Helpers antigos mantidos (`_aflDeltaSugerido`/`_aflPrecoSugerido`/`_aflSalvarPrecoMinimo`/etc.).
 - **Portal (`portal.html`):** vitrine virou **cards expansíveis** (preço mínimo→comissão base,
   ⭐ preço sugerido→comissão com "(máx)"), ficha/condições com **📋 Copiar** (clipboard + fallback),
   imagens/arquivos com download por signed URL (`?acao=materiais`, lazy), **indisponíveis
   recolhidos** por padrão (backlog UX item 2 ✅), seção "Materiais da loja" (materiais gerais).
-- **Edge Function v2 (`?acao=dados` estendida + `?acao=materiais` nova):** vitrine ganha id,
-  precoSugerido, comissaoMinimo/Sugerido, fichaTecnica, condicoesPagamento, qtdImagens/qtdArquivos;
-  resposta ganha `gerais` + `escala`. Allowlist mantida (nada de custo/lucro).
+- **Edge Function `portal-afiliado` (deployada v4 = versão com materiais/precoSugerido — a nota
+  antiga de "deploy pendente" estava DESATUALIZADA):** `?acao=dados` retorna vitrine com id,
+  precoSugerido, comissaoMinimo/Sugerido, fichaTecnica, condicoesPagamento, qtdImagens/qtdArquivos +
+  `gerais` + `escala`; `?acao=materiais` (signed URLs 1h). Allowlist mantida (nada de custo/lucro).
+- **Seleção de produtos visíveis (visivel_afiliado) — 08/07/2026:** coluna
+  `produtos_precos.visivel_afiliado boolean default false` (migração `afiliados_visivel_no_programa`;
+  espelho `.sql`). A vitrine do portal passou a filtrar por **`visivel_afiliado = true`** em vez do
+  gate fixo "é scooter" → **permite liberar acessórios** também. Default false = **tudo começa
+  oculto**; o admin escolhe. **Mudança na Edge Function local ainda NÃO deployada** (deploy só
+  depois do dono marcar os produtos, senão a vitrine fica vazia — ver Histórico/pendências).
+- **Auto-cadastro de afiliados pelo portal (campanha) — 08/07/2026:** a tela de login do
+  `portal.html` ganhou **"Quero me cadastrar"** → formulário (nome, WhatsApp, e-mail, CPF=`documento`,
+  cidade/uf, chave PIX, Instagram/como divulga) + **aceite de termo de uso** (rascunho `TERMO_TEXTO`
+  no portal — dono pode ajustar). Envia pra Edge Function **`?acao=cadastro`** (nova) que insere um
+  afiliado **`status='pendente'`, `ativo=false`, `criado_via='portal'`** (dedup por telefone/e-mail).
+  Login continua **sem senha** (nome/e-mail + telefone); pendente/rejeitado não loga (login agora dá
+  mensagem "cadastro em análise"). **Aprovação no painel:** aba "Afiliados" ganhou seção **"⏳
+  Cadastros pendentes"** (`_aflRenderPendentes`/`_aflAprovarCadastro`/`_aflRejeitarCadastro`) — Aprovar
+  = `status='aprovado'`+`ativo=true`. Migração `afiliados_cadastro_portal` (colunas status/cidade/uf/
+  instagram/termo_*/criado_via + check de status; CPF reusa `documento`, PIX `chave_pix`, e-mail
+  `email`). **Edge Function + portal.html com o cadastro só ativam após o deploy** (bundle com o gate
+  de visibilidade — 1 deploy só).
 - **Acesso rápido ao portal na tela de Afiliados (08/07/2026, ✅ no ar):** bloco fixo no topo do
   módulo Afiliados (`index.html`, dentro de `#page-afiliados`, **antes** das `.fin-tabs` → visível
   em todas as 4 abas) com o link `https://smartmotorsapp.com.br/portal.html`, botão **Abrir** (nova
@@ -198,6 +232,24 @@ função antiga). Migração `afiliados_materiais_ficha_tecnica` APLICADA em pro
 - **Auditoria original (3 agentes):** `~/projetos/Smart Motors/documentos/auditoria-custos-fixo-variavel-2026-07.md`. Contexto de negócio (obra = prejuízo esporádico; quiosque = escambo por venda de moto) em `~/projetos/Smart Motors/_memoria/empresa.md`.
 
 ## Histórico de mudanças
+
+### 2026-07-08 — Afiliados: aba única "Produtos & materiais" + auto-cadastro pela campanha
+Dois pedidos do dono na sequência, mesma frente. **(1) Unificação + seleção-primeiro:** as abas
+"Preço mínimo & comissão" e "Materiais de venda" viraram **uma só** ("Produtos & materiais"), com a
+lógica invertida — **primeiro escolher quais produtos entram no programa** (toggle "No programa" =
+`produtos_precos.visivel_afiliado`, default false), e **só dos escolhidos** o sistema cobra o
+preenchimento (preço mínimo, foto, ficha técnica, formas de pagamento). O portal passou a mostrar o
+que estiver marcado visível (qualquer categoria → dá pra liberar acessório, não só scooter). **(2)
+Auto-cadastro:** `portal.html` ganhou tela "Quero me cadastrar" (dados pessoais + aceite de termo) →
+Edge Function `?acao=cadastro` cria afiliado **pendente**; aprovação na aba "Afiliados" (seção
+"Cadastros pendentes"); login segue sem senha, só aprovado entra. Migrações
+`afiliados_visivel_no_programa` + `afiliados_cadastro_portal` aplicadas via MCP (ver seção "Painel de
+Afiliados"). **Validado no localhost** (DevTools, 0 erro de console): aba nova renderiza, round-trip
+real de gravar/reverter visível+preço no banco (RLS ok), editor do produto, seção de pendentes com
+Aprovar/Rejeitar (testado com afiliado-teste inserido e depois apagado via MCP), formulário do portal
+(validações + payload + card de sucesso com fetch mockado). **Pendente:** publicar o front + o dono
+marcar produtos + **1 deploy** da `portal-afiliado` (bundle visibilidade + cadastro). Checkpoints
+locais (front não publicado).
 
 ### 2026-07-08 — Afiliados: botão de acesso rápido ao portal na própria tela
 A pedido do dono, a tela **Afiliados** ganhou um bloco de **acesso rápido ao portal** no topo (acima das abas, visível em todas): link `https://smartmotorsapp.com.br/portal.html` + botão **Abrir** (nova aba) e **Copiar link** (reusa `_cpCopiar`). Objetivo: a loja copiar e mandar pros afiliados vinculados no WhatsApp sem sair do sistema. Só front (12 linhas em `index.html`, dentro de `#page-afiliados`), sem banco/Edge Function. Validado no localhost via DevTools (bloco renderiza, href/target/rel/onclick corretos, ícones `ic-link`/`ic-clipboard` no sprite, 0 erro de console; screenshot na sessão logada do dono). **✅ Commit `bf4371f` pushed → GitHub Pages (no ar).** Ver seção **"Painel de Afiliados"**.

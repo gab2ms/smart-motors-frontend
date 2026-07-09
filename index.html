@@ -3066,6 +3066,7 @@ select:not(.input-pro):not(.search-input){
         <input type="text" class="search-input" id="afl-busca" placeholder="Buscar afiliado..." oninput="renderAfiliados()" style="min-width:220px;">
         <button class="btn btn-gold" onclick="abrirAfiliadoModal()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Novo afiliado</button>
       </div>
+      <div id="afl-pendentes"></div>
       <div class="card">
         <div class="card-header"><div><div class="card-sub" id="afl-count">—</div></div></div>
         <div id="afl-lista"></div>
@@ -19145,16 +19146,64 @@ function switchAfiliadosTab(t) {
   else if (t === 'catalogo') renderAfiliadosCatalogo();
 }
 
+// Renderiza os cadastros PENDENTES (auto-cadastro do portal) no topo, com Aprovar/Rejeitar.
+function _aflRenderPendentes() {
+  const box = document.getElementById('afl-pendentes');
+  if (!box) return;
+  const pend = afiliados.filter(a => a.status === 'pendente')
+    .sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')));
+  if (!pend.length) { box.innerHTML = ''; return; }
+  const fmtData = iso => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toLocaleDateString('pt-BR'); };
+  const info = (lbl, val) => val ? `<span style="color:var(--text3);">${lbl}:</span> ${escHtml(val)}` : '';
+  box.innerHTML =
+      `<div class="card" style="margin-bottom:14px;border-color:var(--gold);">`
+    +   `<div style="padding:12px 16px;font-weight:800;color:var(--gold);border-bottom:1px solid var(--border);">⏳ Cadastros pendentes (${pend.length}) <span style="font-weight:400;font-size:12px;color:var(--text3);">— vieram da campanha; aprove pra liberar o acesso</span></div>`
+    +   pend.map(a => {
+          const cidadeUf = [a.cidade, a.uf].filter(Boolean).join('/');
+          const linha2 = [info('E-mail', a.email), info('CPF', a.documento), info('Cidade', cidadeUf), info('PIX', a.chavePix), info('Divulga', a.instagram)].filter(Boolean).join(' · ');
+          return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">`
+            + `<div style="min-width:220px;flex:1;">`
+            +   `<div style="font-weight:700;">${escHtml(a.nome || '—')} <span style="font-weight:400;color:var(--text3);font-size:12px;">· ${escHtml(a.telefone || '')} · ${fmtData(a.criadoEm)}</span></div>`
+            +   (linha2 ? `<div style="font-size:12px;color:var(--text2);margin-top:3px;line-height:1.5;">${linha2}</div>` : '')
+            + `</div>`
+            + `<div style="white-space:nowrap;display:flex;gap:8px;">`
+            +   `<button class="btn btn-gold" style="padding:6px 14px;" onclick="_aflAprovarCadastro('${a.id}')">Aprovar</button>`
+            +   `<button class="btn" style="padding:6px 14px;" onclick="_aflRejeitarCadastro('${a.id}')">Rejeitar</button>`
+            + `</div>`
+            + `</div>`;
+        }).join('')
+    + `</div>`;
+}
+
+async function _aflAprovarCadastro(id) {
+  const a = afiliados.find(x => x.id === id); if (!a) return;
+  if (!(await smConfirm(`Aprovar o cadastro de "${a.nome}"? Ele passa a acessar o portal do afiliado.`))) return;
+  const { error } = await sb.from('afiliados').update({ status: 'aprovado', ativo: true, atualizado_em: new Date().toISOString() }).eq('id', id);
+  if (error) { smAlert('Erro ao aprovar: ' + error.message); return; }
+  a.status = 'aprovado'; a.ativo = true;
+  renderAfiliados();
+}
+async function _aflRejeitarCadastro(id) {
+  const a = afiliados.find(x => x.id === id); if (!a) return;
+  if (!(await smConfirm(`Rejeitar o cadastro de "${a.nome}"? Ele não terá acesso ao portal.`))) return;
+  const { error } = await sb.from('afiliados').update({ status: 'rejeitado', ativo: false, atualizado_em: new Date().toISOString() }).eq('id', id);
+  if (error) { smAlert('Erro ao rejeitar: ' + error.message); return; }
+  a.status = 'rejeitado'; a.ativo = false;
+  renderAfiliados();
+}
+
 function renderAfiliados() {
+  _aflRenderPendentes();
   const lista = document.getElementById('afl-lista');
   if (!lista) return;
   const q = (document.getElementById('afl-busca')?.value || '').trim().toLowerCase();
-  const ativosCount = afiliados.filter(a => a.ativo !== false).length;
+  const ativosCount = afiliados.filter(a => a.ativo !== false && a.status !== 'pendente').length;
   const cnt = document.getElementById('afl-cnt');
   if (cnt) cnt.textContent = ativosCount;
 
+  // Lista principal = todos MENOS os pendentes (esses ficam na seção de aprovação).
   // Ativos primeiro, depois por nome.
-  let arr = afiliados.slice().sort((a, b) =>
+  let arr = afiliados.filter(a => a.status !== 'pendente').sort((a, b) =>
     (a.ativo === false ? 1 : 0) - (b.ativo === false ? 1 : 0) ||
     String(a.nome || '').localeCompare(String(b.nome || '')));
   if (q) arr = arr.filter(a =>
@@ -19165,7 +19214,7 @@ function renderAfiliados() {
 
   if (!arr.length) {
     lista.innerHTML = '<div style="padding:24px;color:var(--text3);text-align:center;">'
-      + (afiliados.length ? 'Nenhum afiliado encontrado na busca.' : 'Nenhum afiliado cadastrado ainda. Clique em "Novo afiliado".')
+      + (afiliados.length ? 'Nenhum afiliado na busca.' : 'Nenhum afiliado cadastrado ainda. Clique em "Novo afiliado".')
       + '</div>';
     return;
   }
@@ -19178,18 +19227,19 @@ function renderAfiliados() {
     +   `<th style="text-align:center;padding:8px 10px;">Status</th>`
     +   `<th style="padding:8px 10px;"></th></tr></thead><tbody>`
     + arr.map(a => {
+        const rejeitado = a.status === 'rejeitado';
         const inativo = a.ativo === false;
+        const badge = rejeitado ? '<span style="color:var(--red,#ef6048);font-weight:700;">rejeitado</span>'
+          : (inativo ? '<span style="color:var(--text3);">inativo</span>' : '<span style="color:var(--green);font-weight:700;">ativo</span>');
         return `<tr style="border-bottom:1px solid var(--border);${inativo ? 'opacity:.55;' : ''}">`
           + `<td style="padding:9px 10px;font-weight:700;">${escHtml(a.nome || '—')}</td>`
           + `<td style="padding:9px 10px;">${escHtml(a.telefone || '—')}</td>`
           + `<td style="padding:9px 10px;">${escHtml(a.chavePix || '—')}</td>`
-          + `<td style="padding:9px 10px;text-align:center;">`
-          +   (inativo ? '<span style="color:var(--text3);">inativo</span>' : '<span style="color:var(--green);font-weight:700;">ativo</span>')
-          + `</td>`
+          + `<td style="padding:9px 10px;text-align:center;">${badge}</td>`
           + `<td style="padding:9px 10px;text-align:right;white-space:nowrap;">`
           +   `<button class="action-btn edit-btn" onclick="abrirAfiliadoModal('${a.id}')" title="Editar"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`
-          +   (inativo
-              ? `<button class="action-btn" onclick="_alternarStatusAfiliado('${a.id}', true)" title="Reativar" style="color:var(--green);"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
+          +   ((inativo || rejeitado)
+              ? `<button class="action-btn" onclick="_aflAprovarCadastro('${a.id}')" title="${rejeitado ? 'Aprovar' : 'Reativar'}" style="color:var(--green);"><svg class="ic ic-sm"><use href="#ic-refresh"/></svg></button>`
               : `<button class="action-btn del-btn" onclick="_alternarStatusAfiliado('${a.id}', false)" title="Desativar"><svg class="ic ic-sm"><use href="#ic-ban"/></svg></button>`)
           + `</td></tr>`;
       }).join('')

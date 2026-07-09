@@ -8,6 +8,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 //
 // Endpoints (via ?acao=):
 //   login     — body { identificador, telefone } → { token, afiliado:{id,nome} }
+//   cadastro  — body { nome, telefone, email, documento, cidade, uf, chavePix, instagram, termoAceito }
+//               → cria afiliado PENDENTE (ativo=false) pra aprovação no painel; { ok:true }
 //   dados     — header Authorization: Bearer <token> → { vitrine[], pedidos[], totais, gerais }
 //   materiais — header Authorization + ?modelo=<produto_precos_id> OU ?geral=1
 //               → { materiais: [{id,tipo,titulo,nome,tamanho,url}] } (signed URLs 1h)
@@ -105,17 +107,67 @@ Deno.serve(async (req: Request) => {
       const tel = digits(body.telefone);
       if (!idNome || !tel) return json({ error: "Informe nome e telefone." }, 400);
 
-      const { data, error } = await sb.from("afiliados").select("id,nome,telefone,email").eq("ativo", true);
+      const { data, error } = await sb.from("afiliados").select("id,nome,telefone,email,ativo,status");
       if (error) return json({ error: "Falha ao validar." }, 500);
       // identificador casa com o nome OU com o e-mail; telefone é o 2º fator.
       const match = (data || []).filter((a) =>
         (norm(a.nome) === idNome || (a.email && norm(a.email) === idNome)) && digits(a.telefone) === tel);
-      // Erro genérico (não revela se nome existe). Ambíguo (2+) também recusa.
-      if (match.length !== 1) return json({ error: "Nome ou telefone não confere." }, 401);
+      // Match único: decide pelo status. Pendente/rejeitado/inativo NÃO logam (mas
+      // damos uma mensagem clara — é o próprio dado da pessoa). 0 ou ambíguo = genérico.
+      if (match.length === 1) {
+        const afil = match[0];
+        if (afil.status === "pendente")
+          return json({ error: "Seu cadastro está em análise. A loja vai liberar seu acesso em breve." }, 403);
+        if (afil.status === "rejeitado" || afil.ativo === false)
+          return json({ error: "Acesso indisponível no momento. Fale com a loja." }, 403);
+        const token = await makeToken(SECRET, afil.id);
+        return json({ token, afiliado: { id: afil.id, nome: afil.nome } });
+      }
+      return json({ error: "Nome ou telefone não confere." }, 401);
+    }
 
-      const afil = match[0];
-      const token = await makeToken(SECRET, afil.id);
-      return json({ token, afiliado: { id: afil.id, nome: afil.nome } });
+    // ───────────────────────── CADASTRO (auto-cadastro da campanha) ─────────────────────────
+    // A pessoa preenche o formulário no portal e aceita o termo → cria um afiliado
+    // PENDENTE (ativo=false). O admin aprova depois no painel. Sem senha (login futuro
+    // será nome/e-mail + telefone, como os demais).
+    if (acao === "cadastro") {
+      const body = await req.json().catch(() => ({}));
+      const nome = String(body.nome ?? "").trim();
+      const telefone = String(body.telefone ?? "").trim();
+      const email = String(body.email ?? "").trim();
+      const documento = String(body.documento ?? "").trim();
+      const cidade = String(body.cidade ?? "").trim();
+      const uf = String(body.uf ?? "").trim().toUpperCase().slice(0, 2);
+      const chavePix = String(body.chavePix ?? "").trim();
+      const instagram = String(body.instagram ?? "").trim();
+      const termoAceito = body.termoAceito === true;
+
+      if (nome.length < 3) return json({ error: "Informe seu nome completo." }, 400);
+      if (digits(telefone).length < 10) return json({ error: "Informe um WhatsApp válido com DDD." }, 400);
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: "Informe um e-mail válido." }, 400);
+      if (!termoAceito) return json({ error: "É preciso aceitar o termo de uso pra continuar." }, 400);
+
+      // Dedup por telefone OU e-mail (não duplica quem já se cadastrou / já é afiliado).
+      const tel = digits(telefone);
+      const { data: existentes } = await sb.from("afiliados").select("telefone,email,status");
+      const dup = (existentes || []).find((a) =>
+        digits(a.telefone) === tel || (email && a.email && norm(a.email) === norm(email)));
+      if (dup) {
+        const msg = dup.status === "pendente"
+          ? "Você já tem um cadastro em análise. Aguarde a liberação da loja."
+          : "Já existe um cadastro com esse telefone ou e-mail. Se já é afiliado, é só entrar.";
+        return json({ error: msg }, 409);
+      }
+
+      const { error: insErr } = await sb.from("afiliados").insert({
+        nome, telefone, email: email || null, documento: documento || null,
+        cidade: cidade || null, uf: uf || null, chave_pix: chavePix || null,
+        instagram: instagram || null,
+        status: "pendente", ativo: false, criado_via: "portal",
+        termo_aceito: true, termo_aceito_em: new Date().toISOString(), termo_versao: "v1-2026-07",
+      });
+      if (insErr) return json({ error: "Não foi possível enviar o cadastro. Tente de novo." }, 500);
+      return json({ ok: true });
     }
 
     // ───────────────────────── DADOS ─────────────────────────
