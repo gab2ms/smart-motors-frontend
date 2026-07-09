@@ -166,6 +166,20 @@ Deno.serve(async (req: Request) => {
         termo_aceito: true, termo_aceito_em: new Date().toISOString(), termo_versao: "v1-2026-07",
       });
       if (insErr) return json({ error: "Não foi possível enviar o cadastro. Tente de novo." }, 500);
+
+      // Aviso no WhatsApp da loja (best-effort; falha aqui NÃO quebra o cadastro).
+      try {
+        const msg = `🤝 *Novo cadastro de afiliado!*\nNome: ${nome}\nWhatsApp: ${telefone}`
+          + ((cidade || uf) ? `\nCidade: ${[cidade, uf].filter(Boolean).join("/")}` : "")
+          + (instagram ? `\nDivulga: ${instagram}` : "")
+          + `\n\nAprove em Afiliados → Cadastros pendentes.`;
+        await fetch(`${SUPA_URL}/functions/v1/wa-notify`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "authorization": `Bearer ${SERVICE}` },
+          body: JSON.stringify({ numero: "5521997507738", mensagem: msg }),
+        });
+      } catch (_) { /* não bloqueia o cadastro */ }
+
       return json({ ok: true });
     }
 
@@ -308,11 +322,39 @@ Deno.serve(async (req: Request) => {
       });
 
       const round2 = (n: number) => Math.round(n * 100) / 100;
+
+      // ── Comissão JÁ PAGA ao afiliado: contas a pagar dele (categoria "Comissão
+      //    Afiliados") baixadas — via lançamentos de saída OU marcadas status='pago'
+      //    (botão "só marcar como paga", que não lança no caixa). "A receber" = comissão
+      //    de vendas ENTREGUES menos o que já foi pago. "Aguardando entrega" fica à parte. ──
+      const { data: ctsCom } = await sb.from("contas_pagar")
+        .select("id,valor,status").eq("afiliado_id", afiliadoId).eq("categoria", "Comissão Afiliados");
+      const contaIds = (ctsCom || []).map((c) => c.id);
+      const pagoPorConta = new Map<string, number>();
+      if (contaIds.length) {
+        const { data: lancs } = await sb.from("lancamentos")
+          .select("conta_pagar_id,valor").in("conta_pagar_id", contaIds).eq("tipo", "saida");
+        for (const l of lancs || []) {
+          const k = String(l.conta_pagar_id);
+          pagoPorConta.set(k, (pagoPorConta.get(k) || 0) + Number(l.valor || 0));
+        }
+      }
+      let comissaoPaga = 0;
+      for (const c of ctsCom || []) {
+        const viaLanc = pagoPorConta.get(String(c.id)) || 0;
+        // status='pago' sem lançamento = paga por fora → conta pelo valor cheio.
+        comissaoPaga += c.status === "pago" ? Math.max(viaLanc, Number(c.valor || 0)) : viaLanc;
+      }
+      comissaoPaga = round2(comissaoPaga);
+      const comissaoAReceber = round2(Math.max(0, comissaoLiberada - comissaoPaga));
+
       const totais = {
         totalVendido: round2(totalVendido),
         comissaoLiberada: round2(comissaoLiberada),
         comissaoPendente: round2(comissaoPendente),
-        comissaoTotal: round2(comissaoLiberada + comissaoPendente),
+        comissaoPaga,
+        comissaoAReceber,
+        comissaoTotal: round2(comissaoLiberada + comissaoPendente), // compat (não usado no portal novo)
       };
 
       return json({

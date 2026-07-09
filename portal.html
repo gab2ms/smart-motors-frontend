@@ -346,11 +346,15 @@ Ao marcar a caixa de aceite, você declara que leu e concorda com este termo.`;
 
   function render(data) {
     const t = data.totais || {};
+    // "Já recebida" = comissão de vendas entregues que já foi paga; "A receber" = entregue
+    // ainda não paga; "Aguardando entrega" = vendas não entregues (a comissão só libera na entrega).
+    const paga = t.comissaoPaga != null ? t.comissaoPaga : 0;
+    const aReceber = t.comissaoAReceber != null ? t.comissaoAReceber : (t.comissaoLiberada || 0);
     $('kpis').innerHTML =
         kpi('Total vendido', money(t.totalVendido), '')
-      + kpi('Comissão liberada', money(t.comissaoLiberada), 'green')
-      + kpi('Comissão pendente', money(t.comissaoPendente), '')
-      + kpi('Comissão a receber', money(t.comissaoTotal), 'gold');
+      + kpi('Comissão já recebida', money(paga), 'green')
+      + kpi('A receber', money(aReceber), 'gold')
+      + kpi('Aguardando entrega', money(t.comissaoPendente), '');
 
     VITRINE = data.vitrine || [];
     ESCALA = data.escala || {};

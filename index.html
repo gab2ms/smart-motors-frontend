@@ -22644,6 +22644,8 @@ async function _pdvFinalizarVenda() {
     // Cria/atualiza o cadastro do cliente — best-effort, fora do try da venda
     // (v ainda referencia a venda mesmo após _pdvVenda=null). Nunca quebra nada.
     _pdvUpsertCliente(v.cliente);
+    // Aviso no WhatsApp da loja — venda registrada (best-effort, fire-and-forget).
+    _notificarVendaWhatsApp(_pdvUltimoComprovante);
   } catch (e) {
     smAlert(e.message || 'Erro desconhecido.');
     if (btn) { btn.disabled = false; btn.innerHTML = 'Finalizar venda <svg class="ic ic-sm"><use href="#ic-check"/></svg>'; }
@@ -25214,6 +25216,27 @@ async function _enviarWhatsAppRaw(numero, apikey, mensagem) {
 async function enviarWhatsApp(mensagem) {
   if (!mensagem) return false;
   return _enviarWhatsAppRaw(WA_NUMBER, null, mensagem);
+}
+
+// Aviso de VENDA registrada no WhatsApp da loja (best-effort; nunca quebra a venda).
+// Recebe o snapshot _pdvUltimoComprovante. O nº do pedido deixa a mensagem única
+// (o dedup do wa-notify é por número|dia|mensagem — não colapsa vendas diferentes).
+function _notificarVendaWhatsApp(comp) {
+  try {
+    if (!comp) return;
+    const itensTxt = (comp.itens || []).map(it => `${it.qtd}× ${it.nome}`).join(', ');
+    const cliNome  = (comp.cliente && comp.cliente.nome) || '—';
+    const entrega  = comp.entregaImediata ? 'Entrega imediata'
+      : (comp.dataPrevistaEntrega ? 'Entrega prevista ' + _aflFmtData(comp.dataPrevistaEntrega) : '');
+    const msg = `🛒 *Nova venda registrada!*\n`
+      + `Pedido #${comp.numero}\n`
+      + `Cliente: ${cliNome}\n`
+      + `Vendedor: ${comp.vendedorNome || '—'}\n`
+      + (itensTxt ? `Itens: ${itensTxt}\n` : '')
+      + `Total: ${_fmtBRMoney(comp.total)}`
+      + (entrega ? `\n${entrega}` : '');
+    enviarWhatsApp(msg); // fire-and-forget (a função já trata erro internamente)
+  } catch (e) { /* nunca quebra a venda */ }
 }
 
 function _waHoje() { return new Date().toISOString().slice(0,10); }

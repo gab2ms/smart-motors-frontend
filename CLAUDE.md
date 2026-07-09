@@ -100,6 +100,15 @@ Fonte do preço do CRM/IA = `produtos_precos.venda` (via VIEW `crm_catalogo`), l
 - **Dois disparadores, mesma fonte:**
   1. **Railway `resumoWhatsapp.js`** (cron 8h/20h) — resumos automáticos; espera 8s entre envios.
   2. **App** (avisos de evento: conta vencendo, OS pronta, SAC; prévia; teste) — via Edge Function **`wa-notify`** (key resolvida no servidor; nunca no front).
+- **Avisos automáticos de afiliado/venda (08/07/2026) — pendente deploy/push:**
+  (a) **Nova venda registrada** → aviso no WhatsApp da loja (`5521997507738`) no `_pdvFinalizarVenda`
+  (helper `_notificarVendaWhatsApp`, usa o snapshot `_pdvUltimoComprovante`: nº, cliente, vendedor,
+  itens, total, entrega; fire-and-forget, nunca quebra a venda). Cobre o **PDV**; venda gerada pelo
+  **CRM** (app à parte) precisaria do mesmo chamado — pendência. (b) **Novo auto-cadastro de afiliado**
+  → aviso no WhatsApp da loja a partir da Edge Function `portal-afiliado` (`?acao=cadastro` chama a
+  `wa-notify` com `Authorization: Bearer <service_role>`; nome/telefone/cidade/instagram). O **dedup**
+  do `wa-notify` é por número|dia|mensagem, então as mensagens incluem nº do pedido / nome do afiliado
+  pra não colapsar eventos diferentes.
 - **Dedup no servidor:** `wa-notify` grava `wa_dedup(chave = numero|dia|mensagem)` e recusa repetição — a mesma msg/numero/dia sai 1x só (não importa quantos navegadores disparem). `__ping__` = healthcheck (não envia/dedup).
 - **Se parar de chegar (remetente desconectado):** abrir `https://api.textmebot.com/status.php?apikey=<api_key do cadastro>` → escanear o QR no WhatsApp do remetente atual `+5521997507738` (Config → Dispositivos conectados → Conectar aparelho). Pra **trocar** o número remetente: **Logout** primeiro, depois escanear o QR novo com o número desejado e conferir o campo "Sender's Phone number". O link tem a key — não compartilhar. Vale ativar "Add Notification" lá pra avisar quando cair.
 - **"Enviar pra si mesmo" — validado (07/07/2026):** remetente = destinatário = `+5521997507738`; teste real via `send.php` retornou "Sender: +5521997507738 / Result: Success!". Funciona (cai no chat "Você" do WhatsApp). Re-testar após qualquer novo re-vínculo.
@@ -204,6 +213,15 @@ mostra nenhum produto até o dono selecionar. Só então mandar o link da campan
   = `status='aprovado'`+`ativo=true`. Migração `afiliados_cadastro_portal` (colunas status/cidade/uf/
   instagram/termo_*/criado_via + check de status; CPF reusa `documento`, PIX `chave_pix`, e-mail
   `email`). **✅ No ar** (portal.html publicado + Edge Function v5).
+- **Correção da comissão "a receber" no portal (08/07/2026):** o portal mostrava "Comissão a receber" =
+  `liberada + pendente`, **sem descontar o que já foi pago** → afiliado com comissão já paga ainda
+  via "a receber R$X" (caso do Pedro: venda entregue e comissão paga, mas mostrava R$100 a receber). **Fix na
+  Edge Function `dados`:** soma a comissão **já paga** das contas a pagar dele (categoria "Comissão
+  Afiliados": lançamentos de saída OU `status='pago'` do "só marcar como paga") e retorna
+  `comissaoPaga` + `comissaoAReceber = max(0, liberada − paga)`. **Portal:** KPIs viraram **Total
+  vendido · Comissão já recebida · A receber · Aguardando entrega** (era liberada/pendente/a-receber
+  confuso). Validado com os dados reais do Pedro (liberada 100, paga 100, a receber 0). **Deploy +
+  push pendentes** (bundle com os avisos de WhatsApp — ver seção WhatsApp).
 - **Acesso rápido ao portal na tela de Afiliados (08/07/2026, ✅ no ar):** bloco fixo no topo do
   módulo Afiliados (`index.html`, dentro de `#page-afiliados`, **antes** das `.fin-tabs` → visível
   em todas as 4 abas) com o link `https://smartmotorsapp.com.br/portal.html`, botão **Abrir** (nova
