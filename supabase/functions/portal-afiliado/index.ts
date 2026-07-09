@@ -143,8 +143,9 @@ Deno.serve(async (req: Request) => {
         : null;
 
       // produtos_precos: modelo + preços + conteúdo comercial (allowlist — nada de custo).
+      // visivel_afiliado = seleção do admin: só produtos marcados entram na vitrine.
       const { data: precos } = await sb.from("produtos_precos")
-        .select("id,modelo,preco_minimo_afiliado,preco_sugerido_afiliado,ficha_tecnica,condicoes_pagamento");
+        .select("id,modelo,preco_minimo_afiliado,preco_sugerido_afiliado,ficha_tecnica,condicoes_pagamento,visivel_afiliado");
       const precoById = new Map((precos || []).map((p) => [p.id, p]));
 
       // Contagem de materiais ativos por modelo (NULL = materiais gerais da loja).
@@ -163,14 +164,16 @@ Deno.serve(async (req: Request) => {
         .select("id,categoria,estoque,ativo,produto_precos_id,comissao_afiliado");
       const prodById = new Map((prods || []).map((p) => [p.id, p]));
 
-      // ── Vitrine: agrega scooters por modelo (FK exata). Sem quantidade/custo. ──
+      // ── Vitrine: agrega por modelo (FK exata) os produtos que o admin marcou como
+      //    visíveis no programa (visivel_afiliado). Qualquer categoria — permite liberar
+      //    acessórios, não só scooters. Sem quantidade/custo. ──
       const vitMap = new Map<string, { id: string; modelo: string; disponivel: boolean; precoMinimo: number | null }>();
       for (const p of prods || []) {
         if (p.ativo === false) continue;
-        if (!isScooter(p.categoria)) continue;
         if (!p.produto_precos_id) continue;
         const pp = precoById.get(p.produto_precos_id);
         if (!pp) continue;
+        if (!pp.visivel_afiliado) continue; // fora do programa → não aparece no portal
         const key = String(p.produto_precos_id);
         const cur = vitMap.get(key) || {
           id: key,

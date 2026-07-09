@@ -3057,8 +3057,7 @@ select:not(.input-pro):not(.search-input){
     <div class="fin-tabs">
       <button class="fin-tab-btn active" data-afltab="cadastro"  onclick="switchAfiliadosTab('cadastro')">Afiliados (<span id="afl-cnt">0</span>)</button>
       <button class="fin-tab-btn"         data-afltab="vendas"    onclick="switchAfiliadosTab('vendas')">Vendas &amp; Comissões</button>
-      <button class="fin-tab-btn"         data-afltab="comissoes" onclick="switchAfiliadosTab('comissoes')">Preço mínimo &amp; comissão</button>
-      <button class="fin-tab-btn"         data-afltab="materiais" onclick="switchAfiliadosTab('materiais')">Materiais de venda</button>
+      <button class="fin-tab-btn"         data-afltab="catalogo"  onclick="switchAfiliadosTab('catalogo')">Produtos &amp; materiais</button>
     </div>
 
     <!-- TAB: cadastro -->
@@ -3078,13 +3077,8 @@ select:not(.input-pro):not(.search-input){
       <div id="afl-vendas-conteudo" style="color:var(--text3);padding:24px;text-align:center;">Vendas e comissões por afiliado entram na próxima fase.</div>
     </div>
 
-    <!-- TAB: comissões por produto (Fase 3) -->
-    <div class="fin-tab-content" id="afl-tab-comissoes" style="display:none;">
-      <div id="afl-comissoes-conteudo" style="color:var(--text3);padding:24px;text-align:center;">A tabela de comissão por produto entra na próxima fase.</div>
-    </div>
-
-    <!-- TAB: materiais de venda (ficha técnica, condições de pagamento, imagens, arquivos) -->
-    <div class="fin-tab-content" id="afl-tab-materiais" style="display:none;">
+    <!-- TAB: catálogo do afiliado — seleção de produtos + preço mínimo/comissão + materiais (ficha, formas, imagens/arquivos) -->
+    <div class="fin-tab-content" id="afl-tab-catalogo" style="display:none;">
       <div style="color:var(--text3);padding:24px;text-align:center;">Carregando...</div>
     </div>
   </div>
@@ -19137,17 +19131,18 @@ async function initAfiliados() {
 }
 
 function switchAfiliadosTab(t) {
-  if (!['cadastro', 'vendas', 'comissoes', 'materiais'].includes(t)) t = 'cadastro';
+  // Compat: as abas antigas "comissoes" e "materiais" viraram a única "catalogo".
+  if (t === 'comissoes' || t === 'materiais') t = 'catalogo';
+  if (!['cadastro', 'vendas', 'catalogo'].includes(t)) t = 'cadastro';
   _afiliadosAbaAtiva = t;
-  ['cadastro', 'vendas', 'comissoes', 'materiais'].forEach(x => {
+  ['cadastro', 'vendas', 'catalogo'].forEach(x => {
     const c = document.getElementById('afl-tab-' + x);
     if (c) c.style.display = (x === t) ? '' : 'none';
   });
   document.querySelectorAll('#page-afiliados .fin-tab-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.afltab === t));
   if (t === 'vendas')        renderAfiliadosVendas();
-  else if (t === 'comissoes') renderAfiliadosComissoes();
-  else if (t === 'materiais') renderAfiliadosMateriais();
+  else if (t === 'catalogo') renderAfiliadosCatalogo();
 }
 
 function renderAfiliados() {
@@ -19555,26 +19550,44 @@ async function _aflEditarComissaoPedido(pedidoId) {
   }
 }
 
-function renderAfiliadosComissoes() {
-  const root = document.getElementById('afl-tab-comissoes');
+function renderAfiliadosCatalogo() {
+  const root = document.getElementById('afl-tab-catalogo');
   if (!root) return;
   root.innerHTML = '<div style="padding:24px;color:var(--text3);text-align:center;">Carregando produtos...</div>';
-  _aflGarantirProdutos().then(() => _aflRenderComissoesInner());
+  Promise.all([_aflGarantirProdutos(), _aflCarregarMateriais()]).then(() => _aflRenderCatalogoInner());
 }
 
 // true se o modelo já tem preço mínimo de afiliado cadastrado.
 function _aflTemPrecoMin(pp) { return pp && pp.precoMinimoAfiliado != null && Number(pp.precoMinimoAfiliado) >= 0; }
 
-// Aplica os filtros (busca por modelo + com/sem preço mínimo) sobre os MODELOS
-// (produtos_precos = global products), já ordenados.
-function _aflModelosFiltrados() {
-  const q   = (document.getElementById('afl-c-busca')?.value || '').trim().toLowerCase();
-  const fPm = document.getElementById('afl-c-pm')?.value || '';
+// Checklist de preenchimento de um produto JÁ incluído no programa: o que ainda
+// falta pra ficha do afiliado ficar completa (preço mínimo, foto, ficha, formas).
+// Retorna [] quando está completo. Só faz sentido pra produto com visivelAfiliado.
+function _aflItemFalta(pp) {
+  const falta = [];
+  if (pp.precoMinimoAfiliado == null) falta.push('preço mín.');
+  const mats = _aflMatDoModelo(pp.id);
+  if (!mats.some(m => m.tipo === 'imagem')) falta.push('foto');
+  if (!pp.fichaTecnica)       falta.push('ficha técnica');
+  if (!pp.condicoesPagamento) falta.push('formas de pgto');
+  return falta;
+}
+
+// Aplica os filtros da aba (busca + categoria + status no programa) sobre os
+// MODELOS (produtos_precos = global products) ativos, já ordenados. Regra da
+// categoria: "scooter" (padrão) sempre inclui os já marcados como visíveis, pra
+// um acessório liberado não sumir da lista.
+function _aflCatalogoFiltrados() {
+  const q    = (document.getElementById('afl-c-busca')?.value || '').trim().toLowerCase();
+  const fCat = document.getElementById('afl-c-cat')?.value || 'scooter';
+  const fSt  = document.getElementById('afl-c-status')?.value || '';
   const fOrd = document.getElementById('afl-c-ord')?.value || 'modelo-asc';
-  let arr = (typeof products !== 'undefined' ? products : []).slice();
-  if (q)   arr = arr.filter(pp => (pp.modelo || '').toLowerCase().includes(q));
-  if (fPm === 'com') arr = arr.filter(_aflTemPrecoMin);
-  else if (fPm === 'sem') arr = arr.filter(pp => !_aflTemPrecoMin(pp));
+  let arr = (typeof products !== 'undefined' ? products : []).filter(pp => pp.ativo !== false);
+  if (fCat === 'scooter')        arr = arr.filter(pp => _aflMatEhScooter(pp.categoria) || pp.visivelAfiliado);
+  else if (fCat === 'acessorio') arr = arr.filter(pp => !_aflMatEhScooter(pp.categoria));
+  if (fSt === 'sim')      arr = arr.filter(pp => pp.visivelAfiliado);
+  else if (fSt === 'nao') arr = arr.filter(pp => !pp.visivelAfiliado);
+  if (q) arr = arr.filter(pp => (pp.modelo || '').toLowerCase().includes(q));
   const byModelo = (a, b) => String(a.modelo || '').localeCompare(String(b.modelo || ''));
   const num = v => Number(v) || 0;
   arr.sort((a, b) => {
@@ -19585,30 +19598,51 @@ function _aflModelosFiltrados() {
       default:            return byModelo(a, b);
     }
   });
+  // Incluídos no programa primeiro (concentra o trabalho de preenchimento no topo).
+  arr.sort((a, b) => Number(!!b.visivelAfiliado) - Number(!!a.visivelAfiliado));
   return arr;
 }
 
-function _aflRenderComissoesInner() {
-  const root = document.getElementById('afl-tab-comissoes');
+// Inclui/remove um MODELO do programa de afiliados (produtos_precos.visivel_afiliado).
+async function _aflSalvarVisivel(precosId, visivel, el) {
+  if (el) el.disabled = true;
+  try {
+    const { error } = await sb.from('produtos_precos').update({ visivel_afiliado: !!visivel }).eq('id', precosId);
+    if (error) throw new Error(error.message);
+    const pp = (typeof products !== 'undefined' ? products : []).find(x => x.id === precosId);
+    if (pp) pp.visivelAfiliado = !!visivel;
+    _aflRenderCatalogoInner();
+  } catch (e) {
+    smAlert('Erro ao salvar a seleção: ' + e.message);
+    if (el) el.disabled = false;
+  }
+}
+
+function _aflRenderCatalogoInner() {
+  const root = document.getElementById('afl-tab-catalogo');
   if (!root) return;
   const q    = (document.getElementById('afl-c-busca')?.value || '').trim().toLowerCase();
-  const fPm  = document.getElementById('afl-c-pm')?.value || '';
+  const fCat = document.getElementById('afl-c-cat')?.value || 'scooter';
+  const fSt  = document.getElementById('afl-c-status')?.value || '';
   const fOrd = document.getElementById('afl-c-ord')?.value || 'modelo-asc';
   const cfg = _aflCfgEscala();
-
-  const arr = _aflModelosFiltrados();
-  const semCount = (typeof products !== 'undefined' ? products : []).filter(pp => !_aflTemPrecoMin(pp)).length;
-
-  const optPm  = [['', 'Preço mínimo: todos'], ['com', 'Só com preço mínimo'], ['sem', 'Só sem preço mínimo']].map(([v, l]) => `<option value="${v}"${fPm === v ? ' selected' : ''}>${l}</option>`).join('');
-  const optOrd = [['modelo-asc', 'Modelo (A→Z)'], ['modelo-desc', 'Modelo (Z→A)'], ['pm-desc', 'Maior preço mínimo'], ['pm-asc', 'Menor preço mínimo']].map(([v, l]) => `<option value="${v}"${fOrd === v ? ' selected' : ''}>${l}</option>`).join('');
   const fmtMoney = v => (typeof _fmtBRMoney === 'function') ? _fmtBRMoney(v) : ('R$ ' + (Number(v)||0).toFixed(2));
 
-  // Painel: escala global da comissão (editável) + explicação.
+  const arr = _aflCatalogoFiltrados();
+  const todos = (typeof products !== 'undefined' ? products : []).filter(pp => pp.ativo !== false);
+  const noPrograma = todos.filter(pp => pp.visivelAfiliado);
+  const incompletos = noPrograma.filter(pp => _aflItemFalta(pp).length).length;
+  const gerais = _aflMatDoModelo(null);
+
+  const optCat = [['scooter', 'Scooters'], ['acessorio', 'Acessórios'], ['todos', 'Todos os produtos']].map(([v, l]) => `<option value="${v}"${fCat === v ? ' selected' : ''}>${l}</option>`).join('');
+  const optSt  = [['', 'Todos'], ['sim', 'No programa'], ['nao', 'Fora do programa']].map(([v, l]) => `<option value="${v}"${fSt === v ? ' selected' : ''}>${l}</option>`).join('');
+  const optOrd = [['modelo-asc', 'Modelo (A→Z)'], ['modelo-desc', 'Modelo (Z→A)'], ['pm-desc', 'Maior preço mínimo'], ['pm-asc', 'Menor preço mínimo']].map(([v, l]) => `<option value="${v}"${fOrd === v ? ' selected' : ''}>${l}</option>`).join('');
+
+  // Painel (recolhido): escala global da comissão (editável) + explicação.
   const inEscala = (chave, val) => `<input type="number" step="1" min="0" value="${Number(val)}" onchange="_aflSalvarEscala('${chave}', this.value, this)" style="width:90px;text-align:right;padding:6px 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);">`;
   const deltaSug = _aflDeltaSugerido(cfg);
   const painel =
-      `<div class="card" style="margin-bottom:14px;"><div style="padding:14px 16px;">`
-    +   `<div style="font-weight:800;font-size:15px;margin-bottom:6px;">Regra de comissão escalonada</div>`
+      `<details class="card" style="margin-bottom:14px;"><summary style="padding:14px 16px;cursor:pointer;font-weight:800;font-size:15px;list-style:none;">Regra de comissão escalonada <span style="font-weight:400;font-size:12px;color:var(--text3);">— clique pra ajustar base/incremento/teto</span></summary><div style="padding:0 16px 16px;">`
     +   `<div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:12px;">Vendendo um modelo no <b>preço mínimo</b>, o afiliado ganha a comissão <b>base</b>. A cada faixa vendida acima do mínimo, soma o <b>incremento</b>. Vender abaixo do mínimo paga só a base (não penaliza). O <b>teto</b> trava a comissão (acima dele o afiliado não ganha mais — segura o preço pro cliente).</div>`
     +   `<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:13px;">`
     +     `<label style="display:flex;gap:8px;align-items:center;">Base (R$) ${inEscala('afiliado_comissao_base', cfg.base)}</label>`
@@ -19617,35 +19651,68 @@ function _aflRenderComissoesInner() {
     +     `<label style="display:flex;gap:8px;align-items:center;">Teto (R$) <input type="number" step="1" min="0" value="${cfg.teto != null ? Number(cfg.teto) : ''}" placeholder="sem teto" onchange="_aflSalvarTeto(this.value, this)" style="width:90px;text-align:right;padding:6px 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);"></label>`
     +   `</div>`
     +   `<div style="font-size:12px;color:var(--text3);margin-top:10px;">Ex.: base ${fmtMoney(cfg.base)} + ${fmtMoney(cfg.incremento)} a cada ${fmtMoney(cfg.passo)} acima do mínimo${cfg.teto != null ? `, travando em ${fmtMoney(cfg.teto)}` : ''}.${deltaSug != null ? ` Preço sugerido automático = mínimo + ${fmtMoney(deltaSug)} (onde a comissão atinge o teto).` : ''}</div>`
+    + `</div></details>`;
+
+  // Card: materiais gerais da loja (logo/institucional — valem pra todos os afiliados).
+  const cardGerais =
+      `<div class="card" style="margin-bottom:14px;"><div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">`
+    +   `<div><div style="font-weight:800;">Materiais gerais da loja</div><div style="font-size:12px;color:var(--text3);">Logo, institucional etc. — aparecem pra todos os afiliados · ${gerais.filter(m => m.tipo === 'imagem').length} imagem(ns), ${gerais.filter(m => m.tipo !== 'imagem').length} arquivo(s)</div></div>`
+    +   `<button class="btn" onclick="abrirAflMateriaisModal(null)">Gerenciar</button>`
     + `</div></div>`;
 
-  root.innerHTML = painel
+  const linha = pp => {
+    const vis = !!pp.visivelAfiliado;
+    const falta = vis ? _aflItemFalta(pp) : [];
+    const sug = _aflPrecoSugerido(pp, cfg);
+    const sugAuto = pp.precoSugeridoAfiliado == null && sug != null;
+    const comSug = (sug != null && pp.precoMinimoAfiliado != null) ? _aflComissaoEscalonadaUnit(sug, pp.precoMinimoAfiliado, cfg) : null;
+    const semPm = vis && !_aflTemPrecoMin(pp); // "falta preço" só pesa quando está no programa
+    const mats = _aflMatDoModelo(pp.id);
+    const nImg = mats.filter(m => m.tipo === 'imagem').length;
+    const nArq = mats.filter(m => m.tipo !== 'imagem').length;
+
+    const btnVis = vis
+      ? `<button class="btn" style="padding:4px 10px;background:var(--gold-dim);border-color:var(--gold);color:var(--gold);font-weight:700;white-space:nowrap;" onclick="_aflSalvarVisivel('${pp.id}', false, this)" title="Remover do programa de afiliados">✓ No programa</button>`
+      : `<button class="btn" style="padding:4px 10px;color:var(--text3);white-space:nowrap;" onclick="_aflSalvarVisivel('${pp.id}', true, this)" title="Incluir no programa de afiliados">+ Incluir</button>`;
+
+    const situacao = !vis
+      ? `<span style="color:var(--text3);font-size:12px;">—</span>`
+      : (falta.length
+          ? `<span style="font-size:11px;color:var(--gold);">⚠ falta: ${escHtml(falta.join(' · '))}</span>`
+          : `<span style="font-size:11px;color:var(--green);font-weight:700;">✓ completo</span>`);
+
+    const matsResumo = `<span style="font-size:11px;color:var(--text3);white-space:nowrap;">${pp.fichaTecnica ? '📋' : '<span style="opacity:.35;">📋</span>'} ${pp.condicoesPagamento ? '💳' : '<span style="opacity:.35;">💳</span>'} · 🖼️${nImg} · 📄${nArq}</span>`;
+
+    return `<tr style="border-bottom:1px solid var(--border);${vis && falta.length ? 'background:rgba(245,158,11,0.06);' : ''}${vis ? 'box-shadow:inset 3px 0 0 var(--gold);' : 'opacity:.72;'}">`
+      + `<td style="padding:8px 14px;">${btnVis}</td>`
+      + `<td style="padding:8px 14px;font-weight:700;">${escHtml(pp.modelo || '—')}${_aflMatEhScooter(pp.categoria) ? '' : ' <span style="font-weight:400;font-size:10px;color:var(--text3);border:1px solid var(--border2);border-radius:6px;padding:1px 6px;vertical-align:middle;">acessório</span>'}</td>`
+      + `<td style="padding:8px 14px;">${situacao}</td>`
+      + `<td style="padding:8px 14px;text-align:right;color:var(--text3);">${fmtMoney(pp.venda)}</td>`
+      + `<td style="padding:8px 14px;text-align:right;"><input type="number" step="0.01" min="0" value="${pp.precoMinimoAfiliado != null ? Number(pp.precoMinimoAfiliado) : ''}" placeholder="0,00" style="width:120px;text-align:right;padding:6px 8px;background:var(--surface2);border:1px solid ${semPm ? 'rgba(245,158,11,0.5)' : 'var(--border2)'};border-radius:6px;color:var(--text);" onchange="_aflSalvarPrecoMinimo('${pp.id}', this.value, this)"></td>`
+      + `<td style="padding:8px 14px;text-align:right;"><input type="number" step="0.01" min="0" value="${pp.precoSugeridoAfiliado != null ? Number(pp.precoSugeridoAfiliado) : ''}" placeholder="${sugAuto ? 'auto: ' + Number(sug) : '—'}" title="Vazio = automático (mínimo + delta do teto). Preencher força o valor manual." style="width:120px;text-align:right;padding:6px 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);" onchange="_aflSalvarPrecoSugerido('${pp.id}', this.value, this)"></td>`
+      + `<td style="padding:8px 14px;text-align:right;color:${comSug != null ? 'var(--green)' : 'var(--text3)'};font-weight:700;">${comSug != null ? fmtMoney(comSug) : '—'}</td>`
+      + `<td style="padding:8px 14px;text-align:center;">${matsResumo}</td>`
+      + `<td style="padding:8px 14px;text-align:right;"><button class="btn" style="padding:4px 10px;white-space:nowrap;" onclick="abrirAflMateriaisModal('${pp.id}')">${vis ? 'Preencher' : 'Editar'}</button></td>`
+      + `</tr>`;
+  };
+
+  root.innerHTML = painel + cardGerais
+    + `<div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:12px;">Escolha quais produtos entram no <b>programa de afiliados</b> (botão <b>Incluir</b>). Só os incluídos aparecem no portal e pedem preenchimento — <b>preço mínimo, foto, ficha técnica e formas de pagamento</b>. Clique em <b>Preencher</b> pra completar cada um.</div>`
     + `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">`
-    +   `<input type="text" class="search-input" id="afl-c-busca" placeholder="Buscar modelo..." oninput="_aflRenderComissoesInner()" value="${escHtml(q).replace(/"/g,'&quot;')}" style="flex:1;min-width:200px;">`
-    +   `<select class="search-input" id="afl-c-pm" onchange="_aflRenderComissoesInner()" style="max-width:200px;">${optPm}</select>`
-    +   `<select class="search-input" id="afl-c-ord" onchange="_aflRenderComissoesInner()" style="max-width:200px;">${optOrd}</select>`
+    +   `<input type="text" class="search-input" id="afl-c-busca" placeholder="Buscar modelo..." oninput="_aflRenderCatalogoInner()" value="${escHtml(q).replace(/"/g,'&quot;')}" style="flex:1;min-width:180px;">`
+    +   `<select class="search-input" id="afl-c-cat" onchange="_aflRenderCatalogoInner()" style="max-width:180px;" title="Categoria">${optCat}</select>`
+    +   `<select class="search-input" id="afl-c-status" onchange="_aflRenderCatalogoInner()" style="max-width:170px;" title="No programa de afiliados">${optSt}</select>`
+    +   `<select class="search-input" id="afl-c-ord" onchange="_aflRenderCatalogoInner()" style="max-width:180px;">${optOrd}</select>`
     + `</div>`
     + `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:12px;color:var(--text3);">`
-    +   `<span>${arr.length} modelo${arr.length === 1 ? '' : 's'}${(q || fPm) ? ' (filtrado)' : ''}${semCount ? ` · <span style="color:var(--gold);">${semCount} sem preço mínimo</span>` : ''}</span>`
+    +   `<span><b style="color:var(--gold);">${noPrograma.length}</b> no programa${incompletos ? ` · <span style="color:var(--gold);">${incompletos} incompleto${incompletos === 1 ? '' : 's'}</span>` : (noPrograma.length ? ' · <span style="color:var(--green);">todos completos</span>' : '')} · ${arr.length} na lista</span>`
     +   `<span>O preço mínimo é por modelo e vale pra todos os afiliados. Edite e clique fora pra salvar.</span>`
     + `</div>`
     + `<div class="card"><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">`
-    +   `<thead><tr style="border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;"><th style="text-align:left;padding:8px 14px;">Modelo</th><th style="text-align:right;padding:8px 14px;">Preço de venda</th><th style="text-align:right;padding:8px 14px;">Preço mínimo afiliado (R$)</th><th style="text-align:right;padding:8px 14px;">Preço sugerido (R$)</th><th style="text-align:right;padding:8px 14px;">Comissão no sugerido</th></tr></thead><tbody>`
+    +   `<thead><tr style="border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;"><th style="text-align:left;padding:8px 14px;">No afiliado</th><th style="text-align:left;padding:8px 14px;">Modelo</th><th style="text-align:left;padding:8px 14px;">Situação</th><th style="text-align:right;padding:8px 14px;">Preço de venda</th><th style="text-align:right;padding:8px 14px;">Preço mínimo (R$)</th><th style="text-align:right;padding:8px 14px;">Preço sugerido (R$)</th><th style="text-align:right;padding:8px 14px;">Comissão no sug.</th><th style="text-align:center;padding:8px 14px;">Materiais</th><th style="padding:8px 14px;"></th></tr></thead><tbody>`
     +   (arr.length
-        ? arr.map(pp => {
-            const sc = !_aflTemPrecoMin(pp);
-            const sug = _aflPrecoSugerido(pp, cfg);
-            const sugAuto = pp.precoSugeridoAfiliado == null && sug != null;
-            const comSug = (sug != null && pp.precoMinimoAfiliado != null) ? _aflComissaoEscalonadaUnit(sug, pp.precoMinimoAfiliado, cfg) : null;
-            return `<tr style="border-bottom:1px solid var(--border);${sc ? 'background:rgba(245,158,11,0.07);' : ''}">`
-              + `<td style="padding:8px 14px;font-weight:700;">${escHtml(pp.modelo || '—')}${sc ? ' <span style="font-weight:400;font-size:10px;color:var(--gold);border:1px solid var(--gold);border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:middle;">⚠ definir preço mínimo</span>' : ''}</td>`
-              + `<td style="padding:8px 14px;text-align:right;color:var(--text3);">${fmtMoney(pp.venda)}</td>`
-              + `<td style="padding:8px 14px;text-align:right;"><input type="number" step="0.01" min="0" value="${pp.precoMinimoAfiliado != null ? Number(pp.precoMinimoAfiliado) : ''}" placeholder="0,00" style="width:140px;text-align:right;padding:6px 8px;background:var(--surface2);border:1px solid ${sc ? 'rgba(245,158,11,0.5)' : 'var(--border2)'};border-radius:6px;color:var(--text);" onchange="_aflSalvarPrecoMinimo('${pp.id}', this.value, this)"></td>`
-              + `<td style="padding:8px 14px;text-align:right;"><input type="number" step="0.01" min="0" value="${pp.precoSugeridoAfiliado != null ? Number(pp.precoSugeridoAfiliado) : ''}" placeholder="${sugAuto ? 'auto: ' + Number(sug) : '—'}" title="Vazio = automático (mínimo + delta do teto). Preencher força o valor manual." style="width:140px;text-align:right;padding:6px 8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);" onchange="_aflSalvarPrecoSugerido('${pp.id}', this.value, this)"></td>`
-              + `<td style="padding:8px 14px;text-align:right;color:${comSug != null ? 'var(--green)' : 'var(--text3)'};font-weight:700;">${comSug != null ? fmtMoney(comSug) : '—'}</td>`
-              + `</tr>`;
-          }).join('')
-        : `<tr><td colspan="5" style="padding:18px;color:var(--text3);text-align:center;">Nenhum modelo no filtro.</td></tr>`)
+        ? arr.map(linha).join('')
+        : `<tr><td colspan="9" style="padding:18px;color:var(--text3);text-align:center;">Nenhum produto no filtro.</td></tr>`)
     +   `</tbody></table></div></div>`;
 }
 
@@ -19659,7 +19726,8 @@ async function _aflSalvarPrecoMinimo(precosId, valorRaw, inputEl) {
     if (error) throw new Error(error.message);
     const pp = (typeof products !== 'undefined' ? products : []).find(x => x.id === precosId);
     if (pp) pp.precoMinimoAfiliado = valor;
-    _aflRenderComissoesInner(); // refaz a linha (o preço sugerido automático depende do mínimo)
+    _aflRenderCatalogoInner(); // refaz a linha (o preço sugerido automático depende do mínimo)
+    _aflmRefreshCab();          // atualiza o "falta preencher" se o editor estiver aberto
   } catch (e) {
     smAlert('Erro ao salvar preço mínimo: ' + e.message);
   } finally {
@@ -19677,7 +19745,8 @@ async function _aflSalvarPrecoSugerido(precosId, valorRaw, inputEl) {
     if (error) throw new Error(error.message);
     const pp = (typeof products !== 'undefined' ? products : []).find(x => x.id === precosId);
     if (pp) pp.precoSugeridoAfiliado = valor;
-    _aflRenderComissoesInner();
+    _aflRenderCatalogoInner();
+    _aflmRefreshCab();
   } catch (e) {
     smAlert('Erro ao salvar preço sugerido: ' + e.message);
   } finally {
@@ -19694,7 +19763,7 @@ async function _aflSalvarTeto(valorRaw, inputEl) {
     const { error } = await sb.from('config_custos').upsert({ chave: 'afiliado_comissao_teto', valor, atualizado_em: new Date().toISOString() });
     if (error) throw new Error(error.message);
     if (typeof CONFIG_CUSTOS !== 'undefined') CONFIG_CUSTOS.afiliado_comissao_teto = valor;
-    _aflRenderComissoesInner();
+    _aflRenderCatalogoInner();
   } catch (e) {
     smAlert('Erro ao salvar o teto: ' + e.message);
   } finally {
@@ -19711,7 +19780,7 @@ async function _aflSalvarEscala(chave, valorRaw, inputEl) {
     const { error } = await sb.from('config_custos').upsert({ chave, valor, atualizado_em: new Date().toISOString() });
     if (error) throw new Error(error.message);
     if (typeof CONFIG_CUSTOS !== 'undefined') CONFIG_CUSTOS[chave] = valor;
-    _aflRenderComissoesInner();
+    _aflRenderCatalogoInner();
   } catch (e) {
     smAlert('Erro ao salvar a escala: ' + e.message);
   } finally {
@@ -19736,49 +19805,8 @@ function _aflMatDoModelo(ppId) {
   return _aflMateriais.filter(m => (ppId == null ? m.produtoPrecosId == null : m.produtoPrecosId === ppId));
 }
 
-function renderAfiliadosMateriais() {
-  const root = document.getElementById('afl-tab-materiais');
-  if (!root) return;
-  root.innerHTML = '<div style="padding:24px;color:var(--text3);text-align:center;">Carregando...</div>';
-  Promise.all([_aflGarantirProdutos(), _aflCarregarMateriais()]).then(() => _aflRenderMateriaisInner());
-}
-
-function _aflRenderMateriaisInner() {
-  const root = document.getElementById('afl-tab-materiais');
-  if (!root) return;
-  const modelos = (typeof products !== 'undefined' ? products : [])
-    .filter(pp => pp.ativo !== false && _aflMatEhScooter(pp.categoria))
-    .sort((a, b) => String(a.modelo || '').localeCompare(String(b.modelo || '')));
-  const gerais = _aflMatDoModelo(null);
-  const chip = (ok, lblOk, lblNo) => ok
-    ? `<span style="font-size:11px;font-weight:700;color:var(--green);background:rgba(53,194,129,.12);border-radius:6px;padding:2px 8px;">${lblOk}</span>`
-    : `<span style="font-size:11px;font-weight:700;color:var(--text3);background:rgba(255,255,255,.05);border-radius:6px;padding:2px 8px;">${lblNo}</span>`;
-
-  root.innerHTML =
-      `<div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:14px;">Tudo que você cadastrar aqui aparece no <b>portal do afiliado</b>: ele copia a ficha técnica e as formas de pagamento com 1 clique e baixa as imagens/arquivos oficiais. Preencha os textos no formato de anúncio (como você já manda no WhatsApp).</div>`
-    + `<div class="card" style="margin-bottom:14px;"><div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">`
-    +   `<div><div style="font-weight:800;">Materiais gerais da loja</div><div style="font-size:12px;color:var(--text3);">Logo, institucional etc. — aparecem pra todos os afiliados · ${gerais.filter(m => m.tipo === 'imagem').length} imagem(ns), ${gerais.filter(m => m.tipo !== 'imagem').length} arquivo(s)</div></div>`
-    +   `<button class="btn" onclick="abrirAflMateriaisModal(null)">Gerenciar</button>`
-    + `</div></div>`
-    + `<div class="card"><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">`
-    +   `<thead><tr style="border-bottom:1px solid var(--border);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;"><th style="text-align:left;padding:8px 14px;">Modelo</th><th style="text-align:center;padding:8px 14px;">Ficha técnica</th><th style="text-align:center;padding:8px 14px;">Formas de pagamento</th><th style="text-align:center;padding:8px 14px;">Imagens</th><th style="text-align:center;padding:8px 14px;">Arquivos</th><th style="padding:8px 14px;"></th></tr></thead><tbody>`
-    +   (modelos.length
-        ? modelos.map(pp => {
-            const mats = _aflMatDoModelo(pp.id);
-            const nImg = mats.filter(m => m.tipo === 'imagem').length;
-            const nArq = mats.filter(m => m.tipo !== 'imagem').length;
-            return `<tr style="border-bottom:1px solid var(--border);">`
-              + `<td style="padding:8px 14px;font-weight:700;">${escHtml(pp.modelo || '—')}</td>`
-              + `<td style="padding:8px 14px;text-align:center;">${chip(!!pp.fichaTecnica, '✓ ok', 'falta')}</td>`
-              + `<td style="padding:8px 14px;text-align:center;">${chip(!!pp.condicoesPagamento, '✓ ok', 'falta')}</td>`
-              + `<td style="padding:8px 14px;text-align:center;color:${nImg ? 'var(--text)' : 'var(--text3)'};">${nImg}</td>`
-              + `<td style="padding:8px 14px;text-align:center;color:${nArq ? 'var(--text)' : 'var(--text3)'};">${nArq}</td>`
-              + `<td style="padding:8px 14px;text-align:right;"><button class="action-btn edit-btn" onclick="abrirAflMateriaisModal('${pp.id}')" title="Editar materiais"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button></td>`
-              + `</tr>`;
-          }).join('')
-        : `<tr><td colspan="6" style="padding:18px;color:var(--text3);text-align:center;">Nenhum modelo de scooter ativo.</td></tr>`)
-    +   `</tbody></table></div></div>`;
-}
+// (As antigas renderAfiliadosMateriais/_aflRenderMateriaisInner foram fundidas na
+//  aba única "Produtos & materiais" — ver renderAfiliadosCatalogo/_aflRenderCatalogoInner.)
 
 const _AFL_FICHA_PLACEHOLDER = 'Scooter NOME 👇\n\nEspecificações:\n\n• Potência: 1000W\n• Velocidade máxima: 32km\n• Autonomia: 60km por carga\n• Suporte de peso: 180kg\n• ...';
 const _AFL_COND_PLACEHOLDER = 'FORMAS DE PAGAMENTO:\n\n21x de 676,14 no cartão de crédito\nTotal: 14.199\n\n12x de 1.066,58 no cartão de crédito\nTotal: 12.799\n\nValor promocional R$ 11.999 via Pix ou dinheiro.';
@@ -19794,8 +19822,17 @@ function abrirAflMateriaisModal(ppId) {
   shell.className = 'modal-overlay open';
   shell.dataset.ppId = ppId || '';
   const taStyle = 'width:100%;min-height:150px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:inherit;font-size:13px;line-height:1.55;resize:vertical;box-sizing:border-box;';
+  const inPreco = 'width:150px;padding:8px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;color:var(--text);';
+  const precos = pp ? (
+      `<div style="display:flex;gap:14px;flex-wrap:wrap;margin:4px 0 2px;">`
+    +   `<label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text3);">Preço mínimo (R$)`
+    +     `<input type="number" step="0.01" min="0" value="${pp.precoMinimoAfiliado != null ? Number(pp.precoMinimoAfiliado) : ''}" placeholder="0,00" style="${inPreco}" onchange="_aflSalvarPrecoMinimo('${ppId}', this.value, this)"></label>`
+    +   `<label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text3);">Preço sugerido (R$)`
+    +     `<input type="number" step="0.01" min="0" value="${pp.precoSugeridoAfiliado != null ? Number(pp.precoSugeridoAfiliado) : ''}" placeholder="auto" title="Vazio = automático (preço mínimo + delta do teto de comissão)." style="${inPreco}" onchange="_aflSalvarPrecoSugerido('${ppId}', this.value, this)"></label>`
+    + `</div>`
+  ) : '';
   const textos = pp ? (
-      `<label style="display:block;font-size:12px;color:var(--text3);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.5px;">Ficha técnica (o afiliado copia esse texto)</label>`
+      `<label style="display:block;font-size:12px;color:var(--text3);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.5px;">Ficha técnica / descrição (o afiliado copia esse texto)</label>`
     + `<textarea id="aflm-ficha" style="${taStyle}" placeholder="${escHtml(_AFL_FICHA_PLACEHOLDER)}">${escHtml(pp.fichaTecnica || '')}</textarea>`
     + `<label style="display:block;font-size:12px;color:var(--text3);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.5px;">Formas de pagamento (o afiliado copia esse texto)</label>`
     + `<textarea id="aflm-cond" style="${taStyle}" placeholder="${escHtml(_AFL_COND_PLACEHOLDER)}">${escHtml(pp.condicoesPagamento || '')}</textarea>`
@@ -19803,9 +19840,11 @@ function abrirAflMateriaisModal(ppId) {
   ) : '';
   shell.innerHTML =
       `<div class="modal" style="width:640px;max-width:96vw;max-height:92vh;overflow-y:auto;">`
-    +   `<div class="modal-title">${pp ? 'Materiais — <span>' + escHtml(pp.modelo || '') + '</span>' : 'Materiais <span>gerais da loja</span>'}</div>`
+    +   `<div class="modal-title">${pp ? 'Produto — <span>' + escHtml(pp.modelo || '') + '</span>' : 'Materiais <span>gerais da loja</span>'}</div>`
+    +   (pp ? `<div id="aflm-cab"></div>` : '')
+    +   precos
     +   textos
-    +   `<label style="display:block;font-size:12px;color:var(--text3);margin:16px 0 6px;text-transform:uppercase;letter-spacing:.5px;">Imagens oficiais e arquivos</label>`
+    +   `<label style="display:block;font-size:12px;color:var(--text3);margin:16px 0 6px;text-transform:uppercase;letter-spacing:.5px;">${pp ? 'Fotos oficiais e arquivos' : 'Imagens oficiais e arquivos'}</label>`
     +   `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">`
     +     `<label class="btn" style="cursor:pointer;"><svg class="ic ic-sm"><use href="#ic-upload"/></svg> Adicionar imagens<input type="file" accept="image/*" multiple style="display:none;" onchange="_aflmUpload('${ppId || ''}', this, 'imagem')"></label>`
     +     `<label class="btn" style="cursor:pointer;"><svg class="ic ic-sm"><use href="#ic-upload"/></svg> Adicionar arquivos<input type="file" multiple style="display:none;" onchange="_aflmUpload('${ppId || ''}', this, 'arquivo')"></label>`
@@ -19818,7 +19857,40 @@ function abrirAflMateriaisModal(ppId) {
     + `</div>`;
   document.body.appendChild(shell);
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+  if (ppId) _aflmRenderCabecalho(ppId);
   _aflmRenderLista(ppId || null);
+}
+
+// Cabeçalho do editor de um produto: toggle "no programa" + o que falta preencher.
+// Fica num container próprio pra atualizar sem recriar o modal (preserva textos não salvos).
+function _aflmRenderCabecalho(ppId) {
+  const el = document.getElementById('aflm-cab');
+  if (!el || !ppId) return;
+  const pp = (typeof products !== 'undefined' ? products : []).find(x => x.id === ppId);
+  if (!pp) return;
+  const vis = !!pp.visivelAfiliado;
+  const falta = vis ? _aflItemFalta(pp) : [];
+  const btn = vis
+    ? `<button class="btn" style="padding:5px 12px;background:var(--gold-dim);border-color:var(--gold);color:var(--gold);font-weight:700;white-space:nowrap;" onclick="_aflmSetVisivel('${ppId}', false)" title="Remover do programa de afiliados">✓ No programa de afiliados</button>`
+    : `<button class="btn btn-gold" style="padding:5px 12px;white-space:nowrap;" onclick="_aflmSetVisivel('${ppId}', true)">+ Incluir no programa de afiliados</button>`;
+  const hint = !vis
+    ? `<span style="font-size:12px;color:var(--text3);">Fora do programa — não aparece no portal do afiliado.</span>`
+    : (falta.length
+        ? `<span style="font-size:12px;color:var(--gold);">⚠ Falta preencher: ${escHtml(falta.join(' · '))}</span>`
+        : `<span style="font-size:12px;color:var(--green);font-weight:700;">✓ Ficha completa — pronto pro portal.</span>`);
+  el.innerHTML =
+      `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:12px 14px;margin-bottom:8px;">`
+    +   btn + hint
+    + `</div>`;
+}
+// Re-renderiza o cabeçalho se o modal daquele produto está aberto (chamado após salvar).
+function _aflmRefreshCab() {
+  const modal = document.getElementById('aflm-modal');
+  if (modal && modal.dataset.ppId) _aflmRenderCabecalho(modal.dataset.ppId);
+}
+async function _aflmSetVisivel(ppId, vis) {
+  await _aflSalvarVisivel(ppId, vis, null); // grava + atualiza cache + tabela de fundo
+  _aflmRenderCabecalho(ppId);
 }
 
 function _aflmRenderLista(ppId) {
@@ -19847,7 +19919,8 @@ async function _aflmSalvarTextos(ppId, btn) {
     if (pp) { pp.fichaTecnica = ficha; pp.condicoesPagamento = cond; } // cache em dia (o _syncTable regrava a linha inteira)
     if (btn) btn.textContent = '✓ Salvo';
     setTimeout(() => { if (btn) { btn.textContent = 'Salvar textos'; btn.disabled = false; } }, 1200);
-    _aflRenderMateriaisInner();
+    _aflRenderCatalogoInner();
+    _aflmRefreshCab();
   } catch (e) {
     smAlert('Erro ao salvar textos: ' + e.message);
     if (btn) { btn.disabled = false; btn.textContent = 'Salvar textos'; }
@@ -19883,7 +19956,8 @@ async function _aflmUpload(ppIdRaw, inputEl, tipo) {
   }
   await _aflCarregarMateriais();
   _aflmRenderLista(ppId);
-  _aflRenderMateriaisInner();
+  _aflRenderCatalogoInner();
+  _aflmRefreshCab();
 }
 
 async function _aflmVer(matId) {
@@ -19916,7 +19990,8 @@ async function _aflmRemover(matId) {
   const ppId = m.produtoPrecosId || null;
   await _aflCarregarMateriais();
   _aflmRenderLista(ppId);
-  _aflRenderMateriaisInner();
+  _aflRenderCatalogoInner();
+  _aflmRefreshCab();
 }
 
 // ─── Fase 4: fechamento mensal → Contas a Pagar (vence dia 5) ───
