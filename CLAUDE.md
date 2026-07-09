@@ -283,6 +283,22 @@ Substituiu o simulador de dívida isolado (que usava caixa operacional, otimista
   pedidos via `calcularDRE().pedidos.length` (async, 1× ao abrir; global `_fcVendasMedia`).
 - **Base de vendas:** `fcMediasOperacao()` passou a EXCLUIR o mês de início parcial (`_mesInicioParcial`) —
   usa maio+junho, não abril (que puxava a média pra baixo). Propaga p/ projeção 12m, fôlego, semáforo, Raio-X.
+- **Mês corrente afinado pelo ritmo real (`fcMesCorrenteParcial(medias)`, 09/07/2026):** o mês em curso
+  projetava o resto SEMPRE pela média (resto = média × dias restantes), cego ao que o mês já fez. Agora a
+  função nova calcula o **realizado** do mês (entradas de operação já no caixa = `medias.fluxo[ym].operacao.ent`),
+  o **run-rate** (no ritmo de hoje o mês fecha em `realizado/diasDecorridos × diasMes`) e projeta o **resto**
+  por um **blend** entre run-rate e média, com **trava de ruído**: peso do run-rate = 0 até `FC_MC_DIAS_MIN`
+  (=10) dias de amostra, depois cresce com a fração do mês decorrida (`min(1, diasDecorridos/diasMes)`). Com
+  peso 0 (começo do mês) **reproduz EXATAMENTE o comportamento antigo** (`entradasRestoMes == entradasOp ×
+  fracaoRestante`) — nada muda antes do dia 10. `fcRaioXObrigacoes` usa `mc.entradasRestoMes` no mês corrente
+  (i=0) e a média cheia nos futuros; retorna `mesCorrente: mc`. O card ganhou o **bloco "📅 mês (parcial ·
+  dia X de N)"** (antes do controle de vendas): quanto já entrou (+ % do proporcional aos dias), o fecho no
+  ritmo atual (+ % de um mês normal, cor verde/amarelo/vermelho ≥90/≥70/<70) e o status da trava (ritmo real
+  vs média). Propaga automático p/ `fcEspacoObrigacaoMensal` e o simulador (chamam `fcRaioXObrigacoes`). A
+  **projeção semanal** (`fcProjecaoSemanal`) NÃO foi tocada (curto prazo já usa datas reais dos boletos).
+  Validado 09/07: sintaxe (new Function por bloco), lógica do blend (dia<10 idêntico ao antigo; dia≥10 afina
+  forte/fraco; neutro no ritmo), browser real (função exposta, retorno certo com data de hoje dia 9/31, render
+  sem erro, 0 erro de console).
 
 ### Projeção de curto prazo por DATA (card `#fin-fluxo-curtoprazo`) — timing intra-mês
 - **`fcProjecaoSemanal(opts)`** — 8 semanas calculadas DIA A DIA: rotina (vendas−fixo−variáveis)/30 espalhada,
@@ -302,6 +318,17 @@ certa no caixa (fontes independentes da DRE). Dono confirmou manter conservador 
 - Contexto de negócio (fornecedor 50%+50% em 4 meses; discórdia dono×sócio sobre alavancagem) em `_memoria/empresa.md`.
 
 ## Histórico de mudanças
+
+### 2026-07-09 — Raio-X: mês corrente afinado pelo ritmo real (com trava de ruído)
+Fecha o último item do backlog do Raio-X. O mês em curso projetava o resto SEMPRE pela média (cego ao
+desempenho parcial). Nova função `fcMesCorrenteParcial(medias)`: mostra quanto o mês **já vendeu** (entradas
+de operação no caixa) + o **run-rate** (no ritmo de hoje o mês fecha em X), e projeta o **resto** por um blend
+run-rate×média com **trava** — peso 0 até o dia 10 (poucos dias enganam), depois cresce com a fração do mês.
+Com peso 0 **reproduz exatamente o número antigo** (hoje, dia 9, nada muda nos valores — só aparece o bloco
+informativo; a partir do dia 10 o afinamento entra). `fcRaioXObrigacoes` usa o resto afinado no mês corrente
+(propaga p/ "quanto cabe" e simulador); card ganhou o bloco "📅 mês (parcial · dia X/N)". Projeção semanal
+intacta. Detalhe na seção **"DRE + Raio-X Financeiro" → Raio-X de Obrigações**. Validado (sintaxe, lógica do
+blend, browser real 0 erro). **Aguarda validação do dono no ar + push.**
 
 ### 2026-07-09 — DRE corrigida + Raio-X Financeiro (análise de risco/alavancagem)
 Sócio alegou "DRE toda errada"; auditoria (3 agentes) mostrou base sólida com 2 erros. **DRE:** empréstimo

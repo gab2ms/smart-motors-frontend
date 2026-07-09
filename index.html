@@ -12545,6 +12545,43 @@ const FC_RAIOX_MESES = 6;
 // null = usa o cenário pessimista (50%). Setada pelo controle do card.
 let _fcVendasPct = null;
 
+// ── MÊS CORRENTE (parcial): realizado + run-rate com trava de ruído ──────────
+// O mês em curso ainda não fechou. O caixa de hoje (saldo0) JÁ contém o que ele
+// vendeu até agora; o que o Raio-X precisa projetar é só o RESTO do mês. Em vez
+// de assumir cegamente a média (resto = média × dias restantes), afina pelo
+// ritmo real do mês — MAS só depois de ~10 dias de amostra (poucos dias enganam:
+// uma venda de R$ 11k num dia 3 dispara o run-rate). O peso do ritmo real cresce
+// com a fração do mês já decorrida (o que passou é fato). Com peso 0 (começo do
+// mês) reproduz EXATAMENTE o comportamento antigo — nada muda antes do dia mínimo.
+const FC_MC_DIAS_MIN = 10;   // dias mínimos de amostra p/ confiar no ritmo real
+function fcMesCorrenteParcial(medias) {
+  medias = medias || fcMediasOperacao();
+  const hoje = new Date();
+  const ym = hoje.toISOString().slice(0, 7);
+  const diasMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+  const diasDecorridos = hoje.getDate();
+  const diasRestantes = Math.max(0, diasMes - diasDecorridos);
+  const fracaoRestante = diasMes > 0 ? diasRestantes / diasMes : 0;
+  const realizado = (medias.fluxo?.[ym]?.operacao?.ent) || 0;   // entradas de operação já no caixa
+  const ritmoMedioDia = diasMes > 0 ? medias.entradasOp / diasMes : 0;
+  const runRateDia = diasDecorridos > 0 ? realizado / diasDecorridos : ritmoMedioDia;
+  const runRateMensal = runRateDia * diasMes;                   // no ritmo de hoje, o mês fecha em
+  // confiança no ritmo real: 0 até o mínimo de dias; depois cresce com a fração do mês decorrida
+  const pesoRun = diasDecorridos < FC_MC_DIAS_MIN ? 0 : Math.min(1, diasDecorridos / diasMes);
+  const ritmoRestoDia = pesoRun * runRateDia + (1 - pesoRun) * ritmoMedioDia;
+  const entradasRestoMes = ritmoRestoDia * diasRestantes;       // expectativa central do RESTO do mês
+  // % do ritmo normal: (a) já-realizado vs o proporcional aos dias já passados; (b) projeção de fecho
+  const espProporcional = medias.entradasOp * (diasMes > 0 ? diasDecorridos / diasMes : 0);
+  const pctRealizado = espProporcional > 0 ? realizado / espProporcional : null;
+  const pctFecha = medias.entradasOp > 0 ? runRateMensal / medias.entradasOp : null;
+  return {
+    ym, diasMes, diasDecorridos, diasRestantes, fracaoRestante,
+    realizado, runRateDia, runRateMensal, entradasRestoMes,
+    pesoRun, usandoRunRate: pesoRun > 0, pctRealizado, pctFecha,
+    entradasMedia: medias.entradasOp,
+  };
+}
+
 function fcRaioXObrigacoes(opts) {
   opts = opts || {};
   const simMensal = Math.max(0, opts.simMensal || 0);   // valor de cada parcela nova
@@ -12563,31 +12600,37 @@ function fcRaioXObrigacoes(opts) {
   // Geração líquida do mês = vendas esperadas − custo fixo − variáveis. `vendasPct`
   // é o quanto do ritmo de maio+junho a loja espera vender; guardo o pessimista
   // fixo (50%) como referência de alerta.
-  const geraExp  = medias.entradasOp * vendasPct - fixo - medias.variaveis;
-  const geraPess = medias.entradasOp * FC_PESSIMISTA_PCT - fixo - medias.variaveis;
+  // Mês corrente afinado pelo ritmo real (com trava); meses futuros usam a média.
+  const mc = fcMesCorrenteParcial(medias);
   const linhas = [];
   let saldo = saldo0 - simAVista, saldoPess = saldo0 - simAVista;
   for (let i = 0; i < FC_RAIOX_MESES; i++) {
     const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
     const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-    const fator = i === 0 ? fracaoRestante : 1;
+    const fator = i === 0 ? fracaoRestante : 1;   // custo fixo/variáveis pro-rata no mês corrente
+    // Entradas esperadas do mês: no mês corrente projeta só o RESTO (o realizado já está no
+    // saldo0), pelo ritmo real quando há amostra; nos meses futuros, a média cheia.
+    const entradasMes = i === 0 ? mc.entradasRestoMes : medias.entradasOp;
+    const custoMes = (fixo + medias.variaveis) * fator;
+    const geraExpMes  = entradasMes * vendasPct         - custoMes;
+    const geraPessMes = entradasMes * FC_PESSIMISTA_PCT - custoMes;
     const forn = comp.boletos[ym] || 0;
     const empr = comp.parcelas[ym] || 0;
     const outros = comp.semCat[ym] || 0;
     // Parcela nova começa no próximo mês (i≥1); dura simParcelas meses (0 = recorrente).
     const simDoMes = (i >= 1 && (simParcelas <= 0 || i <= simParcelas)) ? simMensal : 0;
-    saldo     += geraExp  * fator - forn - empr - outros - simDoMes;
-    saldoPess += geraPess * fator - forn - empr - outros - simDoMes;
+    saldo     += geraExpMes  - forn - empr - outros - simDoMes;
+    saldoPess += geraPessMes - forn - empr - outros - simDoMes;
     const lbl = d.toLocaleString('pt-BR', { month: 'short' }).replace('.', '') + '/'
       + String(d.getFullYear()).slice(2) + (i === 0 ? ' (resto)' : '');
     linhas.push({ ym, lbl, forn, empr, outros, sim: simDoMes, fixo: fixo * fator,
-      gera: geraExp * fator, saldo, saldoPess });
+      gera: geraExpMes, saldo, saldoPess });
   }
   const vale = Math.min(...linhas.map(l => l.saldo));
   const valePess = Math.min(...linhas.map(l => l.saldoPess));
   const critico = linhas.find(l => l.saldo === vale) || linhas[0];
   return { linhas, saldo0, fixo, reserva, vendasPct, medias, comp,
-    vale, valePess, critico, furaReserva: vale < reserva, negativo: vale < 0 };
+    vale, valePess, critico, furaReserva: vale < reserva, negativo: vale < 0, mesCorrente: mc };
 }
 
 // Quanto de obrigação mensal NOVA ainda cabe mantendo o vale ≥ reserva, na
@@ -12881,10 +12924,31 @@ function renderFinFluxo() {
     + (_temMotos ? '<span><input id="fc-vendas-qtd" type="text" inputmode="decimal" value="' + _motosAtual + '" onchange="_fcVendasPorQtd()" style="' + _inpCssV + '"> vendas/mês</span>' : '')
     + '<span style="color:var(--text3);">= <b style="color:var(--text2);">' + fmt(_rx.medias.entradasOp * _vp) + '/mês</b></span>'
     + '</div></div>';
+  // Bloco do MÊS CORRENTE (parcial): quanto já entrou + ritmo real projetado.
+  const _mc = _rx.mesCorrente;
+  const _mcNome = new Date(_mc.ym + '-01T12:00:00').toLocaleString('pt-BR', { month: 'long' });
+  const _mcPctFecha = _mc.pctFecha != null ? Math.round(_mc.pctFecha * 100) : null;
+  const _mcPctReal  = _mc.pctRealizado != null ? Math.round(_mc.pctRealizado * 100) : null;
+  const _mcCor = _mcPctFecha == null ? 'var(--text2)'
+    : _mcPctFecha >= 90 ? 'var(--green)' : _mcPctFecha >= 70 ? 'var(--gold)' : 'var(--red)';
+  const _mcBloco = '<div style="margin-bottom:14px;padding:12px 14px;background:var(--surface2);border-radius:var(--r-sm);border-left:3px solid ' + _mcCor + ';">'
+    + '<div style="font-size:12px;font-weight:700;margin-bottom:6px;">📅 <span style="text-transform:capitalize;">' + _mcNome + '</span> (parcial · dia ' + _mc.diasDecorridos + ' de ' + _mc.diasMes + ')</div>'
+    + '<div style="font-size:12px;color:var(--text2);line-height:1.7;">'
+    + 'Já entrou no caixa: <b>' + fmt(_mc.realizado) + '</b>'
+    + (_mcPctReal != null ? ' <span style="color:var(--text3);">(' + _mcPctReal + '% do que o ritmo normal traria até hoje)</span>' : '')
+    + '<br>No ritmo de agora, o mês fecha em <b style="color:' + _mcCor + ';">' + fmt(_mc.runRateMensal) + '</b>'
+    + (_mcPctFecha != null ? ' <span style="color:var(--text3);">(' + _mcPctFecha + '% de um mês normal)</span>' : '')
+    + '</div>'
+    + '<div style="font-size:10.5px;color:var(--text3);margin-top:6px;">'
+    + (_mc.usandoRunRate
+        ? '✓ O resto do mês está sendo projetado por esse ritmo real (não pela média).'
+        : 'Poucos dias ainda — o resto do mês segue a média (trava anti-ruído até o dia ' + FC_MC_DIAS_MIN + '; o valor acima é só referência).')
+    + '</div></div>';
   document.getElementById('fin-fluxo-alavancagem').innerHTML =
     '<div class="card" style="border-left:4px solid ' + _rxCor + ';"><div style="padding:16px 20px;">'
     + '<div style="font-size:15px;font-weight:800;margin-bottom:2px;">⚖️ Raio-X de Obrigações — posso assumir mais?</div>'
     + '<div style="font-size:11.5px;color:var(--text3);margin-bottom:12px;">Tudo que sai do caixa (custo fixo + boletos de fornecedor + parcelas de empréstimo) contra as vendas que você espera. Reserva de segurança: ' + fmt(_rx.reserva) + ' (1 mês de custo fixo).</div>'
+    + _mcBloco
     + _controleVendas
     + '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:14px;padding:12px 14px;background:var(--surface2);border-radius:var(--r-sm);">'
     + '<div style="font-size:26px;line-height:1;">' + _rxEmoji + '</div><div style="flex:1;">'
