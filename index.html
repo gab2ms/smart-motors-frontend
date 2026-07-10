@@ -9256,9 +9256,11 @@ function renderPedidosUnif() {
     const pdvNaoSync  = p.origem === 'pdv' && p.raw?.sincronizadoTiny === false && !pdvLocal;
     const pdvEditado  = p.origem === 'pdv' && p.raw?.editadoAposSync === true;
     const pdvRevertido = p.origem === 'pdv' && p.raw?.revertidoAposSync === true;
+    const cprogPed    = p.origem === 'pdv' && p.raw?.origem === 'compra_programada';
     const seloHTML = p.origem === 'tiny'
       ? '<span class="pill pill--blue">TINY</span>'
       : '<span class="pill pill--gold">PDV</span>'
+        + (cprogPed ? ' <span class="pill" style="margin-left:4px;background:var(--gold-dim);color:var(--gold);border:1px solid var(--gold);" title="Venda originada de uma Compra Programada">COMPRA PROGRAMADA</span>' : '')
         + (pdvLocal ? ' <span class="pill pill--neutral" style="margin-left:4px;" title="Venda local — não enviada ao Tiny">LOCAL</span>' : '')
         + (pdvNaoSync ? ' <svg class="ic ic-sm" style="color:var(--orange);margin-left:4px;" title="Não sincronizado com Tiny — abrir detalhe pra tentar de novo"><use href="#ic-alert"/></svg>' : '')
         + (pdvEditado ? ' <svg class="ic ic-sm" style="color:var(--orange);margin-left:4px;" title="Editado aqui · pode estar diferente no Tiny"><use href="#ic-alert"/></svg>' : '')
@@ -26255,7 +26257,7 @@ async function _cprogModalEntrega(motoId) {
      <div style="font-size:10px;color:var(--text3);margin-top:-4px;margin-bottom:4px;">Essa é a data que conta como a venda no faturamento. Já vem o vendedor do plano (${escHtml(_cprogVendedorNome(p))}) — a comissão é reconhecida nessa data.</div>
      <div style="margin-top:12px;padding:10px 12px;border-radius:var(--r-sm);background:var(--surface2);font-size:12px;">
        Preço da moto <b>${_fmtBRMoney(preco)}</b> · já pago <b>${_fmtBRMoney(pago)}</b>
-       ${falta>0.005?`<div style="color:var(--orange);margin-top:4px;">⚠️ Faltam ${_fmtBRMoney(falta)}. Você pode registrar o pagamento final antes, ou entregar assim mesmo (o saldo fica em aberto com o cliente).</div>`:'<div style="color:var(--green);margin-top:4px;">✓ Valor já coberto pelos pagamentos.</div>'}
+       ${falta>0.005?`<div style="color:var(--orange);margin-top:4px;">⚠️ Faltam ${_fmtBRMoney(falta)}. Ao entregar, esse saldo vira <b>automaticamente uma conta a receber</b> do cliente (aba Contas a Receber).</div>`:'<div style="color:var(--green);margin-top:4px;">✓ Valor já coberto pelos pagamentos.</div>'}
      </div>`;
   _cprogModalShell('Entregar <span>moto</span>', body, 'Confirmar entrega', () => _cprogEntregar(motoId), 560);
 }

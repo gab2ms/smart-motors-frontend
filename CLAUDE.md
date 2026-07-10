@@ -303,9 +303,17 @@ nasce na **entrega**, no mês da entrega.
 - **✅ Publicado 10/07/2026** (commit + push na `main` → GitHub Pages); migração já em produção no
   Supabase. Falta só o dono validar no ar com uma venda real. O % de retenção de cancelamento (20%)
   fica editável (dono confirma com advogado).
-- **Follow-ups (menores, anotados):** na entrega com saldo em aberto o sistema só **avisa** (não cria
-  conta a receber automática); a retenção fica no caixa sem reconhecimento contábil de receita (ajuste
-  fino contábil, se o dono quiser). Reserva permite estoque negativo (só avisa), igual ao PDV.
+- **Etiqueta + saldo a receber (migração `compra_programada_entrega_saldo_a_receber`, 10/07/2026):**
+  (1) a relação de Pedidos (`renderPedidosUnif` ~9253) mostra o selo **"COMPRA PROGRAMADA"** quando
+  `pdv_pedidos.origem='compra_programada'`. (2) Na entrega, se o crédito acumulado não cobre o preço
+  da moto, `cprog_entregar_moto` **cria automaticamente uma conta a receber** do cliente com o saldo
+  (categoria "Compra Programada", vencimento = data da venda). Crédito consumido pelas motos já
+  entregues (ordem de entrega) → fecha certo com várias motos. Validado: pagou R$3k de moto R$10k →
+  conta a receber R$7k criada. Quando o cliente pagar o saldo, marca recebido no Contas a Receber
+  (entra no caixa) — sem dupla contagem (DRE reconheceu a venda na entrega; caixa recebe ao longo).
+- **Follow-ups (menores, anotados):** a retenção de cancelamento fica no caixa sem reconhecimento
+  contábil de receita (ajuste fino contábil, se o dono quiser). Reserva permite estoque negativo
+  (só avisa), igual ao PDV.
 
 ## Custos Operacionais (sub-aba do Financeiro) — classificação de custos
 **Estado (08/07/2026):** a aba classifica cada categoria de despesa por **natureza MANUAL**, não mais por variância estatística (que rotulava quase tudo como "variável" — 0 categorias fixas). Fonte da verdade = coluna **`categorias_lancamento.natureza`** (`fixo|semifixo|variavel|nao_recorrente`, nullable; NULL = "a classificar"). Editável no **modal de cadastro de categorias** (seletor "Natureza do custo").
