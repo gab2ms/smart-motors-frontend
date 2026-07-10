@@ -25725,6 +25725,7 @@ let cprogPlanos   = [];
 let cprogModelos  = [];   // produtos_precos (pra meta por modelo)
 let cprogProdutos = [];   // produtos/variações (pra reservar moto)
 let cprogContas   = [];   // {id,nome} via RPC cprog_contas (funciona p/ vendedor)
+let cprogVendedores = [];  // pdv_vendedores (comissão por moto); nome "Smart Motors" = venda direta
 const cprogCfg    = { pctLib: 80, taxaRet: 20 };
 let _cprogView       = 'lista';   // 'lista' | 'detalhe'
 let _cprogPlanoAtualId = null;
@@ -25752,6 +25753,9 @@ async function _cprogCarregar() {
   // Contas (id+nome) — via RPC, não exige módulo financeiro
   try { const { data } = await sb.rpc('cprog_contas'); cprogContas = data || []; }
   catch (e) { console.warn('[cprog] contas', e.message); cprogContas = []; }
+  // Vendedores (pra comissão) — pdv_vendedores é acessível a quem opera vendas
+  try { const { data } = await sb.from('pdv_vendedores').select('id,nome,comissao_moto').eq('ativo', true).order('nome'); cprogVendedores = data || []; }
+  catch (e) { console.warn('[cprog] vendedores', e.message); cprogVendedores = []; }
   // Modelos (produtos_precos) pra meta
   try {
     const { data } = await sb.from('produtos_precos').select('id,modelo,venda,categoria,ativo')
@@ -25792,6 +25796,21 @@ function _cprogLiberado(p) {
   return _cprogTotalPago(p) >= meta * (_cprogPctLib(p) / 100) - 0.005;
 }
 function _cprogClienteNome(p) { return (p.clientes && p.clientes.nome) || 'Cliente'; }
+// Vendedor "venda direta" = o registro interno "Smart Motors" (comissão 0). É o que
+// entra no pdv_pedido quando o plano não tem vendedor, zerando a comissão no CPV.
+function _cprogVendedorDireto() { return cprogVendedores.find(v => (v.nome||'').trim().toLowerCase() === 'smart motors') || null; }
+function _cprogVendedorNome(p) {
+  if (!p.vendedor_id) return 'Venda direta da loja';
+  const v = cprogVendedores.find(x => x.id === p.vendedor_id);
+  return v ? v.nome : 'Vendedor';
+}
+// id de vendedor a usar na entrega: o do plano, ou "Smart Motors" (venda direta).
+function _cprogVendedorEntregaId(p) { if (p.vendedor_id) return p.vendedor_id; const d = _cprogVendedorDireto(); return d ? d.id : null; }
+function _cprogOptVendedores(sel) {
+  const reais = cprogVendedores.filter(v => (v.nome||'').trim().toLowerCase() !== 'smart motors');
+  return `<option value="">Venda direta da loja (sem comissão)</option>`
+    + reais.map(v => `<option value="${v.id}"${sel===v.id?' selected':''}>${escHtml(v.nome)}${Number(v.comissao_moto)>0?(' — comissão '+_fmtBRMoney(v.comissao_moto)+'/moto'):''}</option>`).join('');
+}
 function _cprogStatusBadge(p) {
   if (p.status === 'cancelado') return '<span class="badge" style="background:var(--red-dim);color:var(--red);">Cancelado</span>';
   if (p.status === 'concluido') return '<span class="badge badge-green">Concluído</span>';
@@ -25880,6 +25899,7 @@ function _cprogRenderLista() {
         <div style="min-width:180px;">
           <div style="font-weight:700;font-size:14px;">${escHtml(_cprogClienteNome(p))}</div>
           <div style="font-size:11px;color:var(--text3);margin-top:2px;">🎯 ${escHtml(_cprogMetaLabel(p))}${meta>0?(' · '+_fmtBRMoney(meta)):''}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;">👤 ${escHtml(_cprogVendedorNome(p))}</div>
         </div>
         <div style="text-align:right;">
           ${_cprogStatusBadge(p)}
@@ -25965,8 +25985,8 @@ function _cprogRenderDetalhe() {
        <div>
          <div style="font-size:18px;font-weight:800;">${escHtml(_cprogClienteNome(p))} ${_cprogStatusBadge(p)}</div>
          <div style="font-size:12px;color:var(--text3);margin-top:3px;">
-           ${cli.telefone?('📞 '+escHtml(cli.telefone)+' · '):''}🎯 ${escHtml(_cprogMetaLabel(p))}
-           ${ativo?`<button class="action-btn edit-btn" style="margin-left:6px;" title="Editar meta" onclick="_cprogModalMeta('${p.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`:''}
+           ${cli.telefone?('📞 '+escHtml(cli.telefone)+' · '):''}🎯 ${escHtml(_cprogMetaLabel(p))} · 👤 ${escHtml(_cprogVendedorNome(p))}
+           ${ativo?`<button class="action-btn edit-btn" style="margin-left:6px;" title="Editar plano" onclick="_cprogModalMeta('${p.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`:''}
          </div>
        </div>
      </div>
@@ -26026,6 +26046,9 @@ function _cprogModalNovo() {
     `<div class="form-grid">
        <div class="form-group full"><label>Cliente</label><div id="cprog-cli-search"></div>
          <div style="font-size:10px;color:var(--text3);margin-top:4px;">Cada cliente tem 1 plano ativo por vez.</div></div>
+       <div class="form-group full"><label>Vendedor (quem fez a venda)</label>
+         <select class="form-input" id="cprog-vendedor">${_cprogOptVendedores()}</select>
+         <div style="font-size:10px;color:var(--text3);margin-top:4px;">A comissão vai pra ele quando a moto for entregue. "Venda direta" = sem comissão.</div></div>
        <div class="form-group full"><label>Objetivo (o que ele está mirando)</label>
          <select class="form-input" id="cprog-meta-modelo" onchange="_cprogMetaModeloChg()">
            <option value="">— Valor livre —</option>${modelosOpt}
@@ -26048,6 +26071,7 @@ async function _cprogSalvarNovo() {
   const sel = clienteSearchGet('cprog-cli-search');
   if (sel.tipo !== 'cliente') return smAlert('Selecione um cliente cadastrado (ou cadastre pelo "+ Cadastrar este cliente").');
   const clienteId = sel.clienteId;
+  const vendedorId = document.getElementById('cprog-vendedor').value || null;
   const modeloId = document.getElementById('cprog-meta-modelo').value || null;
   const metaValor = parseFloat(document.getElementById('cprog-meta-valor').value) || null;
   const pctLib = parseFloat(document.getElementById('cprog-pctlib').value);
@@ -26057,6 +26081,7 @@ async function _cprogSalvarNovo() {
   let user = null; try { user = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e){}
   const payload = {
     cliente_id: clienteId,
+    vendedor_id: vendedorId,
     meta_produto_precos_id: modeloId,
     meta_valor: metaValor,
     meta_descricao: metaDesc,
@@ -26084,6 +26109,8 @@ function _cprogModalMeta(planoId) {
   const modelosOpt = cprogModelos.map(m => `<option value="${m.id}" data-venda="${Number(m.venda||0)}"${p.meta_produto_precos_id===m.id?' selected':''}>${escHtml(m.modelo)} — ${_fmtBRMoney(m.venda)}</option>`).join('');
   const body =
     `<div class="form-grid">
+       <div class="form-group full"><label>Vendedor (quem fez a venda)</label>
+         <select class="form-input" id="cprog-vendedor">${_cprogOptVendedores(p.vendedor_id)}</select></div>
        <div class="form-group full"><label>Objetivo (modelo)</label>
          <select class="form-input" id="cprog-meta-modelo" onchange="_cprogMetaModeloChg()">
            <option value="">— Valor livre —</option>${modelosOpt}
@@ -26093,14 +26120,16 @@ function _cprogModalMeta(planoId) {
        <div class="form-group full"><label>Descrição da meta (opcional)</label><input class="form-input" id="cprog-meta-desc" value="${escHtml(p.meta_descricao||'')}"></div>
      </div>
      <div style="font-size:11px;color:var(--text3);margin-top:8px;">A meta é editável — se o cliente mudar de ideia (ex.: quer um modelo mais caro), é só trocar aqui.</div>`;
-  _cprogModalShell('Editar <span>meta</span>', body, 'Salvar', () => _cprogSalvarMeta(planoId));
+  _cprogModalShell('Editar <span>plano</span>', body, 'Salvar', () => _cprogSalvarMeta(planoId));
 }
 async function _cprogSalvarMeta(planoId) {
+  const vendedorId = document.getElementById('cprog-vendedor').value || null;
   const modeloId = document.getElementById('cprog-meta-modelo').value || null;
   const metaValor = parseFloat(document.getElementById('cprog-meta-valor').value) || null;
   const pctLib = parseFloat(document.getElementById('cprog-pctlib').value);
   const metaDesc = document.getElementById('cprog-meta-desc').value.trim() || null;
   const { error } = await sb.from('compra_programada').update({
+    vendedor_id: vendedorId,
     meta_produto_precos_id: modeloId, meta_valor: metaValor, meta_descricao: metaDesc,
     pct_liberacao: (pctLib>=0&&pctLib<=100)?pctLib:cprogCfg.pctLib, atualizado_em: new Date().toISOString(),
   }).eq('id', planoId);
@@ -26210,15 +26239,17 @@ async function _cprogModalEntrega(motoId) {
   try { const r = await sb.from('pdv_vendedores').select('id,nome').order('nome'); vend = r.data || []; } catch(e){}
   try { const r = await sb.from('pdv_locais_venda').select('id,nome').order('ordem'); locais = r.data || []; } catch(e){}
   const pago = _cprogTotalPago(p), preco = Number(moto.preco||0), falta = Math.max(0, preco - pago);
+  const vendEntrega = _cprogVendedorEntregaId(p); // vendedor do plano (ou venda direta)
   const body =
     `<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">
        Entregar <b>${escHtml(moto.produto_nome||'Scooter')}${moto.cor?(' · '+escHtml(moto.cor)):''}</b>${moto.chassi?(' (chassi '+escHtml(moto.chassi)+')'):''}.
        Isso <b>gera a venda</b> agora (conta no faturamento deste mês). O estoque não baixa de novo (já baixou na reserva).
      </div>
      <div class="form-grid">
-       <div class="form-group"><label>Vendedor</label><select class="form-input" id="cprog-en-vend">${vend.map(v=>`<option value="${v.id}">${escHtml(v.nome)}</option>`).join('')}</select></div>
+       <div class="form-group"><label>Vendedor (comissão)</label><select class="form-input" id="cprog-en-vend">${vend.map(v=>`<option value="${v.id}"${v.id===vendEntrega?' selected':''}>${escHtml(v.nome)}</option>`).join('')}</select></div>
        <div class="form-group"><label>Local da venda</label><select class="form-input" id="cprog-en-local">${locais.map(l=>`<option value="${l.id}">${escHtml(l.nome)}</option>`).join('')}</select></div>
      </div>
+     <div style="font-size:10px;color:var(--text3);margin-top:-4px;margin-bottom:4px;">Já vem o vendedor do plano (${escHtml(_cprogVendedorNome(p))}). A comissão é reconhecida agora, na entrega.</div>
      <div style="margin-top:12px;padding:10px 12px;border-radius:var(--r-sm);background:var(--surface2);font-size:12px;">
        Preço da moto <b>${_fmtBRMoney(preco)}</b> · já pago <b>${_fmtBRMoney(pago)}</b>
        ${falta>0.005?`<div style="color:var(--orange);margin-top:4px;">⚠️ Faltam ${_fmtBRMoney(falta)}. Você pode registrar o pagamento final antes, ou entregar assim mesmo (o saldo fica em aberto com o cliente).</div>`:'<div style="color:var(--green);margin-top:4px;">✓ Valor já coberto pelos pagamentos.</div>'}

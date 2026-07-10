@@ -256,9 +256,16 @@ nasce na **entrega**, no mês da entrega.
   gera o `pdv_pedidos` (`origem='compra_programada'`, status entregue, no mês da entrega) **sem
   re-baixar estoque** (já baixou na reserva — igual à consignação); (5) cancelar → devolve com
   **retenção % editável (padrão 20%)** + saída no caixa + motos voltam ao estoque.
+- **Vendedor & comissão (migração `compra_programada_vendedor`, 10/07/2026):** o plano tem
+  `vendedor_id → pdv_vendedores` (NULL = **venda direta da loja**, sem comissão = registro interno
+  "Smart Motors" comissão 0). Escolhido na criação do plano (editável). Na entrega, esse vendedor
+  vai pro `pdv_pedidos.vendedor_id` → a **comissão (R$/moto de `pdv_vendedores.comissao_moto`)
+  entra no CPV e é reconhecida no mês da entrega**, indo pra quem fez a venda (não pra quem entrega).
+  Front: select "Vendedor" no modal novo/editar plano, mostrado no card e no detalhe, e
+  pré-selecionado na entrega. Validado ao vivo (plano c/ Henrique → pedido saiu com vendedor_id dele).
 - **Banco (migrações `compra_programada_*`, 10/07/2026):** tabelas `compra_programada` (cabeçalho,
   **1 plano ativo por cliente** via índice único parcial; meta_valor/meta_produto_precos_id/
-  meta_descricao/pct_liberacao/status ativo|concluido|cancelado + campos de cancelamento),
+  meta_descricao/pct_liberacao/status ativo|concluido|cancelado + `vendedor_id` + campos de cancelamento),
   `compra_programada_pagamentos` (aporte → `lancamento_id`), `compra_programada_motos` (produto_id/
   cor/chassi/preco travado/status reservada|entregue|cancelada/pedido_id). RLS `acesso_total` =
   `tem_modulo('compra-programada')`; módulo adicionado aos ramos **operacional + vendedor** de
