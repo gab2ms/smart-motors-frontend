@@ -241,12 +241,63 @@ mostra nenhum produto até o dono selecionar. Só então mandar o link da campan
    novos já estão prontos pra receber os valores.
 2. ✅ ~~UX esconder indisponíveis~~ (entregue 08/07 no portal novo).
 
+## Compra Programada (cliente junta crédito até retirar a scooter) — no ar 10/07/2026
+**O que é:** módulo novo (item próprio na sidebar, `ic-trending-up`) pro cliente que compra a
+scooter **aos poucos** — paga o valor que quiser, quando quiser (sem parcela/vencimento/juros —
+NÃO é financiamento), acumula crédito e retira quando o dono autoriza. **Regra de ouro:** enquanto
+acumula, **NÃO existe pedido no PDV** (o faturamento lê `pdv_pedidos` e conta `aguardando_entrega`
+também — `backend/resumoWhatsapp.js:93` —, então um pedido cedo inflaria a receita). A venda só
+nasce na **entrega**, no mês da entrega.
+- **Fluxo:** (1) cria o plano pro cliente (meta editável: modelo do catálogo OU valor livre; %
+  liberação padrão 80% ajustável por plano); (2) registra pagamentos (cada um entra no **caixa na
+  hora**, categoria "Adiantamento — Compra Programada" — fora da receita do DRE, que lê pedidos);
+  (3) reserva a moto (modelo+cor+**chassi**) → **segura a unidade** (baixa 1 do estoque via
+  `registrar_movimento` origem `reserva_compra_programada`, sem virar venda); (4) **entrega** →
+  gera o `pdv_pedidos` (`origem='compra_programada'`, status entregue, no mês da entrega) **sem
+  re-baixar estoque** (já baixou na reserva — igual à consignação); (5) cancelar → devolve com
+  **retenção % editável (padrão 20%)** + saída no caixa + motos voltam ao estoque.
+- **Banco (migrações `compra_programada_*`, 10/07/2026):** tabelas `compra_programada` (cabeçalho,
+  **1 plano ativo por cliente** via índice único parcial; meta_valor/meta_produto_precos_id/
+  meta_descricao/pct_liberacao/status ativo|concluido|cancelado + campos de cancelamento),
+  `compra_programada_pagamentos` (aporte → `lancamento_id`), `compra_programada_motos` (produto_id/
+  cor/chassi/preco travado/status reservada|entregue|cancelada/pedido_id). RLS `acesso_total` =
+  `tem_modulo('compra-programada')`; módulo adicionado aos ramos **operacional + vendedor** de
+  `tem_modulo` (espelhado em `PERFIS_DEFAULT_MODULOS` no front). Config em `config_custos`
+  (`cprog_pct_liberacao_padrao=80`, `cprog_taxa_retencao_cancelamento=20`). 2 categorias de
+  lançamento próprias (adiantamento=entrada s/ natureza; devolução=saida `nao_recorrente`).
+- **RPCs SECURITY DEFINER** (deixam o **vendedor** operar sem ter o módulo financeiro; cada uma
+  checa `tem_modulo('compra-programada')`, execute revogado de public/anon): `cprog_registrar_pagamento`
+  (insere aporte + lançamento de entrada + ajusta saldo da conta), `cprog_reservar_moto` (cria +
+  baixa estoque), `cprog_cancelar_moto` (estorna estoque), `cprog_cancelar_plano` (devolução c/
+  retenção + estorna motos), `cprog_entregar_moto` (gera pdv_pedido+item+auditoria, marca entregue,
+  **não** baixa estoque), `cprog_contas` (lista id+nome das contas p/ vendedor sem módulo financeiro).
+- **Front (`index.html`):** registrado nos pontos-padrão (page `#page-compra-programada` com
+  `#cprog-root`, `NAV_TREE` solo destaque, `TODOS_MODULOS`, `PERFIS_DEFAULT_MODULOS` operacional+
+  vendedor, `pageMeta`, `BREADCRUMB_MAP`, dispatch `initCompraProgramada` no `showPage`). Bloco JS
+  `cprog*` junto de Clientes (reusa `initClienteSearch`/`openCliQuickModal`, `enviarWhatsApp`,
+  `_fmtBRMoney`/`_fmtBR`, `_cpCopiar`, `smAlert/smConfirm/smToast`). **Assinatura visual:** barra de
+  progresso do acúmulo (com marca do ponto de liberação) + trilha vertical dos aportes (estilos
+  `#page-compra-programada .cprog-*` num `<style>` antes da página). Lista (KPIs+cards) ↔ detalhe
+  (barra + pagamentos + motos + ações). **Avisos WhatsApp** (`wa-notify`, best-effort): a cada
+  pagamento + ao cruzar a liberação. **Recibo** = texto pra copiar (botão 📋 em cada aporte).
+- **Validado (10/07/2026):** boot sem erro (console limpo, funções definidas); **teste E2E real**
+  com a sessão do dono (criar plano → 2 pagamentos → reserva → entrega): estoque baixou na reserva
+  (6→5) e **NÃO** re-baixou na entrega, saldo da conta subiu +R$1.500, 2 lançamentos na categoria
+  certa, pdv_pedido gerado com chassi. **Dados de teste 100% apagados e estoque/saldo restaurados.**
+  Advisors: só os avisos genéricos de função SECURITY DEFINER (mitigados com revoke de public).
+- **✅ Publicado 10/07/2026** (commit + push na `main` → GitHub Pages); migração já em produção no
+  Supabase. Falta só o dono validar no ar com uma venda real. O % de retenção de cancelamento (20%)
+  fica editável (dono confirma com advogado).
+- **Follow-ups (menores, anotados):** na entrega com saldo em aberto o sistema só **avisa** (não cria
+  conta a receber automática); a retenção fica no caixa sem reconhecimento contábil de receita (ajuste
+  fino contábil, se o dono quiser). Reserva permite estoque negativo (só avisa), igual ao PDV.
+
 ## Custos Operacionais (sub-aba do Financeiro) — classificação de custos
 **Estado (08/07/2026):** a aba classifica cada categoria de despesa por **natureza MANUAL**, não mais por variância estatística (que rotulava quase tudo como "variável" — 0 categorias fixas). Fonte da verdade = coluna **`categorias_lancamento.natureza`** (`fixo|semifixo|variavel|nao_recorrente`, nullable; NULL = "a classificar"). Editável no **modal de cadastro de categorias** (seletor "Natureza do custo").
 - **Código (`index.html`):** `_naturezaDaCategoria(nome)` (lookup por nome) · `calcularCustosOperacionais(periodo)` (agrupa por categoria, classifica pela natureza; baldes `fixos/semifixos/variaveis/naoRecorrentes/semNatureza`; `total` = **recorrente**, EXCLUI não-recorrente; `item.alerta` = anomalia) · `renderCustos()` (4 baldes + "a classificar" + não-recorrentes à parte + inativos; variância virou **alarme ⚠️**) · `_custoFixoMensalMedio()` + `renderPontoEquilibrio()` (painel **⚖️ ponto de equilíbrio**: CF mensal médio fixos+semifixos ÷ margem de contribuição do DRE → vendas/mês de equilíbrio).
 - **NÃO altera o lucro/resultado do DRE:** o resultado do mês usa a despesa REAL (`despReal`), intacta; a lista `_DRE_CATEGORIAS_FORA_DESPESA` idem. `renderPontoEquilibrio` só **LÊ** `calcularDRE`. **Ajuste 08/07:** `_despPlanejadoHistorico` (a linha de **referência** "Custo Fixo Planejado", que NÃO entra no resultado) passou a excluir não-recorrentes (natureza) + o mês de início parcial (1º lançamento depois do dia 5) → caiu de ~R$ 39,2k p/ ~R$ 33,6k, mais realista. Propaga pros outros consumidores da função (fôlego, análise IA, aba Vendas).
 - **Classificação atual (16 categorias operacionais):** **Fixo** = Aluguel e Condomínio, Sócios (pró-labore), Marketing, Segurança, Sistemas/Ferramenta Gestão, Seguro · **Semifixo** = Funcionários, Veículos/transportes, Serviços Terceirizados, Água/Luz/Internet · **Variável** = Oficina-Peças, Compras Gerais, Taxas, Comissão Indicação · **Não-recorrente** = Obra Loja Nova, Eventos Comerciais. (Marketing=fixo e Eventos=não-recorrente foram pontos de julgamento — ajustáveis no cadastro.)
-- **Pendências conhecidas:** (1) **Export Excel** (aba 4 do Fechamento, ~7036) ainda usa o shape antigo (`fixos/variaveis/indefinidos`) — roda, mas não mostra semifixo/não-recorrente. (2) `Comissão Afiliados` (R$ 100) cai em "a classificar" (não está no cadastro; destino = `Comissão Indicação`). (3) aluguel do quiosque some nos meses de compensação/escambo (custo fixo invisível) — ver `empresa.md`. *(Resolvido 08/07: "Custo Fixo Planejado" do DRE deixou de somar não-recorrentes + mês parcial — ver acima.)*
+- **Pendências conhecidas:** (1) **Export Excel** (aba 4 do Fechamento, ~7036) ainda usa o shape antigo (`fixos/variaveis/indefinidos`) — roda, mas não mostra semifixo/não-recorrente. (2) aluguel do quiosque some nos meses de compensação/escambo (custo fixo invisível) — ver `empresa.md`. *(Resolvido 08/07: "Custo Fixo Planejado" do DRE deixou de somar não-recorrentes + mês parcial — ver acima. Resolvido 10/07: `Comissão Afiliados` saiu do "a classificar" — a categoria era gerada só nos lançamentos pelo fechamento de comissões (`~21092`), sem linha no cadastro; criada a categoria `Comissão Afiliados` em `categorias_lancamento` como Saída/**Variável** (via MCP) → o lançamento casa por nome e os fechamentos futuros já entram classificados. Não virou `Comissão Indicação` de propósito: o sistema recriaria "Comissão Afiliados" todo mês.)*
 - **Auditoria original (3 agentes):** `~/projetos/Smart Motors/documentos/auditoria-custos-fixo-variavel-2026-07.md`. Contexto de negócio (obra = prejuízo esporádico; quiosque = escambo por venda de moto) em `~/projetos/Smart Motors/_memoria/empresa.md`.
 
 ## DRE + Raio-X Financeiro (Fluxo de Caixa) — análise de risco/alavancagem (09/07/2026)
@@ -353,6 +404,15 @@ certa no caixa (fontes independentes da DRE). Dono confirmou manter conservador 
 - Contexto de negócio (fornecedor 50%+50% em 4 meses; discórdia dono×sócio sobre alavancagem) em `_memoria/empresa.md`.
 
 ## Histórico de mudanças
+
+### 2026-07-10 — Módulo Compra Programada no ar
+Módulo novo (item próprio na sidebar) pro cliente juntar crédito aos poucos até retirar a scooter,
+sem virar faturamento até a entrega. 3 tabelas + 6 RPCs SECURITY DEFINER (vendedor opera sem módulo
+financeiro) + config (80% liberação / 20% retenção) + 2 categorias de lançamento. Front: lista+detalhe
+com barra de progresso (assinatura), pagamentos→caixa, reserva→segura unidade no estoque, entrega→gera
+pdv_pedido sem re-baixar, cancelamento→devolução com retenção. Validado E2E ao vivo com a sessão do dono
+(estoque/saldo/lançamento/pedido conferidos, dados de teste apagados). Seção completa: **"Compra
+Programada"**. **✅ commit + push → GitHub Pages.**
 
 ### 2026-07-10 — KPI "Espaço para nova dívida" + correção 12m + KPIs gerenciais em Produtos > Cadastro
 Três pedidos do dono. **(1) PDF explicativo do Raio-X** (`documentos/Raio-X-Viabilidade-Guia-Smart-Motors.pdf`,

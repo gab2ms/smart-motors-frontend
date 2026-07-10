@@ -3691,6 +3691,32 @@ select:not(.input-pro):not(.search-input){
     <div id="pdv-root"></div>
   </div>
 
+  <!-- ══════════════ COMPRA PROGRAMADA ══════════════ -->
+  <style>
+    /* Assinatura do módulo: a barra de progresso do acúmulo + a trilha de aportes. */
+    #page-compra-programada .cprog-bar { position:relative; height:16px; border-radius:var(--r-pill); background:var(--surface3); overflow:hidden; }
+    #page-compra-programada .cprog-bar-fill { position:absolute; top:0; left:0; bottom:0; border-radius:var(--r-pill); background:linear-gradient(90deg, var(--gold-dim), var(--gold)); transition:width .55s cubic-bezier(.2,.8,.2,1); }
+    #page-compra-programada .cprog-bar.liberado .cprog-bar-fill { background:linear-gradient(90deg, var(--green-dim), var(--green)); }
+    #page-compra-programada .cprog-bar-mark { position:absolute; top:-4px; bottom:-4px; width:2px; background:var(--text); opacity:.5; z-index:2; }
+    #page-compra-programada .cprog-bar-mark::after { content:attr(data-lbl); position:absolute; top:-16px; left:50%; transform:translateX(-50%); font-size:9px; font-weight:700; color:var(--text3); white-space:nowrap; }
+    #page-compra-programada .cprog-bar-mini { height:7px; }
+    #page-compra-programada .cprog-card { cursor:pointer; transition:border-color .15s, transform .15s; }
+    #page-compra-programada .cprog-card:hover { border-color:var(--gold); transform:translateY(-1px); }
+    /* Trilha vertical dos aportes — comunica "foi juntando ao longo do tempo". */
+    #page-compra-programada .cprog-trilha { position:relative; padding-left:22px; }
+    #page-compra-programada .cprog-trilha::before { content:''; position:absolute; left:6px; top:6px; bottom:6px; width:2px; background:var(--border2); }
+    #page-compra-programada .cprog-aporte { position:relative; padding:10px 0; border-bottom:1px solid var(--border); }
+    #page-compra-programada .cprog-aporte:last-child { border-bottom:0; }
+    #page-compra-programada .cprog-aporte::before { content:''; position:absolute; left:-19px; top:16px; width:10px; height:10px; border-radius:50%; background:var(--gold); border:2px solid var(--bg); }
+    #page-compra-programada .cprog-chip { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; padding:2px 8px; border-radius:var(--r-pill); background:var(--surface3); color:var(--text2); }
+    #page-compra-programada .cprog-moto { border:1px solid var(--border2); border-radius:var(--r); padding:12px 14px; background:var(--surface2); }
+    #page-compra-programada .cprog-back { display:inline-flex; align-items:center; gap:6px; cursor:pointer; color:var(--text3); font-size:12px; font-weight:600; background:none; border:0; padding:0; }
+    #page-compra-programada .cprog-back:hover { color:var(--gold); }
+  </style>
+  <div class="page content" id="page-compra-programada">
+    <div id="cprog-root"></div>
+  </div>
+
 </div><!-- /main -->
 </div><!-- /layout -->
 
@@ -4349,6 +4375,7 @@ const pageMeta={
   'custos-produtos':['Custos de Produtos','Gerencie os componentes de custo de cada produto'],
   pdv:             ['PDV','Painel de operação — criar novas vendas'],
   relatorios:      ['Relatórios','Biblioteca de relatórios e análises de venda'],
+  'compra-programada': ['Compra Programada','Clientes juntando crédito até retirar a scooter'],
 };
 // Breadcrumb hierárquico — pai não-clicável (etiqueta visual), atual em destaque.
 // Dashboard NÃO aparece (raiz). Pais espelham os agrupadores da sidebar.
@@ -4374,6 +4401,7 @@ const BREADCRUMB_MAP = {
   custos:          ['Financeiro', 'Custos Operacionais'],
   'custos-produtos':['Produtos', 'Custos de Produtos'],
   pdv:             ['Vendas', 'PDV'],
+  'compra-programada':['Vendas', 'Compra Programada'],
 };
 // Sub-tabs do módulo Financeiro: troca de sub-tab deve refletir em
 // título, subtítulo e breadcrumb (não rerenderiza pelo showPage).
@@ -4519,6 +4547,7 @@ function showPage(id, opts){
   if(id==='clientes')initClientes();
   if(id==='contratos')initContratos();
   if(id==='pdv')initPdv();
+  if(id==='compra-programada')initCompraProgramada();
   if(id==='relatorios')initRelatorios();
 }
 
@@ -9531,6 +9560,7 @@ const NAV_TREE = [
       { id:'custos-produtos', label:'Custos de Produtos', icon:'ic-tag'     },
   ]},
   { kind:'solo', id:'afiliados', label:'Afiliados', icon:'ic-users' },
+  { kind:'solo', id:'compra-programada', label:'Compra Programada', icon:'ic-trending-up', destaque:true },
   { kind:'group', label:'Operação',   icon:'ic-wrench', children:[
       { id:'posvenda', label:'Pós-venda / SAC', icon:'ic-phone',  dotId:'dot-sac' },
       { id:'oficina',  label:'Oficina',   icon:'ic-wrench' },
@@ -11583,15 +11613,16 @@ const TODOS_MODULOS = [
   { id: 'pdv',             nome: 'PDV — Operação' },
   { id: 'relatorios',      nome: 'Relatórios' },
   { id: 'crm',             nome: 'CRM / Atendimento' },
+  { id: 'compra-programada', nome: 'Compra Programada' },
 ];
 const PERFIS_DEFAULT_MODULOS = {
   admin:       TODOS_MODULOS.map(m => m.id),
   // Perfil padrão de Vendedor — DEVE ficar idêntico ao ramo 'vendedor' da função
   // tem_modulo no banco (migração tem_modulo_perfil_vendedor). Mudou aqui, muda lá.
   // Sem financeiro/custos/preços/afiliados (não vê comissão/custo/margem/lucro).
-  vendedor:    ['dashboard', 'vendas', 'estoque', 'localizacao', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'clientes', 'contratos', 'pdv', 'crm'],
-  // 'crm' no operacional espelha a função tem_modulo do banco (migração crm_modulo_permissoes)
-  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'localizacao', 'vendas', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'afiliados', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv', 'crm'],
+  vendedor:    ['dashboard', 'vendas', 'estoque', 'localizacao', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'clientes', 'contratos', 'pdv', 'crm', 'compra-programada'],
+  // 'crm'/'compra-programada' no operacional espelham a função tem_modulo do banco
+  operacional: ['dashboard', 'precos', 'custos-produtos', 'estoque', 'localizacao', 'vendas', 'pedidos', 'oficina-sac', 'calendario', 'montagens', 'afiliados', 'clientes', 'contratos', 'financeiro', 'contas-pagar', 'contas-receber', 'custos', 'pdv', 'crm', 'compra-programada'],
   customizado: null, // usa user.modulosPermitidos
 };
 // Visibilidade de KPI/campo sensível por módulo (espelha modulosPermitidos do
@@ -25681,6 +25712,627 @@ async function cliExcluir(id) {
   clientesAll = clientesAll.filter(x => x.id !== id);
   oficinaClientes = clientesAll.slice();
   renderClientesKpis(); renderClientes();
+}
+
+// ══════════════════════════════════════════
+//  COMPRA PROGRAMADA (cliente junta crédito até retirar a scooter)
+// ══════════════════════════════════════════
+// Regra de ouro: enquanto acumula, NÃO existe pedido no PDV (não infla faturamento).
+// Cada pagamento entra no caixa na hora (categoria "Adiantamento — Compra Programada");
+// a venda só nasce na ENTREGA (gera pdv_pedido no mês da entrega). Reservar segura a
+// unidade (baixa 1 do estoque). Toda escrita sensível passa por RPC SECURITY DEFINER.
+let cprogPlanos   = [];
+let cprogModelos  = [];   // produtos_precos (pra meta por modelo)
+let cprogProdutos = [];   // produtos/variações (pra reservar moto)
+let cprogContas   = [];   // {id,nome} via RPC cprog_contas (funciona p/ vendedor)
+const cprogCfg    = { pctLib: 80, taxaRet: 20 };
+let _cprogView       = 'lista';   // 'lista' | 'detalhe'
+let _cprogPlanoAtualId = null;
+
+const CPROG_FORMAS = [
+  { v:'pix',            l:'Pix' },
+  { v:'dinheiro',       l:'Dinheiro' },
+  { v:'transferencia',  l:'Transferência' },
+  { v:'cartao_credito', l:'Cartão de crédito' },
+  { v:'cartao_debito',  l:'Cartão de débito' },
+];
+const _cprogFormaLabel = v => (CPROG_FORMAS.find(f => f.v === v) || {}).l || (v || '—');
+
+// ── Carga de dados ──────────────────────────────────────────
+async function _cprogCarregar() {
+  // Config (pct liberação padrão + taxa de retenção). config_custos é liberado p/ quem tem 'vendas'.
+  try {
+    const { data } = await sb.from('config_custos').select('chave,valor')
+      .in('chave', ['cprog_pct_liberacao_padrao', 'cprog_taxa_retencao_cancelamento']);
+    (data || []).forEach(r => {
+      if (r.chave === 'cprog_pct_liberacao_padrao')      cprogCfg.pctLib  = Number(r.valor);
+      if (r.chave === 'cprog_taxa_retencao_cancelamento') cprogCfg.taxaRet = Number(r.valor);
+    });
+  } catch (e) { console.warn('[cprog] config', e.message); }
+  // Contas (id+nome) — via RPC, não exige módulo financeiro
+  try { const { data } = await sb.rpc('cprog_contas'); cprogContas = data || []; }
+  catch (e) { console.warn('[cprog] contas', e.message); cprogContas = []; }
+  // Modelos (produtos_precos) pra meta
+  try {
+    const { data } = await sb.from('produtos_precos').select('id,modelo,venda,categoria,ativo')
+      .eq('ativo', true).order('modelo');
+    cprogModelos = (data || []).filter(m => (m.categoria || 'scooter') !== 'acessorio');
+  } catch (e) { console.warn('[cprog] modelos', e.message); cprogModelos = []; }
+  // Produtos/variações (pra reservar moto) — scooters ativos
+  try {
+    const { data } = await sb.from('produtos').select('id,nome,cor,preco_venda,estoque,categoria,ativo,produto_precos_id')
+      .eq('ativo', true).order('nome');
+    cprogProdutos = (data || []).filter(p => (p.categoria || 'scooter') === 'scooter');
+  } catch (e) { console.warn('[cprog] produtos', e.message); cprogProdutos = []; }
+  // Planos + agregados (embed de pagamentos e motos)
+  try {
+    const { data, error } = await sb.from('compra_programada')
+      .select('*, clientes(nome,telefone,cpf_cnpj,cpf), compra_programada_pagamentos(id,valor,data,forma,conta_id,observacao,criado_em), compra_programada_motos(id,status,produto_id,produto_nome,cor,chassi,preco,pedido_id,data_entrega,data_reserva)')
+      .order('criado_em', { ascending: false });
+    if (error) throw error;
+    cprogPlanos = data || [];
+  } catch (e) { console.warn('[cprog] planos', e.message); cprogPlanos = []; }
+}
+
+// ── Helpers de cálculo ──────────────────────────────────────
+function _cprogPlano(id) { return cprogPlanos.find(p => p.id === id); }
+function _cprogPagamentos(p) { return (p.compra_programada_pagamentos || []).slice().sort((a,b) => String(a.data||'').localeCompare(String(b.data||'')) || String(a.criado_em||'').localeCompare(String(b.criado_em||''))); }
+function _cprogMotos(p) { return (p.compra_programada_motos || []); }
+function _cprogMotosReservadas(p) { return _cprogMotos(p).filter(m => m.status === 'reservada'); }
+function _cprogTotalPago(p) { return (p.compra_programada_pagamentos || []).reduce((s,x) => s + Number(x.valor||0), 0); }
+function _cprogMetaValor(p) { return Number(p.meta_valor || 0); }
+function _cprogMetaLabel(p) {
+  if (p.meta_produto_precos_id) { const m = cprogModelos.find(x => x.id === p.meta_produto_precos_id); if (m) return m.modelo; }
+  return (p.meta_descricao || '').trim() || 'Meta livre';
+}
+function _cprogPct(p) { const meta = _cprogMetaValor(p); return meta > 0 ? Math.min(100, (_cprogTotalPago(p) / meta) * 100) : 0; }
+function _cprogPctLib(p) { return Number(p.pct_liberacao != null ? p.pct_liberacao : cprogCfg.pctLib); }
+function _cprogLiberado(p) {
+  const meta = _cprogMetaValor(p); if (meta <= 0) return false;
+  return _cprogTotalPago(p) >= meta * (_cprogPctLib(p) / 100) - 0.005;
+}
+function _cprogClienteNome(p) { return (p.clientes && p.clientes.nome) || 'Cliente'; }
+function _cprogStatusBadge(p) {
+  if (p.status === 'cancelado') return '<span class="badge" style="background:var(--red-dim);color:var(--red);">Cancelado</span>';
+  if (p.status === 'concluido') return '<span class="badge badge-green">Concluído</span>';
+  if (_cprogLiberado(p))        return '<span class="badge badge-green">Liberado p/ retirar</span>';
+  return '<span class="badge" style="background:var(--gold-dim);color:var(--gold);">Juntando</span>';
+}
+
+// ── Entrada / roteamento de view ────────────────────────────
+async function initCompraProgramada() {
+  const root = document.getElementById('cprog-root');
+  if (root) root.innerHTML = '<div class="empty" style="padding:48px;text-align:center;color:var(--text3);">Carregando…</div>';
+  await _cprogCarregar();
+  if (!_cprogPlanoAtualId || !_cprogPlano(_cprogPlanoAtualId)) { _cprogView = 'lista'; _cprogPlanoAtualId = null; }
+  renderCompraProgramada();
+}
+function renderCompraProgramada() {
+  if (_cprogView === 'detalhe' && _cprogPlano(_cprogPlanoAtualId)) _cprogRenderDetalhe();
+  else { _cprogView = 'lista'; _cprogRenderLista(); }
+}
+function _cprogAbrir(id) { _cprogPlanoAtualId = id; _cprogView = 'detalhe'; renderCompraProgramada(); }
+function _cprogVoltar() { _cprogView = 'lista'; _cprogPlanoAtualId = null; renderCompraProgramada(); }
+
+// ── Tela 1: LISTA ───────────────────────────────────────────
+function _cprogRenderLista() {
+  const root = document.getElementById('cprog-root');
+  if (!root) return;
+  const ativos = cprogPlanos.filter(p => p.status === 'ativo');
+  const totalAcumulado = ativos.reduce((s,p) => s + _cprogTotalPago(p), 0);
+  const prontos = ativos.filter(_cprogLiberado).length;
+  const motosReserv = ativos.reduce((s,p) => s + _cprogMotosReservadas(p).length, 0);
+  const q = (document.getElementById('cprog-busca')?.value || '').toLowerCase();
+
+  let lista = cprogPlanos.slice();
+  const fStatus = document.getElementById('cprog-filtro-status')?.value || 'ativo';
+  if (fStatus) lista = lista.filter(p => p.status === fStatus);
+  if (q) lista = lista.filter(p =>
+    _cprogClienteNome(p).toLowerCase().includes(q) ||
+    _cprogMetaLabel(p).toLowerCase().includes(q) ||
+    ((p.clientes && p.clientes.telefone) || '').toLowerCase().includes(q));
+  lista.sort((a,b) => (b.status==='ativo') - (a.status==='ativo') || String(b.atualizado_em||b.criado_em||'').localeCompare(String(a.atualizado_em||a.criado_em||'')));
+
+  const kpi = (label, valor, cor, sub) =>
+    `<div class="kpi" style="border-top:2px solid ${cor};"><div class="kpi-label">${label}</div>`
+    + `<div class="kpi-value" style="color:${cor};">${valor}</div><div class="kpi-change">${sub}</div></div>`;
+
+  root.innerHTML =
+    `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+       <div>
+         <div style="font-size:13px;font-weight:700;">Planos de compra programada</div>
+         <div style="font-size:11px;color:var(--text3);margin-top:2px;">O cliente junta crédito no seu ritmo — a venda só entra no faturamento na entrega.</div>
+       </div>
+       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+         <select class="search-input" id="cprog-filtro-status" onchange="_cprogRenderLista()" style="max-width:150px;">
+           <option value="ativo">Ativos</option>
+           <option value="concluido">Concluídos</option>
+           <option value="cancelado">Cancelados</option>
+           <option value="">Todos</option>
+         </select>
+         <input type="text" class="search-input" id="cprog-busca" placeholder="Buscar cliente, telefone, meta…" oninput="_cprogRenderLista()" style="min-width:220px;">
+         <button class="btn btn-gold" onclick="_cprogModalNovo()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Novo plano</button>
+       </div>
+     </div>
+     <div class="kpi-grid" style="margin-bottom:18px;">
+       ${kpi('Planos ativos', ativos.length, 'var(--gold)', 'clientes juntando')}
+       ${kpi('Total acumulado', _fmtBRMoney(totalAcumulado), 'var(--green)', 'já pago pelos clientes')}
+       ${kpi('Prontos p/ retirar', prontos, 'var(--blue)', 'atingiram a liberação')}
+       ${kpi('Motos reservadas', motosReserv, 'var(--text)', 'seguradas no estoque')}
+     </div>
+     <div id="cprog-cards"></div>`;
+  // restaura filtro/busca (innerHTML resetou)
+  const selF = document.getElementById('cprog-filtro-status'); if (selF) selF.value = fStatus;
+  const inpB = document.getElementById('cprog-busca'); if (inpB) inpB.value = q;
+
+  const cards = document.getElementById('cprog-cards');
+  if (!lista.length) {
+    cards.innerHTML = `<div class="card"><div class="empty" style="padding:40px;text-align:center;">
+      ${cprogPlanos.length ? 'Nenhum plano com esse filtro.' : 'Nenhum plano ainda. Clique em <b>Novo plano</b> pra cadastrar o primeiro cliente.'}</div></div>`;
+    return;
+  }
+  cards.innerHTML = lista.map(p => {
+    const meta = _cprogMetaValor(p), pago = _cprogTotalPago(p), pct = _cprogPct(p);
+    const lib = _cprogLiberado(p), motos = _cprogMotosReservadas(p);
+    const cor = p.status !== 'ativo' ? 'var(--text3)' : (lib ? 'var(--green)' : 'var(--gold)');
+    return `<div class="card cprog-card" style="margin-bottom:10px;padding:16px 18px;" onclick="_cprogAbrir('${p.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+        <div style="min-width:180px;">
+          <div style="font-weight:700;font-size:14px;">${escHtml(_cprogClienteNome(p))}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;">🎯 ${escHtml(_cprogMetaLabel(p))}${meta>0?(' · '+_fmtBRMoney(meta)):''}</div>
+        </div>
+        <div style="text-align:right;">
+          ${_cprogStatusBadge(p)}
+          ${motos.length?`<div style="font-size:10px;color:var(--text3);margin-top:4px;">🏍️ ${motos.length} moto${motos.length>1?'s':''} reservada${motos.length>1?'s':''}</div>`:''}
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        <div class="cprog-bar cprog-bar-mini ${lib?'liberado':''}"><div class="cprog-bar-fill" style="width:${pct.toFixed(1)}%;"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:6px;">
+          <span style="color:${cor};font-weight:700;">${_fmtBRMoney(pago)}</span>
+          <span style="color:var(--text3);">${meta>0?(pct.toFixed(0)+'% de '+_fmtBRMoney(meta)):'sem meta definida'}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Tela 2: DETALHE DO PLANO ────────────────────────────────
+function _cprogRenderDetalhe() {
+  const root = document.getElementById('cprog-root');
+  const p = _cprogPlano(_cprogPlanoAtualId);
+  if (!root || !p) { _cprogVoltar(); return; }
+  const meta = _cprogMetaValor(p), pago = _cprogTotalPago(p), pct = _cprogPct(p);
+  const lib = _cprogLiberado(p), falta = Math.max(0, meta - pago), sobra = Math.max(0, pago - meta);
+  const cli = p.clientes || {};
+  const ativo = p.status === 'ativo';
+  const pctLib = _cprogPctLib(p);
+
+  // Barra grande com marca do ponto de liberação
+  const barra =
+    `<div style="position:relative;margin:26px 0 8px;">
+       <div class="cprog-bar ${lib?'liberado':''}" style="height:18px;">
+         <div class="cprog-bar-fill" style="width:${pct.toFixed(1)}%;"></div>
+         ${meta>0?`<div class="cprog-bar-mark" data-lbl="liberação ${pctLib}%" style="left:${Math.min(99,pctLib)}%;"></div>`:''}
+       </div>
+     </div>
+     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;margin-top:14px;">
+       <div><span style="color:var(--text3);">Já pago</span> <b style="color:${lib?'var(--green)':'var(--gold)'};font-size:15px;">${_fmtBRMoney(pago)}</b></div>
+       <div style="text-align:center;"><span style="color:var(--text3);">Meta</span> <b>${meta>0?_fmtBRMoney(meta):'—'}</b></div>
+       <div style="text-align:right;">${lib
+          ? '<b style="color:var(--green);">✓ Liberado pra retirar</b>'
+          : (meta>0 ? `<span style="color:var(--text3);">Falta</span> <b>${_fmtBRMoney(falta)}</b>` : '<span style="color:var(--text3);">defina uma meta</span>')}</div>
+     </div>
+     ${sobra>0.005?`<div style="margin-top:8px;font-size:11px;color:var(--blue);">💰 Crédito acima da meta: ${_fmtBRMoney(sobra)} — você decide devolver ou usar como crédito na loja.</div>`:''}`;
+
+  // Coluna: pagamentos (trilha)
+  const pags = _cprogPagamentos(p);
+  const trilha = pags.length ? `<div class="cprog-trilha">` + pags.map(pg => {
+    const conta = cprogContas.find(c => c.id === pg.conta_id);
+    return `<div class="cprog-aporte">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <div>
+          <div style="font-weight:700;font-size:13px;">${_fmtBRMoney(pg.valor)}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;">${_fmtBR(pg.data)} · ${escHtml(_cprogFormaLabel(pg.forma))}${conta?(' · '+escHtml(conta.nome)):''}</div>
+        </div>
+        <button class="action-btn" title="Copiar recibo pro cliente" onclick="_cprogRecibo('${p.id}','${pg.id}', this)"><svg class="ic ic-sm"><use href="#ic-clipboard"/></svg></button>
+      </div>
+    </div>`;
+  }).join('') + `</div>` : `<div class="empty" style="padding:24px;text-align:center;font-size:12px;">Nenhum pagamento ainda.</div>`;
+
+  // Coluna: motos
+  const motos = _cprogMotos(p).filter(m => m.status !== 'cancelada');
+  const motosHtml = motos.length ? motos.map(m => {
+    const ent = m.status === 'entregue';
+    return `<div class="cprog-moto" style="margin-bottom:10px;${ent?'opacity:.75;':''}">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+        <div>
+          <div style="font-weight:700;font-size:13px;">${escHtml(m.produto_nome || 'Scooter')}${m.cor?(' · '+escHtml(m.cor)):''}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:3px;">${m.chassi?('Chassi '+escHtml(m.chassi)):'sem chassi'} · ${_fmtBRMoney(m.preco)}</div>
+        </div>
+        ${ent?'<span class="badge badge-green">Entregue</span>':'<span class="badge" style="background:var(--gold-dim);color:var(--gold);">Reservada</span>'}
+      </div>
+      ${(ativo && !ent) ? `<div style="display:flex;gap:6px;margin-top:10px;">
+        <button class="btn" style="flex:1;padding:7px;font-size:11px;" onclick="_cprogModalEntrega('${m.id}')"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Entregar</button>
+        <button class="action-btn del-btn" title="Cancelar reserva (moto volta ao estoque)" onclick="_cprogCancelarMotoAcao('${m.id}')"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>
+      </div>` : ''}
+    </div>`;
+  }).join('') : `<div class="empty" style="padding:24px;text-align:center;font-size:12px;">Nenhuma moto reservada.</div>`;
+
+  root.innerHTML =
+    `<button class="cprog-back" onclick="_cprogVoltar()">← Voltar aos planos</button>
+     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin:14px 0 4px;">
+       <div>
+         <div style="font-size:18px;font-weight:800;">${escHtml(_cprogClienteNome(p))} ${_cprogStatusBadge(p)}</div>
+         <div style="font-size:12px;color:var(--text3);margin-top:3px;">
+           ${cli.telefone?('📞 '+escHtml(cli.telefone)+' · '):''}🎯 ${escHtml(_cprogMetaLabel(p))}
+           ${ativo?`<button class="action-btn edit-btn" style="margin-left:6px;" title="Editar meta" onclick="_cprogModalMeta('${p.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`:''}
+         </div>
+       </div>
+     </div>
+     <div class="card" style="padding:18px 20px;">${barra}</div>
+     ${p.status==='cancelado'?`<div class="card" style="padding:14px 18px;margin-top:12px;border-left:3px solid var(--red);">
+        <div style="font-size:12px;color:var(--text2);">Cancelado em ${_fmtBR((p.cancelado_em||'').slice(0,10))}. Total pago ${_fmtBRMoney(_cprogTotalPago(p))} · retido ${Number(p.taxa_retencao_pct||0)}% (${_fmtBRMoney(p.valor_retido)}) · devolvido ${_fmtBRMoney(p.valor_devolvido)}.${p.motivo_cancelamento?(' Motivo: '+escHtml(p.motivo_cancelamento)):''}</div></div>`:''}
+     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;" id="cprog-cols">
+       <div class="card" style="padding:0;">
+         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;">
+           <div><div class="card-title">Pagamentos</div><div class="card-sub">${pags.length} lançamento${pags.length!==1?'s':''} · ${_fmtBRMoney(pago)}</div></div>
+           ${ativo?`<button class="btn btn-gold" style="padding:7px 12px;font-size:12px;" onclick="_cprogModalPagamento('${p.id}')"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Pagamento</button>`:''}
+         </div>
+         <div style="padding:6px 18px 16px;">${trilha}</div>
+       </div>
+       <div class="card" style="padding:0;">
+         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;">
+           <div><div class="card-title">Motos reservadas</div><div class="card-sub">segura a unidade no estoque</div></div>
+           ${ativo?`<button class="btn" style="padding:7px 12px;font-size:12px;" onclick="_cprogModalReserva('${p.id}')"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Reservar</button>`:''}
+         </div>
+         <div style="padding:6px 18px 16px;">${motosHtml}</div>
+       </div>
+     </div>
+     ${ativo?`<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap;">
+        <button class="btn" onclick="_cprogConcluir('${p.id}')"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Concluir plano</button>
+        <button class="btn" style="color:var(--red);border-color:var(--red-dim);" onclick="_cprogModalCancelar('${p.id}')"><svg class="ic ic-sm"><use href="#ic-ban"/></svg> Cancelar plano</button>
+      </div>`:''}`;
+}
+
+// ── Modal genérico do módulo (padrão do sistema) ────────────
+function _cprogModalShell(titulo, bodyHtml, btnLabel, onSalvar, width) {
+  const old = document.getElementById('cprog-modal'); if (old) old.remove();
+  const shell = document.createElement('div');
+  shell.id = 'cprog-modal';
+  shell.className = 'modal-overlay open';
+  shell.innerHTML = `<div class="modal" style="width:${width||520}px;max-width:95vw;">
+      <div class="modal-title">${titulo}</div>
+      <div id="cprog-modal-body">${bodyHtml}</div>
+      <div class="modal-actions">
+        <button class="btn" onclick="document.getElementById('cprog-modal').remove();">Cancelar</button>
+        <button class="btn btn-gold" id="cprog-modal-ok">${btnLabel||'Salvar'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+  document.getElementById('cprog-modal-ok').onclick = onSalvar;
+  return shell;
+}
+function _cprogFecharModal() { const m = document.getElementById('cprog-modal'); if (m) m.remove(); }
+function _cprogOptContas(sel) {
+  return cprogContas.map(c => `<option value="${c.id}"${sel===c.id?' selected':''}>${escHtml(c.nome)}</option>`).join('');
+}
+
+// ── Novo plano ──────────────────────────────────────────────
+function _cprogModalNovo() {
+  const modelosOpt = cprogModelos.map(m => `<option value="${m.id}" data-venda="${Number(m.venda||0)}">${escHtml(m.modelo)} — ${_fmtBRMoney(m.venda)}</option>`).join('');
+  const body =
+    `<div class="form-grid">
+       <div class="form-group full"><label>Cliente</label><div id="cprog-cli-search"></div>
+         <div style="font-size:10px;color:var(--text3);margin-top:4px;">Cada cliente tem 1 plano ativo por vez.</div></div>
+       <div class="form-group full"><label>Objetivo (o que ele está mirando)</label>
+         <select class="form-input" id="cprog-meta-modelo" onchange="_cprogMetaModeloChg()">
+           <option value="">— Valor livre —</option>${modelosOpt}
+         </select></div>
+       <div class="form-group"><label>Valor da meta (R$)</label><input class="form-input" id="cprog-meta-valor" type="number" placeholder="0,00"></div>
+       <div class="form-group"><label>Liberar retirada com (%)</label><input class="form-input" id="cprog-pctlib" type="number" value="${cprogCfg.pctLib}"></div>
+       <div class="form-group full" id="cprog-meta-desc-wrap"><label>Descrição da meta (opcional)</label><input class="form-input" id="cprog-meta-desc" placeholder="Ex.: scooter pro filho, modelo a definir"></div>
+       <div class="form-group full"><label>Observação (opcional)</label><input class="form-input" id="cprog-obs" placeholder="Anotações do plano"></div>
+     </div>`;
+  _cprogModalShell('Novo <span>plano</span>', body, 'Criar plano', _cprogSalvarNovo, 560);
+  initClienteSearch('cprog-cli-search', { placeholder: 'Buscar por nome, telefone ou CPF' });
+}
+function _cprogMetaModeloChg() {
+  const sel = document.getElementById('cprog-meta-modelo');
+  const opt = sel.options[sel.selectedIndex];
+  const venda = opt ? Number(opt.getAttribute('data-venda') || 0) : 0;
+  if (sel.value && venda) document.getElementById('cprog-meta-valor').value = venda;
+}
+async function _cprogSalvarNovo() {
+  const sel = clienteSearchGet('cprog-cli-search');
+  if (sel.tipo !== 'cliente') return smAlert('Selecione um cliente cadastrado (ou cadastre pelo "+ Cadastrar este cliente").');
+  const clienteId = sel.clienteId;
+  const modeloId = document.getElementById('cprog-meta-modelo').value || null;
+  const metaValor = parseFloat(document.getElementById('cprog-meta-valor').value) || null;
+  const pctLib = parseFloat(document.getElementById('cprog-pctlib').value);
+  const metaDesc = document.getElementById('cprog-meta-desc').value.trim() || null;
+  const obs = document.getElementById('cprog-obs').value.trim() || null;
+
+  let user = null; try { user = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e){}
+  const payload = {
+    cliente_id: clienteId,
+    meta_produto_precos_id: modeloId,
+    meta_valor: metaValor,
+    meta_descricao: metaDesc,
+    pct_liberacao: (pctLib >= 0 && pctLib <= 100) ? pctLib : cprogCfg.pctLib,
+    observacao: obs,
+    criado_por: user?.id || null,
+  };
+  const btn = document.getElementById('cprog-modal-ok'); if (btn) { btn.disabled = true; btn.textContent = 'Criando…'; }
+  const { data, error } = await sb.from('compra_programada').insert(payload).select('id').single();
+  if (error) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Criar plano'; }
+    if ((error.message||'').includes('compra_programada_cliente_ativo_uidx') || error.code === '23505')
+      return smAlert('Esse cliente já tem um plano ativo. Abra o plano existente pra registrar pagamentos.');
+    return smAlert('Erro ao criar o plano: ' + error.message);
+  }
+  _cprogFecharModal();
+  await _cprogCarregar();
+  _cprogAbrir(data.id);
+  smToast('Plano criado. Agora registre o primeiro pagamento.');
+}
+
+// ── Editar meta ─────────────────────────────────────────────
+function _cprogModalMeta(planoId) {
+  const p = _cprogPlano(planoId); if (!p) return;
+  const modelosOpt = cprogModelos.map(m => `<option value="${m.id}" data-venda="${Number(m.venda||0)}"${p.meta_produto_precos_id===m.id?' selected':''}>${escHtml(m.modelo)} — ${_fmtBRMoney(m.venda)}</option>`).join('');
+  const body =
+    `<div class="form-grid">
+       <div class="form-group full"><label>Objetivo (modelo)</label>
+         <select class="form-input" id="cprog-meta-modelo" onchange="_cprogMetaModeloChg()">
+           <option value="">— Valor livre —</option>${modelosOpt}
+         </select></div>
+       <div class="form-group"><label>Valor da meta (R$)</label><input class="form-input" id="cprog-meta-valor" type="number" value="${_cprogMetaValor(p)||''}"></div>
+       <div class="form-group"><label>Liberar retirada com (%)</label><input class="form-input" id="cprog-pctlib" type="number" value="${_cprogPctLib(p)}"></div>
+       <div class="form-group full"><label>Descrição da meta (opcional)</label><input class="form-input" id="cprog-meta-desc" value="${escHtml(p.meta_descricao||'')}"></div>
+     </div>
+     <div style="font-size:11px;color:var(--text3);margin-top:8px;">A meta é editável — se o cliente mudar de ideia (ex.: quer um modelo mais caro), é só trocar aqui.</div>`;
+  _cprogModalShell('Editar <span>meta</span>', body, 'Salvar', () => _cprogSalvarMeta(planoId));
+}
+async function _cprogSalvarMeta(planoId) {
+  const modeloId = document.getElementById('cprog-meta-modelo').value || null;
+  const metaValor = parseFloat(document.getElementById('cprog-meta-valor').value) || null;
+  const pctLib = parseFloat(document.getElementById('cprog-pctlib').value);
+  const metaDesc = document.getElementById('cprog-meta-desc').value.trim() || null;
+  const { error } = await sb.from('compra_programada').update({
+    meta_produto_precos_id: modeloId, meta_valor: metaValor, meta_descricao: metaDesc,
+    pct_liberacao: (pctLib>=0&&pctLib<=100)?pctLib:cprogCfg.pctLib, atualizado_em: new Date().toISOString(),
+  }).eq('id', planoId);
+  if (error) return smAlert('Erro ao salvar: ' + error.message);
+  _cprogFecharModal();
+  await _cprogCarregar(); renderCompraProgramada();
+}
+
+// ── Registrar pagamento ─────────────────────────────────────
+function _cprogModalPagamento(planoId) {
+  if (!cprogContas.length) return smAlert('Nenhuma conta bancária cadastrada. Cadastre em Financeiro → Contas antes de registrar pagamentos.');
+  const hoje = new Date().toISOString().slice(0,10);
+  const body =
+    `<div class="form-grid">
+       <div class="form-group"><label>Valor (R$)</label><input class="form-input" id="cprog-pg-valor" type="number" placeholder="0,00" autofocus></div>
+       <div class="form-group"><label>Data</label><input class="form-input" id="cprog-pg-data" type="date" value="${hoje}"></div>
+       <div class="form-group"><label>Forma</label><select class="form-input" id="cprog-pg-forma">${CPROG_FORMAS.map(f=>`<option value="${f.v}">${f.l}</option>`).join('')}</select></div>
+       <div class="form-group"><label>Caiu na conta</label><select class="form-input" id="cprog-pg-conta">${_cprogOptContas()}</select></div>
+       <div class="form-group full"><label>Observação (opcional)</label><input class="form-input" id="cprog-pg-obs" placeholder="Ex.: entrada, referente a…"></div>
+     </div>
+     <div style="font-size:11px;color:var(--text3);margin-top:8px;">Entra no seu caixa na hora (categoria "Adiantamento — Compra Programada"). Vira venda só na entrega.</div>`;
+  _cprogModalShell('Registrar <span>pagamento</span>', body, 'Registrar', () => _cprogSalvarPagamento(planoId));
+}
+async function _cprogSalvarPagamento(planoId) {
+  const valor = parseFloat(document.getElementById('cprog-pg-valor').value);
+  const data  = document.getElementById('cprog-pg-data').value || new Date().toISOString().slice(0,10);
+  const forma = document.getElementById('cprog-pg-forma').value;
+  const conta = document.getElementById('cprog-pg-conta').value || null;
+  const obs   = document.getElementById('cprog-pg-obs').value.trim() || null;
+  if (!(valor > 0)) return smAlert('Informe um valor maior que zero.');
+
+  const pAntes = _cprogPlano(planoId);
+  const libAntes = pAntes ? _cprogLiberado(pAntes) : false;
+
+  const btn = document.getElementById('cprog-modal-ok'); if (btn) { btn.disabled = true; btn.textContent = 'Registrando…'; }
+  const { error } = await sb.rpc('cprog_registrar_pagamento', {
+    p_plano_id: planoId, p_valor: valor, p_data: data, p_forma: forma, p_conta_id: conta, p_observacao: obs,
+  });
+  if (error) { if (btn) { btn.disabled = false; btn.textContent = 'Registrar'; } return smAlert('Erro ao registrar: ' + error.message); }
+  _cprogFecharModal();
+  await _cprogCarregar();
+  renderCompraProgramada();
+
+  const p = _cprogPlano(planoId);
+  const totalNovo = p ? _cprogTotalPago(p) : 0;
+  // Avisos WhatsApp (best-effort). A cada pagamento + ao cruzar a liberação.
+  _cprogAvisarPagamento(p, valor, totalNovo);
+  if (p && !libAntes && _cprogLiberado(p)) _cprogAvisarLiberacao(p);
+  smToast('Pagamento registrado e lançado no caixa.');
+}
+
+// ── Reservar moto ───────────────────────────────────────────
+function _cprogModalReserva(planoId) {
+  const disp = cprogProdutos.filter(pr => Number(pr.estoque||0) > 0);
+  const fonte = disp.length ? disp : cprogProdutos;
+  const opts = fonte.map(pr => `<option value="${pr.id}" data-preco="${Number(pr.preco_venda||0)}" data-cor="${escHtml(pr.cor||'')}" data-nome="${escHtml(pr.nome||'')}">${escHtml(pr.nome||'')}${pr.cor?(' · '+escHtml(pr.cor)):''} — ${_fmtBRMoney(pr.preco_venda)} · estoque ${Number(pr.estoque||0)}</option>`).join('');
+  const body =
+    `<div class="form-grid">
+       <div class="form-group full"><label>Moto (modelo + cor)</label>
+         <select class="form-input" id="cprog-rv-produto" onchange="_cprogReservaProdChg()"><option value="">Selecione…</option>${opts}</select>
+         ${disp.length?'':'<div style="font-size:10px;color:var(--orange);margin-top:4px;">Nenhuma scooter com estoque disponível — a reserva vai deixar o estoque negativo.</div>'}</div>
+       <div class="form-group"><label>Chassi</label><input class="form-input" id="cprog-rv-chassi" placeholder="Chassi da moto"></div>
+       <div class="form-group"><label>Preço (trava aqui)</label><input class="form-input" id="cprog-rv-preco" type="number" placeholder="0,00"></div>
+     </div>
+     <div style="font-size:11px;color:var(--text3);margin-top:8px;">Segura essa unidade no estoque (some da lista de disponíveis). Não conta como venda — vira venda só na entrega.</div>`;
+  _cprogModalShell('Reservar <span>moto</span>', body, 'Reservar', () => _cprogSalvarReserva(planoId));
+}
+function _cprogReservaProdChg() {
+  const sel = document.getElementById('cprog-rv-produto');
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt || !sel.value) return;
+  document.getElementById('cprog-rv-preco').value = Number(opt.getAttribute('data-preco')||0) || '';
+}
+async function _cprogSalvarReserva(planoId) {
+  const sel = document.getElementById('cprog-rv-produto');
+  const opt = sel.options[sel.selectedIndex];
+  if (!sel.value) return smAlert('Selecione a moto.');
+  const chassi = document.getElementById('cprog-rv-chassi').value.trim() || null;
+  const preco = parseFloat(document.getElementById('cprog-rv-preco').value) || null;
+  const btn = document.getElementById('cprog-modal-ok'); if (btn) { btn.disabled = true; btn.textContent = 'Reservando…'; }
+  const { error } = await sb.rpc('cprog_reservar_moto', {
+    p_plano_id: planoId, p_produto_id: sel.value,
+    p_produto_nome: opt.getAttribute('data-nome') || null,
+    p_cor: opt.getAttribute('data-cor') || null,
+    p_chassi: chassi, p_preco: preco,
+  });
+  if (error) { if (btn) { btn.disabled = false; btn.textContent = 'Reservar'; } return smAlert('Erro ao reservar: ' + error.message); }
+  _cprogFecharModal();
+  await _cprogCarregar(); renderCompraProgramada();
+  smToast('Moto reservada e segurada no estoque.');
+}
+async function _cprogCancelarMotoAcao(motoId) {
+  if (!(await smConfirm('Cancelar esta reserva? A moto volta ao estoque disponível.'))) return;
+  const { error } = await sb.rpc('cprog_cancelar_moto', { p_moto_id: motoId });
+  if (error) return smAlert('Erro: ' + error.message);
+  await _cprogCarregar(); renderCompraProgramada();
+  smToast('Reserva cancelada — moto de volta ao estoque.');
+}
+
+// ── Entregar moto (gera a venda no PDV) ─────────────────────
+async function _cprogModalEntrega(motoId) {
+  const p = _cprogPlano(_cprogPlanoAtualId);
+  const moto = p && _cprogMotos(p).find(m => m.id === motoId);
+  if (!moto) return;
+  // vendedores + locais sob demanda
+  let vend = [], locais = [];
+  try { const r = await sb.from('pdv_vendedores').select('id,nome').order('nome'); vend = r.data || []; } catch(e){}
+  try { const r = await sb.from('pdv_locais_venda').select('id,nome').order('ordem'); locais = r.data || []; } catch(e){}
+  const pago = _cprogTotalPago(p), preco = Number(moto.preco||0), falta = Math.max(0, preco - pago);
+  const body =
+    `<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">
+       Entregar <b>${escHtml(moto.produto_nome||'Scooter')}${moto.cor?(' · '+escHtml(moto.cor)):''}</b>${moto.chassi?(' (chassi '+escHtml(moto.chassi)+')'):''}.
+       Isso <b>gera a venda</b> agora (conta no faturamento deste mês). O estoque não baixa de novo (já baixou na reserva).
+     </div>
+     <div class="form-grid">
+       <div class="form-group"><label>Vendedor</label><select class="form-input" id="cprog-en-vend">${vend.map(v=>`<option value="${v.id}">${escHtml(v.nome)}</option>`).join('')}</select></div>
+       <div class="form-group"><label>Local da venda</label><select class="form-input" id="cprog-en-local">${locais.map(l=>`<option value="${l.id}">${escHtml(l.nome)}</option>`).join('')}</select></div>
+     </div>
+     <div style="margin-top:12px;padding:10px 12px;border-radius:var(--r-sm);background:var(--surface2);font-size:12px;">
+       Preço da moto <b>${_fmtBRMoney(preco)}</b> · já pago <b>${_fmtBRMoney(pago)}</b>
+       ${falta>0.005?`<div style="color:var(--orange);margin-top:4px;">⚠️ Faltam ${_fmtBRMoney(falta)}. Você pode registrar o pagamento final antes, ou entregar assim mesmo (o saldo fica em aberto com o cliente).</div>`:'<div style="color:var(--green);margin-top:4px;">✓ Valor já coberto pelos pagamentos.</div>'}
+     </div>`;
+  _cprogModalShell('Entregar <span>moto</span>', body, 'Confirmar entrega', () => _cprogEntregar(motoId), 560);
+}
+async function _cprogEntregar(motoId) {
+  const vend = document.getElementById('cprog-en-vend').value;
+  const local = document.getElementById('cprog-en-local').value;
+  if (!vend || !local) return smAlert('Escolha vendedor e local da venda.');
+  if (!(await smConfirm('Confirmar a entrega? Isso registra a venda no faturamento.'))) return;
+  const btn = document.getElementById('cprog-modal-ok'); if (btn) { btn.disabled = true; btn.textContent = 'Entregando…'; }
+  const { error } = await sb.rpc('cprog_entregar_moto', {
+    p_moto_id: motoId, p_vendedor_id: vend, p_local_venda_id: local, p_forma_pagamento: null, p_observacao: null,
+  });
+  if (error) { if (btn) { btn.disabled = false; btn.textContent = 'Confirmar entrega'; } return smAlert('Erro na entrega: ' + error.message); }
+  _cprogFecharModal();
+  await _cprogCarregar(); renderCompraProgramada();
+  smToast('Moto entregue — venda registrada no faturamento.');
+}
+
+// ── Cancelar plano (devolução com retenção) ─────────────────
+function _cprogModalCancelar(planoId) {
+  const p = _cprogPlano(planoId); if (!p) return;
+  const totalPago = _cprogTotalPago(p);
+  const body =
+    `<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">Cancelar o plano de <b>${escHtml(_cprogClienteNome(p))}</b>. As motos reservadas voltam ao estoque.</div>
+     <div class="form-grid">
+       <div class="form-group"><label>Retenção da loja (%)</label><input class="form-input" id="cprog-cc-taxa" type="number" value="${cprogCfg.taxaRet}" oninput="_cprogCancelCalc(${totalPago})"></div>
+       <div class="form-group"><label>Devolver da conta</label><select class="form-input" id="cprog-cc-conta">${_cprogOptContas()}</select></div>
+       <div class="form-group full"><label>Motivo (opcional)</label><input class="form-input" id="cprog-cc-motivo" placeholder="Ex.: desistência do cliente"></div>
+     </div>
+     <div id="cprog-cc-calc" style="margin-top:12px;padding:10px 12px;border-radius:var(--r-sm);background:var(--surface2);font-size:12px;"></div>`;
+  _cprogModalShell('Cancelar <span>plano</span>', body, 'Confirmar cancelamento', () => _cprogCancelarPlanoAcao(planoId), 540);
+  _cprogCancelCalc(totalPago);
+}
+function _cprogCancelCalc(totalPago) {
+  const taxa = parseFloat(document.getElementById('cprog-cc-taxa').value) || 0;
+  const retido = Math.round(totalPago * taxa) / 100;
+  const devolver = Math.round((totalPago - retido) * 100) / 100;
+  const el = document.getElementById('cprog-cc-calc');
+  if (el) el.innerHTML = `Total pago <b>${_fmtBRMoney(totalPago)}</b> · retém <b>${_fmtBRMoney(retido)}</b> (${taxa}%) · <span style="color:var(--red);">devolve ao cliente <b>${_fmtBRMoney(devolver)}</b></span>`;
+}
+async function _cprogCancelarPlanoAcao(planoId) {
+  const taxa = parseFloat(document.getElementById('cprog-cc-taxa').value);
+  const conta = document.getElementById('cprog-cc-conta').value || null;
+  const motivo = document.getElementById('cprog-cc-motivo').value.trim() || null;
+  if (isNaN(taxa) || taxa < 0 || taxa > 100) return smAlert('Informe uma retenção entre 0 e 100%.');
+  if (!(await smConfirm('Confirmar o cancelamento? A devolução será lançada como saída no caixa e as motos voltam ao estoque.'))) return;
+  const btn = document.getElementById('cprog-modal-ok'); if (btn) { btn.disabled = true; btn.textContent = 'Cancelando…'; }
+  const { error } = await sb.rpc('cprog_cancelar_plano', {
+    p_plano_id: planoId, p_taxa_retencao_pct: taxa, p_conta_id: conta, p_motivo: motivo,
+  });
+  if (error) { if (btn) { btn.disabled = false; btn.textContent = 'Confirmar cancelamento'; } return smAlert('Erro ao cancelar: ' + error.message); }
+  _cprogFecharModal();
+  await _cprogCarregar(); renderCompraProgramada();
+  smToast('Plano cancelado.');
+}
+
+async function _cprogConcluir(planoId) {
+  const p = _cprogPlano(planoId); if (!p) return;
+  const reserv = _cprogMotosReservadas(p).length;
+  const msg = reserv ? `Concluir o plano? Ainda há ${reserv} moto(s) reservada(s) sem entregar.` : 'Concluir o plano? Ele sai da lista de ativos.';
+  if (!(await smConfirm(msg))) return;
+  const { error } = await sb.from('compra_programada').update({ status: 'concluido', atualizado_em: new Date().toISOString() }).eq('id', planoId);
+  if (error) return smAlert('Erro: ' + error.message);
+  await _cprogCarregar(); renderCompraProgramada();
+  smToast('Plano concluído.');
+}
+
+// ── Recibo (texto pra copiar e mandar no WhatsApp) ──────────
+function _cprogRecibo(planoId, pagId, btn) {
+  const p = _cprogPlano(planoId); if (!p) return;
+  const pg = (p.compra_programada_pagamentos || []).find(x => x.id === pagId);
+  if (!pg) return;
+  const total = _cprogTotalPago(p), meta = _cprogMetaValor(p), falta = Math.max(0, meta - total);
+  const linhas = [
+    `*Smart Motors — Compra Programada*`,
+    `Cliente: ${_cprogClienteNome(p)}`,
+    `Pagamento recebido: ${_fmtBRMoney(pg.valor)} (${_cprogFormaLabel(pg.forma)})`,
+    `Data: ${_fmtBR(pg.data)}`,
+    `Total acumulado: ${_fmtBRMoney(total)}`,
+  ];
+  if (meta > 0) {
+    linhas.push(`Meta (${_cprogMetaLabel(p)}): ${_fmtBRMoney(meta)}`);
+    linhas.push(falta > 0.005 ? `Falta: ${_fmtBRMoney(falta)}` : `✅ Meta atingida — pode retirar!`);
+  }
+  linhas.push(`\nObrigado! 🛵`);
+  _cpCopiar(linhas.join('\n'), btn);
+  smToast('Recibo copiado — cole no WhatsApp do cliente.');
+}
+
+// ── Avisos WhatsApp (best-effort, nunca quebram o fluxo) ────
+function _cprogAvisarPagamento(p, valor, totalNovo) {
+  try {
+    if (!p) return;
+    const meta = _cprogMetaValor(p);
+    const msg = `💰 *Compra Programada — pagamento*\n`
+      + `Cliente: ${_cprogClienteNome(p)}\n`
+      + `Valor: ${_fmtBRMoney(valor)}\n`
+      + `Acumulado: ${_fmtBRMoney(totalNovo)}${meta>0?(' de '+_fmtBRMoney(meta)+' ('+_cprogPct(p).toFixed(0)+'%)'):''}\n`
+      + `Plano: ${String(p.id).slice(0,8)}`;
+    enviarWhatsApp(msg);
+  } catch (e) {}
+}
+function _cprogAvisarLiberacao(p) {
+  try {
+    if (!p) return;
+    const msg = `🎉 *Compra Programada — liberado pra retirar!*\n`
+      + `Cliente: ${_cprogClienteNome(p)}\n`
+      + `Já pagou ${_fmtBRMoney(_cprogTotalPago(p))} (${_cprogPct(p).toFixed(0)}% da meta ${_fmtBRMoney(_cprogMetaValor(p))}).\n`
+      + `Atingiu os ${_cprogPctLib(p)}% — pode autorizar a entrega.`;
+    enviarWhatsApp(msg);
+  } catch (e) {}
 }
 
 // ══════════════════════════════════════════
