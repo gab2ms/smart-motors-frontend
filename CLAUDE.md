@@ -256,6 +256,14 @@ nasce na **entrega**, no mês da entrega.
   gera o `pdv_pedidos` (`origem='compra_programada'`, status entregue, no mês da entrega) **sem
   re-baixar estoque** (já baixou na reserva — igual à consignação); (5) cancelar → devolve com
   **retenção % editável (padrão 20%)** + saída no caixa + motos voltam ao estoque.
+- **Duas datas (migração `compra_programada_entrega_data_venda`, 10/07/2026):** o dono pediu separar
+  (1) **data de início** = `compra_programada.criado_em` (quando o cliente começou a juntar; mostrada
+  no detalhe "iniciada em") e (2) **data da venda** = quando quitou e levou a moto (a data que conta
+  como venda no faturamento). A entrega ganhou o campo **Data da venda** (default hoje, editável) →
+  `cprog_entregar_moto(...,p_data_venda date)` grava essa data no `criado_em`/`data_entrega_real` do
+  pdv_pedido e no `motos.data_entrega` (usa **meio-dia de Brasília** p/ não deslocar o dia por fuso);
+  a **observação do pedido** registra a data de início. Assinatura da RPC mudou (drop+create;
+  agora 6 args, execute revogado de public). Validado: venda em 15/06 caiu em 15/06 no fuso BR.
 - **Vendedor & comissão (migração `compra_programada_vendedor`, 10/07/2026):** o plano tem
   `vendedor_id → pdv_vendedores` (NULL = **venda direta da loja**, sem comissão = registro interno
   "Smart Motors" comissão 0). Escolhido na criação do plano (editável). Na entrega, esse vendedor

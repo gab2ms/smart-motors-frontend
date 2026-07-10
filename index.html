@@ -25969,6 +25969,7 @@ function _cprogRenderDetalhe() {
         <div>
           <div style="font-weight:700;font-size:13px;">${escHtml(m.produto_nome || 'Scooter')}${m.cor?(' · '+escHtml(m.cor)):''}</div>
           <div style="font-size:10px;color:var(--text3);margin-top:3px;">${m.chassi?('Chassi '+escHtml(m.chassi)):'sem chassi'} · ${_fmtBRMoney(m.preco)}</div>
+          ${ent&&m.data_entrega?`<div style="font-size:10px;color:var(--green);margin-top:2px;">✓ Vendida/entregue em ${_fmtBR(m.data_entrega)}</div>`:''}
         </div>
         ${ent?'<span class="badge badge-green">Entregue</span>':'<span class="badge" style="background:var(--gold-dim);color:var(--gold);">Reservada</span>'}
       </div>
@@ -25988,6 +25989,7 @@ function _cprogRenderDetalhe() {
            ${cli.telefone?('📞 '+escHtml(cli.telefone)+' · '):''}🎯 ${escHtml(_cprogMetaLabel(p))} · 👤 ${escHtml(_cprogVendedorNome(p))}
            ${ativo?`<button class="action-btn edit-btn" style="margin-left:6px;" title="Editar plano" onclick="_cprogModalMeta('${p.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`:''}
          </div>
+         <div style="font-size:11px;color:var(--text3);margin-top:3px;">📅 Compra programada iniciada em <b>${_fmtBR(p.criado_em)}</b></div>
        </div>
      </div>
      <div class="card" style="padding:18px 20px;">${barra}</div>
@@ -26248,8 +26250,9 @@ async function _cprogModalEntrega(motoId) {
      <div class="form-grid">
        <div class="form-group"><label>Vendedor (comissão)</label><select class="form-input" id="cprog-en-vend">${vend.map(v=>`<option value="${v.id}"${v.id===vendEntrega?' selected':''}>${escHtml(v.nome)}</option>`).join('')}</select></div>
        <div class="form-group"><label>Local da venda</label><select class="form-input" id="cprog-en-local">${locais.map(l=>`<option value="${l.id}">${escHtml(l.nome)}</option>`).join('')}</select></div>
+       <div class="form-group full"><label>Data da venda (quando ele levou a moto)</label><input class="form-input" id="cprog-en-data" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
      </div>
-     <div style="font-size:10px;color:var(--text3);margin-top:-4px;margin-bottom:4px;">Já vem o vendedor do plano (${escHtml(_cprogVendedorNome(p))}). A comissão é reconhecida agora, na entrega.</div>
+     <div style="font-size:10px;color:var(--text3);margin-top:-4px;margin-bottom:4px;">Essa é a data que conta como a venda no faturamento. Já vem o vendedor do plano (${escHtml(_cprogVendedorNome(p))}) — a comissão é reconhecida nessa data.</div>
      <div style="margin-top:12px;padding:10px 12px;border-radius:var(--r-sm);background:var(--surface2);font-size:12px;">
        Preço da moto <b>${_fmtBRMoney(preco)}</b> · já pago <b>${_fmtBRMoney(pago)}</b>
        ${falta>0.005?`<div style="color:var(--orange);margin-top:4px;">⚠️ Faltam ${_fmtBRMoney(falta)}. Você pode registrar o pagamento final antes, ou entregar assim mesmo (o saldo fica em aberto com o cliente).</div>`:'<div style="color:var(--green);margin-top:4px;">✓ Valor já coberto pelos pagamentos.</div>'}
@@ -26259,11 +26262,13 @@ async function _cprogModalEntrega(motoId) {
 async function _cprogEntregar(motoId) {
   const vend = document.getElementById('cprog-en-vend').value;
   const local = document.getElementById('cprog-en-local').value;
+  const dataVenda = document.getElementById('cprog-en-data').value || null;
   if (!vend || !local) return smAlert('Escolha vendedor e local da venda.');
-  if (!(await smConfirm('Confirmar a entrega? Isso registra a venda no faturamento.'))) return;
+  if (!dataVenda) return smAlert('Informe a data da venda.');
+  if (!(await smConfirm('Confirmar a entrega? Isso registra a venda no faturamento na data informada.'))) return;
   const btn = document.getElementById('cprog-modal-ok'); if (btn) { btn.disabled = true; btn.textContent = 'Entregando…'; }
   const { error } = await sb.rpc('cprog_entregar_moto', {
-    p_moto_id: motoId, p_vendedor_id: vend, p_local_venda_id: local, p_forma_pagamento: null, p_observacao: null,
+    p_moto_id: motoId, p_vendedor_id: vend, p_local_venda_id: local, p_forma_pagamento: null, p_observacao: null, p_data_venda: dataVenda,
   });
   if (error) { if (btn) { btn.disabled = false; btn.textContent = 'Confirmar entrega'; } return smAlert('Erro na entrega: ' + error.message); }
   _cprogFecharModal();
