@@ -2100,10 +2100,10 @@ select:not(.input-pro):not(.search-input){
       </div>
     </div>
 
-    <!-- KPIs de estoque (lê do nosso banco — produtos.estoque) -->
+    <!-- KPIs gerenciais de estoque (lê do nosso banco — produtos.estoque) -->
     <div class="kpi-grid" id="estoque-kpis" style="margin-bottom:8px;"></div>
-    <!-- Etapa 2: mostra/esconde os 3 cards extras; lembra a escolha (localStorage) -->
-    <button id="estoque-kpi-vermais" onclick="catKpiToggleVerMais()" style="background:none;border:none;color:var(--text3);font-size:12px;font-weight:600;cursor:pointer;padding:2px 0;margin-bottom:16px;">+ ver mais (3)</button>
+    <!-- Chips discretos de higiene de estoque (filtro rápido da lista): com saldo / zerados / negativos -->
+    <div id="estoque-kpi-chips" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;"></div>
 
     <!-- Busca -->
     <div class="search-bar" style="margin-bottom:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
@@ -10155,45 +10155,81 @@ function renderCatalogoProdutos() {
   const limparBtn = document.getElementById('estoque-limpar-filtro');
   if (limparBtn) limparBtn.style.display = catKpiFiltro ? '' : 'none';
 
-  // KPIs de estoque — só ATIVOS (inativos ficam fora do panorama), estáveis ao filtro.
+  // KPIs GERENCIAIS de estoque — leitura de gestão (só ATIVOS; estáveis ao filtro).
   const kpiEl = document.getElementById('estoque-kpis');
   if (kpiEl) {
-    const tot       = ativos.length;
     const comSaldo  = ativos.filter(p => p.estoque > 0).length;
     const zerados   = ativos.filter(p => p.estoque === 0).length;
     const negativos = ativos.filter(p => p.estoque < 0).length;
-    // Unidades por categoria (serviço fora) + valor parado (custo×saldo, só admin).
-    let unidSc = 0, unidAc = 0, valor = 0, semCusto = 0;
+    // Unidades por categoria (serviço fora) + valor em estoque (custo×saldo, só admin).
+    // Modelos = produto_precos distintos com saldo (agrupa as cores de um mesmo modelo).
+    let unidSc = 0, unidAc = 0, valor = 0, semCusto = 0, acessComSaldo = 0;
+    const modelosSc = new Set();
     ativos.forEach(p => {
-      if (p.categoria === 'scooter')        unidSc += p.estoque;
-      else if (p.categoria === 'acessorio') unidAc += p.estoque;
+      if (p.categoria === 'scooter') {
+        unidSc += p.estoque;
+        if (p.estoque > 0) modelosSc.add(p.produtoPrecosId || ('nome:' + (p.nome || '').toLowerCase()));
+      } else if (p.categoria === 'acessorio') {
+        unidAc += p.estoque;
+        if (p.estoque > 0) acessComSaldo++;
+      }
       const pp  = _matchProdutoPorNome(p.nome);
       const ctr = pp ? ctReal(pp) : null;     // mesmo custo da coluna "Custo total"
       if (ctr != null) valor += ctr * Math.max(p.estoque, 0);  // negativo conta como 0
       else if (p.estoque > 0) semCusto++;     // tem saldo mas sem custo → fica fora
     });
-    const valorCard = _isAdminUser()
-      ? `<div class="kpi"><div class="kpi-label">Valor em estoque</div><div class="kpi-value gold">${fmt(valor)}</div><div class="kpi-change">${semCusto > 0 ? semCusto + ' c/ saldo sem custo (fora)' : 'custo × saldo'}</div></div>`
-      : '';
-    // Cards clicáveis (Etapa 1): Com saldo / Zerados / Negativos viram filtro.
-    // `at(m)` marca o card ativo (kpi-ativo) conforme o estado compartilhado.
-    const at = m => catKpiFiltro === m ? ' kpi-ativo' : '';
-    // Etapa 2: principais sempre visíveis (Valor admin + os 3 cards-filtro).
-    const principais =
-        valorCard
-      + `<div class="kpi kpi-clickable${at('comSaldo')}" data-cat-kpi="comSaldo" onclick="catKpiFiltrar('comSaldo')" title="Mostrar só produtos com saldo"><div class="kpi-label">Com saldo</div><div class="kpi-value green">${comSaldo}</div></div>`
-      + `<div class="kpi kpi-clickable${at('zerados')}" data-cat-kpi="zerados" onclick="catKpiFiltrar('zerados')" title="Mostrar só produtos zerados"><div class="kpi-label">Zerados</div><div class="kpi-value">${zerados}</div></div>`
-      + `<div class="kpi kpi-clickable${at('negativos')}" data-cat-kpi="negativos" onclick="catKpiFiltrar('negativos')" title="Mostrar só produtos com saldo negativo"><div class="kpi-label">Negativos</div><div class="kpi-value ${negativos > 0 ? 'red' : ''}">${negativos}</div></div>`;
-    // Etapa 2: extras só aparecem com "ver mais" (Total/Unid. scooters/Unid. acessórios).
-    const extras = !catKpiVerMais ? '' :
-        `<div class="kpi"><div class="kpi-label">Total de produtos</div><div class="kpi-value gold">${tot}</div></div>`
-      + `<div class="kpi"><div class="kpi-label">Unid. scooters</div><div class="kpi-value gold">${unidSc}</div></div>`
-      + `<div class="kpi"><div class="kpi-label">Unid. acessórios</div><div class="kpi-value">${unidAc}</div></div>`;
-    kpiEl.innerHTML = principais + extras;
+    // "Em montagem agora" = scooters no montador (status Fila/Montando) — mesmo
+    // critério do módulo Montagens (montagensItens vem no boot). O dono confirmou
+    // que essas unidades JÁ entram no produtos.estoque ao comprar → logo
+    // "prontas p/ venda" = scooters em estoque − as que estão em montagem.
+    const emMontagem = (montagensItens || []).filter(i =>
+      i.statusMontagem === 'fila' || i.statusMontagem === 'montando').length;
+    const prontas  = Math.max(0, unidSc - emMontagem);
+    const nModelos = modelosSc.size;
+
+    const card = (label, val, cls, sub, title) =>
+        `<div class="kpi"${title ? ` title="${title}"` : ''}>`
+      + `<div class="kpi-label">${label}</div>`
+      + `<div class="kpi-value${cls ? ' ' + cls : ''}">${val}</div>`
+      + (sub ? `<div class="kpi-change">${sub}</div>` : '') + '</div>';
+
+    kpiEl.innerHTML =
+        card('Prontas p/ venda', prontas, 'green', 'scooters montadas, prontas no PDV',
+             'Scooters em estoque menos as que ainda estão no montador (em montagem).')
+      + card('Em montagem', emMontagem, emMontagem > 0 ? 'gold' : '',
+             emMontagem > 0 ? 'no montador, ainda chegando' : 'nenhuma no montador',
+             'Scooters em lotes de montagem com status Fila ou Montando (módulo Montagens).')
+      + card('Scooters em estoque', unidSc, '', 'total, todas as cores',
+             'Soma de unidades de scooter no estoque (produtos.estoque).')
+      + card('Modelos disponíveis', nModelos, '', 'modelos de scooter com saldo',
+             'Modelos distintos de scooter com pelo menos 1 unidade (agrupa as cores).')
+      + card('Acessórios em estoque', unidAc, '', acessComSaldo + ' ite' + (acessComSaldo !== 1 ? 'ns' : 'm') + ' com saldo',
+             'Soma de unidades de acessórios no estoque.')
+      + (_isAdminUser()
+          ? card('Valor em estoque', fmt(valor), 'gold',
+                 semCusto > 0 ? semCusto + ' c/ saldo sem custo (fora)' : 'custo × saldo',
+                 'Custo de compra × saldo, para os produtos com custo cadastrado.')
+          : '');
+
+    // Chips discretos de higiene (filtro rápido da lista) — Com saldo / Zerados /
+    // Negativos. Mantêm a função dos cards-filtro antigos, sem competir com os KPIs.
+    const chipsEl = document.getElementById('estoque-kpi-chips');
+    if (chipsEl) {
+      const chip = (m, lbl, n, cor) => {
+        const on = catKpiFiltro === m;
+        return `<button data-cat-kpi="${m}" onclick="catKpiFiltrar('${m}')" title="Filtrar a lista: ${lbl}" style="`
+          + `padding:4px 11px;border-radius:20px;border:1px solid ${on ? 'var(--gold)' : 'var(--border)'};`
+          + `background:${on ? 'rgba(230,170,40,.14)' : 'var(--surface2)'};color:var(--text2);`
+          + `font-size:12px;cursor:pointer;font-weight:${on ? '700' : '500'};">`
+          + `${lbl} <b style="color:${cor || 'var(--text)'};">${n}</b></button>`;
+      };
+      chipsEl.innerHTML =
+          '<span style="font-size:11px;color:var(--text3);white-space:nowrap;">Filtrar estoque:</span>'
+        + chip('comSaldo', 'Com saldo', comSaldo, 'var(--green)')
+        + chip('zerados', 'Zerados', zerados, '')
+        + chip('negativos', 'Negativos', negativos, negativos > 0 ? 'var(--red)' : '');
+    }
   }
-  // Etapa 2: rótulo do botão "ver mais / ver menos" (3 cards extras).
-  const vmBtn = document.getElementById('estoque-kpi-vermais');
-  if (vmBtn) vmBtn.textContent = catKpiVerMais ? '− ver menos' : '+ ver mais (3)';
 
   // Etapa 3: aviso de cadastro incompleto (só ativos). Clicável → reusa catKpiFiltro.
   const avisoEl = document.getElementById('estoque-aviso-incompleto');
@@ -13102,6 +13138,29 @@ function renderFinFluxo() {
   const _div = fcDividaTotal();
   const _espaco = fcEspacoObrigacaoMensal(_rx.reserva);
   _fcRaioReserva = _rx.reserva;
+  // Card destacado "Espaço para nova dívida" (pedido do dono): o mesmo número que já
+  // aparece na frase do veredito ("cabe assumir R$ X/mês"), agora em DESTAQUE e
+  // convertido em compromisso TOTAL aproximado (soma das parcelas em 12/24 meses —
+  // com juros do banco o principal que entra é um pouco menor). Reflete o cenário de
+  // vendas selecionado. _espaco = 0 → já está no limite (nenhum espaço).
+  const _espacoPct = Math.round((_rx.vendasPct || 0) * 100);
+  const _espacoBloco = '<div style="margin-bottom:14px;padding:13px 16px;border-radius:var(--r-sm);'
+    + 'background:' + (_espaco > 0 ? 'rgba(230,170,40,.10)' : 'rgba(239,68,68,.08)')
+    + ';border:1px solid ' + (_espaco > 0 ? 'rgba(230,170,40,.35)' : 'rgba(239,68,68,.30)') + ';">'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;">'
+    + '<div style="font-size:13px;font-weight:800;">💰 Espaço para nova dívida</div>'
+    + '<div style="font-family:\'JetBrains Mono\',monospace;font-size:20px;font-weight:800;color:'
+    + (_espaco > 0 ? 'var(--gold)' : 'var(--red)') + ';">' + fmt(_espaco)
+    + '<span style="font-size:12px;font-weight:600;color:var(--text3);">/mês</span></div></div>'
+    + '<div style="font-size:11.5px;color:var(--text2);margin-top:5px;line-height:1.5;">'
+    + (_espaco > 0
+        ? 'Quanto de <b>parcela nova por mês</b> cabe sem furar a reserva. Equivale a um compromisso total de cerca de <b>'
+          + fmt(_espaco * 12) + '</b> em 12× ou <b>' + fmt(_espaco * 24) + '</b> em 24× '
+          + '<span style="color:var(--text3);">(soma das parcelas; num empréstimo com juros, o valor que entra é um pouco menor)</span>.'
+        : 'No cenário atual <b>não há espaço</b> para novo compromisso sem furar a reserva de segurança — evite assumir mais dívida agora.')
+    + '</div>'
+    + '<div style="font-size:10.5px;color:var(--text3);margin-top:4px;">Calculado no cenário de vendas selecionado ('
+    + _espacoPct + '% do ritmo normal). Pra testar um empréstimo ou compra específicos, use o simulador abaixo.</div></div>';
   const _fornAberto = Object.values(_rx.comp.boletos).reduce((s, v) => s + v, 0);
   const _rxCor = _rx.negativo ? 'var(--red)' : _rx.furaReserva ? 'var(--gold)' : 'var(--green)';
   const _rxEmoji = _rx.negativo ? '🔴' : _rx.furaReserva ? '🟡' : '🟢';
@@ -13172,9 +13231,11 @@ function renderFinFluxo() {
   const _receber = (contasReceber || []).filter(c => !c.recebidoEm && c.status !== 'recebido')
     .reduce((s, c) => s + (c.valor || 0), 0);
   const _semCatAb = _rx.comp.semCatTot || 0;
-  // Parcelas de empréstimo dos próximos 12 meses (passivo de giro).
+  // Parcelas de empréstimo dos próximos 12 meses (passivo de giro). Janela = mês
+  // corrente + 11 seguintes = 12 meses. `_ym12` é o mês+12 (o 13º), EXCLUÍDO pelo
+  // `<` — antes o `<=` incluía o 13º mês (mês corrente contado nas duas pontas).
   const _ym12 = (() => { const d = new Date(); d.setMonth(d.getMonth() + 12); return d.toISOString().slice(0, 7); })();
-  const _parc12m = Object.entries(_rx.comp.parcelas).reduce((s, [ym, v]) => s + (ym <= _ym12 ? v : 0), 0);
+  const _parc12m = Object.entries(_rx.comp.parcelas).reduce((s, [ym, v]) => s + (ym < _ym12 ? v : 0), 0);
   const _passivoGiro = _fornAberto + _semCatAb + _parc12m;
   const _cgl = _rx.saldo0 + (_est ? _est.custoTotal : 0) + _receber - _passivoGiro;
   const _liqSeca = _passivoGiro > 0 ? _rx.saldo0 / _passivoGiro : null;
@@ -13240,6 +13301,7 @@ function renderFinFluxo() {
     + (_gs100 > 0 && _gs < 0 ? ' <b style="color:var(--gold);">Atenção:</b> nessa expectativa de vendas a operação roda no negativo (' + fmtSigned(_gs) + '/mês em regime) — a folga vem do estoque já pago, não é permanente.' : '')
     + (_vp > FC_PESSIMISTA_PCT + 0.001 ? ' <span style="color:var(--text3);">No pior caso (vendas pela metade), o vale cairia pra ' + fmt(_rx.valePess) + '.</span>' : '')
     + '</div></div></div>'
+    + _espacoBloco
     + '<div style="font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.5;">' + _cobTxt + '</div>'
     + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:560px;">'
     + '<thead><tr><th style="padding:5px 8px;text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);">Mês</th>'

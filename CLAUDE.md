@@ -302,6 +302,16 @@ reposição das motos vendidas) → "cabe assumir R$ 109k/mês" (irreal). Agora:
   parcelas vencidas, comentários defasados no legado.
 - **`fcEspacoObrigacaoMensal(reserva)`** — busca binária: quanto de obrigação mensal nova ainda cabe
   (na expectativa de vendas ativa, com o motor novo).
+- **KPI "💰 Espaço para nova dívida" (10/07/2026, pedido do dono):** card destacado (dourado) no
+  `fin-fluxo-alavancagem`, logo após o veredito — `_espacoBloco` (~13140), usa `_espaco`
+  (=`fcEspacoObrigacaoMensal`). Mostra a **parcela mensal** que cabe + a **equivalência total** (parcela×12
+  e ×24, com nota de que juros reduzem o principal) + o cenário de vendas atual. `_espaco=0` (ex.: cenário
+  pessimista padrão) → "não há espaço". Reflete o cenário selecionado (re-renderiza com `_fcSetVendas`).
+- **Correção 12 meses do capital de giro (10/07/2026):** `_parc12m` (~13236) usava `ym <= _ym12` (mês+12) →
+  contava **13** meses (o corrente entrava nas duas pontas), inflando o passivo de giro em ~1 parcela
+  (R$ 9.898). Trocado p/ `ym < _ym12` = **12 meses cravados** (corrente + 11). Impacto: **Capital de giro
+  líquido +61.580 → +71.478**; liquidez seca segue 0,19; **serviço da dívida, veredito 🟢🟡🔴 e "espaço p/
+  dívida" NÃO mudam** (usam projeção por datas reais / pico, não a janela). Parcelas 12m: 111.471 → 101.573.
 - **Expectativa de vendas ajustável:** global `_fcVendasPct` (default pessimista 50%); presets ½/−30%/−20%/
   Normal/+20% (`_fcSetVendas`); input em **% OU nº de vendas** (`_fcVendasPorPct`/`_fcVendasPorQtd`, onchange).
   Média-base visível (ritmo maio+junho ≈ 23 vendas ≈ R$ 218k = 100%); `fcCarregarVendasMedia()` conta os
@@ -343,6 +353,23 @@ certa no caixa (fontes independentes da DRE). Dono confirmou manter conservador 
 - Contexto de negócio (fornecedor 50%+50% em 4 meses; discórdia dono×sócio sobre alavancagem) em `_memoria/empresa.md`.
 
 ## Histórico de mudanças
+
+### 2026-07-10 — KPI "Espaço para nova dívida" + correção 12m + KPIs gerenciais em Produtos > Cadastro
+Três pedidos do dono. **(1) PDF explicativo do Raio-X** (`documentos/Raio-X-Viabilidade-Guia-Smart-Motors.pdf`,
+7 págs, fonte `.html` ao lado — pasta `documentos/` é local/gitignore): guia pra leigo/sócio de cada indicador
+(caixa/estoque/a receber/fornecedor/dívida/capital de giro/liquidez seca/geração líquida/serviço da dívida),
+com números reais batendo com a tela. **(2) KPI "💰 Espaço para nova dívida"** no Raio-X + **correção da janela
+de 12 meses** do capital de giro (`ym < _ym12`) — ver seção "DRE + Raio-X Financeiro" → Raio-X de VIABILIDADE.
+**(3) Tela Produtos > Cadastro (`renderCatalogoProdutos` ~10159): KPIs trocados por leitura gerencial** —
+**Prontas p/ venda · Em montagem · Scooters em estoque · Modelos disponíveis · Acessórios em estoque · Valor
+em estoque** (valor só admin). "Em montagem" = `montagensItens` status fila+montando (mesmo critério do módulo
+Montagens; o dono confirmou que a moto em montagem JÁ entra no `produtos.estoque` → **prontas = scooters −
+em montagem**). Montagem×estoque são módulos **desacoplados** (montagem liga a produto só por texto; receber
+não dá entrada no estoque) — o desconto assume a regra operacional do dono. Os antigos Com saldo/Zerados/
+Negativos viraram **chips discretos** (`#estoque-kpi-chips`, reusam `catKpiFiltrar`); botão "ver mais" removido.
+**Validado no localhost logado** (sessão do dono): Produtos = 37 prontas/1 montagem/38/10 modelos/27 acess.;
+Raio-X = capital giro +71.478/liquidez 0,19/espaço R$0 no pessimista, R$22.714/mês no Normal; 0 erro de console.
+**Commit `<pendente>` → GitHub Pages.**
 
 ### 2026-07-09 (noite) — Raio-X de VIABILIDADE: motor com reposição de estoque + saúde/capital de giro + simulador de dívida
 Pedido urgente do dono (precisava analisar um pedido de compra à noite). Reforma completa — ver seção
