@@ -369,7 +369,7 @@ não dá entrada no estoque) — o desconto assume a regra operacional do dono. 
 Negativos viraram **chips discretos** (`#estoque-kpi-chips`, reusam `catKpiFiltrar`); botão "ver mais" removido.
 **Validado no localhost logado** (sessão do dono): Produtos = 37 prontas/1 montagem/38/10 modelos/27 acess.;
 Raio-X = capital giro +71.478/liquidez 0,19/espaço R$0 no pessimista, R$22.714/mês no Normal; 0 erro de console.
-**Commit `<pendente>` → GitHub Pages.**
+**Commit `a83c98c` pushed → GitHub Pages.**
 
 ### 2026-07-09 (noite) — Raio-X de VIABILIDADE: motor com reposição de estoque + saúde/capital de giro + simulador de dívida
 Pedido urgente do dono (precisava analisar um pedido de compra à noite). Reforma completa — ver seção
