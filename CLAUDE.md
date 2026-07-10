@@ -267,16 +267,41 @@ real por item) com 2 erros conceituais; reforma feita + módulo novo de risco de
 - Ex. junho: operação **+14.544 (7,5%)**; mês (com extraordinários Eventos+Obra −20.735) **−6.191**. Antes
   o sistema mostrava −15.484 (a diferença era o principal do empréstimo).
 
-### Raio-X de Obrigações (card `#fin-fluxo-alavancagem`) — "posso assumir mais dívida/estoque?"
-Substituiu o simulador de dívida isolado (que usava caixa operacional, otimista demais).
-- **`fcRaioXObrigacoes(opts)`** — projeta 6 meses: caixa hoje (Σ `contas.saldo`) + geração líquida esperada
-  (vendas×`vendasPct` − custo fixo médio − variáveis) − boletos de fornecedor/estoque/inv/dívida (`comp.boletos`,
-  por mês) − parcelas de empréstimo (`comp.parcelas`). Opts: `vendasPct`, `simAVista`, `simMensal`,
-  `simParcelas`, `reserva`. Retorna `vale` (pior saldo), `critico`, `furaReserva`, `negativo`, `valePess`.
-  **Reserva de segurança = 1 mês de custo fixo** (~R$ 34k). Régua: 🟢 acima / 🟡 abaixo / 🔴 negativo.
-- **`fcEspacoObrigacaoMensal(reserva)`** — busca binária: quanto de obrigação mensal nova ainda cabe.
-- **Simulador `_fcSimularCompra()`** — 3 campos livres: entrada (à vista) + parcela + nº de parcelas (0=fixo).
-  Cobre empréstimo, compra à vista, compra a prazo. Parcela começa no mês i≥1.
+### Raio-X de VIABILIDADE (card `#fin-fluxo-alavancagem`) — reforma 09/07/2026 (commit `e85fe68`)
+Virou análise de analista financeiro: "posso assumir nova dívida (empréstimo/compra de estoque)?".
+**CORREÇÃO CENTRAL:** a projeção antiga somava a receita quase inteira como sobra (não descontava a
+reposição das motos vendidas) → "cabe assumir R$ 109k/mês" (irreal). Agora: geração = vendas −
+**reposição** − variáveis (proporcionais à venda) − fixo. Sustentável ≈ **+R$ 18k/mês no ritmo 100%**
+(consistente com DRE jun +14,5k).
+- **`_fcGiroInfo(medias)`** — ratio de reposição (custo por R$ vendido) = vendasMes×custoUnit/entradasOp
+  ≈ 0,693 (fallback `FC_CUSTO_RATIO_FALLBACK=0.68` se async não carregou) + pool em R$ = custo do estoque
+  já comprado. **Sem dupla contagem:** o estoque atual é consumido do pool SEM desembolso novo (os boletos
+  de fornecedor em aberto são o pagamento dele, contados nas datas); esgotado o pool (~2 meses), cada venda
+  paga reposição à vista. Fallback conservador: sem dado, pool=0 → repõe desde o mês 1.
+- **`fcGeraSustentavel(pct)`** — geração de regime. Alimenta KPI e o semáforo de crédito (que antes dividia
+  por caixaOp bruto → 2,6% falso; agora serviço/geração no PICO futuro da parcela ≈ **54% 🔴**).
+- **`fcRaioXObrigacoes(opts)`** — 12 meses (`FC_RAIOX_MESES=12`); mês corrente afinado (`fcMesCorrenteParcial`);
+  opts.sim = `{tipo:'emprestimo'|'compra', valorTotal, entrada, parcela, nParcelas, inicioIdx, unidades}` —
+  empréstimo ENTRA no caixa no m0; compra soma valorTotal ao pool (entra no giro). Legado `simMensal`/
+  `simAVista`/`simParcelas` mantido (usado pelo `fcEspacoObrigacaoMensal`). Retorna também `custoRatio`,
+  `coberturaMeses`, `geraSust(100)`, `estoqueUn0`, linhas com `vendas/custos/repor/forn/empr/saldo`.
+- **Painel:** bloco **🩺 Saúde financeira** (caixa, estoque un+custo — loader async `fcCarregarEstoque` →
+  `_fcEstoque`, com estado `.erro` sinalizado —, a receber, fornecedor, dívida, capital de giro líquido,
+  liquidez seca, geração líquida, serviço da dívida pico) + cobertura de estoque + tabela 12m + simulador.
+- **Simulador `_fcSimularViabilidade()`** — tipo (compra/empréstimo), valor total, entrada, nº parcelas,
+  **mês da 1ª parcela** (`input type=month`; parser tolerante `_fcParseMesIdx` aceita AAAA-MM e MM/AAAA —
+  Safari não tem month nativo, NUNCA ignora parcela silenciosamente), parcela (auto p/ compra = (total−
+  entrada)/n; empréstimo exige a do banco), motos (informativo). Números via `_fcNumBR` (BR/US sem
+  ambiguidade destrutiva). Compara com/sem, % da geração, avisos (mês inválido/passado/além da janela,
+  parcelas fora do horizonte).
+- **Coerência:** os vales do card Crédito (semáforo) vêm do motor novo; a projeção legada `fcProjecao`
+  (sem reposição) ganhou nota de encaminhamento. **Auditoria por 2 agentes (matemática + dados)**: 0
+  críticos; dados conferidos ao centavo; fixes aplicados (parsers, semáforo, loader erro, avisos).
+  **Follow-ups anotados (menores):** UTC vs local na virada do mês (janela 21h-0h), matching case-sensitive
+  de categoria no fixo vs normalizado nas variáveis, `_ym12` conta 13 meses (conservador), pico inclui
+  parcelas vencidas, comentários defasados no legado.
+- **`fcEspacoObrigacaoMensal(reserva)`** — busca binária: quanto de obrigação mensal nova ainda cabe
+  (na expectativa de vendas ativa, com o motor novo).
 - **Expectativa de vendas ajustável:** global `_fcVendasPct` (default pessimista 50%); presets ½/−30%/−20%/
   Normal/+20% (`_fcSetVendas`); input em **% OU nº de vendas** (`_fcVendasPorPct`/`_fcVendasPorQtd`, onchange).
   Média-base visível (ritmo maio+junho ≈ 23 vendas ≈ R$ 218k = 100%); `fcCarregarVendasMedia()` conta os
@@ -318,6 +343,16 @@ certa no caixa (fontes independentes da DRE). Dono confirmou manter conservador 
 - Contexto de negócio (fornecedor 50%+50% em 4 meses; discórdia dono×sócio sobre alavancagem) em `_memoria/empresa.md`.
 
 ## Histórico de mudanças
+
+### 2026-07-09 (noite) — Raio-X de VIABILIDADE: motor com reposição de estoque + saúde/capital de giro + simulador de dívida
+Pedido urgente do dono (precisava analisar um pedido de compra à noite). Reforma completa — ver seção
+**"Raio-X de VIABILIDADE"**. Bug de fundo corrigido (projeção não descontava reposição → "cabe R$ 109k/mês"
+irreal; sustentável real ≈ +18k/mês), painel de saúde financeira (capital de giro, liquidez seca, serviço da
+dívida honesto ~54% no pico 🔴), projeção 12m, simulador tipo/valor/entrada/parcelas/mês. **Inventário físico
+aplicado no banco via MCP** (38 motos; ajustes com trilha via `registrar_movimento`; Cytron Preta/Vermelha
+criadas; 66 cadastros zerados inativados; Baú re-categorizado acessorio na tabela produtos). Validação: modelo
+de referência independente (node) × motor real = 100% idêntico; 18/18 parsers; auditoria por 2 agentes (0
+críticos, fixes aplicados). **Commit `e85fe68` pushed → GitHub Pages, produção confirmada.**
 
 ### 2026-07-09 — Raio-X: mês corrente afinado pelo ritmo real (com trava de ruído)
 Fecha o último item do backlog do Raio-X. O mês em curso projetava o resto SEMPRE pela média (cego ao
