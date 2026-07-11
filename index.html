@@ -3628,7 +3628,10 @@ select:not(.input-pro):not(.search-input){
           <div style="font-size:13px;font-weight:700;">🤝 Consignação Recebida</div>
           <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="consigr-sub">Motos de terceiros que você recebeu pra vender</div>
         </div>
-        <button class="btn btn-gold" onclick="abrirReceberConsignacaoModal()">+ Receber moto consignada</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn" onclick="_consigrCopiarLinkVitrine(this)" title="Link público das consignadas disponíveis — pra mandar no WhatsApp"><svg class="ic ic-sm"><use href="#ic-link"/></svg> Link da vitrine</button>
+          <button class="btn btn-gold" onclick="abrirReceberConsignacaoModal()">+ Receber moto consignada</button>
+        </div>
       </div>
       <div id="consigr-lista">
         <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
@@ -22798,10 +22801,13 @@ function _consigrCard(c) {
     : `<button class="btn" style="font-size:11px;padding:5px 10px;" onclick="_consigrExcluir('${c.id}')" title="Remover registro">🗑️</button>`;
   return `<div class="card" style="padding:14px 16px;margin-bottom:10px;">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
-      <div>
-        <div style="font-weight:700;font-size:13px;">${escHtml(c.produtoNome || 'moto')}${c.cor ? ' · ' + escHtml(c.cor) : ''} ${badge}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:3px;">Dono: <strong>${escHtml(_consigrNomeDono(c))}</strong>${c.chassi ? ' · chassi ' + escHtml(c.chassi) : ''}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px;">📦 Veio junto: ${escHtml(itensTxt)}</div>
+      <div style="display:flex;gap:12px;align-items:flex-start;">
+        ${c.fotoPath ? `<img src="${_consigrFotoUrl(c.fotoPath)}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0;" alt="foto">` : ''}
+        <div>
+          <div style="font-weight:700;font-size:13px;">${escHtml(c.produtoNome || 'moto')}${c.cor ? ' · ' + escHtml(c.cor) : ''} ${badge}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px;">Dono: <strong>${escHtml(_consigrNomeDono(c))}</strong>${c.chassi ? ' · chassi ' + escHtml(c.chassi) : ''}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;">📦 Veio junto: ${escHtml(itensTxt)}</div>
+        </div>
       </div>
       <div style="text-align:right;font-size:11px;min-width:150px;">
         <div>Repasse ao dono: <strong>${_fmtBRMoney(c.valorRepasse)}</strong></div>
@@ -22867,6 +22873,10 @@ function abrirReceberConsignacaoModal(editId) {
          <select class="form-input" id="consigr-estado"><option value="">—</option>
            <option value="nova"${c&&c.estado==='nova'?' selected':''}>Nova</option>
            <option value="usada"${c&&c.estado==='usada'?' selected':''}>Usada</option></select></div>
+       <div class="form-group full"><label>📸 Foto da moto</label>
+         <input class="form-input" id="consigr-foto" type="file" accept="image/*" onchange="_consigrPreviewFoto()" style="font-size:11px;padding:8px;">
+         <div style="font-size:10px;color:var(--text3);margin-top:3px;">No celular abre a câmera ou a galeria. Aparece na lista e na vitrine pública do WhatsApp.</div>
+         <div id="consigr-foto-preview" style="margin-top:8px;"></div></div>
        <div class="form-group full"><label>📦 Itens que vieram junto</label>
          <div style="margin-top:4px;">${_consigrItensChecklist(itensSel)}</div>
          <input class="form-input" id="consigr-item-extra" placeholder="Outro item (opcional) — ex.: bateria extra" style="margin-top:8px;font-size:11px;" value="${escHtml(itensExtra)}"></div>
@@ -22881,8 +22891,30 @@ function abrirReceberConsignacaoModal(editId) {
   _consigrModalShell(editId ? 'Editar <span>consignação</span>' : 'Receber <span>moto consignada</span>', body, editId ? 'Salvar' : 'Registrar', _consigrSalvar, 640);
   initClienteSearch('consigr-cli-search', { placeholder: 'Buscar dono por nome, telefone ou CPF' });
   if (c && c.consignanteClienteId && typeof clienteSearchSet === 'function') clienteSearchSet('consigr-cli-search', { clienteId: c.consignanteClienteId }, false);
+  if (c && c.fotoPath) { const pv = document.getElementById('consigr-foto-preview'); if (pv) pv.innerHTML = `<img src="${_consigrFotoUrl(c.fotoPath)}" style="max-width:160px;border-radius:8px;" alt="foto"><div style="font-size:10px;color:var(--text3);margin-top:2px;">Foto atual — escolha outra pra trocar.</div>`; }
   ['consigr-repasse','consigr-preco','consigr-comissao'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', _consigrMargemPreview); });
   _consigrMargemPreview();
+}
+
+function _consigrFotoUrl(path) {
+  if (!path) return '';
+  try { return sb.storage.from('consignacoes').getPublicUrl(path).data.publicUrl; } catch (e) { return ''; }
+}
+
+function _consigrPreviewFoto() {
+  const inp = document.getElementById('consigr-foto');
+  const pv = document.getElementById('consigr-foto-preview');
+  if (!inp || !pv) return;
+  const f = inp.files && inp.files[0];
+  pv.innerHTML = f ? `<img src="${URL.createObjectURL(f)}" style="max-width:160px;border-radius:8px;" alt="preview">` : '';
+}
+
+// Link público da vitrine (lista das consignadas disponíveis) — pra mandar no WhatsApp.
+function _consigrCopiarLinkVitrine(btn) {
+  const link = 'https://smartmotorsapp.com.br/consignados.html';
+  if (typeof _cpCopiar === 'function') { _cpCopiar(link, btn); return; }
+  try { navigator.clipboard.writeText(link); if (typeof smToast === 'function') smToast('🔗 Link da vitrine copiado!'); }
+  catch (e) { smAlert('Link da vitrine: ' + link); }
 }
 
 function _consigrModeloChg() {
@@ -22949,12 +22981,25 @@ async function _consigrSalvar() {
 
   if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
   try {
+    let consigId = _consigrEditId;
     if (_consigrEditId) {
       const { error } = await sb.from('consignacoes').update(payload).eq('id', _consigrEditId);
       if (error) throw error;
     } else {
-      const { error } = await sb.from('consignacoes').insert(payload);
+      const { data: ins, error } = await sb.from('consignacoes').insert(payload).select('id').single();
       if (error) throw error;
+      consigId = ins.id;
+    }
+    // Foto: se escolheu uma, sobe pro bucket público e grava o caminho.
+    const fotoFile = document.getElementById('consigr-foto')?.files?.[0];
+    if (fotoFile && consigId) {
+      try {
+        const ext = ((fotoFile.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'jpg';
+        const path = consigId + '/foto-' + Date.now() + '.' + ext;
+        const up = await sb.storage.from('consignacoes').upload(path, fotoFile, { upsert: true, contentType: fotoFile.type || 'image/jpeg' });
+        if (up.error) console.warn('[consigr] upload foto:', up.error.message);
+        else await sb.from('consignacoes').update({ foto_path: path }).eq('id', consigId);
+      } catch (e) { console.warn('[consigr] foto:', e.message); }
     }
     const m = document.getElementById('consigr-modal'); if (m) m.remove();
     await initConsignacaoRecebida();

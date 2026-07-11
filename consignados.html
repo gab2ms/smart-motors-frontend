@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Motors — Seminovos & Consignados</title>
+<meta name="description" content="Scooters seminovas disponíveis na Smart Motors.">
+<style>
+  :root { --bg:#0e0e10; --bg2:#17171b; --bg3:#202027; --gold:#f5c518; --text:#f3f3f5; --text2:#b8b8c0; --text3:#7a7a85; --green:#2ec880; --border:#2a2a32; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:900px; margin:0 auto; padding:0 16px 60px; }
+  header { text-align:center; padding:34px 16px 24px; }
+  .brand { font-size:22px; font-weight:800; letter-spacing:.5px; }
+  .brand span { color:var(--gold); }
+  .sub { color:var(--text3); font-size:13px; margin-top:6px; }
+  .count { color:var(--text2); font-size:12px; margin-top:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px; margin-top:8px; }
+  .card { background:var(--bg2); border:1px solid var(--border); border-radius:16px; overflow:hidden; display:flex; flex-direction:column; }
+  .photo { width:100%; aspect-ratio:4/3; object-fit:cover; background:var(--bg3); display:block; }
+  .photo.ph { display:flex; align-items:center; justify-content:center; color:var(--text3); font-size:40px; }
+  .body { padding:14px 16px 16px; display:flex; flex-direction:column; gap:8px; flex:1; }
+  .model { font-size:16px; font-weight:700; }
+  .badge { display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--green); background:rgba(46,200,128,.14); padding:2px 8px; border-radius:20px; }
+  .specs { display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
+  .spec { font-size:11px; color:var(--text2); background:var(--bg3); padding:3px 9px; border-radius:8px; }
+  .price { font-size:20px; font-weight:800; color:var(--gold); margin-top:2px; }
+  .price small { font-size:11px; color:var(--text3); font-weight:500; display:block; }
+  .cta { margin-top:auto; text-align:center; background:var(--green); color:#06231a; font-weight:800; font-size:13px; text-decoration:none; padding:11px; border-radius:10px; }
+  .cta:active { opacity:.85; }
+  .empty, .loading { text-align:center; color:var(--text3); padding:60px 20px; font-size:14px; }
+  footer { text-align:center; color:var(--text3); font-size:12px; margin-top:36px; }
+  footer a { color:var(--text2); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">SMART <span>MOTORS</span></div>
+      <div class="sub">Seminovos & Consignados · scooters disponíveis</div>
+      <div class="count" id="count"></div>
+    </header>
+    <div id="lista"><div class="loading">Carregando as motos disponíveis…</div></div>
+    <footer>
+      Gostou de alguma? Chama a gente no WhatsApp.<br>
+      © Smart Motors
+    </footer>
+  </div>
+
+<script>
+  var API = 'https://sxmeuqlotjuchslevofv.supabase.co/functions/v1/consignados-publicos';
+  var WHATS = '5521997507738';
+  var fmt = function (v) { return v == null ? '' : 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); };
+  var esc = function (s) { return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); };
+
+  function card(m) {
+    var titulo = [m.modelo, m.cor].filter(Boolean).join(' ');
+    var specs = [];
+    if (m.fabricante) specs.push(m.fabricante);
+    if (m.motor) specs.push(m.motor);
+    if (m.ano) specs.push(m.ano);
+    if (m.km != null) specs.push(m.km.toLocaleString('pt-BR') + ' km');
+    if (m.estado) specs.push(m.estado === 'usada' ? 'Usada' : (m.estado === 'nova' ? 'Nova' : m.estado));
+    var foto = m.foto
+      ? '<img class="photo" src="' + esc(m.foto) + '" alt="' + esc(titulo) + '" loading="lazy">'
+      : '<div class="photo ph">🛵</div>';
+    var msg = encodeURIComponent('Olá! Tenho interesse na ' + titulo + (m.preco ? ' (' + fmt(m.preco) + ')' : '') + ' que vi no site.');
+    return '<div class="card">' + foto +
+      '<div class="body">' +
+        '<span class="badge">Seminova</span>' +
+        '<div class="model">' + esc(titulo || 'Scooter') + '</div>' +
+        (specs.length ? '<div class="specs">' + specs.map(function (s) { return '<span class="spec">' + esc(s) + '</span>'; }).join('') + '</div>' : '') +
+        (m.preco != null ? '<div class="price">' + fmt(m.preco) + '<small>à vista ou cartão</small></div>' : '') +
+        '<a class="cta" target="_blank" rel="noopener" href="https://wa.me/' + WHATS + '?text=' + msg + '">Tenho interesse</a>' +
+      '</div></div>';
+  }
+
+  fetch(API)
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var itens = (d && d.itens) || [];
+      var lista = document.getElementById('lista');
+      var count = document.getElementById('count');
+      if (!itens.length) {
+        lista.innerHTML = '<div class="empty">No momento não temos scooters seminovas disponíveis.<br>Fala com a gente no WhatsApp que a gente te avisa quando chegar. 🛵</div>';
+        return;
+      }
+      count.textContent = itens.length + (itens.length === 1 ? ' scooter disponível' : ' scooters disponíveis');
+      lista.innerHTML = '<div class="grid">' + itens.map(card).join('') + '</div>';
+    })
+    .catch(function () {
+      document.getElementById('lista').innerHTML = '<div class="empty">Não consegui carregar agora. Tenta recarregar a página em instantes.</div>';
+    });
+</script>
+</body>
+</html>

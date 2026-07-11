@@ -460,6 +460,21 @@ as contas aparecem no módulo Contas a Pagar normalmente.
 
 ## Histórico de mudanças
 
+### 2026-07-11 (tarde) — Consignação: venda pelo PDV + foto + vitrine pública (MÓDULO COMPLETO)
+Fechou os 3 pedidos do dono. **Venda pelo PDV:** a consignada disponível aparece na busca do PDV ("SCOOTER X ·
+consignada (dono)"), `produto_id=null` (não baixa estoque próprio), item único; ao finalizar → pedido
+`origem=consignacao` + `custo_consignacao` (repasse+comissão) + marca vendida + gera repasse; a comissão do
+vendedor vem pelo trigger normal. **DRE:** CPV usa o custo pela consignação (`custoConsig`), não o do modelo →
+margem certa (R$ 900). Migração `pdv_itens_consignacao_vinculo` (`pdv_itens_pedido.consignacao_id` +
+`custo_consignacao`). Venda normal 100% intacta. **Foto:** bucket público `consignacoes`
+(`consignacoes_bucket_fotos`) + campo upload/câmera (`accept=image/*`) no modal + preview + thumbnail no card +
+`consignacoes.foto_path`. **Vitrine pública:** Edge Function `consignados-publicos` (verify_jwt=false,
+service_role, expõe SÓ modelo/cor/specs/preço/foto — NUNCA repasse/margem/dono) + página
+`frontend/consignados.html` (dark/dourada, mobile-first, wa.me/5521997507738); botão "🔗 Link da vitrine"
+(`_consigrCopiarLinkVitrine`) copia `smartmotorsapp.com.br/consignados.html`. Validado (sintaxe + chrome-devtools:
+PDV normal intacto, item consignado não baixa estoque, DRE margem R$900, vitrine renderiza sem vazar dado
+sensível). Detalhe vivo em `_memoria/tarefa-atual.md`. **✅ commit + push → GitHub Pages.**
+
 ### 2026-07-11 — Módulo Consignação (recebida + reorg do menu) — parcial no ar
 Nova aba **"Consignação"** (menu: item solo **logo após Vendas**; saiu do grupo Produtos) com **3 sub-abas**:
 📊 Dashboard · 📤 Consignação Enviada (a antiga tela `localizacao` — Matriz/Quiosque/parceiros) · 🤝 Consignação
