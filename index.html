@@ -5476,7 +5476,7 @@ async function buscarVendasMescladas(iniISO, fimISO, forcar) {
     // normalizarNomeVendedor pra agrupar com Tiny ("Henrique Quiosque" e
     // "Henrique" do PDV viram "Henrique" no ranking).
     var resp = await sb.from('pdv_pedidos')
-      .select('id,numero_smart,total,status,tiny_pedido_id,criado_em,vendedor_id,local_venda_id,cliente_dados,forma_pagamento,pdv_itens_pedido(produto_id,produto_nome_tiny,quantidade,valor_unitario,ordem)')
+      .select('id,numero_smart,total,status,tiny_pedido_id,criado_em,vendedor_id,local_venda_id,cliente_dados,forma_pagamento,pdv_itens_pedido(produto_id,produto_nome_tiny,quantidade,valor_unitario,ordem,custo_consignacao)')
       .neq('status', 'cancelado')
       .gte('criado_em', j.iniUTC)
       .lt('criado_em', j.fimUTC);
@@ -5491,6 +5491,7 @@ async function buscarVendasMescladas(iniISO, fimISO, forcar) {
             quantidade:    Number(it.quantidade) || 0,
             valorUnitario: Number(it.valor_unitario) || 0,
             produtoId:     it.produto_id || null, // FK p/ produtos (relatórios); descartado antes
+            custoConsig:   (it.custo_consignacao != null) ? Number(it.custo_consignacao) : null,
           };
         });
       var vendObj = null;
@@ -8173,6 +8174,9 @@ async function calcularDRE(iniISO, fimISO) {
     const vendaDireta = _nomeVend === 'Venda Direta Smart Motors' || _nomeVend === 'Smart Motors';
     for (const it of (ped.itens || [])) {
       const qtd  = it.quantidade || 0;
+      // Consignação recebida: o custo real da loja é o repasse ao dono (+ comissão),
+      // gravado em custo_consignacao — NÃO o custo do modelo do catálogo.
+      if (it.custoConsig != null) { cpv += Number(it.custoConsig) * qtd; continue; }
       const prod = _matchProdutoPorNome((it.produto || it.nome || '').trim());
       if (prod) {
         const comissao = vendaDireta ? 0 : (prod.comissao || 0);
@@ -23235,6 +23239,31 @@ async function _pdvGarantirProdutos(forcar = false) {
       estoque:   Number(p.estoque) || 0,
     }));
     console.log('[pdv] carregou ' + produtosTiny.length + ' produtos (nosso banco)');
+    // Injeta as motos de CONSIGNAÇÃO RECEBIDA disponíveis (de terceiro) como itens
+    // vendáveis no PDV: produtoId=null (NÃO baixa estoque próprio) + vínculo/repasse.
+    try {
+      const { data: cons } = await sb.from('consignacoes')
+        .select('id,produto_precos_id,produto_nome,cor,chassi,valor_repasse,preco_venda,comissao_vendedor,consignante_cliente_id')
+        .eq('status', 'disponivel');
+      if (cons && cons.length) {
+        let donos = {};
+        const donoIds = [...new Set(cons.map(c => c.consignante_cliente_id).filter(Boolean))];
+        if (donoIds.length) {
+          const { data: dd } = await sb.from('clientes').select('id,nome').in('id', donoIds);
+          (dd || []).forEach(d => { donos[d.id] = d.nome; });
+        }
+        cons.forEach(c => {
+          const dono = donos[c.consignante_cliente_id] || 'dono';
+          produtosTiny.push({
+            id: '', produtoId: null, produtoPrecosId: c.produto_precos_id || null, local: true,
+            nome: 'SCOOTER ' + (c.produto_nome || 'moto') + (c.cor ? ' ' + c.cor : '') + ' · consignada (' + dono + ')',
+            codigo: 'CONSIG', preco: Number(c.preco_venda) || 0, estoque: 1,
+            _consignacaoId: c.id, _repasse: Number(c.valor_repasse) || 0,
+            _comissaoConsig: Number(c.comissao_vendedor) || 0, _chassi: c.chassi || '',
+          });
+        });
+      }
+    } catch (e) { console.warn('[pdv] consignadas:', e.message); }
     const inp = document.getElementById('pdv-busca-prod');
     if (inp && /carregando/.test(inp.placeholder)) inp.placeholder = 'Buscar produto por nome ou código...';
   } catch (e) {
@@ -23515,11 +23544,12 @@ async function _pdvAddItemFromIdx(idx) {
     const ok = await smConfirm(`⚠️ Produto sem estoque: "${p.nome || 'item'}".\n\nAdicionar mesmo assim?`);
     if (!ok) return;
   }
-  // Dedup: local casa por produtoId, Tiny por tinyProdutoId.
-  const chaveDe = it => it.local ? ('L:' + it.produtoId) : ('T:' + (it.tinyProdutoId || ''));
-  const chave = p.local ? ('L:' + p.produtoId) : ('T:' + (p.id || ''));
+  // Dedup: consignada por consignacaoId (é única), local por produtoId, Tiny por tinyProdutoId.
+  const chaveDe = it => it.consignacaoId ? ('C:' + it.consignacaoId) : (it.local ? ('L:' + it.produtoId) : ('T:' + (it.tinyProdutoId || '')));
+  const chave = p._consignacaoId ? ('C:' + p._consignacaoId) : (p.local ? ('L:' + p.produtoId) : ('T:' + (p.id || '')));
   const existente = _pdvVenda.itens.find(it => chaveDe(it) === chave);
   if (existente) {
+    if (existente.consignacaoId) { smAlert('Essa moto consignada é única — já está nessa venda.'); return; }
     existente.qtd = Number(existente.qtd||0) + 1;
   } else {
     _pdvVenda.itens.push({
@@ -23531,7 +23561,10 @@ async function _pdvAddItemFromIdx(idx) {
       produtoModelo: null,
       qtd: 1,
       precoUnit: Number(p.preco) || 0,
-      chassi: '',
+      chassi: p._chassi || '',
+      consignacaoId: p._consignacaoId || null,
+      repasse: p._consignacaoId ? (Number(p._repasse) || 0) : null,
+      comissaoConsig: p._consignacaoId ? (Number(p._comissaoConsig) || 0) : null,
     });
   }
   document.getElementById('pdv-itens-tabela').innerHTML = _pdvRenderItensTabela();
@@ -24020,6 +24053,7 @@ async function _pdvFinalizarVenda() {
     // Fase 3: TODA venda nasce local (sem Tiny). venda_local sempre true.
     const _localAfilFin = (pdvLocais || []).find(x => (x.nome||'').trim().toLowerCase() === 'afiliado');
     const _afiliadoIdVenda = (_localAfilFin && v.localId === _localAfilFin.id) ? (v.afiliadoId || null) : null;
+    const _temConsig = v.itens.some(it => it.consignacaoId);
     const pedidoPayload = {
       vendedor_id: v.vendedorId,
       local_venda_id: v.localId,
@@ -24033,6 +24067,7 @@ async function _pdvFinalizarVenda() {
       sincronizado_tiny: false,
       venda_local: true,
     };
+    if (_temConsig) pedidoPayload.origem = 'consignacao';
     if (v.entregaImediata) {
       pedidoPayload.status                = 'entregue';
       pedidoPayload.data_entrega_real     = new Date().toISOString();
@@ -24049,13 +24084,15 @@ async function _pdvFinalizarVenda() {
       pedido_id: ped.id,
       produto_modelo: it.produtoModelo || null,
       produto_nome_tiny: it.produtoNomeTiny,
-      tiny_produto_id: it.tinyProdutoId || null,
-      produto_id: it.produtoId || null,
+      tiny_produto_id: it.consignacaoId ? null : (it.tinyProdutoId || null),
+      produto_id: it.consignacaoId ? null : (it.produtoId || null),   // consignada NÃO baixa estoque próprio
       quantidade: parseInt(it.qtd, 10),
       valor_unitario: Number(it.precoUnit),
       valor_total: Number(it.qtd) * Number(it.precoUnit),
       chassi: (SCOOTER_RE.test(it.produtoNomeTiny || '') && it.chassi?.trim()) ? it.chassi.trim() : null,
       ordem: idx,
+      consignacao_id: it.consignacaoId || null,
+      custo_consignacao: it.consignacaoId ? ((Number(it.repasse)||0) + (Number(it.comissaoConsig)||0)) : null,
     }));
     if (itensRows.length) {
       const { error: errI } = await sb.from('pdv_itens_pedido').insert(itensRows);
@@ -24067,6 +24104,10 @@ async function _pdvFinalizarVenda() {
       acao: 'criou',
       quem: criadoPor,
     });
+
+    // Consignação recebida: marca as motos vendidas + gera o repasse ao dono
+    // (a comissão do vendedor vem sozinha pelo trigger de comissão dos pedidos).
+    if (_temConsig) { try { await _pdvProcessarConsignadas(ped, v.itens, v.cliente); } catch (e) { console.warn('[pdv] consignada:', e.message); } }
 
     // Snapshot p/ o comprovante A4 — captura itens, pagamentos e nomes de
     // vendedor/local AGORA (v ainda existe; itens vivem em outra tabela).
@@ -24105,6 +24146,40 @@ async function _pdvFinalizarVenda() {
   } catch (e) {
     smAlert(e.message || 'Erro desconhecido.');
     if (btn) { btn.disabled = false; btn.innerHTML = 'Finalizar venda <svg class="ic ic-sm"><use href="#ic-check"/></svg>'; }
+  }
+}
+
+// Processa os itens de CONSIGNAÇÃO RECEBIDA de uma venda do PDV: marca cada moto
+// como vendida (só se ainda 'disponivel' — trava reprocesso) e gera a conta a pagar
+// do repasse ao dono. A comissão do vendedor NÃO é lançada aqui: como o pedido é um
+// pdv_pedido com item "SCOOTER ...", o trigger de comissão já a gera (comvend-<mês>).
+async function _pdvProcessarConsignadas(ped, itens, comprador) {
+  const dataVenda = (ped.criado_em || new Date().toISOString()).slice(0, 10);
+  for (const it of (itens || []).filter(x => x.consignacaoId)) {
+    const { data: upd, error } = await sb.from('consignacoes').update({
+      status: 'vendida',
+      comprador_cliente_id: (comprador && comprador._clienteId) || null,
+      valor_venda: Number(it.precoUnit) || 0,
+      data_venda: dataVenda,
+      pedido_id: ped.id,
+      atualizado_em: new Date().toISOString(),
+    }).eq('id', it.consignacaoId).eq('status', 'disponivel')
+      .select('id,consignante_cliente_id,produto_nome,cor').maybeSingle();
+    if (error || !upd) continue;   // já vendida/devolvida ou erro → não gera repasse duplicado
+    const repasse = Number(it.repasse) || 0;
+    if (repasse > 0) {
+      let donoNome = 'dono';
+      try { const { data: d } = await sb.from('clientes').select('nome').eq('id', upd.consignante_cliente_id).maybeSingle(); if (d) donoNome = d.nome; } catch (e) {}
+      const moto = (upd.produto_nome || 'moto') + (upd.cor ? ' ' + upd.cor : '');
+      const r = await sb.from('contas_pagar').insert({
+        id: 'consigr-' + upd.id + '-repasse',
+        descricao: 'Repasse consignacao · ' + donoNome + ' (' + moto + ')',
+        valor: repasse, vencimento: dataVenda, categoria: 'Consignação', status: 'pendente',
+        beneficiario: donoNome, avisar: 1,
+        observacao: 'Repasse ao dono — venda pelo PDV (pedido #' + (ped.numero_smart || '') + ').',
+      });
+      if (r.error && r.error.code !== '23505') console.warn('[pdv] repasse:', r.error.message);
+    }
   }
 }
 
