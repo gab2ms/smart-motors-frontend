@@ -426,7 +426,64 @@ certa no caixa (fontes independentes da DRE). Dono confirmou manter conservador 
   todo boleto. Base de vendas de só 2 meses (maio+junho) — folga depende de manter o ritmo.
 - Contexto de negócio (fornecedor 50%+50% em 4 meses; discórdia dono×sócio sobre alavancagem) em `_memoria/empresa.md`.
 
+## Comissão automática de vendedor interno (Contas a Pagar) — no ar 11/07/2026
+**O que é:** a cada venda registrada, o banco gera/atualiza SOZINHO uma **conta a pagar de comissão por
+vendedor/mês** (pedido do dono: acumular ao longo do mês e pagar todo mundo no **dia 5**). Espelha o
+fechamento de AFILIADOS, mas pros vendedores internos. **100% no banco (trigger)** — o front NÃO mudou;
+as contas aparecem no módulo Contas a Pagar normalmente.
+- **Regra do cálculo:** `pdv_vendedores.comissao_moto` (hoje **R$100** p/ os 4 vendedores; Smart Motors=0)
+  × nº de **scooters** (SCOOTER_RE = `/MOTONETA|TRICICLO|SCOOTER/i` no `produto_nome_tiny`). **Acessório NÃO
+  conta.** Competência = **data da venda** (`criado_em`, fuso America/Sao_Paulo). Só pedidos **não
+  cancelados** e **sem afiliado** (afiliado tem o fluxo dele). Vencimento **dia 5 do mês seguinte**.
+- **Conta gerada:** `contas_pagar` id **`comvend-<YYYY-MM>-<vendedor_id>`**, categoria **"Comissão de
+  Vendas"**, status pendente, `beneficiario`=nome, `comissao_competencia`. **Idempotente** (recalcula o
+  total do mês do zero a cada evento) e **trava se `status='pago'`** (mês fechado não muda mais). Se o mês
+  zera (sem scooter), a conta pendente é **removida**.
+- **Não duplica no DRE:** a comissão já entra no **CPV** de cada venda; a categoria "Comissão de Vendas"
+  está em `_DRE_CATEGORIAS_FORA_DESPESA` → pagar a conta **não conta 2×**. A conta a pagar é só o controle
+  de quanto pagar a cada um.
+- **Banco (migrações `comissao_vendedor_automatica` + `comissao_vendedor_revoke_execute`):**
+  `fn_recalc_comissao_vendedor(uuid,text)` (SECURITY DEFINER, `search_path=public`) + trigger functions
+  `trg_comissao_vend_pedidos()` (AFTER I/U/D em `pdv_pedidos` — nova venda, troca de vendedor, mudança de
+  data, **cancelamento/exclusão** recalculam) e `trg_comissao_vend_itens()` (AFTER I/U/D em
+  `pdv_itens_pedido` — os itens entram DEPOIS do pedido, é aqui que o valor ganha o nº de scooters).
+  EXECUTE revogado de public/anon/authenticated (triggers rodam pelo sistema; fecha o aviso do linter).
+- **Backfill julho/2026 aplicado:** **Michelle R$300** (3 scooters) · **Rafael R$200** (2 scooters), venc
+  05/08. Meses anteriores NÃO foram tocados (o dono fecha como sempre fez).
+- **Validado E2E via MCP (11/07):** venda nova 200→300 · cancelar 300→200 · reativar 200→300 · acessório
+  não soma (fica 300) · excluir 300→200. Dados de teste apagados. Advisor: só os 3 avisos genéricos de
+  SECURITY DEFINER, mitigados com revoke.
+- **Escopo/limite:** a comissão da **consignação recebida** (piloto, ver `_memoria/tarefa-atual.md`) NÃO
+  passa por `pdv_pedidos`, então fica numa conta à parte (lançada à mão) — quando a tela de consignação
+  recebida for construída, ela deve gerar a comissão no mesmo esquema. **CRM e Compra Programada já são
+  cobertos** (geram `pdv_pedidos`).
+
 ## Histórico de mudanças
+
+### 2026-07-11 — Módulo Consignação (recebida + reorg do menu) — parcial no ar
+Nova aba **"Consignação"** (menu: item solo **logo após Vendas**; saiu do grupo Produtos) com **3 sub-abas**:
+📊 Dashboard · 📤 Consignação Enviada (a antiga tela `localizacao` — Matriz/Quiosque/parceiros) · 🤝 Consignação
+Recebida (**NOVA** — moto de terceiro que a loja recebe pra vender). Tabela `consignacoes` (migração
+`consignacoes_recebidas_base`, RLS `tem_modulo('localizacao')`). Fluxo: registrar (dono via `initClienteSearch` +
+moto + **itens que vieram junto** `_CONSIGR_ITENS_PADRAO` + valores) → lista de cards → atalho **"Vender"**
+(`_consigrVender`/`_consigrConfirmarVenda`: gera **conta a receber** do comprador + **repasse a pagar** ao dono +
+**comissão** do vendedor — modelo PASSAGEM, sem `pdv_pedido`/DRE) → **Devolver**. **Margem escondida pros
+vendedores** (`.js-custo`; repasse e preço de venda ficam visíveis). Dashboard (`renderConsigDashboard`) resume as
+duas pontas. Funções no bloco após `_locAbrirLancamentoConsignacao`. Piloto Andrisa/Alessandro migrado pra tabela
+nova (Harley 16 Preta disponível). Ordem do menu: Vendas · Consignação · Afiliados · Compra Programada · Produtos ·
+Operação · Financeiro · Relatórios · CRM. **PENDENTES (pedidos do dono):** 📸 foto (upload/câmera no registro) · 🛒
+**venda pelo PDV** (fluxo que os vendedores usam) · 🔗 vitrine pública (link WhatsApp com as consignadas + foto/
+preço, sem margem/repasse/dono). Detalhe vivo em `_memoria/tarefa-atual.md`. Validado no localhost (sintaxe +
+chrome-devtools: menu, sub-abas, dashboard, modais, bloqueio de margem). **✅ commit + push → GitHub Pages.**
+
+### 2026-07-11 — Comissão automática de vendedor (Contas a Pagar por gatilho)
+Pedido do dono: a cada venda, acumular R$100 de comissão por vendedor no Contas a Pagar, vencendo dia 5 do
+mês seguinte, pra pagar todos de uma vez. Feito **100% no banco** (trigger em `pdv_pedidos` +
+`pdv_itens_pedido` → `fn_recalc_comissao_vendedor`, idempotente, trava se pago). R$100 × nº de scooters
+(acessório não conta), por data da venda, sem afiliado/cancelado. Backfill julho: Michelle 300, Rafael 200
+(venc 05/08). Validado E2E (venda/cancelamento/reativação/exclusão/acessório) via MCP, dados de teste
+apagados. O front não mudou (as contas aparecem no Contas a Pagar). Ver seção **"Comissão automática de
+vendedor interno"**. Migrações `comissao_vendedor_automatica` + `comissao_vendedor_revoke_execute`.
 
 ### 2026-07-10 — Módulo Compra Programada no ar
 Módulo novo (item próprio na sidebar) pro cliente juntar crédito aos poucos até retirar a scooter,

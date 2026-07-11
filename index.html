@@ -3595,16 +3595,44 @@ select:not(.input-pro):not(.search-input){
 
     <!-- ══════════════ LOCALIZAÇÃO ══════════════ -->
   <div class="page content" id="page-localizacao">
-    <!-- Header -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
-      <div>
-        <div style="font-size:13px;font-weight:700;">Consignação &amp; Estoque</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="loc-sub">—</div>
-      </div>
-      <button class="btn btn-gold" onclick="abrirRegistroMotoModal()">+ Enviar moto</button>
+    <!-- Sub-abas: Dashboard · Consignação Enviada · Consignação Recebida -->
+    <div class="fin-tabs" style="margin-bottom:20px;">
+      <button class="fin-tab-btn active" data-consigtab="dashboard" onclick="switchConsigTab('dashboard')">📊 Dashboard</button>
+      <button class="fin-tab-btn"        data-consigtab="enviada"   onclick="switchConsigTab('enviada')">📤 Consignação Enviada</button>
+      <button class="fin-tab-btn"        data-consigtab="recebida"  onclick="switchConsigTab('recebida')">🤝 Consignação Recebida</button>
     </div>
-    <div id="loc-lista">
-      <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+
+    <!-- ABA: Dashboard (resumo das duas pontas) -->
+    <div class="fin-tab-content" id="consig-tab-dashboard">
+      <div id="consig-dash"><div class="empty" style="padding:24px;font-size:11px;">Carregando...</div></div>
+    </div>
+
+    <!-- ABA: Consignação Enviada (Matriz / Quiosque / parceiros) -->
+    <div class="fin-tab-content" id="consig-tab-enviada" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;">📤 Consignação Enviada</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="loc-sub">—</div>
+        </div>
+        <button class="btn btn-gold" onclick="abrirRegistroMotoModal()">+ Enviar moto</button>
+      </div>
+      <div id="loc-lista">
+        <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+      </div>
+    </div>
+
+    <!-- ABA: Consignação Recebida (moto de terceiro que a loja recebe pra vender) -->
+    <div class="fin-tab-content" id="consig-tab-recebida" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;">🤝 Consignação Recebida</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="consigr-sub">Motos de terceiros que você recebeu pra vender</div>
+        </div>
+        <button class="btn btn-gold" onclick="abrirReceberConsignacaoModal()">+ Receber moto consignada</button>
+      </div>
+      <div id="consigr-lista">
+        <div class="empty" style="padding:24px;font-size:11px;">Carregando...</div>
+      </div>
     </div>
   </div>
 
@@ -4356,7 +4384,7 @@ const pageMeta={
   precos:['Preços & Margens','Gerencie preços e veja margens de contribuição'],
   vendas:['Vendas do Mês','Importe o relatório do Tiny ERP e veja a margem líquida real'],
   estoque:['Cadastros','Produtos e estoque — controle próprio'],
-  localizacao:['Consignação & Estoque','Onde está cada moto — matriz, quiosque e parceiros'],
+  localizacao:['Consignação','Enviada, recebida e o resumo geral das duas pontas'],
   pedidos:['Pedidos','Lista unificada de pedidos — Tiny e PDV no mesmo lugar'],
   oficina:['Oficina','Ordens de serviço — inclui itens de pós-venda que estão na loja'],
   sac:['SAC','Atendimento pós-venda, garantias e contatos com fornecedores'],
@@ -4385,7 +4413,7 @@ const BREADCRUMB_MAP = {
   pedidos:         ['Vendas', 'Pedidos'],
   vendas:          ['Vendas', 'Vendas do Mês'],
   estoque:         ['Produtos', 'Cadastros'],
-  localizacao:     ['Produtos', 'Consignação & Estoque'],
+  localizacao:     ['Consignação'],
   precos:          ['Produtos', 'Preços & Margens'],
   oficina:         ['Operação', 'Oficina'],
   sac:             ['Operação', 'SAC'],
@@ -9556,13 +9584,13 @@ const NAV_TREE = [
       { id:'clientes',        label:'Clientes',       icon:'ic-users'        },
       { id:'contratos',       label:'Contrato',       icon:'ic-file-text'    },
   ]},
-  { kind:'group', label:'Produtos',   icon:'ic-store', children:[
-      { id:'estoque',         label:'Cadastros',          icon:'ic-store'   },
-      { id:'localizacao',     label:'Consignação & Estoque', icon:'ic-package' },
-      { id:'custos-produtos', label:'Custos de Produtos', icon:'ic-tag'     },
-  ]},
+  { kind:'solo', id:'localizacao', label:'Consignação', icon:'ic-package' },
   { kind:'solo', id:'afiliados', label:'Afiliados', icon:'ic-users' },
   { kind:'solo', id:'compra-programada', label:'Compra Programada', icon:'ic-trending-up', destaque:true },
+  { kind:'group', label:'Produtos',   icon:'ic-store', children:[
+      { id:'estoque',         label:'Cadastros',          icon:'ic-store'   },
+      { id:'custos-produtos', label:'Custos de Produtos', icon:'ic-tag'     },
+  ]},
   { kind:'group', label:'Operação',   icon:'ic-wrench', children:[
       { id:'posvenda', label:'Pós-venda / SAC', icon:'ic-phone',  dotId:'dot-sac' },
       { id:'oficina',  label:'Oficina',   icon:'ic-wrench' },
@@ -21339,6 +21367,13 @@ let _locProdutoSel      = null; // produto escolhido no modal de registro (item 
 let _locVendaId         = null; // id da unidade no modal de venda
 let _locPagarId         = null; // id da unidade no modal de pagamento
 let _locAbertos = (() => { try { return new Set(JSON.parse(localStorage.getItem('sm_loc_abertos') || '[]')); } catch (e) { return new Set(); } })(); // blocos expandidos (acordeão); default tudo fechado
+// ── Consignação RECEBIDA (Lado B) — motos de terceiro que a loja recebe pra vender (tabela `consignacoes`)
+let consignacoesRecebidas = [];   // registros carregados
+let _consigrModelos       = [];   // modelos scooter do catálogo (select do registro)
+let _consigrVendedores    = [];   // vendedores ativos (select do registro)
+let _consigrDonos         = {};   // mapa id→nome do dono/consignante (pra listagem)
+let _consigrEditId        = null; // id em edição no modal (null = novo registro)
+let _consigrVendaId       = null; // id da consignação no modal de venda (Fase 3)
 let _pdvUsuariosCache   = null; // [{id,nome,email,perfil}] — alimenta o select do modal
 // Sets de IDs que têm pedidos vinculados — usados pra esconder o botão
 // "Excluir" quando o registro está referenciado. Recarregam a cada init.
@@ -22008,6 +22043,8 @@ async function initLocalizacao() {
   _locParceiros   = (!pRes.error && pRes.data) ? toCamelArr(pRes.data) : [];
   _locProdutos    = (!prRes.error && prRes.data) ? prRes.data : [];
   renderLocalizacao();
+  await initConsignacaoRecebida();   // Lado B — consignação recebida (tabela `consignacoes`)
+  _consigAplicarAba();               // sub-abas: Dashboard | Enviada | Recebida
 }
 
 // Dias parados no parceiro: hoje − data_entrada (data do envio). Acima de
@@ -22689,6 +22726,425 @@ function _locAbrirLancamentoConsignacao(valor, data, nomeParceiro, motoNome) {
   setV('lan-data', data);
   setV('lan-descricao', 'Recebimento consignação · ' + nomeParceiro + ' · ' + motoNome);
   if (typeof popularLanCategorias === 'function') popularLanCategorias('entrada', 'Recebimento Consignação', true);
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONSIGNAÇÃO RECEBIDA (Lado B) — moto de terceiro que a loja
+// recebe pra vender. Tabela `consignacoes`. NÃO mistura com o
+// estoque próprio: fica marcada "consignada" (dono = consignante,
+// custo = repasse). A venda (Fase 3) gera o pedido no PDV com a
+// margem certa + o repasse a pagar + a comissão do vendedor.
+// ═══════════════════════════════════════════════════════════
+const _CONSIGR_ITENS_PADRAO = ['Carregador', 'Chave reserva', 'Manual / documentos', 'Capa de chuva', 'Kit de ferramentas'];
+
+async function initConsignacaoRecebida() {
+  const [cRes, mRes, vRes] = await Promise.all([
+    sb.from('consignacoes').select('*').order('created_at', { ascending: false }),
+    sb.from('produtos_precos').select('id,modelo,venda,custo,categoria').eq('ativo', true).eq('categoria', 'scooter').order('modelo'),
+    sb.from('pdv_vendedores').select('id,nome,comissao_moto').eq('ativo', true).order('nome'),
+  ]);
+  if (cRes.error) console.warn('[consignr] consignacoes:', cRes.error.message);
+  consignacoesRecebidas = (!cRes.error && cRes.data) ? toCamelArr(cRes.data) : [];
+  _consigrModelos    = (!mRes.error && mRes.data) ? mRes.data : [];
+  _consigrVendedores = (!vRes.error && vRes.data) ? vRes.data : [];
+  // Nomes dos donos p/ a listagem (sem depender do clientesAll estar carregado).
+  const donoIds = [...new Set(consignacoesRecebidas.map(c => c.consignanteClienteId).filter(Boolean))];
+  if (donoIds.length) {
+    const { data: dd } = await sb.from('clientes').select('id,nome').in('id', donoIds);
+    _consigrDonos = {}; (dd || []).forEach(d => { _consigrDonos[d.id] = d.nome; });
+  }
+  renderConsignacaoRecebida();
+}
+
+function _consigrNomeDono(c) { return _consigrDonos[c.consignanteClienteId] || 'dono'; }
+
+function renderConsignacaoRecebida() {
+  const cont = document.getElementById('consigr-lista');
+  const sub  = document.getElementById('consigr-sub');
+  if (!cont) return;
+  const arr = consignacoesRecebidas || [];
+  const disp = arr.filter(c => c.status === 'disponivel');
+  const vend = arr.filter(c => c.status === 'vendida');
+  const dev  = arr.filter(c => c.status === 'devolvida');
+  if (sub) sub.textContent = arr.length
+    ? `${disp.length} disponível(is) · ${vend.length} vendida(s) · ${dev.length} devolvida(s)`
+    : 'Motos de terceiros que você recebeu pra vender';
+  if (!arr.length) {
+    cont.innerHTML = `<div class="empty" style="padding:24px;font-size:11px;">Nenhuma moto em consignação recebida. Clique em "+ Receber moto consignada" pra registrar a primeira.</div>`;
+    return;
+  }
+  const ordem = { disponivel: 0, vendida: 1, devolvida: 2 };
+  const lista = [...arr].sort((a, b) => (ordem[a.status] - ordem[b.status]));
+  cont.innerHTML = lista.map(_consigrCard).join('');
+}
+
+function _consigrCard(c) {
+  const badge = c.status === 'disponivel'
+      ? '<span class="badge badge-green">Disponível</span>'
+      : c.status === 'vendida'
+        ? '<span class="badge" style="background:rgba(245,197,24,.18);color:#f5c518;">Vendida</span>'
+        : '<span class="badge" style="background:var(--bg3,#222);color:var(--text3);">Devolvida</span>';
+  const itens = Array.isArray(c.itensAcompanham) ? c.itensAcompanham.filter(i => i && i.ok).map(i => i.item) : [];
+  const itensTxt = itens.length ? itens.join(' · ') : '—';
+  const margem = (Number(c.precoVenda) || 0) - (Number(c.valorRepasse) || 0) - (Number(c.comissaoVendedor) || 0);
+  const acoes = c.status === 'disponivel'
+    ? `<button class="btn btn-gold" style="font-size:11px;padding:5px 12px;" onclick="_consigrVender('${c.id}')">Vender</button>
+       <button class="btn" style="font-size:11px;padding:5px 12px;" onclick="_consigrDevolver('${c.id}')">Devolver</button>
+       <button class="btn" style="font-size:11px;padding:5px 10px;" onclick="abrirReceberConsignacaoModal('${c.id}')">Editar</button>`
+    : `<button class="btn" style="font-size:11px;padding:5px 10px;" onclick="_consigrExcluir('${c.id}')" title="Remover registro">🗑️</button>`;
+  return `<div class="card" style="padding:14px 16px;margin-bottom:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+      <div>
+        <div style="font-weight:700;font-size:13px;">${escHtml(c.produtoNome || 'moto')}${c.cor ? ' · ' + escHtml(c.cor) : ''} ${badge}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:3px;">Dono: <strong>${escHtml(_consigrNomeDono(c))}</strong>${c.chassi ? ' · chassi ' + escHtml(c.chassi) : ''}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">📦 Veio junto: ${escHtml(itensTxt)}</div>
+      </div>
+      <div style="text-align:right;font-size:11px;min-width:150px;">
+        <div>Repasse ao dono: <strong>${_fmtBRMoney(c.valorRepasse)}</strong></div>
+        <div>Preço de venda: <strong>${_fmtBRMoney(c.precoVenda)}</strong></div>
+        <div class="js-custo" style="color:var(--green);">Sua margem: <strong>${_fmtBRMoney(margem)}</strong></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap;">${acoes}</div>
+  </div>`;
+}
+
+function _consigrItensChecklist(sel) {
+  const marc = new Set((sel || []).map(String));
+  return _CONSIGR_ITENS_PADRAO.map(it =>
+    `<label style="display:inline-flex;align-items:center;gap:6px;font-size:11px;margin:2px 12px 2px 0;cursor:pointer;">
+       <input type="checkbox" class="consigr-item-chk" value="${escHtml(it)}"${marc.has(it) ? ' checked' : ''}> ${escHtml(it)}
+     </label>`).join('');
+}
+
+function _consigrModalShell(titulo, bodyHtml, btnLabel, onSalvar, width) {
+  const old = document.getElementById('consigr-modal'); if (old) old.remove();
+  const shell = document.createElement('div');
+  shell.id = 'consigr-modal';
+  shell.className = 'modal-overlay open';
+  shell.innerHTML = `<div class="modal" style="width:${width||600}px;max-width:95vw;">
+      <div class="modal-title">${titulo}</div>
+      <div id="consigr-modal-body" style="max-height:70vh;overflow:auto;">${bodyHtml}</div>
+      <div class="modal-actions">
+        <button class="btn" onclick="document.getElementById('consigr-modal').remove();">Cancelar</button>
+        <button class="btn btn-gold" id="consigr-modal-ok">${btnLabel||'Salvar'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+  document.getElementById('consigr-modal-ok').onclick = onSalvar;
+  return shell;
+}
+
+function abrirReceberConsignacaoModal(editId) {
+  _consigrEditId = editId || null;
+  const c = editId ? (consignacoesRecebidas || []).find(x => String(x.id) === String(editId)) : null;
+  const modelosOpt = (_consigrModelos || []).map(m =>
+    `<option value="${m.id}" data-venda="${Number(m.venda||0)}"${c && c.produtoPrecosId===m.id ? ' selected' : ''}>${escHtml(m.modelo)}</option>`).join('');
+  const vendOpt = `<option value="">— Venda direta (sem comissão) —</option>` + (_consigrVendedores || [])
+    .filter(v => (Number(v.comissao_moto) || 0) > 0)
+    .map(v => `<option value="${v.id}"${c && c.vendedorId===v.id ? ' selected' : ''}>${escHtml(v.nome)}</option>`).join('');
+  const itensSel = (c && Array.isArray(c.itensAcompanham)) ? c.itensAcompanham.filter(i => i && i.ok).map(i => i.item) : ['Carregador'];
+  const itensExtra = (c && Array.isArray(c.itensAcompanham))
+    ? c.itensAcompanham.filter(i => i && i.ok && !_CONSIGR_ITENS_PADRAO.includes(i.item)).map(i => i.item).join(', ') : '';
+
+  const body =
+    `<div class="form-grid">
+       <div class="form-group full"><label>Dono da moto (quem deixou em consignação)</label><div id="consigr-cli-search"></div>
+         <div style="font-size:10px;color:var(--text3);margin-top:4px;">Não achou? Digite o nome e clique em "+ Cadastrar este cliente".</div></div>
+       <div class="form-group full"><label>Modelo</label>
+         <select class="form-input" id="consigr-modelo" onchange="_consigrModeloChg()"><option value="">— Escolha o modelo —</option>${modelosOpt}</select></div>
+       <div class="form-group"><label>Cor</label><input class="form-input" id="consigr-cor" value="${c ? escHtml(c.cor||'') : ''}" placeholder="Ex.: Preta"></div>
+       <div class="form-group"><label>Chassi</label><input class="form-input" id="consigr-chassi" value="${c ? escHtml(c.chassi||'') : ''}" placeholder="Nº do chassi" style="text-transform:uppercase;"></div>
+       <div class="form-group"><label>Motor</label><input class="form-input" id="consigr-motor" value="${c ? escHtml(c.motor||'') : ''}" placeholder="Ex.: 1000W"></div>
+       <div class="form-group"><label>Fabricante</label><input class="form-input" id="consigr-fabricante" value="${c ? escHtml(c.fabricante||'') : ''}" placeholder="Ex.: HAO"></div>
+       <div class="form-group"><label>Ano</label><input class="form-input" id="consigr-ano" value="${c ? escHtml(c.ano||'') : ''}" placeholder="Ex.: 2025"></div>
+       <div class="form-group"><label>Estado</label>
+         <select class="form-input" id="consigr-estado"><option value="">—</option>
+           <option value="nova"${c&&c.estado==='nova'?' selected':''}>Nova</option>
+           <option value="usada"${c&&c.estado==='usada'?' selected':''}>Usada</option></select></div>
+       <div class="form-group full"><label>📦 Itens que vieram junto</label>
+         <div style="margin-top:4px;">${_consigrItensChecklist(itensSel)}</div>
+         <input class="form-input" id="consigr-item-extra" placeholder="Outro item (opcional) — ex.: bateria extra" style="margin-top:8px;font-size:11px;" value="${escHtml(itensExtra)}"></div>
+       <div class="form-group"><label>Repasse ao dono (R$)</label><input class="form-input" id="consigr-repasse" type="number" step="0.01" value="${c ? (c.valorRepasse??'') : ''}" placeholder="0,00"></div>
+       <div class="form-group"><label>Preço de venda (R$)</label><input class="form-input" id="consigr-preco" type="number" step="0.01" value="${c ? (c.precoVenda??'') : ''}" placeholder="0,00"></div>
+       <div class="form-group"><label>Comissão do vendedor (R$)</label><input class="form-input" id="consigr-comissao" type="number" step="0.01" value="${c ? (c.comissaoVendedor??100) : 100}"></div>
+       <div class="form-group"><label>Vendedor</label><select class="form-input" id="consigr-vendedor">${vendOpt}</select></div>
+       <div class="form-group full"><label>Garantia (opcional)</label><input class="form-input" id="consigr-garantia" value="${c ? escHtml(c.garantia||'') : ''}" placeholder="Ex.: 3 meses bateria/módulo/motor"></div>
+       <div class="form-group full"><label>Observação (opcional)</label><input class="form-input" id="consigr-obs" value="${c ? escHtml(c.observacao||'') : ''}" placeholder="Anotações da consignação"></div>
+       <div class="form-group full js-custo" id="consigr-margem-preview" style="font-size:11px;color:var(--text3);"></div>
+     </div>`;
+  _consigrModalShell(editId ? 'Editar <span>consignação</span>' : 'Receber <span>moto consignada</span>', body, editId ? 'Salvar' : 'Registrar', _consigrSalvar, 640);
+  initClienteSearch('consigr-cli-search', { placeholder: 'Buscar dono por nome, telefone ou CPF' });
+  if (c && c.consignanteClienteId && typeof clienteSearchSet === 'function') clienteSearchSet('consigr-cli-search', { clienteId: c.consignanteClienteId }, false);
+  ['consigr-repasse','consigr-preco','consigr-comissao'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', _consigrMargemPreview); });
+  _consigrMargemPreview();
+}
+
+function _consigrModeloChg() {
+  const sel = document.getElementById('consigr-modelo');
+  const opt = sel && sel.options[sel.selectedIndex];
+  const venda = opt ? Number(opt.getAttribute('data-venda') || 0) : 0;
+  const precoEl = document.getElementById('consigr-preco');
+  if (venda && precoEl && !precoEl.value) precoEl.value = venda;
+  _consigrMargemPreview();
+}
+
+function _consigrMargemPreview() {
+  const rep = Number(document.getElementById('consigr-repasse')?.value || 0);
+  const pre = Number(document.getElementById('consigr-preco')?.value || 0);
+  const com = Number(document.getElementById('consigr-comissao')?.value || 0);
+  const box = document.getElementById('consigr-margem-preview');
+  if (!box) return;
+  const m = pre - rep - com;
+  box.innerHTML = `Sua margem estimada: <strong style="color:${m<0?'var(--red)':'var(--green)'};">${_fmtBRMoney(m)}</strong> <span style="color:var(--text3);">(venda − repasse − comissão)</span>`;
+}
+
+function _consigrColetaItens() {
+  const marc = _CONSIGR_ITENS_PADRAO.map(it => ({ item: it, ok: false }));
+  document.querySelectorAll('.consigr-item-chk').forEach(chk => {
+    const found = marc.find(m => m.item === chk.value);
+    if (found) found.ok = chk.checked;
+  });
+  const extra = (document.getElementById('consigr-item-extra')?.value || '').trim();
+  if (extra) extra.split(',').map(s => s.trim()).filter(Boolean).forEach(it => marc.push({ item: it, ok: true }));
+  return marc;
+}
+
+async function _consigrSalvar() {
+  const btn = document.getElementById('consigr-modal-ok');
+  const sel = clienteSearchGet('consigr-cli-search');
+  if (!sel || sel.tipo !== 'cliente') return smAlert('Selecione o dono da moto (cliente cadastrado). Se não existir, cadastre pelo "+ Cadastrar este cliente".');
+  const modeloId = document.getElementById('consigr-modelo').value || null;
+  if (!modeloId) return smAlert('Escolha o modelo da moto.');
+  const modelo = (_consigrModelos || []).find(m => String(m.id) === String(modeloId));
+  const repasse = Number(document.getElementById('consigr-repasse').value || 0);
+  const preco   = Number(document.getElementById('consigr-preco').value || 0);
+  if (!(repasse > 0)) return smAlert('Informe o valor de repasse ao dono.');
+  if (!(preco > 0))   return smAlert('Informe o preço de venda.');
+
+  const payload = {
+    consignante_cliente_id: sel.clienteId,
+    produto_precos_id: modeloId,
+    produto_nome: modelo ? modelo.modelo : null,
+    cor: (document.getElementById('consigr-cor').value || '').trim() || null,
+    chassi: (document.getElementById('consigr-chassi').value || '').trim().toUpperCase() || null,
+    motor: (document.getElementById('consigr-motor').value || '').trim() || null,
+    fabricante: (document.getElementById('consigr-fabricante').value || '').trim() || null,
+    ano: (document.getElementById('consigr-ano').value || '').trim() || null,
+    estado: document.getElementById('consigr-estado').value || null,
+    itens_acompanham: _consigrColetaItens(),
+    valor_repasse: repasse,
+    preco_venda: preco,
+    comissao_vendedor: Number(document.getElementById('consigr-comissao').value || 0),
+    vendedor_id: document.getElementById('consigr-vendedor').value || null,
+    garantia: (document.getElementById('consigr-garantia').value || '').trim() || null,
+    observacao: (document.getElementById('consigr-obs').value || '').trim() || null,
+    atualizado_em: new Date().toISOString(),
+  };
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    if (_consigrEditId) {
+      const { error } = await sb.from('consignacoes').update(payload).eq('id', _consigrEditId);
+      if (error) throw error;
+    } else {
+      const { error } = await sb.from('consignacoes').insert(payload);
+      if (error) throw error;
+    }
+    const m = document.getElementById('consigr-modal'); if (m) m.remove();
+    await initConsignacaoRecebida();
+    if (typeof smToast === 'function') smToast('✅ Consignação registrada.');
+  } catch (e) {
+    smAlert(e.code === '23505' ? 'Já existe uma moto disponível com esse chassi.' : 'Erro ao salvar: ' + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = _consigrEditId ? 'Salvar' : 'Registrar'; }
+  }
+}
+
+async function _consigrDevolver(id) {
+  const c = (consignacoesRecebidas || []).find(x => String(x.id) === String(id));
+  if (!c) return;
+  const ok = await smConfirm(`Devolver "${c.produtoNome || 'moto'}" pro dono (${_consigrNomeDono(c)})?\n\nA moto sai da lista de disponíveis (não foi vendida). Confira que os itens que vieram junto voltam com ela.`);
+  if (!ok) return;
+  const { error } = await sb.from('consignacoes').update({ status: 'devolvida', data_devolucao: _locHojeISO(), atualizado_em: new Date().toISOString() }).eq('id', id);
+  if (error) { smAlert('Erro ao devolver: ' + error.message); return; }
+  await initConsignacaoRecebida();
+}
+
+async function _consigrExcluir(id) {
+  const ok = await smConfirm('Remover este registro de consignação? (só apaga o registro — use pra corrigir um cadastro errado)');
+  if (!ok) return;
+  const { error } = await sb.from('consignacoes').delete().eq('id', id);
+  if (error) { smAlert('Erro ao remover: ' + error.message); return; }
+  await initConsignacaoRecebida();
+}
+
+function _consigrVender(id) {
+  const c = (consignacoesRecebidas || []).find(x => String(x.id) === String(id));
+  if (!c) return;
+  _consigrVendaId = id;
+  const margem = (Number(c.precoVenda)||0) - (Number(c.valorRepasse)||0) - (Number(c.comissaoVendedor)||0);
+  const vendNome = (_consigrVendedores || []).find(v => String(v.id) === String(c.vendedorId));
+  const body =
+    `<div style="font-size:11px;color:var(--text3);margin-bottom:12px;padding:10px 12px;background:var(--bg2);border-radius:8px;">
+       <strong>${escHtml(c.produtoNome||'moto')}${c.cor?' · '+escHtml(c.cor):''}</strong>${c.chassi?' · chassi '+escHtml(c.chassi):''}<br>
+       Dono: ${escHtml(_consigrNomeDono(c))} · Repasse ${_fmtBRMoney(c.valorRepasse)}${vendNome?' · Vendedor: '+escHtml(vendNome.nome):''}<span class="js-custo"> · Sua margem ${_fmtBRMoney(margem)}</span>
+     </div>
+     <div class="form-grid">
+       <div class="form-group full"><label>Comprador</label><div id="consigr-venda-cli"></div>
+         <div style="font-size:10px;color:var(--text3);margin-top:4px;">Não achou? Digite o nome e clique em "+ Cadastrar este cliente".</div></div>
+       <div class="form-group"><label>Valor da venda (R$)</label><input class="form-input" id="consigr-venda-valor" type="number" step="0.01" value="${c.precoVenda??''}"></div>
+       <div class="form-group"><label>Data da venda</label><input class="form-input" id="consigr-venda-data" type="date" value="${_locHojeISO()}"></div>
+       <div class="form-group full"><label>Forma de pagamento</label>
+         <select class="form-input" id="consigr-venda-forma">
+           <option value="dinheiro">Dinheiro</option><option value="pix">Pix</option>
+           <option value="cartao">Cartão</option><option value="transferencia">Transferência</option>
+         </select></div>
+     </div>
+     <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.5;">Ao confirmar eu gero no financeiro: <strong>conta a receber</strong> do comprador${(Number(c.valorRepasse)||0)>0?' · <strong>conta a pagar</strong> do repasse ao dono':''}${(c.vendedorId&&(Number(c.comissaoVendedor)||0)>0)?' · <strong>comissão</strong> do vendedor (venc. dia 5)':''}. Você marca recebido/pago quando o dinheiro girar.</div>`;
+  _consigrModalShell('Vender <span>consignada</span>', body, 'Confirmar venda', _consigrConfirmarVenda, 560);
+  initClienteSearch('consigr-venda-cli', { placeholder: 'Buscar comprador por nome, telefone ou CPF' });
+}
+
+async function _consigrConfirmarVenda() {
+  const btn = document.getElementById('consigr-modal-ok');
+  const id = _consigrVendaId;
+  const c = (consignacoesRecebidas || []).find(x => String(x.id) === String(id));
+  if (!c) return;
+  const sel = clienteSearchGet('consigr-venda-cli');
+  if (!sel || sel.tipo !== 'cliente') return smAlert('Selecione o comprador (cliente cadastrado). Se não existir, cadastre pelo "+ Cadastrar este cliente".');
+  const valor = Number(document.getElementById('consigr-venda-valor').value || 0);
+  const data  = document.getElementById('consigr-venda-data').value || _locHojeISO();
+  const forma = document.getElementById('consigr-venda-forma').value || 'dinheiro';
+  if (!(valor > 0)) return smAlert('Informe o valor da venda.');
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    const repasse  = Number(c.valorRepasse) || 0;
+    const comissao = Number(c.comissaoVendedor) || 0;
+    const donoNome = _consigrNomeDono(c);
+    const moto = (c.produtoNome || 'moto') + (c.cor ? ' ' + c.cor : '');
+    // dia 5 do mês seguinte à venda (sem Date, TZ-safe)
+    const [vy, vm] = data.split('-').map(Number);
+    const venc5 = `${vm===12?vy+1:vy}-${String(vm===12?1:vm+1).padStart(2,'0')}-05`;
+    const comp = data.slice(0, 7);
+
+    // 1) conta a RECEBER do comprador
+    const crId = `consigr-${id}-receber`;
+    const r1 = await sb.from('contas_receber').insert({
+      id: crId, descricao: `Venda consignada · ${moto} (${sel.cliente.nome})`,
+      cliente_id: sel.clienteId, valor, vencimento: data, status: 'pendente', categoria: 'Consignação', avisar: 0,
+      observacao: `Consignacao recebida (dono ${donoNome}). Forma: ${forma}. Repasse ao dono ${_fmtBRMoney(repasse)}.`,
+    });
+    if (r1.error && r1.error.code !== '23505') throw r1.error;
+
+    // 2) conta a PAGAR do repasse ao dono
+    let cpRepId = null;
+    if (repasse > 0) {
+      cpRepId = `consigr-${id}-repasse`;
+      const r2 = await sb.from('contas_pagar').insert({
+        id: cpRepId, descricao: `Repasse consignacao · ${donoNome} (${moto})`,
+        valor: repasse, vencimento: data, categoria: 'Consignação', status: 'pendente',
+        beneficiario: donoNome, avisar: 1,
+        observacao: `Repasse ao dono da moto consignada vendida pra ${sel.cliente.nome}.`,
+      });
+      if (r2.error && r2.error.code !== '23505') throw r2.error;
+    }
+
+    // 3) COMISSÃO do vendedor (conta a pagar, dia 5) — consignação não é pdv_pedido, então é lançada à parte
+    if (c.vendedorId && comissao > 0) {
+      const vend = (_consigrVendedores || []).find(v => String(v.id) === String(c.vendedorId));
+      const r3 = await sb.from('contas_pagar').insert({
+        id: `consigr-${id}-comissao`, descricao: `Comissao de venda · ${vend?vend.nome:'vendedor'} · ${moto} (consignada)`,
+        valor: comissao, vencimento: venc5, categoria: 'Comissão de Vendas', status: 'pendente',
+        beneficiario: vend?vend.nome:'vendedor', comissao_competencia: comp, avisar: 3,
+        observacao: `Comissao da venda de consignacao recebida. Competencia ${comp}.`,
+      });
+      if (r3.error && r3.error.code !== '23505') throw r3.error;
+    }
+
+    // 4) marca a consignação VENDIDA
+    const { error } = await sb.from('consignacoes').update({
+      status: 'vendida', comprador_cliente_id: sel.clienteId, valor_venda: valor,
+      data_venda: data, forma_pagamento: { forma }, conta_receber_id: crId, conta_pagar_repasse_id: cpRepId,
+      atualizado_em: new Date().toISOString(),
+    }).eq('id', id);
+    if (error) throw error;
+
+    const m = document.getElementById('consigr-modal'); if (m) m.remove();
+    await initConsignacaoRecebida();
+    if (typeof smToast === 'function') smToast('✅ Venda registrada. Contas geradas no financeiro.');
+  } catch (e) {
+    smAlert('Erro ao registrar venda: ' + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar venda'; }
+  }
+}
+
+// ── Sub-abas da tela Consignação (Dashboard · Enviada · Recebida) ──
+function switchConsigTab(tab) {
+  if (!['dashboard','enviada','recebida'].includes(tab)) tab = 'dashboard';
+  ['dashboard','enviada','recebida'].forEach(t => {
+    const pane = document.getElementById('consig-tab-' + t);
+    if (pane) pane.style.display = (t === tab) ? '' : 'none';
+    const btn = document.querySelector('[data-consigtab="' + t + '"]');
+    if (btn) btn.classList.toggle('active', t === tab);
+  });
+  if (tab === 'dashboard') renderConsigDashboard();
+  try { localStorage.setItem('sm_consig_tab', tab); } catch (e) {}
+}
+
+function _consigAplicarAba() {
+  let aba = 'dashboard';
+  try { aba = localStorage.getItem('sm_consig_tab') || 'dashboard'; } catch (e) {}
+  switchConsigTab(aba);
+}
+
+function _consigKpi(label, value, change, valColor, borderColor, cls) {
+  const v = (typeof value === 'number') ? value : escHtml(String(value));
+  return `<div class="kpi${cls ? ' ' + cls : ''}"${borderColor ? ` style="border-top:2px solid ${borderColor};"` : ''}>
+    <div class="kpi-label">${escHtml(label)}</div>
+    <div class="kpi-value"${valColor ? ` style="color:${valColor};"` : ''}>${v}</div>
+    <div class="kpi-change">${escHtml(change || '')}</div>
+  </div>`;
+}
+
+// Dashboard: feedback das duas pontas (enviada + recebida).
+function renderConsigDashboard() {
+  const box = document.getElementById('consig-dash');
+  if (!box) return;
+  const un = estoqueUnidades || [];
+  const naPosse  = un.filter(u => u.status === 'no_parceiro');
+  const aReceber = un.filter(u => u.status === 'vendida' && !u.pago);
+  const aReceberVal = aReceber.reduce((s, u) => s + (Number(u.precoVenda) || 0), 0);
+  const scootMatriz = (_locProdutos || []).filter(p => p.categoria === 'scooter').reduce((s, p) => s + (Number(p.estoque) || 0), 0);
+  const cr = consignacoesRecebidas || [];
+  const crDisp = cr.filter(c => c.status === 'disponivel');
+  const crVend = cr.filter(c => c.status === 'vendida');
+  const crDev  = cr.filter(c => c.status === 'devolvida');
+  const crPotencial = crDisp.reduce((s, c) => s + (Number(c.precoVenda) || 0), 0);
+  const crRepasse   = crDisp.reduce((s, c) => s + (Number(c.valorRepasse) || 0), 0);
+  const crMargem    = crDisp.reduce((s, c) => s + ((Number(c.precoVenda) || 0) - (Number(c.valorRepasse) || 0) - (Number(c.comissaoVendedor) || 0)), 0);
+
+  const grid = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;';
+  const semNada = !un.length && !cr.length;
+  box.innerHTML =
+    `<div style="font-size:12px;font-weight:700;color:var(--text2);margin:2px 0 10px;">📤 Consignação Enviada</div>
+     <div style="${grid}margin-bottom:22px;">
+       ${_consigKpi('Scooters na Matriz', scootMatriz, 'em estoque na loja', '', 'var(--gold)')}
+       ${_consigKpi('Enviadas (na posse)', naPosse.length, 'em parceiros/quiosque', '', 'var(--gold)')}
+       ${_consigKpi('A receber de parceiros', aReceber.length, _fmtBRMoney(aReceberVal), 'var(--gold)', 'var(--gold)')}
+     </div>
+     <div style="font-size:12px;font-weight:700;color:var(--text2);margin:2px 0 10px;">🤝 Consignação Recebida</div>
+     <div style="${grid}">
+       ${_consigKpi('Disponíveis pra vender', crDisp.length, _fmtBRMoney(crPotencial) + ' em vendas', 'var(--green)', 'var(--green)')}
+       ${_consigKpi('A repassar aos donos', _fmtBRMoney(crRepasse), 'quando vender')}
+       ${_consigKpi('Margem potencial', _fmtBRMoney(crMargem), 'sua parte nas disponíveis', 'var(--green)', 'var(--green)', 'js-custo')}
+       ${_consigKpi('Vendidas', crVend.length, 'já negociadas')}
+       ${_consigKpi('Devolvidas', crDev.length, 'voltaram pro dono')}
+     </div>
+     ${semNada ? '<div class="empty" style="padding:20px;font-size:11px;margin-top:16px;">Sem movimento ainda. Use "Consignação Enviada" ou "Consignação Recebida" pra registrar a primeira moto.</div>' : ''}`;
 }
 
 // ═══════════════════════════════════════════════════════════
