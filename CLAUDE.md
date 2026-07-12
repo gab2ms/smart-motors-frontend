@@ -489,6 +489,25 @@ botão "+ Enviar moto". Inalterada (só migrou pra dentro da sub-aba). Funções
      marca vendida (WHERE disponivel) + gera repasse; a comissão vem pelo **trigger** do pdv_pedido. **DRE:**
      `calcularDRE` usa `custoConsig` (repasse) no lugar do custo do modelo → margem certa (ex. 8.000−7.000−100=900).
      Migração `pdv_itens_consignacao_vinculo`. **Venda normal do PDV 100% intacta** (validado).
+- **Pagamento/adiantamento ao dono (12/07/2026):** a dívida com o dono só nasce na VENDA — antes disso o
+  KPI do dashboard mostrava o repasse das disponíveis como se já fosse dívida. Agora: (1) tabela
+  `consignacoes_pagamentos` (migração `consignacoes_pagamentos_ao_dono`: consignacao_id FK cascade, valor,
+  data, forma, `no_caixa`, conta_id/conta_nome, `lancamento_id` FK→lancamentos, observacao; RLS
+  `tem_modulo('localizacao')`) guarda quanto já foi pago/adiantado ao dono. (2) Botão **"💵 Pagar ao dono"**
+  no card das **disponíveis** (`_consigrPagarDono`/`_consigrSalvarPagamentoDono`/`_consigrExcluirPagamentoDono`,
+  modal com histórico) — duas opções: **sai do caixa** (escolhe a conta → gera lançamento de saída categoria
+  'Consignação' + baixa saldo, padrão espelhado do pagamento de montagem) OU **só registrar** (pagou por
+  fora, não mexe no caixa). (3) Card mostra `Repasse · Já paguei · Falta`; `initConsignacaoRecebida` anexa
+  `c.adiantado` (soma) + `c.pagamentosDono` a cada consignação. (4) **Na venda (atalho E PDV), a conta a
+  pagar do repasse nasce só com o SALDO** (repasse − adiantado); se já quitou nos adiantamentos, não gera
+  conta. (5) Dashboard: **"A repassar aos donos"** passou a contar só as **vendidas** com saldo em aberto
+  (dívida real) + KPI novo **"Adiantado aos donos"** (pago por motos ainda não vendidas). (6) **DRE:**
+  `'Consignação'` entrou em `_DRE_CATEGORIAS_FORA_DESPESA` — o adiantamento/repasse sai do caixa (fluxo) mas
+  NÃO vira despesa (o custo já entra no CPV via `custo_consignacao` na venda pelo PDV), sem dupla contagem.
+  Validado E2E ao vivo (sessão do dono): adiantamento só-registro (não lança no caixa) e modo-caixa (lança +
+  baixa saldo + exclusão restaura ao centavo) na Harley piloto, card/dashboard/venda conferidos, **dados de
+  teste 100% revertidos** (saldo e adiantado voltaram ao original). O botão fica só nas disponíveis (depois
+  de vendida, o repasse já é conta a pagar — paga-se pelo Contas a Pagar).
 - **Vitrine pública** (link WhatsApp): Edge Function `consignados-publicos` (verify_jwt=false, service_role, expõe
   SÓ modelo/cor/specs/preço/foto — **NUNCA repasse/margem/dono/comprador**) + página `frontend/consignados.html`
   (dark/dourada, mobile-first, wa.me/5521997507738). Botão "🔗 Link da vitrine" (`_consigrCopiarLinkVitrine`) copia
@@ -504,6 +523,16 @@ botão "+ Enviar moto". Inalterada (só migrou pra dentro da sub-aba). Funções
   na sessão — proteção contra vender 2x = update WHERE status='disponivel'.
 
 ## Histórico de mudanças
+
+### 2026-07-12 — Consignação: pagamento/adiantamento ao dono + dashboard corrigido
+Sintoma do dono: o dashboard mostrava "R$ 7.000 a repassar" com a moto ainda **disponível** (não vendida) —
+a dívida com o dono só existe na venda. E ele precisava registrar quando **adianta parte do repasse antes de
+vender** (e, na venda, pagar só a diferença). Feito: tabela `consignacoes_pagamentos` (migração
+`consignacoes_pagamentos_ao_dono`), botão "💵 Pagar ao dono" nas disponíveis (sai do caixa OU só registro),
+card com `Repasse · Já paguei · Falta`, **venda cobra só o saldo** (repasse − adiantado, nos 2 caminhos),
+dashboard "A repassar" só das vendidas + KPI "Adiantado aos donos", e `'Consignação'` em
+`_DRE_CATEGORIAS_FORA_DESPESA` (sem dupla contagem). Detalhe na seção **"Consignação — Enviada e Recebida"** →
+"Pagamento/adiantamento ao dono". Validado E2E ao vivo (dados de teste revertidos ao centavo). **Aguarda push.**
 
 ### 2026-07-11 (tarde) — Consignação: venda pelo PDV + foto + vitrine pública (MÓDULO COMPLETO)
 Fechou os 3 pedidos do dono. **Venda pelo PDV:** a consignada disponível aparece na busca do PDV ("SCOOTER X ·

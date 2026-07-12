@@ -8094,6 +8094,10 @@ const _DRE_CATEGORIAS_FORA_DESPESA = [
   // Comissão de Vendas — já contada no CPV (componente comissao do ctReal).
   // Investimento em Ponto — caução/abertura de unidade, não-recorrente.
   'Comissão de Vendas', 'Investimento em Ponto',
+  // Consignação — repasse ao dono da moto consignada (adiantamentos + saldo).
+  // O custo real já entra no CPV via custo_consignacao na venda pelo PDV; os
+  // desembolsos de caixa do repasse são FLUXO, não despesa (senão conta 2×).
+  'Consignação',
 ];
 
 // Decompõe as parcelas de empréstimo pagas num período em JUROS vs PRINCIPAL.
@@ -22752,6 +22756,23 @@ async function initConsignacaoRecebida() {
   ]);
   if (cRes.error) console.warn('[consignr] consignacoes:', cRes.error.message);
   consignacoesRecebidas = (!cRes.error && cRes.data) ? toCamelArr(cRes.data) : [];
+  // Pagamentos/adiantamentos ao dono → anexa `adiantado` (soma) e `pagamentosDono`
+  // (lista) a cada consignação, pro card, o dashboard e a venda (cobra a diferença).
+  try {
+    const ids = consignacoesRecebidas.map(c => c.id).filter(Boolean);
+    let pags = [];
+    if (ids.length) {
+      const { data: pd } = await sb.from('consignacoes_pagamentos')
+        .select('*').in('consignacao_id', ids).order('data', { ascending: true });
+      pags = toCamelArr(pd || []);
+    }
+    const porConsig = {};
+    pags.forEach(p => { (porConsig[p.consignacaoId] = porConsig[p.consignacaoId] || []).push(p); });
+    consignacoesRecebidas.forEach(c => {
+      c.pagamentosDono = porConsig[c.id] || [];
+      c.adiantado = c.pagamentosDono.reduce((s, p) => s + (Number(p.valor) || 0), 0);
+    });
+  } catch (e) { console.warn('[consignr] pagamentos ao dono:', e.message); consignacoesRecebidas.forEach(c => { c.pagamentosDono = c.pagamentosDono || []; c.adiantado = c.adiantado || 0; }); }
   _consigrModelos    = (!mRes.error && mRes.data) ? mRes.data : [];
   _consigrVendedores = (!vRes.error && vRes.data) ? vRes.data : [];
   // Nomes dos donos p/ a listagem (sem depender do clientesAll estar carregado).
@@ -22794,8 +22815,17 @@ function _consigrCard(c) {
   const itens = Array.isArray(c.itensAcompanham) ? c.itensAcompanham.filter(i => i && i.ok).map(i => i.item) : [];
   const itensTxt = itens.length ? itens.join(' · ') : '—';
   const margem = (Number(c.precoVenda) || 0) - (Number(c.valorRepasse) || 0) - (Number(c.comissaoVendedor) || 0);
+  const repasse   = Number(c.valorRepasse) || 0;
+  const adiantado = Number(c.adiantado) || 0;
+  const faltaRep  = Math.max(0, repasse - adiantado);
+  // Linhas do status de pagamento ao dono (só aparece quando já houve adiantamento).
+  const linhaAdiant = adiantado > 0
+    ? `<div style="color:var(--green);">Já paguei ao dono: <strong>${_fmtBRMoney(adiantado)}</strong></div>
+       <div style="color:${faltaRep>0?'var(--gold)':'var(--green)'};">${c.status==='vendida'?'Falta (conta a pagar):':'Falta ao dono:'} <strong>${_fmtBRMoney(faltaRep)}</strong></div>`
+    : '';
   const acoes = c.status === 'disponivel'
-    ? `<button class="btn btn-gold" style="font-size:11px;padding:5px 12px;" onclick="_consigrVender('${c.id}')">Vender</button>
+    ? `<button class="btn" style="font-size:11px;padding:5px 12px;" onclick="_consigrPagarDono('${c.id}')" title="Registrar valor pago/adiantado ao dono">💵 Pagar ao dono</button>
+       <button class="btn btn-gold" style="font-size:11px;padding:5px 12px;" onclick="_consigrVender('${c.id}')">Vender</button>
        <button class="btn" style="font-size:11px;padding:5px 12px;" onclick="_consigrDevolver('${c.id}')">Devolver</button>
        <button class="btn" style="font-size:11px;padding:5px 10px;" onclick="abrirReceberConsignacaoModal('${c.id}')">Editar</button>`
     : `<button class="btn" style="font-size:11px;padding:5px 10px;" onclick="_consigrExcluir('${c.id}')" title="Remover registro">🗑️</button>`;
@@ -22811,6 +22841,7 @@ function _consigrCard(c) {
       </div>
       <div style="text-align:right;font-size:11px;min-width:150px;">
         <div>Repasse ao dono: <strong>${_fmtBRMoney(c.valorRepasse)}</strong></div>
+        ${linhaAdiant}
         <div>Preço de venda: <strong>${_fmtBRMoney(c.precoVenda)}</strong></div>
         <div class="js-custo" style="color:var(--green);">Sua margem: <strong>${_fmtBRMoney(margem)}</strong></div>
       </div>
@@ -23035,10 +23066,12 @@ function _consigrVender(id) {
   _consigrVendaId = id;
   const margem = (Number(c.precoVenda)||0) - (Number(c.valorRepasse)||0) - (Number(c.comissaoVendedor)||0);
   const vendNome = (_consigrVendedores || []).find(v => String(v.id) === String(c.vendedorId));
+  const _adiant  = Number(c.adiantado) || 0;
+  const _saldoRep = Math.max(0, (Number(c.valorRepasse)||0) - _adiant);
   const body =
     `<div style="font-size:11px;color:var(--text3);margin-bottom:12px;padding:10px 12px;background:var(--bg2);border-radius:8px;">
        <strong>${escHtml(c.produtoNome||'moto')}${c.cor?' · '+escHtml(c.cor):''}</strong>${c.chassi?' · chassi '+escHtml(c.chassi):''}<br>
-       Dono: ${escHtml(_consigrNomeDono(c))} · Repasse ${_fmtBRMoney(c.valorRepasse)}${vendNome?' · Vendedor: '+escHtml(vendNome.nome):''}<span class="js-custo"> · Sua margem ${_fmtBRMoney(margem)}</span>
+       Dono: ${escHtml(_consigrNomeDono(c))} · Repasse ${_fmtBRMoney(c.valorRepasse)}${_adiant>0?` (já adiantado ${_fmtBRMoney(_adiant)} · falta <strong>${_fmtBRMoney(_saldoRep)}</strong>)`:''}${vendNome?' · Vendedor: '+escHtml(vendNome.nome):''}<span class="js-custo"> · Sua margem ${_fmtBRMoney(margem)}</span>
      </div>
      <div class="form-grid">
        <div class="form-group full"><label>Comprador</label><div id="consigr-venda-cli"></div>
@@ -23051,7 +23084,7 @@ function _consigrVender(id) {
            <option value="cartao">Cartão</option><option value="transferencia">Transferência</option>
          </select></div>
      </div>
-     <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.5;">Ao confirmar eu gero no financeiro: <strong>conta a receber</strong> do comprador${(Number(c.valorRepasse)||0)>0?' · <strong>conta a pagar</strong> do repasse ao dono':''}${(c.vendedorId&&(Number(c.comissaoVendedor)||0)>0)?' · <strong>comissão</strong> do vendedor (venc. dia 5)':''}. Você marca recebido/pago quando o dinheiro girar.</div>`;
+     <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.5;">Ao confirmar eu gero no financeiro: <strong>conta a receber</strong> do comprador${_saldoRep>0?` · <strong>conta a pagar</strong> do repasse ao dono (${_fmtBRMoney(_saldoRep)}${_adiant>0?' — só o que falta':''})`:(_adiant>0?' · repasse já quitado nos adiantamentos':'')}${(c.vendedorId&&(Number(c.comissaoVendedor)||0)>0)?' · <strong>comissão</strong> do vendedor (venc. dia 5)':''}. Você marca recebido/pago quando o dinheiro girar.</div>`;
   _consigrModalShell('Vender <span>consignada</span>', body, 'Confirmar venda', _consigrConfirmarVenda, 560);
   initClienteSearch('consigr-venda-cli', { placeholder: 'Buscar comprador por nome, telefone ou CPF' });
 }
@@ -23088,15 +23121,18 @@ async function _consigrConfirmarVenda() {
     });
     if (r1.error && r1.error.code !== '23505') throw r1.error;
 
-    // 2) conta a PAGAR do repasse ao dono
+    // 2) conta a PAGAR do repasse ao dono — só o SALDO (repasse − o que já foi
+    //    adiantado ao dono antes da venda). Se já quitou tudo, não gera conta.
+    const adiantado = Number(c.adiantado) || 0;
+    const saldoRepasse = Math.max(0, repasse - adiantado);
     let cpRepId = null;
-    if (repasse > 0) {
+    if (saldoRepasse > 0) {
       cpRepId = `consigr-${id}-repasse`;
       const r2 = await sb.from('contas_pagar').insert({
         id: cpRepId, descricao: `Repasse consignacao · ${donoNome} (${moto})`,
-        valor: repasse, vencimento: data, categoria: 'Consignação', status: 'pendente',
+        valor: saldoRepasse, vencimento: data, categoria: 'Consignação', status: 'pendente',
         beneficiario: donoNome, avisar: 1,
-        observacao: `Repasse ao dono da moto consignada vendida pra ${sel.cliente.nome}.`,
+        observacao: `Repasse ao dono da moto consignada vendida pra ${sel.cliente.nome}.` + (adiantado > 0 ? ` Já adiantado ${_fmtBRMoney(adiantado)} de ${_fmtBRMoney(repasse)}.` : ''),
       });
       if (r2.error && r2.error.code !== '23505') throw r2.error;
     }
@@ -23128,6 +23164,171 @@ async function _consigrConfirmarVenda() {
     smAlert('Erro ao registrar venda: ' + (e.message || e));
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Confirmar venda'; }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// PAGAMENTO/ADIANTAMENTO AO DONO (antes ou durante a venda)
+// Registra quanto já foi pago ao dono da moto consignada. Pode sair do caixa
+// (gera lançamento de saída, categoria 'Consignação' — FORA da despesa da DRE,
+// pois o custo já entra no CPV na venda) OU ser só registro (pago por fora).
+// Na venda, a conta a pagar do repasse nasce só com o saldo (repasse − pago).
+// ═══════════════════════════════════════════════════════════
+let _consigrPagDonoId = null;
+
+function _consigrPagarDono(id) {
+  const c = (consignacoesRecebidas || []).find(x => String(x.id) === String(id));
+  if (!c) return;
+  _consigrPagDonoId = id;
+  const repasse   = Number(c.valorRepasse) || 0;
+  const adiantado = Number(c.adiantado) || 0;
+  const falta     = Math.max(0, repasse - adiantado);
+  const pags      = Array.isArray(c.pagamentosDono) ? c.pagamentosDono : [];
+  const moto = (c.produtoNome || 'moto') + (c.cor ? ' ' + c.cor : '');
+  const contasOpt = (contas || []).map(ct =>
+    `<option value="${ct.id}">${escHtml(ct.nome)} (${_fmtBRMoney(ct.saldo)})</option>`).join('');
+  const histHtml = pags.length
+    ? pags.map(p => {
+        const dataBR = String(p.data || '').split('-').reverse().join('/');
+        const tag = p.noCaixa ? (escHtml(p.contaNome || 'caixa')) : 'só registro';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px;padding:6px 0;border-bottom:1px solid var(--bg3,#222);">
+          <div><strong>${_fmtBRMoney(p.valor)}</strong> · ${dataBR}${p.forma?' · '+escHtml(p.forma):''} <span style="color:var(--text3);">(${tag})</span>${p.observacao?'<br><span style=\"color:var(--text3);\">'+escHtml(p.observacao)+'</span>':''}</div>
+          <button class="btn" style="font-size:10px;padding:3px 8px;" onclick="_consigrExcluirPagamentoDono('${p.id}')" title="Remover este pagamento">🗑️</button>
+        </div>`;
+      }).join('')
+    : `<div style="font-size:11px;color:var(--text3);padding:6px 0;">Nenhum pagamento registrado ainda.</div>`;
+
+  const body =
+    `<div style="font-size:11px;color:var(--text3);margin-bottom:12px;padding:10px 12px;background:var(--bg2);border-radius:8px;">
+       <strong>${escHtml(moto)}</strong> · Dono: ${escHtml(_consigrNomeDono(c))}<br>
+       Repasse total: <strong>${_fmtBRMoney(repasse)}</strong> · Já paguei: <strong style="color:var(--green);">${_fmtBRMoney(adiantado)}</strong> · Falta: <strong style="color:${falta>0?'var(--gold)':'var(--green)'};">${_fmtBRMoney(falta)}</strong>
+     </div>
+     <div style="font-size:11px;font-weight:700;color:var(--text2);margin:2px 0 4px;">Histórico</div>
+     <div style="margin-bottom:14px;">${histHtml}</div>
+     <div style="font-size:11px;font-weight:700;color:var(--text2);margin:2px 0 8px;">Registrar novo pagamento</div>
+     <div class="form-grid">
+       <div class="form-group"><label>Valor (R$)</label><input class="form-input" id="consigr-pag-valor" type="number" step="0.01" value="${falta>0?falta:''}" placeholder="0,00"></div>
+       <div class="form-group"><label>Data</label><input class="form-input" id="consigr-pag-data" type="date" value="${_locHojeISO()}"></div>
+       <div class="form-group"><label>Forma</label>
+         <select class="form-input" id="consigr-pag-forma">
+           <option value="dinheiro">Dinheiro</option><option value="pix">Pix</option>
+           <option value="transferencia">Transferência</option><option value="cartao">Cartão</option>
+         </select></div>
+       <div class="form-group"><label>Origem do dinheiro</label>
+         <select class="form-input" id="consigr-pag-origem" onchange="_consigrPagOrigemChg()">
+           <option value="caixa">Sai do caixa (escolher conta)</option>
+           <option value="registro">Só registrar (paguei por fora)</option>
+         </select></div>
+       <div class="form-group full" id="consigr-pag-conta-wrap"><label>Conta de onde saiu</label>
+         <select class="form-input" id="consigr-pag-conta">${contasOpt}</select></div>
+       <div class="form-group full"><label>Observação (opcional)</label><input class="form-input" id="consigr-pag-obs" placeholder="Ex.: entrada combinada com o dono"></div>
+     </div>
+     <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.5;">"Sai do caixa" lança uma saída na conta escolhida (não conta como despesa no DRE — o custo entra na venda). "Só registrar" apenas anota o pagamento, sem mexer no saldo.</div>`;
+  _consigrModalShell('Pagar <span>ao dono</span>', body, 'Registrar pagamento', _consigrSalvarPagamentoDono, 560);
+}
+
+function _consigrPagOrigemChg() {
+  const origem = document.getElementById('consigr-pag-origem')?.value;
+  const wrap = document.getElementById('consigr-pag-conta-wrap');
+  if (wrap) wrap.style.display = (origem === 'caixa') ? '' : 'none';
+}
+
+async function _consigrSalvarPagamentoDono() {
+  const btn = document.getElementById('consigr-modal-ok');
+  const id = _consigrPagDonoId;
+  const c = (consignacoesRecebidas || []).find(x => String(x.id) === String(id));
+  if (!c) return;
+  const valor  = Number(document.getElementById('consigr-pag-valor').value || 0);
+  const data   = document.getElementById('consigr-pag-data').value || _locHojeISO();
+  const forma  = document.getElementById('consigr-pag-forma').value || 'dinheiro';
+  const origem = document.getElementById('consigr-pag-origem').value || 'caixa';
+  const obs    = (document.getElementById('consigr-pag-obs').value || '').trim() || null;
+  const noCaixa = origem === 'caixa';
+  if (!(valor > 0)) return smAlert('Informe o valor pago ao dono.');
+  const contaId = noCaixa ? (document.getElementById('consigr-pag-conta').value || null) : null;
+  if (noCaixa && !contaId) return smAlert('Escolha a conta de onde o dinheiro saiu (ou use "Só registrar").');
+  const ctaBanco = noCaixa ? (contas || []).find(x => String(x.id) === String(contaId)) : null;
+  if (noCaixa && !ctaBanco) return smAlert('Conta inválida.');
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    const donoNome = _consigrNomeDono(c);
+    const moto = (c.produtoNome || 'moto') + (c.cor ? ' ' + c.cor : '');
+    // 1) lançamento de saída no caixa (só quando "sai do caixa")
+    let lancamentoId = null;
+    if (noCaixa) {
+      lancamentoId = 'consigrpag_' + id + '_' + Date.now();
+      const lancPayload = {
+        id: lancamentoId, tipo: 'saida',
+        descricao: 'Pagamento ao dono · ' + donoNome + ' (' + moto + ')',
+        valor, data, categoria: 'Consignação',
+        conta_id: ctaBanco.id, conta_nome: ctaBanco.nome,
+        observacao: obs || 'Repasse/adiantamento ao dono da moto consignada.',
+      };
+      const { error: eL } = await sb.from('lancamentos').insert(lancPayload);
+      if (eL) throw new Error('Erro ao lançar no caixa: ' + eL.message);
+      lancamentos.unshift(toCamel(lancPayload));
+      ctaBanco.saldo = Number(ctaBanco.saldo || 0) - valor;
+    }
+    // 2) registro do pagamento ao dono
+    const { error: eP } = await sb.from('consignacoes_pagamentos').insert({
+      consignacao_id: id, valor, data, forma, no_caixa: noCaixa,
+      conta_id: contaId, conta_nome: noCaixa ? ctaBanco.nome : null,
+      lancamento_id: lancamentoId, observacao: obs,
+    });
+    if (eP) {
+      // rollback do lançamento (sem transação no client)
+      if (lancamentoId) {
+        await sb.from('lancamentos').delete().eq('id', lancamentoId);
+        lancamentos = lancamentos.filter(l => l.id !== lancamentoId);
+        if (ctaBanco) ctaBanco.saldo = Number(ctaBanco.saldo || 0) + valor;
+      }
+      throw new Error('Erro ao registrar pagamento: ' + eP.message);
+    }
+    if (noCaixa && typeof salvarDados === 'function') salvarDados();
+    // re-render financeiro se montado
+    if (typeof renderContas === 'function')      renderContas();
+    if (typeof renderFinKpis === 'function')     renderFinKpis();
+    if (typeof renderLancamentos === 'function') renderLancamentos();
+    const m = document.getElementById('consigr-modal'); if (m) m.remove();
+    await initConsignacaoRecebida();
+    _consigrPagarDono(id);   // reabre com o histórico atualizado
+    if (typeof smToast === 'function') smToast('✅ Pagamento ao dono registrado.');
+  } catch (e) {
+    smAlert(e.message || 'Erro ao registrar pagamento.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Registrar pagamento'; }
+  }
+}
+
+async function _consigrExcluirPagamentoDono(pagId) {
+  const id = _consigrPagDonoId;
+  const c = (consignacoesRecebidas || []).find(x => String(x.id) === String(id));
+  const pag = c && (c.pagamentosDono || []).find(p => String(p.id) === String(pagId));
+  if (!pag) return;
+  const ok = await smConfirm(`Remover este pagamento de ${_fmtBRMoney(pag.valor)}?` + (pag.noCaixa ? '\n\nVai apagar o lançamento do caixa e restaurar o saldo de ' + (pag.contaNome || 'conta') + '.' : ''));
+  if (!ok) return;
+  try {
+    // apaga o registro
+    const { error: eD } = await sb.from('consignacoes_pagamentos').delete().eq('id', pagId);
+    if (eD) throw eD;
+    // desfaz o lançamento no caixa, se houver
+    if (pag.noCaixa && pag.lancamentoId) {
+      await sb.from('lancamentos').delete().eq('id', pag.lancamentoId);
+      lancamentos = (lancamentos || []).filter(l => l.id !== pag.lancamentoId);
+      const ctaBanco = (contas || []).find(x => (pag.contaId && String(x.id) === String(pag.contaId)) || x.nome === pag.contaNome);
+      if (ctaBanco) ctaBanco.saldo = Number(ctaBanco.saldo || 0) + (Number(pag.valor) || 0);
+      if (typeof salvarDados === 'function') salvarDados();
+      if (typeof renderContas === 'function')      renderContas();
+      if (typeof renderFinKpis === 'function')     renderFinKpis();
+      if (typeof renderLancamentos === 'function') renderLancamentos();
+    }
+    const m = document.getElementById('consigr-modal'); if (m) m.remove();
+    await initConsignacaoRecebida();
+    _consigrPagarDono(id);
+    if (typeof smToast === 'function') smToast('Pagamento removido.');
+  } catch (e) {
+    smAlert('Erro ao remover pagamento: ' + (e.message || e));
   }
 }
 
@@ -23173,7 +23374,10 @@ function renderConsigDashboard() {
   const crVend = cr.filter(c => c.status === 'vendida');
   const crDev  = cr.filter(c => c.status === 'devolvida');
   const crPotencial = crDisp.reduce((s, c) => s + (Number(c.precoVenda) || 0), 0);
-  const crRepasse   = crDisp.reduce((s, c) => s + (Number(c.valorRepasse) || 0), 0);
+  // A repassar = DÍVIDA REAL: só das VENDIDAS, e só o que falta (repasse − já adiantado).
+  const crRepasse   = crVend.reduce((s, c) => s + Math.max(0, (Number(c.valorRepasse) || 0) - (Number(c.adiantado) || 0)), 0);
+  // Adiantado = o que já foi pago aos donos por motos ainda NÃO vendidas.
+  const crAdiantado = crDisp.reduce((s, c) => s + (Number(c.adiantado) || 0), 0);
   const crMargem    = crDisp.reduce((s, c) => s + ((Number(c.precoVenda) || 0) - (Number(c.valorRepasse) || 0) - (Number(c.comissaoVendedor) || 0)), 0);
 
   const grid = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;';
@@ -23188,7 +23392,8 @@ function renderConsigDashboard() {
      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:2px 0 10px;">🤝 Consignação Recebida</div>
      <div style="${grid}">
        ${_consigKpi('Disponíveis pra vender', crDisp.length, _fmtBRMoney(crPotencial) + ' em vendas', 'var(--green)', 'var(--green)')}
-       ${_consigKpi('A repassar aos donos', _fmtBRMoney(crRepasse), 'quando vender')}
+       ${_consigKpi('A repassar aos donos', _fmtBRMoney(crRepasse), 'das vendidas (falta pagar)', crRepasse > 0 ? 'var(--gold)' : '', crRepasse > 0 ? 'var(--gold)' : '')}
+       ${_consigKpi('Adiantado aos donos', _fmtBRMoney(crAdiantado), 'pago antes de vender')}
        ${_consigKpi('Margem potencial', _fmtBRMoney(crMargem), 'sua parte nas disponíveis', 'var(--green)', 'var(--green)', 'js-custo')}
        ${_consigKpi('Vendidas', crVend.length, 'já negociadas')}
        ${_consigKpi('Devolvidas', crDev.length, 'voltaram pro dono')}
@@ -24213,15 +24418,20 @@ async function _pdvProcessarConsignadas(ped, itens, comprador) {
     if (error || !upd) continue;   // já vendida/devolvida ou erro → não gera repasse duplicado
     const repasse = Number(it.repasse) || 0;
     if (repasse > 0) {
+      // desconta o que já foi pago/adiantado ao dono antes da venda → conta a pagar só do saldo
+      let adiantado = 0;
+      try { const { data: pgs } = await sb.from('consignacoes_pagamentos').select('valor').eq('consignacao_id', it.consignacaoId); adiantado = (pgs || []).reduce((s, p) => s + (Number(p.valor) || 0), 0); } catch (e) {}
+      const saldoRepasse = Math.max(0, repasse - adiantado);
+      if (saldoRepasse <= 0) continue;   // já quitado nos adiantamentos → nada a pagar
       let donoNome = 'dono';
       try { const { data: d } = await sb.from('clientes').select('nome').eq('id', upd.consignante_cliente_id).maybeSingle(); if (d) donoNome = d.nome; } catch (e) {}
       const moto = (upd.produto_nome || 'moto') + (upd.cor ? ' ' + upd.cor : '');
       const r = await sb.from('contas_pagar').insert({
         id: 'consigr-' + upd.id + '-repasse',
         descricao: 'Repasse consignacao · ' + donoNome + ' (' + moto + ')',
-        valor: repasse, vencimento: dataVenda, categoria: 'Consignação', status: 'pendente',
+        valor: saldoRepasse, vencimento: dataVenda, categoria: 'Consignação', status: 'pendente',
         beneficiario: donoNome, avisar: 1,
-        observacao: 'Repasse ao dono — venda pelo PDV (pedido #' + (ped.numero_smart || '') + ').',
+        observacao: 'Repasse ao dono — venda pelo PDV (pedido #' + (ped.numero_smart || '') + ').' + (adiantado > 0 ? ' Já adiantado ' + _fmtBRMoney(adiantado) + ' de ' + _fmtBRMoney(repasse) + '.' : ''),
       });
       if (r.error && r.error.code !== '23505') console.warn('[pdv] repasse:', r.error.message);
     }
