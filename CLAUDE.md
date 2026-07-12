@@ -51,9 +51,9 @@ Organizado **por assunto** — cada seção traz o **estado atual** daquele tema
 - **Banco (migrações `crm_*`, 04/07/2026):** tabelas `crm_canais` (regras por canal: janela, template, outbound frio), `crm_contatos` (**unique(canal, canal_user_id)**; N contatos→1 `clientes`; lead≠cliente — só vincula por telefone `crm_casar_cliente_por_telefone`, nunca cria), `crm_conversas` (status aguardando|em_atendimento|ia|finalizada; **dono do lead** = atendente_id; `sla_pausado`; `janela_expira_em`), `crm_mensagens` (append-only, idempotente por unique(canal,canal_message_id), notas internas = remetente `nota_interna`), `crm_saida` (fila durável de envio c/ retry), `crm_negociacoes` (**dossiê da venda**: entrada+forma, `simulacoes jsonb`, status_credito, `estagio_funil` novo→…→fechado|perdido, motivo_perda, FK `pdv_pedido_id` p/ F2), `crm_lembretes`, `crm_conteudo_categorias/itens` (biblioteca, 10 categorias seed), `crm_conhecimento` (pg_trgm, SEM pgvector), `crm_templates` (HSM), `crm_eventos` (auditoria), `crm_presenca` (heartbeat 60s do app), `crm_config` (singleton: SLA, teto_desconto, **kill switches** `envio_ativo`/`ia_*`/budget). RLS `tem_modulo('crm')` em tudo. Realtime em conversas/mensagens/presenca. Extensões novas: pg_trgm, unaccent.
 - **Views de segurança:** `crm_catalogo` e `crm_disponibilidade` (security_invoker) — únicas portas do CRM/IA pro catálogo: só modelo/`venda`/estoque/cores/garantia. **Custo/margem/comissão inacessíveis por arquitetura.** Estoque real = `produtos.estoque` (**gerido nativamente pelo sistema Smart Motors — ver seção "Estoque"**; NÃO vem do Tiny); `estoque_unidades` está VAZIA (não usar). **Hold leve:** `disponivel_prometivel` = estoque − negociações abertas por produto (testado: Skylo 18→17).
 - **Roteamento (RPCs security definer):** `crm_atribuir_conversa` (service_role; **dono do lead primeiro** — cliente que volta cai com quem já atendia; senão online c/ menor carga, `FOR UPDATE SKIP LOCKED`), `crm_pegar_conversa` (claim atômico — 2 cliques, 1 ganha), `crm_transferir_conversa` (manual + nota vira nota interna), `crm_msg_recebida` (atualiza conversa + reabre janela + rearma SLA). Testado E2E via SQL (atribuição, dono do lead, idempotência de wamid, hold). SLA/redistribuição automática por pg_cron = **F2 (pendente)**.
-- **Edge Functions:** `crm-meta-webhook` (verify_jwt=false; auth = HMAC `X-Hub-Signature-256`; GET hub.challenge; **200 imediato + processa em background**; idempotência; status callbacks nunca regridem; **opt-out SAIR/STOP** marca `opt_in=false`; baixa mídia pro bucket `crm-midia`; ramifica por `object` — WA/IG/Messenger no MESMO endpoint) e `crm-send` (verify_jwt=true; valida **no servidor**: kill switch, opt-out, **janela 24h** → fora dela só template aprovado; fila `crm_saida` com retry; mídia via signed URL). Secrets pendentes (dono): `CRM_META_APP_SECRET`, `CRM_WA_VERIFY_TOKEN`, `CRM_WA_TOKEN`, `CRM_WA_PHONE_NUMBER_ID`.
+- **Edge Functions:** `crm-meta-webhook` (verify_jwt=false; auth = HMAC `X-Hub-Signature-256`; GET hub.challenge; **200 imediato + processa em background**; idempotência; status callbacks nunca regridem; **opt-out SAIR/STOP** marca `opt_in=false`; baixa mídia pro bucket `crm-midia`; ramifica por `object` — WA/IG/Messenger no MESMO endpoint) e `crm-send` (verify_jwt=true; valida **no servidor**: kill switch, opt-out, **janela 24h** → fora dela só template aprovado; fila `crm_saida` com retry; mídia via signed URL). **Adaptadas p/ BI-PROVIDER (12/07/2026):** `CRM_WA_PROVIDER` = `meta` (default, caminho antigo intacto) | `360dialog` (coexistência) — envio via `waba-v2.360dialog.io`+`D360-API-KEY`, webhook por HTTP Basic, echo de coexistência (`message_echoes`→saída), mídia via `D360-API-KEY`. Ver sub-seção **"WhatsApp via coexistência (360dialog)"**. Secrets Meta: `CRM_META_APP_SECRET`/`CRM_WA_VERIFY_TOKEN`/`CRM_WA_TOKEN`/`CRM_WA_PHONE_NUMBER_ID`; secrets 360dialog: `CRM_D360_API_KEY`/`CRM_D360_WEBHOOK_USER`/`CRM_D360_WEBHOOK_PASS`.
 - **App (crm/):** Login (email OU nome — mesma RPC `resolver_email_login`), Inbox (filas Aguardando/Meus/Em andamento/IA/Finalizadas, Realtime + **refetch na reconexão**, botão Pegar, quem está online), Conversa (thread, status ✓✓, mídia via signed URL, **nota interna** 📝, pausar SLA, transferir, lembrete, finalizar), painel **Negociação** (funil, modelo c/ disponibilidade prometível ao vivo, entrada/forma, **simulador de parcela** PMT c/ histórico, crédito, desconto auditado em `crm_eventos`), aba **Mensagens rápidas** (preço/estoque AO VIVO do banco + biblioteca por categoria). Tema dark/dourado `#f5c518`/Inter.
-- **Pendências do DONO (F0 — destravam o WhatsApp real):** verificação de negócio na Meta · **número novo dedicado** ao CRM (decisão: manter `+5521965107705` só nos avisos `wa-notify`) · criar app Meta/WABA e gerar `PHONE_NUMBER_ID` + token System User + App Secret · cadastrar webhook (`https://sxmeuqlotjuchslevofv.supabase.co/functions/v1/crm-meta-webhook`, verify token à escolha = secret `CRM_WA_VERIFY_TOKEN`) · submeter 3-4 templates HSM · iniciar App Review do Instagram messaging (`instagram_manage_messages` — token de posts NÃO serve) · billing Meta. Depois: setar os 4 secrets nas Edge Functions.
+- **Pendências do DONO (F0 — destravam o WhatsApp real) — REVISADO 12/07/2026:** a estratégia mudou de "Cloud API Meta direta + número novo dedicado" para **coexistência via 360dialog mantendo o número ATUAL** da loja (o código aceita os dois via `CRM_WA_PROVIDER`; o caminho Meta direto fica de reserva). Ver sub-seção **"WhatsApp via coexistência (360dialog)"** + `_memoria/tarefa-atual.md`. Continua valendo: **verificação de negócio na Meta** · **templates HSM** · (F2, futuro) App Review do Instagram messaging (`instagram_manage_messages`).
 - **F2 — ✅ PRONTA (05/07/2026):**
   - **SLA automático:** migração `crm_sla_pg_cron` — job `crm_sla` (1/min) roda `crm_verificar_sla()`: redistribui SLA estourado p/ online c/ menor carga (respeita `sla_pausado`), devolve pra fila se ninguém disponível, marca presença stale offline, dead-man-switch em `crm_cron_status` (dashboard alerta se parar). **Validado em produção** (evento `redistribuida` Henrique→Rafael pelo cron real).
   - **Dashboard admin** (`/dashboard`, perfil admin): KPIs on-the-fly (aguardando+pior espera, em andamento, TMR do dia, finalizadas, redistribuídas), equipe online c/ carga, funil de negociações, motivos de perda, por canal; edita SLA (min) e **kill switches** (`envio_ativo`, `ia_*`); alerta de cron parado.
@@ -65,6 +65,40 @@ Organizado **por assunto** — cada seção traz o **estado atual** daquele tema
 - **F5+ (não construído):** Instagram/Messenger (App Review) · proposta PDF · gestão da biblioteca no app (upload de mídia) · avisos internos de lead parado via `wa-notify`.
 - **Continuidade de tarefas:** estado vivo em `~/projetos/Smart Motors/_memoria/tarefa-atual.md` (regra no CLAUDE.md raiz — retomada automática após queda de sessão).
 - **Contexto de produto (dono, 05/07/2026):** o sistema (`smartmotorsapp.com.br`) e o CRM são **exclusivamente internos** — usuários são SÓ funcionários; nunca propor recurso de cliente final nesses ambientes. **Site público/catálogo = projeto futuro fora do escopo**; quando existir, o contato do cliente será direcionado ao **WhatsApp** (decisão do dono — não haverá webchat). O canal `webchat` do CRM fica reservado ao **modo simulador** (treino da equipe).
+
+### WhatsApp via coexistência (360dialog) — decisão + adaptação técnica (12/07/2026)
+**Decisão do dono (12/07/2026):** ligar o WhatsApp do CRM por **coexistência via 360dialog** (BSP),
+mantendo o **número atual da loja** ativo no app do celular **E** no CRM ao mesmo tempo. Reverte a decisão
+antiga ("Cloud API Meta direta + número novo"): coexistência SÓ existe via BSP (regra da Meta). **Custo:** a
+Meta não cobra mensalidade (só mensagem — atendimento na janela 24h grátis até out/2026, depois ~R$0,035;
+disparo por template R$0,035 utilidade/auth, ~R$0,32 marketing) **+ fee 360dialog ~49€/59US$/mês (~R$300)**,
+sem markup nas mensagens. Decisão/custos detalhados: memória `crm-omnichannel` + `_memoria/tarefa-atual.md`.
+- **Código adaptado p/ bi-provider (`crm-send` + `crm-meta-webhook`):** env `CRM_WA_PROVIDER` = `meta`
+  (default — caminho antigo 100% intacto) | `360dialog`. Com o default `meta`, **nada muda** até setar os
+  secrets → reversível. **AINDA NÃO deployado** (aguarda a conta/API key do 360dialog + autorização de push).
+  - **Envio (`crm-send`):** modo 360dialog → `POST https://waba-v2.360dialog.io/messages` com header
+    `D360-API-KEY` (SEM `phone_number_id` na URL); corpo idêntico à Cloud API. Modo meta → inalterado.
+  - **Webhook (`crm-meta-webhook`) — 3 mudanças:** (1) **auth por HTTP Basic** no modo 360dialog
+    (`CRM_D360_WEBHOOK_USER`/`PASS`, definidos ao registrar o webhook no client hub) — o 360dialog NÃO manda
+    o HMAC da Meta; (2) **echo de coexistência**: o que a loja responde **pelo app do celular** chega em
+    `value.message_echoes[]` → registrado como SAÍDA (`remetente:'atendente'`, idempotente por wamid, zera
+    SLA/não-lidas) pra thread do CRM ficar sincronizada; (3) **roteamento por conteúdo do `value`** (não só
+    `field==='messages'`) porque os echoes vêm em `field` diferente (ex. `smb_message_echoes`).
+  - **Mídia:** `baixarMidia` usa `waba-v2.360dialog.io/{id}` + `D360-API-KEY` no modo 360dialog.
+- **Secrets a setar quando a conta existir (provider 360dialog):** `CRM_WA_PROVIDER=360dialog` ·
+  `CRM_D360_API_KEY` (do canal) · `CRM_D360_WEBHOOK_USER` + `CRM_D360_WEBHOOK_PASS` (Basic Auth do webhook).
+  Os secrets Meta antigos podem permanecer (são ignorados no modo 360dialog).
+- **Pré-reqs OK:** número já no WhatsApp **Business** há 7+ dias · CNPJ + docs em mãos.
+- **Passos do dono (destravam o go-live):** criar conta no 360dialog → Embedded Signup de **coexistência**
+  (escaneia QR com o app da loja) → verificação de negócio na Meta (3–10 dias úteis) → cartão no client hub
+  → registrar o webhook do canal apontando pra `.../functions/v1/crm-meta-webhook` com Basic Auth → aprovar
+  os templates que eu criar. Guia passo a passo: `documentos/whatsapp-360dialog-onboarding.md`.
+- **Depois (eu):** deploy das 2 functions (`--project-ref sxmeuqlotjuchslevofv`), setar secrets, testar E2E
+  (cliente manda → cai no CRM → responder pelo CRM → responder pelo app → echo aparece no CRM) e validar no
+  front que o echo renderiza. **Limitações da coexistência:** WhatsApp Web/Desktop desconectam (atende no
+  celular OU no CRM), abrir o app 1x/13 dias, sem selo azul/troca de foto/API de chamada. **A confirmar no
+  painel real:** formato exato do `smb_message_echoes` e se o webhook usa Basic Auth ou header custom
+  (implementei Basic conforme a doc do 360dialog; ajusto rápido se divergir no teste).
 
 ## Estoque — fonte da verdade = sistema Smart Motors (NÃO o Tiny)
 **Verificado em 05/07/2026** (dados + código): o estoque é gerido **100% pelo próprio sistema**, não sincroniza do Tiny.
@@ -546,7 +580,16 @@ botão "+ Enviar moto". Inalterada (só migrou pra dentro da sub-aba). Funções
 
 ## Histórico de mudanças
 
-### 2026-07-12 — Consignação: pagamento/adiantamento ao dono + dashboard corrigido
+### 2026-07-12 (tarde) — CRM WhatsApp: decisão de coexistência (360dialog) + código adaptado (bi-provider)
+Dono retomou o CRM pra ligar o WhatsApp e decidiu por **coexistência via 360dialog** (mantém o número atual
+da loja ativo no app + CRM ao mesmo tempo; ~R$300/mês de fee, mensagens iguais à Meta). Descartou a migração
+direta (tiraria o número do app) e o "número novo dedicado" do plano original — coexistência só existe via
+BSP. `crm-send` e `crm-meta-webhook` adaptados p/ **bi-provider** (`CRM_WA_PROVIDER=meta|360dialog`, default
+`meta` = intacto/reversível): envio via `waba-v2.360dialog.io`+`D360-API-KEY`, webhook por HTTP Basic, **echo
+de coexistência** (`message_echoes`→saída no CRM, pra sincronizar o que a equipe responde pelo celular) e
+roteamento por conteúdo do `value`. **Ainda NÃO deployado** (aguarda conta/API key do 360dialog + push).
+Guia do dono: `documentos/whatsapp-360dialog-onboarding.md`. Detalhe: seção **"WhatsApp via coexistência
+(360dialog)"**. Pré-reqs do dono OK (número já no WhatsApp Business 7+ dias, CNPJ+docs).
 Sintoma do dono: o dashboard mostrava "R$ 7.000 a repassar" com a moto ainda **disponível** (não vendida) —
 a dívida com o dono só existe na venda. E ele precisava registrar quando **adianta parte do repasse antes de
 vender** (e, na venda, pagar só a diferença). Feito: tabela `consignacoes_pagamentos` (migração

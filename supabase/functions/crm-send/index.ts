@@ -13,11 +13,15 @@
 // Auth: verify_jwt=true. Atendente (JWT) ou worker de IA (service_role, header
 // x-crm-remetente: ia).
 //
-// Secrets: CRM_WA_TOKEN, CRM_WA_PHONE_NUMBER_ID.
+// Secrets (provider "meta", default): CRM_WA_TOKEN, CRM_WA_PHONE_NUMBER_ID.
+// Secrets (provider "360dialog" — coexistência via BSP): CRM_D360_API_KEY.
+//   Escolha o provider com CRM_WA_PROVIDER = "meta" | "360dialog".
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
+const D360 = "https://waba-v2.360dialog.io"; // BSP 360dialog (coexistência) — API espelha a Cloud API
+const PROVIDER = (Deno.env.get("CRM_WA_PROVIDER") || "meta").toLowerCase(); // "meta" | "360dialog"
 const MAX_TENTATIVAS = 3;
 
 const cors = {
@@ -31,11 +35,25 @@ const json = (obj: unknown, status = 200) =>
 const sbAdmin = () =>
   createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-// ── adaptador WhatsApp ────────────────────────────────────────────────────
-async function enviarWhatsApp(destino: string, payload: Record<string, any>, midiaUrl: string | null) {
+// ── adaptador WhatsApp (Meta Cloud API direta OU BSP 360dialog p/ coexistência) ──
+// Resolve endpoint + headers pelo provider. O corpo da mensagem é idêntico nos dois
+// (o 360dialog espelha a Cloud API); só muda pra ONDE e COM QUAL credencial se envia.
+function destinoAPI(): { url: string; headers: Record<string, string> } | { erro: string } {
+  if (PROVIDER === "360dialog") {
+    const key = Deno.env.get("CRM_D360_API_KEY");
+    if (!key) return { erro: "CRM_D360_API_KEY não configurada" };
+    // 360dialog: o número é o do canal da API key — não vai phone_number_id na URL.
+    return { url: `${D360}/messages`, headers: { "D360-API-KEY": key, "Content-Type": "application/json" } };
+  }
   const token = Deno.env.get("CRM_WA_TOKEN");
   const phoneId = Deno.env.get("CRM_WA_PHONE_NUMBER_ID");
-  if (!token || !phoneId) return { ok: false, erro: "CRM_WA_TOKEN/PHONE_NUMBER_ID não configurados" };
+  if (!token || !phoneId) return { erro: "CRM_WA_TOKEN/PHONE_NUMBER_ID não configurados" };
+  return { url: `${GRAPH}/${phoneId}/messages`, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } };
+}
+
+async function enviarWhatsApp(destino: string, payload: Record<string, any>, midiaUrl: string | null) {
+  const alvo = destinoAPI();
+  if ("erro" in alvo) return { ok: false, erro: alvo.erro };
 
   let corpo: Record<string, any> = { messaging_product: "whatsapp", to: destino };
   if (payload.template) {
@@ -61,14 +79,16 @@ async function enviarWhatsApp(destino: string, payload: Record<string, any>, mid
     corpo.text = { body: String(payload.texto || ""), preview_url: true };
   }
 
-  const r = await fetch(`${GRAPH}/${phoneId}/messages`, {
+  const r = await fetch(alvo.url, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: alvo.headers,
     body: JSON.stringify(corpo),
   });
   const resp = await r.json().catch(() => ({}));
   if (!r.ok) {
-    return { ok: false, erro: resp?.error?.message || `HTTP ${r.status}`, codigo: resp?.error?.code };
+    // Meta expõe resp.error.{message,code}; 360dialog espelha esse shape (às vezes resp.errors[]).
+    const erro = resp?.error?.message || resp?.errors?.[0]?.title || `HTTP ${r.status}`;
+    return { ok: false, erro, codigo: resp?.error?.code ?? resp?.errors?.[0]?.code };
   }
   return { ok: true, wa_message_id: resp?.messages?.[0]?.id as string | undefined };
 }
