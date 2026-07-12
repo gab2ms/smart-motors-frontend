@@ -26559,7 +26559,7 @@ async function _cprogCarregar() {
   // Planos + agregados (embed de pagamentos e motos)
   try {
     const { data, error } = await sb.from('compra_programada')
-      .select('*, clientes(nome,telefone,cpf_cnpj,cpf), compra_programada_pagamentos(id,valor,data,forma,conta_id,observacao,criado_em), compra_programada_motos(id,status,produto_id,produto_nome,cor,chassi,preco,pedido_id,data_entrega,data_reserva)')
+      .select('*, clientes(id,nome,telefone,email,cpf,cpf_cnpj,rg,estado_civil,profissao,nacionalidade,cep,rua,numero,complemento,bairro,cidade,uf,endereco), compra_programada_pagamentos(id,valor,data,forma,conta_id,observacao,criado_em), compra_programada_motos(id,status,produto_id,produto_nome,cor,chassi,preco,pedido_id,data_entrega,data_reserva)')
       .order('criado_em', { ascending: false });
     if (error) throw error;
     cprogPlanos = data || [];
@@ -26799,10 +26799,215 @@ function _cprogRenderDetalhe() {
          <div style="padding:6px 18px 16px;">${motosHtml}</div>
        </div>
      </div>
-     ${ativo?`<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap;">
-        <button class="btn" onclick="_cprogConcluir('${p.id}')"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Concluir plano</button>
-        <button class="btn" style="color:var(--red);border-color:var(--red-dim);" onclick="_cprogModalCancelar('${p.id}')"><svg class="ic ic-sm"><use href="#ic-ban"/></svg> Cancelar plano</button>
-      </div>`:''}`;
+     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap;">
+        <button class="btn" onclick="_cprogGerarContrato('${p.id}')" title="Gera o contrato preenchido desta compra programada">📄 Gerar contrato</button>
+        ${ativo?`<button class="btn" onclick="_cprogConcluir('${p.id}')"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Concluir plano</button>
+        <button class="btn" style="color:var(--red);border-color:var(--red-dim);" onclick="_cprogModalCancelar('${p.id}')"><svg class="ic ic-sm"><use href="#ic-ban"/></svg> Cancelar plano</button>`:''}
+      </div>`;
+}
+
+// ── Contrato de Compra Programada (gera o documento preenchido) ─
+const _CPROG_MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+
+function _cprogEnderecoContrato(c){
+  const linha = [c.rua, c.numero].filter(Boolean).join(', ');
+  const ciduf = [c.cidade, c.uf].filter(Boolean).join('/');
+  return [linha, c.complemento, c.bairro, ciduf, c.cep ? ('CEP ' + c.cep) : ''].filter(Boolean).join(', ');
+}
+
+function _cprogFaltaContrato(c){
+  const need = [];
+  if(!c) return ['cadastro do cliente'];
+  if(!c.nome) need.push('nome');
+  if(!(c.cpf || c.cpf_cnpj)) need.push('CPF');
+  if(!c.rg) need.push('RG');
+  if(!c.estado_civil) need.push('estado civil');
+  if(!c.profissao) need.push('profissão');
+  if(!c.rua || !c.numero || !c.bairro || !c.cidade || !c.uf) need.push('endereço');
+  return need;
+}
+
+function _cprogGerarContrato(planoId){
+  const p = _cprogPlano(planoId);
+  if(!p){ if(window.smToast) smToast('Plano não encontrado.'); return; }
+  if(_cprogFaltaContrato(p.clientes).length){ _cprogModalDadosContrato(planoId); return; }
+  _cprogAbrirContrato(p);
+}
+
+function _cprogAbrirContrato(p){
+  const w = window.open('', '_blank');
+  if(!w){ if(window.smAlert) smAlert('O navegador bloqueou a janela. Permita pop-ups para gerar o contrato.'); return; }
+  _cprogEscreverContrato(w, p);
+}
+
+function _cprogEscreverContrato(w, p){
+  const c = p.clientes || {};
+  const motos = _cprogMotos(p).filter(m => m.status !== 'cancelada');
+  const moto = motos.find(m => m.status === 'reservada') || motos[0] || null;
+  const temMoto = !!moto; // só há "modelo travado" quando existe uma UNIDADE reservada
+  const retencao = Number((typeof cprogCfg !== 'undefined' && cprogCfg.taxaRet) || 25);
+  const hoje = new Date();
+  const objeto = temMoto
+    ? `${moto.produto_nome || 'Scooter elétrica'}${moto.cor ? (' — cor ' + moto.cor) : ''}${moto.chassi ? (', chassi nº ' + moto.chassi) : ''}`
+    : '';
+  const html = _cprogHtmlContrato({
+    nome: c.nome || '—', nac: c.nacionalidade || 'Brasileira', ec: c.estado_civil || '—',
+    prof: c.profissao || '—', rg: c.rg || '—', cpf: c.cpf || c.cpf_cnpj || '—',
+    endereco: _cprogEnderecoContrato(c) || c.endereco || '—',
+    tel: c.telefone || '', email: c.email || '',
+    temMoto, objeto,
+    preco: temMoto ? Number(moto.preco || 0) : 0,
+    valorRef: temMoto ? 0 : Number(_cprogMetaValor(p) || 0), // sem modelo → contrato por valor/crédito
+    retencao, devol: 100 - retencao,
+    dataExt: `${hoje.getDate()} de ${_CPROG_MESES[hoje.getMonth()]} de ${hoje.getFullYear()}`
+  });
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+function _cprogModalDadosContrato(planoId){
+  const p = _cprogPlano(planoId); if(!p) return;
+  const c = p.clientes || {};
+  const ecOpts = ['Solteiro(a)','Casado(a)','Divorciado(a)','Viúvo(a)','União estável']
+    .map(o => `<option${c.estado_civil === o ? ' selected' : ''}>${o}</option>`).join('');
+  const body = `
+    <div style="font-size:11px;color:var(--text3);margin-bottom:10px;">Complete os dados do comprador. Ficam salvos no cadastro do cliente — servem pra próxima vez e pra nota fiscal.</div>
+    <div class="form-grid">
+      <div class="form-group"><label>Nacionalidade</label><input class="search-input" id="ck-nac" value="${escHtml(c.nacionalidade || 'Brasileira')}"></div>
+      <div class="form-group"><label>Estado civil</label><select class="search-input" id="ck-ec"><option value="">—</option>${ecOpts}</select></div>
+      <div class="form-group"><label>Profissão</label><input class="search-input" id="ck-prof" value="${escHtml(c.profissao || '')}"></div>
+      <div class="form-group"><label>RG</label><input class="search-input" id="ck-rg" value="${escHtml(c.rg || '')}"></div>
+      <div class="form-group"><label>CPF</label><input class="search-input" id="ck-cpf" value="${escHtml(c.cpf || c.cpf_cnpj || '')}"></div>
+      <div class="form-group"><label>CEP</label><input class="search-input" id="ck-cep" value="${escHtml(c.cep || '')}"></div>
+      <div class="form-group full"><label>Rua / Logradouro</label><input class="search-input" id="ck-rua" value="${escHtml(c.rua || '')}"></div>
+      <div class="form-group"><label>Número</label><input class="search-input" id="ck-num" value="${escHtml(c.numero || '')}"></div>
+      <div class="form-group"><label>Complemento</label><input class="search-input" id="ck-compl" value="${escHtml(c.complemento || '')}"></div>
+      <div class="form-group"><label>Bairro</label><input class="search-input" id="ck-bairro" value="${escHtml(c.bairro || '')}"></div>
+      <div class="form-group"><label>Cidade</label><input class="search-input" id="ck-cidade" value="${escHtml(c.cidade || '')}"></div>
+      <div class="form-group"><label>UF</label><input class="search-input" id="ck-uf" maxlength="2" value="${escHtml(c.uf || '')}"></div>
+    </div>`;
+  _cprogModalShell('Dados para o contrato', body, '📄 Salvar e gerar contrato', async () => {
+    const val = id => (document.getElementById(id)?.value || '').trim();
+    const payload = {
+      nacionalidade: val('ck-nac') || 'Brasileira', estado_civil: val('ck-ec'), profissao: val('ck-prof'),
+      rg: val('ck-rg'), cpf: val('ck-cpf'), cep: val('ck-cep'), rua: val('ck-rua'), numero: val('ck-num'),
+      complemento: val('ck-compl'), bairro: val('ck-bairro'), cidade: val('ck-cidade'), uf: val('ck-uf').toUpperCase()
+    };
+    const falta = _cprogFaltaContrato(Object.assign({}, c, payload));
+    if(falta.length){ if(window.smToast) smToast('Falta preencher: ' + falta.join(', ')); return; }
+    const w = window.open('', '_blank'); // abre no gesto do clique (evita bloqueio de pop-up)
+    const btn = document.getElementById('cprog-modal-ok'); if(btn){ btn.disabled = true; btn.textContent = 'Salvando…'; }
+    const { error } = await sb.from('clientes').update(payload).eq('id', c.id);
+    if(error){
+      if(w) w.close();
+      if(btn){ btn.disabled = false; btn.textContent = '📄 Salvar e gerar contrato'; }
+      if(window.smAlert) smAlert('Erro ao salvar os dados: ' + error.message);
+      return;
+    }
+    Object.assign(c, payload);
+    _cprogFecharModal();
+    if(w) _cprogEscreverContrato(w, p); else _cprogAbrirContrato(p);
+  }, 640);
+}
+
+function _cprogHtmlContrato(d){
+  const E = s => escHtml(String(s == null ? '' : s));
+  const preco = _fmtBRMoney(d.preco);
+  const valorRef = d.valorRef ? _fmtBRMoney(d.valorRef) : '';
+  const contato = [d.tel ? ('telefone/WhatsApp ' + E(d.tel)) : '', d.email ? ('e-mail ' + E(d.email)) : ''].filter(Boolean).join(', ');
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Contrato — Compra Programada — ${E(d.nome)}</title>
+<style>
+  *{box-sizing:border-box;}
+  body{font-family:Georgia,'Times New Roman',serif;color:#111;max-width:800px;margin:0 auto;padding:32px 40px 80px;line-height:1.55;font-size:13px;}
+  h1{font-size:16px;text-align:center;text-transform:uppercase;letter-spacing:.3px;margin:0 0 24px;}
+  h2{font-size:13px;margin:22px 0 6px;}
+  p{margin:8px 0;text-align:justify;}
+  .tf{display:flex;gap:40px;flex-wrap:wrap;margin-top:36px;}
+  .linha-assina{margin-top:44px;border-top:1px solid #111;min-width:300px;flex:1;padding-top:4px;font-size:12px;}
+  .small{font-size:11px;color:#555;}
+  .toolbar{position:sticky;top:0;background:#f5f5f5;border:1px solid #ddd;padding:10px 14px;margin:-32px -40px 24px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
+  .toolbar button{font:inherit;font-size:12px;padding:8px 14px;cursor:pointer;border:1px solid #999;border-radius:6px;background:#fff;}
+  .toolbar button.primary{background:#111;color:#fff;border-color:#111;}
+  @media print{.toolbar{display:none;}body{padding:0 8px;}@page{margin:2cm;}}
+</style></head><body>
+<div class="toolbar">
+  <button class="primary" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+  <span class="small">Confira os dados antes de imprimir. Assinar em 2 vias, com 2 testemunhas.</span>
+</div>
+
+<h1>Instrumento Particular de Contrato de Compra e Venda de Veículo com Pagamento Antecipado Programado</h1>
+
+<p><b>VENDEDORA:</b> SMART MOTORS LTDA, sociedade empresária limitada (ME), inscrita no CNPJ sob o nº 64.020.071/0001-39 e na Inscrição Estadual nº 15.998.31-8, com sede na Rua Monteiro Mendes, nº 76, Letra C, Centro, Itaguaí/RJ, CEP 23.812-345, neste ato representada, na forma da Cláusula Sexta do seu contrato social (que autoriza cada administradora a agir isoladamente), por sua sócia administradora Beatriz Rodrigues Polita, brasileira, solteira, empresária, inscrita no CPF sob o nº 165.169.427-30, doravante denominada simplesmente <b>VENDEDORA</b>;</p>
+
+<p><b>COMPRADOR(A):</b> ${E(d.nome)}, ${E(d.nac)}, ${E(d.ec)}, ${E(d.prof)}, portador(a) do RG nº ${E(d.rg)} e inscrito(a) no CPF sob o nº ${E(d.cpf)}, residente e domiciliado(a) na ${E(d.endereco)}${contato ? (', ' + contato) : ''}, doravante denominado(a) simplesmente <b>COMPRADOR(A)</b>;</p>
+
+<p>As partes têm, entre si, justo e contratado o presente contrato, que se regerá pelas cláusulas seguintes.</p>
+
+<h2>CONSIDERAÇÕES PRELIMINARES</h2>
+<p>(a) que este contrato é uma compra e venda individual e bilateral de um veículo (scooter elétrica) entre a VENDEDORA e o(a) COMPRADOR(A), com preço certo, cujo pagamento o(a) COMPRADOR(A) opta por antecipar de forma programada, antes de retirar o bem;</p>
+<p>(b) que este contrato NÃO constitui consórcio, grupo de autofinanciamento, poupança, investimento, aplicação financeira, captação de recursos, financiamento ou crediário, não havendo grupo de participantes, sorteio, lance, rateio de fundo comum, nem promessa de qualquer rendimento, juro ou correção em favor do(a) COMPRADOR(A) sobre os valores pagos;</p>
+<p>(c) que os valores pagos têm natureza de adiantamento do preço e, desde o pagamento, integram o preço e podem ser livremente utilizados pela VENDEDORA em sua atividade, não se tratando de depósito ou custódia.</p>
+
+<h2>CLÁUSULA 1 — DO OBJETO</h2>
+${d.temMoto
+ ? `<p>1.1. É objeto deste contrato a compra e venda do seguinte veículo: <b>${E(d.objeto)}</b>, pelo preço total de <b>${preco}</b>.</p>
+<p>1.2. O(a) COMPRADOR(A) pagará o preço de forma antecipada e programada, acumulando crédito junto à VENDEDORA, e retirará o veículo na forma da Cláusula 4.</p>`
+ : `<p>1.1. É objeto deste contrato a <b>aquisição futura</b>, pelo(a) COMPRADOR(A), de uma <b>scooter elétrica do catálogo da VENDEDORA, a ser escolhida por ele(a) no momento da retirada</b>, mediante acúmulo programado de crédito, <b>sem vinculação a modelo determinado neste ato</b>.</p>
+<p>1.2. O(a) COMPRADOR(A) pagará de forma antecipada e programada, acumulando crédito junto à VENDEDORA${valorRef ? `, tendo como <b>valor de referência</b> a quantia de <b>${valorRef}</b>` : ''}, e retirará o veículo escolhido na forma da Cláusula 4.${valorRef ? ' O valor de referência é <b>mera meta de acúmulo</b> e não constitui preço fixo nem travamento de valor.' : ''}</p>`}
+
+<h2>CLÁUSULA 2 — DA FORMA DE PAGAMENTO</h2>
+<p>2.1. O(a) COMPRADOR(A) efetuará aportes no valor e na frequência que desejar, sem parcela fixa, sem vencimento obrigatório e sem incidência de juros, multa ou encargos sobre os aportes, até atingir o valor necessário à retirada.</p>
+<p>2.2. São aceitos dinheiro, transferência bancária, Pix e cartão de crédito. Cada aporte será comprovado por recibo, e o saldo ficará registrado no sistema da VENDEDORA.</p>
+
+<h2>CLÁUSULA 3 — DO PREÇO</h2>
+${d.temMoto
+ ? `<p>3.1. O preço total do veículo é de <b>${preco}</b>.</p>
+<p>3.2. Tendo o(a) COMPRADOR(A) definido a unidade, que fica reservada em seu favor, o preço fica travado no valor acima e não sofrerá reajuste, ressalvada a perda do prazo da Cláusula 5.</p>
+<p>3.3. Os aportes já realizados serão integralmente abatidos do preço.</p>`
+ : `<p>3.1. O preço será o do <b>modelo que o(a) COMPRADOR(A) vier a escolher</b>, conforme a tabela vigente da VENDEDORA <b>na data da retirada</b>. Não há, neste ato, preço travado.</p>
+<p>3.2. Os valores pagos constituem <b>crédito acumulado</b> em favor do(a) COMPRADOR(A), integralmente abatido do preço no momento da aquisição.</p>
+${valorRef ? '<p>3.3. O valor de referência mencionado na Cláusula 1 é mera estimativa e não vincula o preço final.</p>' : ''}`}
+
+<h2>CLÁUSULA 4 — DA RETIRADA E DA ENTREGA</h2>
+<p>4.1. A retirada do veículo ocorrerá <b>após a integralização de 100% (cem por cento) do preço</b>${d.temMoto ? '' : ' do modelo escolhido'}. A entrega opera a transferência da posse e da propriedade ao(à) COMPRADOR(A), acompanhada da respectiva nota fiscal.</p>
+<p>4.2. A partir da entrega, aplica-se ao veículo a garantia legal e contratual cabível, encerrando-se a fase de pagamento programado.</p>
+
+<h2>CLÁUSULA 5 — DOS PRAZOS</h2>
+<p>5.1. O(a) COMPRADOR(A) terá o prazo de <b>12 (doze) meses</b>, contados da assinatura, para integralizar o preço e retirar o veículo.</p>
+<p>5.2. Concluído o pagamento integral, o(a) COMPRADOR(A) deverá retirar o veículo no prazo de <b>30 (trinta) dias</b>.</p>
+<p>5.3. Esgotado o prazo da Cláusula 5.1 sem a integralização do preço, a VENDEDORA notificará o(a) COMPRADOR(A) para, em 15 dias, regularizar. Persistindo a inércia, o contrato poderá ser resolvido, liberando-se a unidade eventualmente reservada e devolvendo-se os valores na forma da Cláusula 7.</p>
+
+<h2>CLÁUSULA 6 — DO DIREITO DE ARREPENDIMENTO</h2>
+<p>6.1. Caso este contrato tenha sido celebrado fora do estabelecimento comercial (por WhatsApp, telefone ou internet), o(a) COMPRADOR(A) poderá arrepender-se em até <b>7 (sete) dias corridos</b>, contados da assinatura ou do primeiro aporte, nos termos do art. 49 do Código de Defesa do Consumidor.</p>
+<p>6.2. Exercido o arrependimento nesse prazo, a restituição será integral e sem qualquer retenção. Este direito não se confunde com a desistência da Cláusula 7.</p>
+
+<h2>CLÁUSULA 7 — DA DESISTÊNCIA PELO(A) COMPRADOR(A)</h2>
+<p>7.1. O(a) COMPRADOR(A) poderá desistir a qualquer tempo antes da entrega do veículo, mediante comunicação escrita.</p>
+<p>7.2. A título de cláusula penal compensatória, destinada a cobrir as despesas administrativas, operacionais e financeiras da VENDEDORA, esta reterá <b>${d.retencao}% do total dos valores pagos</b> pelo(a) COMPRADOR(A) até a data da desistência.</p>
+<p>7.3. O valor remanescente (<b>${d.devol}% do total pago</b>) será restituído em parcela única, monetariamente atualizado pelo IPCA, no prazo de 10 (dez) dias úteis, sem incidência de juros.</p>
+<p>7.4. A retenção não se aplica ao arrependimento do art. 49 (Cláusula 6) nem à resolução por culpa exclusiva da VENDEDORA, casos de devolução integral. As partes reconhecem que o percentual é proporcional e razoável, em conformidade com o art. 53 do CDC, que veda apenas a perda total das quantias pagas.</p>
+
+<h2>CLÁUSULA 8 — DAS OBRIGAÇÕES DA VENDEDORA</h2>
+<p>8.1. A VENDEDORA obriga-se a registrar os aportes, reservar e conservar a unidade quando aplicável, e entregar o veículo com nota fiscal e a garantia devida. Se, por culpa exclusiva sua, deixar de entregar o veículo, o(a) COMPRADOR(A) poderá resolver o contrato e receber a devolução integral, sem prejuízo de perdas e danos comprovados.</p>
+
+<h2>CLÁUSULA 9 — DA PROTEÇÃO DE DADOS (LGPD)</h2>
+<p>9.1. A VENDEDORA tratará os dados pessoais do(a) COMPRADOR(A) exclusivamente para a execução deste contrato e o cumprimento de obrigações legais e fiscais, nos termos da Lei nº 13.709/2018.</p>
+
+<h2>CLÁUSULA 10 — DISPOSIÇÕES GERAIS E FORO</h2>
+<p>10.1. Assinado por duas testemunhas, este contrato constitui título executivo extrajudicial (art. 784, III, do CPC). A tolerância quanto a qualquer descumprimento não implica novação. Fica eleito o foro do domicílio do(a) COMPRADOR(A) para dirimir controvérsias decorrentes deste contrato.</p>
+
+<p style="margin-top:26px;">Por estarem assim justas e contratadas, as partes assinam em 2 (duas) vias de igual teor, na presença das testemunhas.</p>
+<p style="margin-top:18px;">Itaguaí/RJ, ${E(d.dataExt)}.</p>
+
+<div class="tf">
+  <div class="linha-assina">VENDEDORA — SMART MOTORS LTDA<br>Beatriz Rodrigues Polita (sócia administradora)</div>
+  <div class="linha-assina">COMPRADOR(A) — ${E(d.nome)}<br>CPF: ${E(d.cpf)}</div>
+</div>
+<div class="tf">
+  <div class="linha-assina">Testemunha 1 — Nome / CPF:</div>
+  <div class="linha-assina">Testemunha 2 — Nome / CPF:</div>
+</div>
+</body></html>`;
 }
 
 // ── Modal genérico do módulo (padrão do sistema) ────────────

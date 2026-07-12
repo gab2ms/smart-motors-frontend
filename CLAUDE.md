@@ -255,7 +255,7 @@ nasce na **entrega**, no mês da entrega.
   `registrar_movimento` origem `reserva_compra_programada`, sem virar venda); (4) **entrega** →
   gera o `pdv_pedidos` (`origem='compra_programada'`, status entregue, no mês da entrega) **sem
   re-baixar estoque** (já baixou na reserva — igual à consignação); (5) cancelar → devolve com
-  **retenção % editável (padrão 20%)** + saída no caixa + motos voltam ao estoque.
+  **retenção % editável (padrão 25%)** + saída no caixa + motos voltam ao estoque.
 - **Duas datas (migração `compra_programada_entrega_data_venda`, 10/07/2026):** o dono pediu separar
   (1) **data de início** = `compra_programada.criado_em` (quando o cliente começou a juntar; mostrada
   no detalhe "iniciada em") e (2) **data da venda** = quando quitou e levou a moto (a data que conta
@@ -278,7 +278,8 @@ nasce na **entrega**, no mês da entrega.
   cor/chassi/preco travado/status reservada|entregue|cancelada/pedido_id). RLS `acesso_total` =
   `tem_modulo('compra-programada')`; módulo adicionado aos ramos **operacional + vendedor** de
   `tem_modulo` (espelhado em `PERFIS_DEFAULT_MODULOS` no front). Config em `config_custos`
-  (`cprog_pct_liberacao_padrao=80`, `cprog_taxa_retencao_cancelamento=20`). 2 categorias de
+  (`cprog_pct_liberacao_padrao=80`, `cprog_taxa_retencao_cancelamento=25` — subiu de 20 p/ 25 em
+  12/07/2026 p/ bater com o contrato). 2 categorias de
   lançamento próprias (adiantamento=entrada s/ natureza; devolução=saida `nao_recorrente`).
 - **RPCs SECURITY DEFINER** (deixam o **vendedor** operar sem ter o módulo financeiro; cada uma
   checa `tem_modulo('compra-programada')`, execute revogado de public/anon): `cprog_registrar_pagamento`
@@ -301,7 +302,7 @@ nasce na **entrega**, no mês da entrega.
   certa, pdv_pedido gerado com chassi. **Dados de teste 100% apagados e estoque/saldo restaurados.**
   Advisors: só os avisos genéricos de função SECURITY DEFINER (mitigados com revoke de public).
 - **✅ Publicado 10/07/2026** (commit + push na `main` → GitHub Pages); migração já em produção no
-  Supabase. Falta só o dono validar no ar com uma venda real. O % de retenção de cancelamento (20%)
+  Supabase. Falta só o dono validar no ar com uma venda real. O % de retenção de cancelamento (25%)
   fica editável (dono confirma com advogado).
 - **Etiqueta + saldo a receber (migração `compra_programada_entrega_saldo_a_receber`, 10/07/2026):**
   (1) a relação de Pedidos (`renderPedidosUnif` ~9253) mostra o selo **"COMPRA PROGRAMADA"** quando
@@ -314,6 +315,27 @@ nasce na **entrega**, no mês da entrega.
 - **Follow-ups (menores, anotados):** a retenção de cancelamento fica no caixa sem reconhecimento
   contábil de receita (ajuste fino contábil, se o dono quiser). Reserva permite estoque negativo
   (só avisa), igual ao PDV.
+- **Gerar contrato jurídico da compra programada (12/07/2026):** botão **"📄 Gerar contrato"** no
+  detalhe do plano (sempre visível, dá pra reimprimir). Abre uma aba com o **contrato preenchido**
+  (formato A4, botão Imprimir/Salvar PDF que some na impressão). Funções `cprog` no `index.html`:
+  `_cprogGerarContrato` (valida dados via `_cprogFaltaContrato`; se faltar, abre
+  `_cprogModalDadosContrato`), `_cprogModalDadosContrato` (form dos dados do comprador → **update em
+  `clientes`** → gera), `_cprogEscreverContrato`/`_cprogAbrirContrato` (abre `window.open` no gesto do
+  clique p/ não cair no popup-blocker; abre a janela ANTES do await do update), `_cprogHtmlContrato`
+  (template do documento). **Migração `clientes_campos_contrato_compra_programada`:** add em `clientes`
+  → `rg`, `estado_civil`, `profissao`, `nacionalidade` (def 'Brasileira'); o resto do endereço já
+  existia (rua/numero/complemento/bairro/cidade/uf/cep). A query de carga dos planos (~26562) foi
+  ampliada p/ trazer esses campos do cliente no join. **Dados do contrato:** empresa fixa (SMART
+  MOTORS LTDA, CNPJ 64.020.071/0001-39, sede Itaguaí/RJ, assina Beatriz Rodrigues Polita — sócia adm.,
+  pode isolada pela Cláusula 6ª do contrato social); comprador do cadastro. **Dois cenários (decisão
+  do dono 12/07):** (1) há UNIDADE reservada → contrato trava modelo/cor/chassi e preço; (2) sem
+  unidade reservada (o caso COMUM — cliente junta esperando modelos novos) → contrato **por valor/
+  crédito** (valor de referência = meta, NÃO trava modelo nem preço; preço = tabela vigente na
+  retirada). **Entrega só com 100% integralizado** — o ponto de liberação do sistema (80%) **NÃO vai
+  pro contrato** (não expor liberação antecipada; se o dono quiser antecipar, é caso a caso, fora do
+  papel). **Retenção 25%** puxada do config (contrato e sistema batendo). Base jurídica e cláusulas: repo raiz
+  `juridico/contrato-compra-programada.md` (CDC art. 53 = veda perda total; retenção 25% = teto da
+  faixa segura; arrependimento 7 dias art. 49; foro do consumidor; título executivo c/ 2 testemunhas).
 
 ## Custos Operacionais (sub-aba do Financeiro) — classificação de custos
 **Estado (08/07/2026):** a aba classifica cada categoria de despesa por **natureza MANUAL**, não mais por variância estatística (que rotulava quase tudo como "variável" — 0 categorias fixas). Fonte da verdade = coluna **`categorias_lancamento.natureza`** (`fixo|semifixo|variavel|nao_recorrente`, nullable; NULL = "a classificar"). Editável no **modal de cadastro de categorias** (seletor "Natureza do custo").
