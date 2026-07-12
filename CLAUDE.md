@@ -532,7 +532,8 @@ vender** (e, na venda, pagar só a diferença). Feito: tabela `consignacoes_paga
 card com `Repasse · Já paguei · Falta`, **venda cobra só o saldo** (repasse − adiantado, nos 2 caminhos),
 dashboard "A repassar" só das vendidas + KPI "Adiantado aos donos", e `'Consignação'` em
 `_DRE_CATEGORIAS_FORA_DESPESA` (sem dupla contagem). Detalhe na seção **"Consignação — Enviada e Recebida"** →
-"Pagamento/adiantamento ao dono". Validado E2E ao vivo (dados de teste revertidos ao centavo). **Aguarda push.**
+"Pagamento/adiantamento ao dono". Validado E2E ao vivo (dados de teste revertidos ao centavo). **✅ Commit
+`6ed711b` pushed → GitHub Pages, produção confirmada.**
 
 ### 2026-07-11 (tarde) — Consignação: venda pelo PDV + foto + vitrine pública (MÓDULO COMPLETO)
 Fechou os 3 pedidos do dono. **Venda pelo PDV:** a consignada disponível aparece na busca do PDV ("SCOOTER X ·
