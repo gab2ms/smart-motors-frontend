@@ -458,6 +458,51 @@ as contas aparecem no módulo Contas a Pagar normalmente.
   recebida for construída, ela deve gerar a comissão no mesmo esquema. **CRM e Compra Programada já são
   cobertos** (geram `pdv_pedidos`).
 
+## Consignação — Enviada e Recebida (módulo, no ar 11/07/2026)
+Aba **"Consignação"** no menu (item solo logo após Vendas; ordem: Vendas · Consignação · Afiliados · Compra
+Programada · Produtos · Operação · Financeiro · Relatórios · CRM). Página `#page-localizacao` com **3 sub-abas**
+(`switchConsigTab`, lembra em localStorage `sm_consig_tab`): **📊 Dashboard** · **📤 Consignação Enviada** · **🤝
+Consignação Recebida**. `pageMeta`/`BREADCRUMB_MAP` = "Consignação".
+
+### 📤 Consignação Enviada (= a tela `localizacao` antiga)
+Motos que a loja DÁ a parceiros/quiosque + estoque da Matriz. `renderLocalizacao`, tabela `estoque_unidades`,
+botão "+ Enviar moto". Inalterada (só migrou pra dentro da sub-aba). Funções `_loc*`.
+
+### 🤝 Consignação Recebida (moto de TERCEIRO que a loja recebe pra vender)
+- **Tabela `consignacoes`** (migração `consignacoes_recebidas_base`, RLS `tem_modulo('localizacao')`):
+  consignante_cliente_id, produto_precos_id, produto_nome/cor/motor/fabricante/ano/estado/km, `itens_acompanham`
+  jsonb (checklist do que veio junto), valor_repasse, preco_venda, comissao_vendedor, vendedor_id, `foto_path`,
+  status (disponivel|vendida|devolvida), comprador_cliente_id, valor_venda, pedido_id, conta_pagar_repasse_id.
+- **Registro** (`abrirReceberConsignacaoModal`/`_consigrSalvar`): dono via `initClienteSearch`, modelo do catálogo,
+  dados da moto, **checklist de itens** (`_CONSIGR_ITENS_PADRAO`: Carregador/Chave reserva/Manual/Capa de chuva/
+  Kit ferramentas + livre), valores com **margem ao vivo**, **foto** (upload/câmera → bucket público `consignacoes`,
+  `consignacoes_bucket_fotos`; `_consigrPreviewFoto`/`_consigrFotoUrl`).
+- **Lista** (`renderConsignacaoRecebida`/`_consigrCard`): cards com thumbnail, dono, chassi, itens, valores; ações
+  Vender/Devolver/Editar/Excluir. **Dashboard** (`renderConsigDashboard`): resume as 2 pontas.
+- **MARGEM escondida dos vendedores** via `.js-custo` (repasse e preço de venda ficam visíveis).
+- **Venda — 2 caminhos, ambos geram repasse a pagar + comissão do vendedor, sem duplicar:**
+  1. **Atalho "Vender"** (`_consigrVender`/`_consigrConfirmarVenda`): modelo PASSAGEM (NÃO cria pdv_pedido/não mexe
+     no DRE) → **conta a receber** do comprador + repasse a pagar + comissão (dia 5, `consigr-<id>-comissao`). P/ admin.
+  2. **Pelo PDV** (fluxo dos vendedores): a consignada disponível aparece na busca do PDV ("SCOOTER modelo cor ·
+     consignada (dono)"), `produto_id=null` (NÃO baixa estoque), item único, chassi pré-preenchido. Ao finalizar →
+     pedido `origem='consignacao'` + `pdv_itens_pedido.custo_consignacao`=repasse+comissão; `_pdvProcessarConsignadas`
+     marca vendida (WHERE disponivel) + gera repasse; a comissão vem pelo **trigger** do pdv_pedido. **DRE:**
+     `calcularDRE` usa `custoConsig` (repasse) no lugar do custo do modelo → margem certa (ex. 8.000−7.000−100=900).
+     Migração `pdv_itens_consignacao_vinculo`. **Venda normal do PDV 100% intacta** (validado).
+- **Vitrine pública** (link WhatsApp): Edge Function `consignados-publicos` (verify_jwt=false, service_role, expõe
+  SÓ modelo/cor/specs/preço/foto — **NUNCA repasse/margem/dono/comprador**) + página `frontend/consignados.html`
+  (dark/dourada, mobile-first, wa.me/5521997507738). Botão "🔗 Link da vitrine" (`_consigrCopiarLinkVitrine`) copia
+  `smartmotorsapp.com.br/consignados.html`. Atualiza sozinha (só disponíveis).
+- **Código:** bloco `consig*/consigr*` em `index.html` logo após `_locAbrirLancamentoConsignacao` + edições no PDV
+  (`_pdvGarantirProdutos`, `_pdvAddItemFromIdx`, `_pdvFinalizarVenda`, `_pdvProcessarConsignadas`) + DRE
+  (`buscarVendasMescladas`, `calcularDRE`).
+- **Piloto:** Andrisa (dono, `bfbae8e8…`) + Alessandro (comprador, `efa327fc…`) cadastrados; consignação Harley 16
+  Preta (chassi 2025072000122, repasse 7.000/venda 8.000/comissão 100 Michelle) registrada **disponível**
+  (`0a997642…`). Venda real Andrisa→Alessandro (cartão R$8.000) o dono marca quando quiser.
+- **Follow-up conhecido:** espelhar `custoConsig` em `buscarLinhasVenda` (~5614, reconciliação DRE×Caixa/
+  Relatórios) senão a consignada pode divergir lá (o DRE principal já está certo). `produtosTiny` do PDV cacheia
+  na sessão — proteção contra vender 2x = update WHERE status='disponivel'.
+
 ## Histórico de mudanças
 
 ### 2026-07-11 (tarde) — Consignação: venda pelo PDV + foto + vitrine pública (MÓDULO COMPLETO)
