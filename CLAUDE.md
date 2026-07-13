@@ -598,9 +598,9 @@ do Supabase e a mudança vale na hora.
   `claude -p /atualizar-novidades auto`, mas o **Supabase MCP não carrega no `claude` headless** (é OAuth interativo →
   some no cron; confirmado por smoke test). Escrever no mural pelo cron exigiria a **service_role key** num arquivo local
   (acesso total ao banco) — trade-off de segurança que o dono precisa aprovar. Alternativa sem chave: o cron só **detecta
-  e avisa no WhatsApp** "tem novidade pra publicar", e eu publico na sessão. **Decisão do dono pendente** — a regra
-  por-evento acima já cobre o essencial. O **modo `auto`** da skill (nunca esvazia · rotação ~6 · aviso textmebot) já
-  está escrito pra quando/se o cron for montado.
+  e avisa no WhatsApp** "tem novidade pra publicar", e eu publico na sessão. **Decisão do dono (13/07/2026): ficar com a
+  regra por-evento — sem cron/LaunchAgent** (não expor a service_role key no Mac; segurança > conveniência). O **modo
+  `auto`** da skill (nunca esvazia · rotação ~6 · aviso textmebot) fica escrito caso o dono mude de ideia no futuro.
 - **Estado atual (12/07/2026):** mural **limpo** (removidas as 5 novidades antigas de 14/06) e recadastrado com 5 itens
   recentes — **3 em destaque:** ⭐ Compra Programada (10/07), ⭐ Compra e Venda Consignada (11/07), ⭐ Sistema de Afiliados
   (08/07); + Comissão de venda automática (11/07) e Raio-X do caixa/DRE nova (09/07). CRM/WhatsApp ficou **de fora** de
