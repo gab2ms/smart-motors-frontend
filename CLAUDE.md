@@ -509,10 +509,11 @@ as contas aparecem no módulo Contas a Pagar normalmente.
 - **Validado E2E via MCP (11/07):** venda nova 200→300 · cancelar 300→200 · reativar 200→300 · acessório
   não soma (fica 300) · excluir 300→200. Dados de teste apagados. Advisor: só os 3 avisos genéricos de
   SECURITY DEFINER, mitigados com revoke.
-- **Escopo/limite:** a comissão da **consignação recebida** (piloto, ver `_memoria/tarefa-atual.md`) NÃO
-  passa por `pdv_pedidos`, então fica numa conta à parte (lançada à mão) — quando a tela de consignação
-  recebida for construída, ela deve gerar a comissão no mesmo esquema. **CRM e Compra Programada já são
-  cobertos** (geram `pdv_pedidos`).
+- **Escopo/limite:** **CRM e Compra Programada** são cobertos por gerarem `pdv_pedidos`. A **consignação
+  recebida** também: vendida **pelo PDV** conta como scooter (tem pedido_id); vendida **pelo atalho**
+  (sem pdv_pedido) entra pela extensão de `fn_recalc_comissao_vendedor` + gatilho
+  `trg_comissao_vend_consignacoes` (migração `comissao_vendedor_inclui_consignada`, 13/07/2026) — ver
+  seção "Consignação". Não há mais conta de comissão à parte pra consignada.
 
 ## Consignação — Enviada e Recebida (módulo, no ar 11/07/2026)
 Aba **"Consignação"** no menu (item solo logo após Vendas; ordem: Vendas · Consignação · Afiliados · Compra
@@ -578,7 +579,61 @@ botão "+ Enviar moto". Inalterada (só migrou pra dentro da sub-aba). Funções
   Relatórios) senão a consignada pode divergir lá (o DRE principal já está certo). `produtosTiny` do PDV cacheia
   na sessão — proteção contra vender 2x = update WHERE status='disponivel'.
 
+## Mural de Novidades (changelog da equipe) — tabela `novidades`
+Changelog que a equipe vê num **pop-up 1×/dia no login** ("📣 Novidades") e é gerenciado no Admin ("Mural de
+Novidades"). **100% dado no banco** (tabela `public.novidades`) — **não precisa commit/deploy**, a tela lê ao vivo
+do Supabase e a mudança vale na hora.
+- **Colunas:** `titulo` (obrigatório), `descricao` (texto simples; `\n\n` = parágrafo, renderiza `white-space:pre-line`),
+  `data_publicacao` (date, ordena o pop-up — recentes no topo), `importante` (bool → ⭐/borda dourada; reservar pras
+  principais), `ativo` (bool → some do pop-up se false). `id`/`created_at` têm default.
+- **Código (`index.html`):** `initNovidades`/`renderNovidades`/`abrirNovidadeModal` (CRUD no Admin) + `_mostrarNovidadesDoDia`
+  (pop-up; chave localStorage `sm_novidades_vistas_<data>` por dia/navegador → a nova leva aparece sozinha no próximo login).
+- **Como atualizar:** skill **`/atualizar-novidades`** (`.claude/skills/atualizar-novidades/`) — levanta o que entrou de
+  novo (via este CLAUDE.md), escreve em linguagem simples e grava via Supabase MCP (limpa e refaz, ou acrescenta).
+- **Manter atualizado (regra por-evento — MECANISMO ATIVO):** sempre que uma feature relevante pra equipe vai **ao ar**
+  numa sessão, **já atualizar o mural na hora** com a skill (acrescentar, sem esvaziar). É o jeito mais robusto — as
+  novidades nascem nas sessões (onde o Supabase MCP funciona), então o mural fica fresco em tempo real; quando não há
+  novidade, o pop-up repete as últimas sozinho. Avisar o dono na conversa.
+- **Automação semanal no Mac — NÃO montada (limitação técnica, 13/07/2026):** a ideia era um LaunchAgent rodando
+  `claude -p /atualizar-novidades auto`, mas o **Supabase MCP não carrega no `claude` headless** (é OAuth interativo →
+  some no cron; confirmado por smoke test). Escrever no mural pelo cron exigiria a **service_role key** num arquivo local
+  (acesso total ao banco) — trade-off de segurança que o dono precisa aprovar. Alternativa sem chave: o cron só **detecta
+  e avisa no WhatsApp** "tem novidade pra publicar", e eu publico na sessão. **Decisão do dono pendente** — a regra
+  por-evento acima já cobre o essencial. O **modo `auto`** da skill (nunca esvazia · rotação ~6 · aviso textmebot) já
+  está escrito pra quando/se o cron for montado.
+- **Estado atual (12/07/2026):** mural **limpo** (removidas as 5 novidades antigas de 14/06) e recadastrado com 5 itens
+  recentes — **3 em destaque:** ⭐ Compra Programada (10/07), ⭐ Compra e Venda Consignada (11/07), ⭐ Sistema de Afiliados
+  (08/07); + Comissão de venda automática (11/07) e Raio-X do caixa/DRE nova (09/07). CRM/WhatsApp ficou **de fora** de
+  propósito (equipe ainda não usa — aguarda 360dialog).
+
 ## Histórico de mudanças
+
+### 2026-07-13 — Consignação: múltiplas formas + recebimento + comissão na automática; CEP no cadastro rápido
+Pedidos do dono na sequência (a venda real da Harley destravou tudo). **(1) Venda pelo atalho** (`_consigrVender`/
+`_consigrConfirmarVenda`): forma única → **lista de formas** (cartão+pix+transferência, cada uma com valor, total soma
+sozinho; helpers `_consigrAddForma`/`_consigrRemoveForma`/`_consigrLerFormas`/`_consigrRecalcFormas`) + seletor de
+**Recebimento** (`_consigrRecebChg`): *a receber* (conta a receber, como antes) · *lançar no caixa agora* (entrada em
+`lancamentos` na conta escolhida, categoria 'Consignação', +saldo, com rollback) · *já lancei por fora* (não mexe no
+caixa nem cria a receber). `forma_pagamento` jsonb virou `{metodos:[{tipo,valor}], recebimento}`. **(2) Comissão da
+consignada integrada na automática:** a venda pelo atalho **não cria mais** a conta `consigr-<id>-comissao` separada;
+`fn_recalc_comissao_vendedor` **estendida** (migração `comissao_vendedor_inclui_consignada`) soma as consignadas
+vendidas pelo atalho (`status='vendida'`, `pedido_id IS NULL`, competência=data_venda) × `comissao_vendedor`, e o
+**gatilho novo `trg_comissao_vend_consignacoes`** (AFTER I/U/D em consignacoes) recalcula sozinho → cai na conta mensal
+`comvend-<mês>-<vendedor>`, junto com as scooters do PDV (paga no dia 5). Consignada vendida pelo PDV tem pedido_id e já
+conta como scooter → filtro evita dobra. **(3) CEP no cadastro rápido** (`#cli-quick-modal` +
+`openCliQuickModal`/`salvarCliQuick`, usado na consignada E na compra programada): campo "Endereço" único → **CEP com
+auto-preenchimento ViaCEP** + rua/número/complemento/bairro/cidade/uf (espelho do PDV; `_cliqAgendaCep`/`_cliqBuscaCep`),
+grava nos campos separados de `clientes` + `endereco` consolidado. **Harley real** (Andrisa→Alessandro) ajustada no
+banco: valor 8.000→**7.930,50** (líquido; margem 830,50), conta a receber automática (8.000) **removida** (lançada por
+fora), comissão (100) **integrada** na da Michelle de julho (300→**400**), repasse 7.000 **mantido** (paga pelo Contas a
+Pagar). Validado: localhost (sintaxe, UI formas/recebimento, CEP real, **dry-run interceptando o `sb`** confirmou o que
+cada modo grava) + banco (recálculo, advisors sem alerta novo). **✅ commit `c16b8f1` pushed → GitHub Pages.**
+
+### 2026-07-12 (tarde) — Mural de Novidades refeito + skill `/atualizar-novidades`
+Dono pediu pra refazer a tela de Novidades mostrando só as implementações recentes. Mural limpo (5 antigas de 14/06
+apagadas) e recadastrado com 5 itens (3 em destaque: Compra Programada, Consignada, Afiliados; + comissão automática e
+Raio-X financeiro), em linguagem simples. É dado na tabela `novidades` (sem deploy). Criada a skill local
+**`/atualizar-novidades`** pra automatizar as próximas levas. Ver seção **"Mural de Novidades"**.
 
 ### 2026-07-12 (tarde) — CRM WhatsApp: decisão de coexistência (360dialog) + código adaptado (bi-provider)
 Dono retomou o CRM pra ligar o WhatsApp e decidiu por **coexistência via 360dialog** (mantém o número atual
