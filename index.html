@@ -1852,7 +1852,7 @@ select:not(.input-pro):not(.search-input){
 
 <!-- MODAL RÁPIDO: CADASTRAR CLIENTE (global — abre sobre qualquer modal) -->
 <div class="modal-overlay" id="cli-quick-modal" style="z-index:500;">
-  <div class="modal" style="width:440px;max-width:94vw;">
+  <div class="modal" style="width:480px;max-width:94vw;">
     <div class="modal-title">Cadastrar <span>cliente</span> rápido</div>
     <div class="form-grid">
       <div class="form-group full">
@@ -1871,12 +1871,37 @@ select:not(.input-pro):not(.search-input){
         <label>Email</label>
         <input class="form-input" id="cliq-email" type="text" placeholder="email@exemplo.com">
       </div>
+      <div class="form-group">
+        <label>CEP</label>
+        <input class="form-input" id="cliq-cep" type="text" inputmode="numeric" placeholder="00000-000" oninput="_cliqAgendaCep()">
+        <div id="cliq-cep-msg" style="font-size:10px;color:var(--text3);margin-top:3px;min-height:12px;"></div>
+      </div>
+      <div class="form-group">
+        <label>Número</label>
+        <input class="form-input" id="cliq-numero" type="text" placeholder="nº / casa / apto">
+      </div>
       <div class="form-group full">
-        <label>Endereço</label>
-        <input class="form-input" id="cliq-endereco" type="text" placeholder="Rua, número, bairro...">
+        <label>Rua / Logradouro</label>
+        <input class="form-input" id="cliq-rua" type="text" placeholder="preenche sozinho pelo CEP">
+      </div>
+      <div class="form-group">
+        <label>Bairro</label>
+        <input class="form-input" id="cliq-bairro" type="text" placeholder="preenche pelo CEP">
+      </div>
+      <div class="form-group">
+        <label>Complemento</label>
+        <input class="form-input" id="cliq-complemento" type="text" placeholder="bloco, referência...">
+      </div>
+      <div class="form-group">
+        <label>Cidade</label>
+        <input class="form-input" id="cliq-cidade" type="text" placeholder="preenche pelo CEP">
+      </div>
+      <div class="form-group">
+        <label>UF</label>
+        <input class="form-input" id="cliq-uf" type="text" maxlength="2" placeholder="UF" style="text-transform:uppercase;">
       </div>
     </div>
-    <div style="font-size:10px;color:var(--text3);margin-top:6px;">* Só o nome é obrigatório</div>
+    <div style="font-size:10px;color:var(--text3);margin-top:6px;">* Só o nome é obrigatório · digite o CEP que o resto preenche sozinho</div>
     <div class="modal-actions">
       <button class="btn" onclick="closeCliQuickModal()">Cancelar</button>
       <button class="btn btn-gold" onclick="salvarCliQuick()">Cadastrar e usar</button>
@@ -17260,9 +17285,49 @@ function openCliQuickModal(nomePrefill, alvoContainerId, onDone){
   document.getElementById('cliq-tel').value      = '';
   document.getElementById('cliq-cpf').value      = '';
   document.getElementById('cliq-email').value    = '';
-  document.getElementById('cliq-endereco').value = '';
+  ['cliq-cep','cliq-rua','cliq-numero','cliq-complemento','cliq-bairro','cliq-cidade','cliq-uf']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  _cliqMsgCep('');
   document.getElementById('cli-quick-modal').classList.add('open');
   document.getElementById('cliq-nome').focus();
+}
+
+// Busca de CEP no cadastro rápido (espelho do PDV `_pdvBuscaCep`): digita o CEP,
+// o ViaCEP preenche rua/bairro/cidade/uf e o foco pula pro Número.
+let _cliqCepTimer = null;
+function _cliqAgendaCep(){ clearTimeout(_cliqCepTimer); _cliqCepTimer = setTimeout(_cliqBuscaCep, 500); }
+function _cliqMsgCep(texto, cor){
+  const el = document.getElementById('cliq-cep-msg');
+  if (!el) return;
+  el.textContent = texto || '';
+  el.style.color = cor || 'var(--text3)';
+}
+async function _cliqBuscaCep(){
+  const raw  = (document.getElementById('cliq-cep')?.value || '').trim();
+  const cep8 = raw.replace(/\D/g, '');
+  if (cep8.length < 8) { _cliqMsgCep(''); return; }
+  _cliqMsgCep('Buscando endereço…');
+  const ruaEl = document.getElementById('cliq-rua');
+  if (ruaEl) ruaEl.style.opacity = '0.6';
+  try {
+    const res = await fetch(VIACEP_URL.replace('{cep}', cep8));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data?.erro) { _cliqMsgCep('CEP não encontrado'); return; }
+    const upd = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+    upd('cliq-rua',    data.logradouro || '');
+    upd('cliq-bairro', data.bairro     || '');
+    upd('cliq-cidade', data.localidade || '');
+    upd('cliq-uf',     (data.uf || '').toUpperCase());
+    _cliqMsgCep('✓ endereço preenchido', 'var(--green)');
+    const numEl = document.getElementById('cliq-numero');
+    if (numEl) numEl.focus();
+  } catch (e) {
+    console.warn('[viacep cliq]', e.message);
+    _cliqMsgCep('Não deu pra buscar o CEP — preencha manualmente');
+  } finally {
+    if (ruaEl) ruaEl.style.opacity = '';
+  }
 }
 
 // Cancelar/fechar — NÃO dispara onDone. Só salvarCliQuick (sucesso) dispara.
@@ -17279,10 +17344,31 @@ async function salvarCliQuick(){
   const tel      = document.getElementById('cliq-tel').value.trim();
   const cpf      = document.getElementById('cliq-cpf').value.trim();
   const email    = document.getElementById('cliq-email').value.trim();
-  const endereco = document.getElementById('cliq-endereco').value.trim();
   if (tel)      novo.telefone = tel;
   if (cpf)      novo.cpf_cnpj = cpf;
   if (email)    novo.email = email;
+  // endereço em campos separados (mesmo esquema do PDV/contrato da compra programada)
+  const cep         = document.getElementById('cliq-cep').value.trim();
+  const rua         = document.getElementById('cliq-rua').value.trim();
+  const numero      = document.getElementById('cliq-numero').value.trim();
+  const complemento = document.getElementById('cliq-complemento').value.trim();
+  const bairro      = document.getElementById('cliq-bairro').value.trim();
+  const cidade      = document.getElementById('cliq-cidade').value.trim();
+  const uf          = document.getElementById('cliq-uf').value.trim().toUpperCase();
+  if (cep)         novo.cep = cep;
+  if (rua)         novo.rua = rua;
+  if (numero)      novo.numero = numero;
+  if (complemento) novo.complemento = complemento;
+  if (bairro)      novo.bairro = bairro;
+  if (cidade)      novo.cidade = cidade;
+  if (uf)          novo.uf = uf;
+  // endereço consolidado (compat com telas que exibem cliente.endereco em 1 linha)
+  const _endParts = [];
+  if (rua)    _endParts.push(rua + (numero ? ', ' + numero : ''));
+  if (complemento) _endParts.push(complemento);
+  if (bairro) _endParts.push(bairro);
+  if (cidade) _endParts.push(cidade + (uf ? '/' + uf : ''));
+  const endereco = _endParts.join(' - ');
   if (endereco) novo.endereco = endereco;
 
   const { data, error } = await sb.from('clientes').insert(novo).select().single();
@@ -23068,6 +23154,8 @@ function _consigrVender(id) {
   const vendNome = (_consigrVendedores || []).find(v => String(v.id) === String(c.vendedorId));
   const _adiant  = Number(c.adiantado) || 0;
   const _saldoRep = Math.max(0, (Number(c.valorRepasse)||0) - _adiant);
+  const contasOpt = (contas || []).map(ct =>
+    `<option value="${ct.id}">${escHtml(ct.nome)} (${_fmtBRMoney(ct.saldo)})</option>`).join('');
   const body =
     `<div style="font-size:11px;color:var(--text3);margin-bottom:12px;padding:10px 12px;background:var(--bg2);border-radius:8px;">
        <strong>${escHtml(c.produtoNome||'moto')}${c.cor?' · '+escHtml(c.cor):''}</strong>${c.chassi?' · chassi '+escHtml(c.chassi):''}<br>
@@ -23076,17 +23164,86 @@ function _consigrVender(id) {
      <div class="form-grid">
        <div class="form-group full"><label>Comprador</label><div id="consigr-venda-cli"></div>
          <div style="font-size:10px;color:var(--text3);margin-top:4px;">Não achou? Digite o nome e clique em "+ Cadastrar este cliente".</div></div>
-       <div class="form-group"><label>Valor da venda (R$)</label><input class="form-input" id="consigr-venda-valor" type="number" step="0.01" value="${c.precoVenda??''}"></div>
        <div class="form-group"><label>Data da venda</label><input class="form-input" id="consigr-venda-data" type="date" value="${_locHojeISO()}"></div>
-       <div class="form-group full"><label>Forma de pagamento</label>
-         <select class="form-input" id="consigr-venda-forma">
-           <option value="dinheiro">Dinheiro</option><option value="pix">Pix</option>
-           <option value="cartao">Cartão</option><option value="transferencia">Transferência</option>
+       <div class="form-group"><label>Valor total da venda</label><input class="form-input" id="consigr-venda-valor" type="number" step="0.01" value="${c.precoVenda??''}" readonly style="background:var(--bg2);font-weight:700;" title="Soma automática das formas de pagamento abaixo"></div>
+       <div class="form-group full"><label>Formas de pagamento <span style="color:var(--text3);font-weight:400;">(pode dividir em mais de uma)</span></label>
+         <div id="consigr-venda-formas"></div>
+         <button class="btn" type="button" onclick="_consigrAddForma()" style="font-size:11px;padding:5px 12px;margin-top:6px;">+ Adicionar forma</button>
+         <div id="consigr-venda-formas-aviso" style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.5;"></div>
+       </div>
+       <div class="form-group full"><label>Recebimento</label>
+         <select class="form-input" id="consigr-venda-receb" onchange="_consigrRecebChg()">
+           <option value="receber">Cliente vai pagar depois — gera conta a receber</option>
+           <option value="caixa">Já recebi — lançar no caixa agora</option>
+           <option value="fora">Já recebi — já lancei / por fora (não mexe no caixa)</option>
          </select></div>
+       <div class="form-group full" id="consigr-venda-conta-wrap" style="display:none;"><label>Conta que recebeu o dinheiro</label>
+         <select class="form-input" id="consigr-venda-conta">${contasOpt}</select></div>
      </div>
-     <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.5;">Ao confirmar eu gero no financeiro: <strong>conta a receber</strong> do comprador${_saldoRep>0?` · <strong>conta a pagar</strong> do repasse ao dono (${_fmtBRMoney(_saldoRep)}${_adiant>0?' — só o que falta':''})`:(_adiant>0?' · repasse já quitado nos adiantamentos':'')}${(c.vendedorId&&(Number(c.comissaoVendedor)||0)>0)?' · <strong>comissão</strong> do vendedor (venc. dia 5)':''}. Você marca recebido/pago quando o dinheiro girar.</div>`;
+     <div id="consigr-venda-nota" style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.5;"></div>`;
   _consigrModalShell('Vender <span>consignada</span>', body, 'Confirmar venda', _consigrConfirmarVenda, 560);
   initClienteSearch('consigr-venda-cli', { placeholder: 'Buscar comprador por nome, telefone ou CPF' });
+  _consigrAddForma(c.precoVenda);   // 1ª forma já vem com o preço da moto
+  _consigrRecebChg();
+}
+
+// Formas de pagamento da venda consignada (pode dividir em várias: cartão+pix+…)
+const _CONSIGR_FORMAS = [['dinheiro','Dinheiro'],['pix','Pix'],['cartao','Cartão'],['transferencia','Transferência']];
+function _consigrFormaLabel(t) { const m = _CONSIGR_FORMAS.find(x => x[0] === t); return m ? m[1] : (t || '—'); }
+
+function _consigrAddForma(valorInicial) {
+  const box = document.getElementById('consigr-venda-formas');
+  if (!box) return;
+  const row = document.createElement('div');
+  row.className = 'consigr-forma-linha';
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 130px auto;gap:8px;margin-bottom:6px;align-items:center;';
+  const opts = _CONSIGR_FORMAS.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+  const val = (valorInicial != null && valorInicial !== '') ? Number(valorInicial).toFixed(2) : '';
+  row.innerHTML =
+      `<select class="form-input cf-tipo">${opts}</select>`
+    + `<input class="form-input cf-valor" type="number" step="0.01" min="0" placeholder="0,00" value="${val}" oninput="_consigrRecalcFormas()">`
+    + `<button class="btn" type="button" onclick="_consigrRemoveForma(this)" title="Remover esta forma" style="padding:6px 10px;">✕</button>`;
+  box.appendChild(row);
+  _consigrRecalcFormas();
+}
+
+function _consigrRemoveForma(btn) {
+  const box = document.getElementById('consigr-venda-formas');
+  const row = btn.closest('.consigr-forma-linha');
+  if (row && box && box.querySelectorAll('.consigr-forma-linha').length > 1) row.remove();
+  else if (row) { const v = row.querySelector('.cf-valor'); if (v) v.value = ''; } // última linha: só zera
+  _consigrRecalcFormas();
+}
+
+function _consigrLerFormas() {
+  return Array.from(document.querySelectorAll('#consigr-venda-formas .consigr-forma-linha')).map(r => ({
+    tipo: r.querySelector('.cf-tipo')?.value || 'dinheiro',
+    valor: Number(r.querySelector('.cf-valor')?.value || 0),
+  }));
+}
+
+function _consigrRecalcFormas() {
+  const formas = _consigrLerFormas();
+  const soma = formas.reduce((s,f) => s + (Number(f.valor)||0), 0);
+  const valEl = document.getElementById('consigr-venda-valor');
+  if (valEl) valEl.value = soma ? soma.toFixed(2) : '';
+  const aviso = document.getElementById('consigr-venda-formas-aviso');
+  if (aviso) aviso.innerHTML = `Total da venda: <strong>${_fmtBRMoney(soma)}</strong>${formas.length > 1 ? ` (${formas.length} formas)` : ''}.`;
+}
+
+function _consigrRecebChg() {
+  const receb = document.getElementById('consigr-venda-receb')?.value || 'receber';
+  const wrap = document.getElementById('consigr-venda-conta-wrap');
+  if (wrap) wrap.style.display = (receb === 'caixa') ? '' : 'none';
+  const nota = document.getElementById('consigr-venda-nota');
+  if (nota) {
+    const como = receb === 'receber'
+        ? 'Vou gerar uma <strong>conta a receber</strong> do comprador (você marca recebido quando o dinheiro entrar).'
+      : receb === 'caixa'
+        ? 'Vou <strong>lançar a entrada no caixa agora</strong>, na conta escolhida — sem conta a receber.'
+        : 'Só registro a venda como <strong>paga</strong> — <strong>não</strong> mexo no caixa (você já lançou por fora).';
+    nota.innerHTML = como + ' O <strong>repasse ao dono</strong> e a <strong>comissão</strong> do vendedor (se houver) são gerados em qualquer caso.';
+  }
 }
 
 async function _consigrConfirmarVenda() {
@@ -23096,30 +23253,57 @@ async function _consigrConfirmarVenda() {
   if (!c) return;
   const sel = clienteSearchGet('consigr-venda-cli');
   if (!sel || sel.tipo !== 'cliente') return smAlert('Selecione o comprador (cliente cadastrado). Se não existir, cadastre pelo "+ Cadastrar este cliente".');
-  const valor = Number(document.getElementById('consigr-venda-valor').value || 0);
   const data  = document.getElementById('consigr-venda-data').value || _locHojeISO();
-  const forma = document.getElementById('consigr-venda-forma').value || 'dinheiro';
+  const receb = document.getElementById('consigr-venda-receb')?.value || 'receber';
+  const formas = _consigrLerFormas().filter(f => (Number(f.valor)||0) > 0);
+  if (!formas.length) return smAlert('Informe ao menos uma forma de pagamento com valor.');
+  const valor = formas.reduce((s,f) => s + (Number(f.valor)||0), 0);
   if (!(valor > 0)) return smAlert('Informe o valor da venda.');
 
+  // conta de destino só quando "lançar no caixa agora"
+  let ctaBanco = null;
+  if (receb === 'caixa') {
+    const contaId = document.getElementById('consigr-venda-conta')?.value || null;
+    ctaBanco = (contas || []).find(x => String(x.id) === String(contaId));
+    if (!ctaBanco) return smAlert('Escolha a conta que recebeu o dinheiro (ou troque para "já lancei por fora").');
+  }
+
   if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  let lancEntradaId = null;   // p/ rollback se algo falhar depois de lançar
   try {
     const repasse  = Number(c.valorRepasse) || 0;
-    const comissao = Number(c.comissaoVendedor) || 0;
     const donoNome = _consigrNomeDono(c);
     const moto = (c.produtoNome || 'moto') + (c.cor ? ' ' + c.cor : '');
-    // dia 5 do mês seguinte à venda (sem Date, TZ-safe)
-    const [vy, vm] = data.split('-').map(Number);
-    const venc5 = `${vm===12?vy+1:vy}-${String(vm===12?1:vm+1).padStart(2,'0')}-05`;
-    const comp = data.slice(0, 7);
+    const formasTxt = formas.map(f => `${_consigrFormaLabel(f.tipo)} ${_fmtBRMoney(f.valor)}`).join(' + ');
+    const formaPag = { metodos: formas, recebimento: receb };
 
-    // 1) conta a RECEBER do comprador
-    const crId = `consigr-${id}-receber`;
-    const r1 = await sb.from('contas_receber').insert({
-      id: crId, descricao: `Venda consignada · ${moto} (${sel.cliente.nome})`,
-      cliente_id: sel.clienteId, valor, vencimento: data, status: 'pendente', categoria: 'Consignação', avisar: 0,
-      observacao: `Consignacao recebida (dono ${donoNome}). Forma: ${forma}. Repasse ao dono ${_fmtBRMoney(repasse)}.`,
-    });
-    if (r1.error && r1.error.code !== '23505') throw r1.error;
+    // 1) RECEBIMENTO do comprador — 3 modos:
+    let crId = null;   // conta a receber (só no modo "receber depois")
+    if (receb === 'receber') {
+      crId = `consigr-${id}-receber`;
+      const r1 = await sb.from('contas_receber').insert({
+        id: crId, descricao: `Venda consignada · ${moto} (${sel.cliente.nome})`,
+        cliente_id: sel.clienteId, valor, vencimento: data, status: 'pendente', categoria: 'Consignação', avisar: 0,
+        observacao: `Consignacao recebida (dono ${donoNome}). Forma: ${formasTxt}. Repasse ao dono ${_fmtBRMoney(repasse)}.`,
+      });
+      if (r1.error && r1.error.code !== '23505') throw r1.error;
+    } else if (receb === 'caixa') {
+      // entrada no caixa AGORA (já recebido). Mesma categoria 'Consignação' que a
+      // conta a receber usaria ao ser quitada → os dois caminhos ficam idênticos no caixa.
+      lancEntradaId = 'consigrvenda_' + id + '_' + Date.now();
+      const lancPayload = {
+        id: lancEntradaId, tipo: 'entrada',
+        descricao: `Venda consignada · ${moto} (${sel.cliente.nome})`,
+        valor, data, categoria: 'Consignação',
+        conta_id: ctaBanco.id, conta_nome: ctaBanco.nome,
+        observacao: `Recebido do comprador. Forma: ${formasTxt}.`,
+      };
+      const { error: eL } = await sb.from('lancamentos').insert(lancPayload);
+      if (eL) throw new Error('Erro ao lançar no caixa: ' + eL.message);
+      lancamentos.unshift(toCamel(lancPayload));
+      ctaBanco.saldo = Number(ctaBanco.saldo || 0) + valor;
+    }
+    // receb === 'fora' → não cria conta a receber nem lançamento (você já lançou por fora)
 
     // 2) conta a PAGAR do repasse ao dono — só o SALDO (repasse − o que já foi
     //    adiantado ao dono antes da venda). Se já quitou tudo, não gera conta.
@@ -23137,30 +23321,38 @@ async function _consigrConfirmarVenda() {
       if (r2.error && r2.error.code !== '23505') throw r2.error;
     }
 
-    // 3) COMISSÃO do vendedor (conta a pagar, dia 5) — consignação não é pdv_pedido, então é lançada à parte
-    if (c.vendedorId && comissao > 0) {
-      const vend = (_consigrVendedores || []).find(v => String(v.id) === String(c.vendedorId));
-      const r3 = await sb.from('contas_pagar').insert({
-        id: `consigr-${id}-comissao`, descricao: `Comissao de venda · ${vend?vend.nome:'vendedor'} · ${moto} (consignada)`,
-        valor: comissao, vencimento: venc5, categoria: 'Comissão de Vendas', status: 'pendente',
-        beneficiario: vend?vend.nome:'vendedor', comissao_competencia: comp, avisar: 3,
-        observacao: `Comissao da venda de consignacao recebida. Competencia ${comp}.`,
-      });
-      if (r3.error && r3.error.code !== '23505') throw r3.error;
-    }
+    // 3) COMISSÃO do vendedor: NÃO é criada aqui. O UPDATE status='vendida' abaixo
+    //    dispara o gatilho trg_comissao_vend_consignacoes → a comissão entra na conta
+    //    de comissão automática MENSAL do vendedor (comvend-<mês>-<vendedor>), junto
+    //    com as scooters do PDV, pra pagar tudo de uma vez no dia 5.
 
     // 4) marca a consignação VENDIDA
     const { error } = await sb.from('consignacoes').update({
       status: 'vendida', comprador_cliente_id: sel.clienteId, valor_venda: valor,
-      data_venda: data, forma_pagamento: { forma }, conta_receber_id: crId, conta_pagar_repasse_id: cpRepId,
+      data_venda: data, forma_pagamento: formaPag, conta_receber_id: crId, conta_pagar_repasse_id: cpRepId,
       atualizado_em: new Date().toISOString(),
     }).eq('id', id);
     if (error) throw error;
 
+    if (lancEntradaId && typeof salvarDados === 'function') salvarDados();
+    if (typeof renderContas === 'function')      renderContas();
+    if (typeof renderFinKpis === 'function')     renderFinKpis();
+    if (typeof renderLancamentos === 'function') renderLancamentos();
     const m = document.getElementById('consigr-modal'); if (m) m.remove();
     await initConsignacaoRecebida();
-    if (typeof smToast === 'function') smToast('✅ Venda registrada. Contas geradas no financeiro.');
+    const msg = receb === 'receber' ? '✅ Venda registrada. Conta a receber gerada.'
+      : receb === 'caixa' ? '✅ Venda registrada e recebida no caixa.'
+      : '✅ Venda registrada (recebimento já lançado por fora).';
+    if (typeof smToast === 'function') smToast(msg);
   } catch (e) {
+    // rollback do lançamento de entrada (sem transação no client)
+    if (lancEntradaId) {
+      try {
+        await sb.from('lancamentos').delete().eq('id', lancEntradaId);
+        lancamentos = lancamentos.filter(l => l.id !== lancEntradaId);
+        if (ctaBanco) ctaBanco.saldo = Number(ctaBanco.saldo || 0) - valor;
+      } catch (_) {}
+    }
     smAlert('Erro ao registrar venda: ' + (e.message || e));
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Confirmar venda'; }
