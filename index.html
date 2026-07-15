@@ -4290,6 +4290,13 @@ let emprestimoSelecionadoId = null;
 // (produtos_precos.venda_na_caixa) é entregue sem montar → a loja não tem esse
 // custo, então ele sai do ctReal/CPV (margem/lucro real, em todo o sistema).
 const _montagemCusto = p => (p && p.vendaNaCaixa) ? 0 : ((p && p.montagem) || 0);
+// Montagem no custo de UMA venda específica (CPV/DRE): a modalidade do ITEM
+// vendido (it.naCaixa) manda; sem essa info (vendas antigas) cai no padrão do
+// modelo (produtos_precos.venda_na_caixa). Preserva a reconciliação DRE×Relatórios.
+const _montagemCustoVenda = (prod, it) => {
+  const naCaixa = (it && it.naCaixa != null) ? it.naCaixa : (prod && prod.vendaNaCaixa);
+  return naCaixa ? 0 : ((prod && prod.montagem) || 0);
+};
 const ctReal = p => {
   const base = (p.custoPuro||0) + _montagemCusto(p);
   return (p.categoria||'scooter') === 'acessorio'
@@ -5512,7 +5519,7 @@ async function buscarVendasMescladas(iniISO, fimISO, forcar) {
     // normalizarNomeVendedor pra agrupar com Tiny ("Henrique Quiosque" e
     // "Henrique" do PDV viram "Henrique" no ranking).
     var resp = await sb.from('pdv_pedidos')
-      .select('id,numero_smart,total,status,tiny_pedido_id,criado_em,vendedor_id,local_venda_id,cliente_dados,forma_pagamento,pdv_itens_pedido(produto_id,produto_nome_tiny,quantidade,valor_unitario,ordem,custo_consignacao)')
+      .select('id,numero_smart,total,status,tiny_pedido_id,criado_em,vendedor_id,local_venda_id,cliente_dados,forma_pagamento,pdv_itens_pedido(produto_id,produto_nome_tiny,quantidade,valor_unitario,ordem,custo_consignacao,na_caixa)')
       .neq('status', 'cancelado')
       .gte('criado_em', j.iniUTC)
       .lt('criado_em', j.fimUTC);
@@ -5528,6 +5535,7 @@ async function buscarVendasMescladas(iniISO, fimISO, forcar) {
             valorUnitario: Number(it.valor_unitario) || 0,
             produtoId:     it.produto_id || null, // FK p/ produtos (relatórios); descartado antes
             custoConsig:   (it.custo_consignacao != null) ? Number(it.custo_consignacao) : null,
+            naCaixa:       !!it.na_caixa, // modalidade da venda: na caixa = sem montagem no CPV
           };
         });
       var vendObj = null;
@@ -5653,7 +5661,7 @@ async function buscarLinhasVenda(iniISO, fimISO){
       if (prod) {
         matched     = true;
         const comUnit = vendaDireta ? 0 : (prod.comissao || 0);
-        cpvProduto  = ((prod.custoPuro||0) + _montagemCusto(prod) + comUnit) * qtd;
+        cpvProduto  = ((prod.custoPuro||0) + _montagemCustoVenda(prod, it) + comUnit) * qtd;
         comissao    = comUnit * qtd;
         cpvEstimado = false;
         categoria   = prod.categoria || 'scooter';
@@ -8220,7 +8228,7 @@ async function calcularDRE(iniISO, fimISO) {
       const prod = _matchProdutoPorNome((it.produto || it.nome || '').trim());
       if (prod) {
         const comissao = vendaDireta ? 0 : (prod.comissao || 0);
-        cpv += ((prod.custoPuro || 0) + _montagemCusto(prod) + comissao) * qtd;
+        cpv += ((prod.custoPuro || 0) + _montagemCustoVenda(prod, it) + comissao) * qtd;
       } else {
         cpv += (qtd * (it.valorUnitario || 0)) * (1 - avgMCpct);
       }
@@ -23953,7 +23961,10 @@ function _pdvRenderItensTabela() {
           <td style="padding:8px;">
             <div style="font-weight:700;">${escHtml(it.produtoNomeTiny)}</div>
             <div style="font-size:10px;color:var(--text3);font-family:var(--mono,monospace);">${escHtml(it.codigo || 'sem código')}</div>
-            ${SCOOTER_RE.test(it.produtoNomeTiny || '') ? `<input class="form-input" type="text" value="${escHtml(it.chassi || '').replace(/"/g,'&quot;')}" placeholder="Chassi (opcional)" style="margin-top:6px;font-size:11px;padding:5px 8px;max-width:260px;text-transform:uppercase;" oninput="_pdvSetItem(${idx},'chassi',this.value.toUpperCase());this.value=this.value.toUpperCase();">` : ''}
+            ${SCOOTER_RE.test(it.produtoNomeTiny || '') ? `<input class="form-input" type="text" value="${escHtml(it.chassi || '').replace(/"/g,'&quot;')}" placeholder="Chassi (opcional)" style="margin-top:6px;font-size:11px;padding:5px 8px;max-width:260px;text-transform:uppercase;" oninput="_pdvSetItem(${idx},'chassi',this.value.toUpperCase());this.value=this.value.toUpperCase();">
+            <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text2);cursor:pointer;user-select:none;" title="Entregue na caixa, sem montar — a loja não paga a montagem nessa venda">
+              <input type="checkbox" ${it.naCaixa ? 'checked' : ''} style="width:auto;cursor:pointer;" onchange="_pdvSetItem(${idx},'naCaixa',this.checked)"> 📦 Vender na caixa (sem montagem)
+            </label>` : ''}
           </td>
           <td style="padding:6px;text-align:center;"><input class="form-input" type="number" min="1" step="1" value="${it.qtd}" style="width:64px;text-align:center;" oninput="_pdvSetItem(${idx},'qtd',this.value)"></td>
           <td style="padding:6px;text-align:right;"><input class="form-input" type="number" min="0" step="0.01" value="${Number(it.precoUnit).toFixed(2)}" style="width:130px;text-align:right;" oninput="_pdvSetItem(${idx},'precoUnit',this.value)"></td>
@@ -23968,6 +23979,8 @@ function _pdvSetItem(idx, campo, valor) {
   if (!_pdvVenda?.itens?.[idx]) return;
   // Chassi é texto (não numérico) e não mexe em subtotal/total.
   if (campo === 'chassi') { _pdvVenda.itens[idx].chassi = valor; return; }
+  // "Na caixa" é booleano (modalidade da venda); não mexe em subtotal/total.
+  if (campo === 'naCaixa') { _pdvVenda.itens[idx].naCaixa = !!valor; return; }
   const novo = (campo === 'qtd') ? parseInt(valor || 0, 10) : parseFloat(valor || 0);
   _pdvVenda.itens[idx][campo] = isNaN(novo) ? 0 : novo;
   const it = _pdvVenda.itens[idx];
@@ -24020,6 +24033,9 @@ async function _pdvAddItemFromIdx(idx) {
       consignacaoId: p._consignacaoId || null,
       repasse: p._consignacaoId ? (Number(p._repasse) || 0) : null,
       comissaoConsig: p._consignacaoId ? (Number(p._comissaoConsig) || 0) : null,
+      // Modalidade: só scooter tem montagem. Default herda o padrão do modelo
+      // (produtos_precos.venda_na_caixa); o vendedor pode mudar por venda.
+      naCaixa: SCOOTER_RE.test(p.nome || '') ? !!(_matchProdutoPorNome(p.nome || '') || {}).vendaNaCaixa : false,
     });
   }
   document.getElementById('pdv-itens-tabela').innerHTML = _pdvRenderItensTabela();
@@ -24548,6 +24564,7 @@ async function _pdvFinalizarVenda() {
       ordem: idx,
       consignacao_id: it.consignacaoId || null,
       custo_consignacao: it.consignacaoId ? ((Number(it.repasse)||0) + (Number(it.comissaoConsig)||0)) : null,
+      na_caixa: !!it.naCaixa,
     }));
     if (itensRows.length) {
       const { error: errI } = await sb.from('pdv_itens_pedido').insert(itensRows);
@@ -25031,7 +25048,7 @@ async function _pdvAbrirDetalhe(pedidoId) {
     +   `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Itens (${itensCam.length})</div>`
     +   `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:18px;">`
     +     `<thead><tr style="background:var(--surface2);"><th style="text-align:left;padding:6px;">Produto</th><th style="text-align:center;padding:6px;">Qtd</th><th style="text-align:right;padding:6px;">Unit</th><th style="text-align:right;padding:6px;">Total</th></tr></thead>`
-    +     `<tbody>${itensCam.map(it => `<tr style="border-bottom:1px solid var(--border);"><td style="padding:6px;"><div style="font-weight:700;">${escHtml(it.produtoNomeTiny)}</div>${it.codigo?`<div style="font-size:9px;color:var(--text3);font-family:var(--mono,monospace);">${escHtml(it.codigo)}</div>`:''}${it.chassi?`<div style="font-size:9px;color:var(--text3);">Chassi: ${escHtml(it.chassi)}</div>`:''}</td><td style="padding:6px;text-align:center;">${it.quantidade}</td><td style="padding:6px;text-align:right;">${_fmtBRMoney(it.valorUnitario)}</td><td style="padding:6px;text-align:right;font-weight:800;color:var(--gold);">${_fmtBRMoney(it.valorTotal)}</td></tr>`).join('')}</tbody>`
+    +     `<tbody>${itensCam.map(it => `<tr style="border-bottom:1px solid var(--border);"><td style="padding:6px;"><div style="font-weight:700;">${escHtml(it.produtoNomeTiny)}</div>${it.codigo?`<div style="font-size:9px;color:var(--text3);font-family:var(--mono,monospace);">${escHtml(it.codigo)}</div>`:''}${it.chassi?`<div style="font-size:9px;color:var(--text3);">Chassi: ${escHtml(it.chassi)}</div>`:''}${it.naCaixa?`<div style="font-size:9px;color:var(--gold);font-weight:700;">📦 na caixa (sem montagem)</div>`:''}</td><td style="padding:6px;text-align:center;">${it.quantidade}</td><td style="padding:6px;text-align:right;">${_fmtBRMoney(it.valorUnitario)}</td><td style="padding:6px;text-align:right;font-weight:800;color:var(--gold);">${_fmtBRMoney(it.valorTotal)}</td></tr>`).join('')}</tbody>`
     +   `</table>`
     +   `<div style="font-size:9px;color:var(--text3);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Pagamento</div>`
     +   `<div style="background:var(--surface2);padding:10px 12px;border-radius:var(--r-sm);font-size:12px;margin-bottom:18px;">`
@@ -25246,6 +25263,7 @@ async function _pdvEditarPedido(pedidoId) {
       qtd:             Number(it.quantidade) || 0,
       precoUnit:       Number(it.valorUnitario) || 0,
       chassi:          it.chassi || '',
+      naCaixa:         !!it.naCaixa,
     })),
     cliente: {
       nome:        cli.nome || '',
@@ -25331,6 +25349,7 @@ async function _pdvSalvarEdicao(v, built) {
       valor_total:       Number(it.qtd) * Number(it.precoUnit),
       chassi:            (SCOOTER_RE.test(it.produtoNomeTiny || '') && it.chassi?.trim()) ? it.chassi.trim() : null,
       ordem:             idx,
+      na_caixa:          !!it.naCaixa,
     }));
     if (itensRows.length) {
       const insI = await sb.from('pdv_itens_pedido').insert(itensRows);

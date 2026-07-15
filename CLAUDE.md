@@ -140,6 +140,24 @@ todo) e o efeito vale **em todo lugar, inclusive a DRE/lucro** (não é só um n
   na caixa 3480, acessório intacto), e **no navegador real** (localhost, sem erro de console): funções carregadas,
   toggle no DOM, e fluxo do modal — marcar o toggle levou CtReal 3.590→3.480 e MC% 44,76→46,45 ao vivo; Konek 800
   usado de exemplo (custo puro 3350 + montagem 110 + comissão 100 + NF 30).
+- **Escolha POR VENDA no PDV (14/07/2026):** o dono refinou — "por padrão montada, mas na hora de montar o pedido
+  quero a opção de vender na caixa". Virou uma escolha **por item do pedido** (o flag do modelo `venda_na_caixa`
+  passa a ser só o **default sugerido** no PDV). Implementado:
+  - **Banco:** `pdv_itens_pedido.na_caixa boolean not null default false` (migração `pdv_itens_na_caixa`).
+  - **PDV:** cada item **scooter** (SCOOTER_RE) ganha, junto do chassi, o checkbox **"📦 Vender na caixa (sem
+    montagem)"** (`_pdvRenderItensTabela` + `_pdvSetItem` trata o booleano; não mexe em subtotal/total). O item
+    novo (`_pdvAddItemFromIdx`) herda `naCaixa` do padrão do modelo (`_matchProdutoPorNome(nome).vendaNaCaixa`);
+    acessório nunca tem. Persiste em `na_caixa` nos itensRows de `_pdvFinalizarVenda` **e** da edição; ao carregar
+    um pedido p/ editar, `naCaixa` é repopulado. Selo "📦 na caixa" no detalhe/comprovante do pedido.
+  - **Custo/DRE por venda:** helper **`_montagemCustoVenda(prod, it)`** (o **item** manda: `it.naCaixa`; venda
+    antiga sem a flag cai no padrão do modelo `prod.vendaNaCaixa`) substitui `_montagemCusto` nos **2 CPVs**
+    (`buscarLinhasVenda` ~5648 e `calcularDRE` ~8215). O select/map de `buscarVendasMescladas` (~5515/5525) passou
+    a trazer `na_caixa`→`naCaixa`. Reconciliação DRE×Relatórios preservada (mesma fonte/fórmula).
+  - **`ctReal` (margem do cadastro/estoque) segue usando o padrão do MODELO** (`_montagemCusto`/`vendaNaCaixa`) —
+    é a estimativa do modelo; o custo REAL de cada venda usa o flag do item.
+  - **Validado (navegador real, localhost, console limpo):** checkbox só no scooter (1×, não no acessório),
+    `_pdvSetItem` marca/desmarca, subtotal intacto; `_montagemCustoVenda` correto (item na caixa→0, montada→110,
+    venda antiga→padrão do modelo). **✅ NO AR** (commit a seguir). **Follow-up:** venda real logada pelo dono.
 
 ## Segurança
 **Estado: ~8–9/10** (era 2/10 antes da auditoria de 28/06/2026). Plano original: `~/.claude/plans/quero-atacar-aquela-pendencia-serene-fox.md`.
