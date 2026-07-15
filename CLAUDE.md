@@ -117,6 +117,30 @@ Fonte do preço do CRM/IA = `produtos_precos.venda` (via VIEW `crm_catalogo`), l
 - **Baú + Suporte Bashi** (`efc4d9c2`): categoria `scooter`→`acessorio`. **Atenção — já tinha sido corrigido em 29/06 e reverteu** (provável re-import manual do Tiny mexe em `produtos_precos.categoria`; NÃO é o sync de estoque). Se recorrer, vale um guard.
 - **Estoques negativos zerados:** 12 produtos, via `registrar_movimento(...,'ajuste',0,...)` (ledger consistente). Negativos eram venda sem entrada prévia no ledger nativo.
 
+## Venda "na caixa" (sem montagem) — modalidade de custo por modelo (14/07/2026)
+Pedido do dono: marcar por modelo se ele é vendido **na caixa** (entregue desmontado — a loja não paga
+montagem) ou **montada** (padrão). Marcado "na caixa", o **custo de montagem sai do custo real** → margem/
+lucro reais maiores. **Decisão do dono:** o marcador fica no **cadastro geral do produto** (vale pro sistema
+todo) e o efeito vale **em todo lugar, inclusive a DRE/lucro** (não é só um número informativo).
+- **Banco:** coluna `produtos_precos.venda_na_caixa boolean not null default false` (migração
+  `produtos_precos_venda_na_caixa`). Default `false` = montada = **comportamento anterior intacto** (nada muda
+  até o dono marcar um modelo). Mapeamento snake↔camel automático (`TABLE_MAP.produtos_precos`) → `vendaNaCaixa`
+  no front, persiste/carrega sozinho.
+- **Cálculo (regra num lugar só):** helper `_montagemCusto(p) = p.vendaNaCaixa ? 0 : (p.montagem||0)` (index.html
+  ~4285, logo antes de `ctReal`). Usado nos **3** pontos que compõem o custo real: `ctReal` (margem/estoque),
+  o CPV de `buscarLinhasVenda` (~5648) e o CPV de `calcularDRE` (~8215). Acessório **não** é afetado (nunca
+  teve montagem no custo). A NF por pedido (`nf_pedido`) e a comissão continuam entrando normalmente.
+- **UI:** toggle **"📦 Vendida na caixa (sem montagem)"** no modal **"Editar custo"** (Custos de Produtos,
+  `#cp-edit-venda-na-caixa`); o CtReal/MC% do modal recalculam ao vivo (`cpUpdateComputed`→`cpGetModalP`→
+  `ctReal`). Persistência via `cpSave` (push + update). Na **lista** de custos, a coluna Montagem mostra o valor
+  **riscado + selo dourado "📦 na caixa"** quando marcado.
+- **NÃO mexe** em preço mínimo/comissão de afiliado (decisão do dono — só custo/margem). A comissão do afiliado
+  já não usava custo (é escalonada sobre preço vs preço mínimo).
+- **Validado (14/07/2026):** sintaxe (2 blocos `<script>` OK via new Function), lógica isolada (montada 3590 /
+  na caixa 3480, acessório intacto), e **no navegador real** (localhost, sem erro de console): funções carregadas,
+  toggle no DOM, e fluxo do modal — marcar o toggle levou CtReal 3.590→3.480 e MC% 44,76→46,45 ao vivo; Konek 800
+  usado de exemplo (custo puro 3350 + montagem 110 + comissão 100 + NF 30).
+
 ## Segurança
 **Estado: ~8–9/10** (era 2/10 antes da auditoria de 28/06/2026). Plano original: `~/.claude/plans/quero-atacar-aquela-pendencia-serene-fox.md`.
 

@@ -3837,6 +3837,10 @@ select:not(.input-pro):not(.search-input){
         Preço de venda é editável em <a onclick="cpCloseModal();showPage('precos');" style="color:var(--gold);cursor:pointer;text-decoration:underline;">Preços &amp; Margens →</a>
       </div>
       <div class="form-group full" style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="cp-edit-venda-na-caixa" style="width:auto;cursor:pointer;" onchange="cpUpdateComputed()">
+        <label for="cp-edit-venda-na-caixa" style="margin:0;cursor:pointer;">📦 Vendida na caixa (sem montagem) — o custo real e o lucro não incluem a montagem</label>
+      </div>
+      <div class="form-group full" style="display:flex;align-items:center;gap:8px;">
         <input type="checkbox" id="cp-edit-ativo" checked style="width:auto;cursor:pointer;">
         <label for="cp-edit-ativo" style="margin:0;cursor:pointer;">Produto ativo — aparece no catálogo vivo e entra na média de MC% do DRE</label>
       </div>
@@ -4282,8 +4286,12 @@ let emprestimoSelecionadoId = null;
 // ctReal — custo total por unidade (estrutura Custos de Produtos):
 // custoPuro absorve nfCompra/jonosake/financeiro; nf vira config por pedido.
 // Acessório não tem comissão própria nem NF própria (a NF é a do pedido).
+// Montagem que ENTRA no custo real. Modelo marcado "vendido na caixa"
+// (produtos_precos.venda_na_caixa) é entregue sem montar → a loja não tem esse
+// custo, então ele sai do ctReal/CPV (margem/lucro real, em todo o sistema).
+const _montagemCusto = p => (p && p.vendaNaCaixa) ? 0 : ((p && p.montagem) || 0);
 const ctReal = p => {
-  const base = (p.custoPuro||0) + (p.montagem||0);
+  const base = (p.custoPuro||0) + _montagemCusto(p);
   return (p.categoria||'scooter') === 'acessorio'
     ? base
     : base + (p.comissao||0) + (CONFIG_CUSTOS.nf_pedido||0);
@@ -5645,7 +5653,7 @@ async function buscarLinhasVenda(iniISO, fimISO){
       if (prod) {
         matched     = true;
         const comUnit = vendaDireta ? 0 : (prod.comissao || 0);
-        cpvProduto  = ((prod.custoPuro||0) + (prod.montagem||0) + comUnit) * qtd;
+        cpvProduto  = ((prod.custoPuro||0) + _montagemCusto(prod) + comUnit) * qtd;
         comissao    = comUnit * qtd;
         cpvEstimado = false;
         categoria   = prod.categoria || 'scooter';
@@ -8212,7 +8220,7 @@ async function calcularDRE(iniISO, fimISO) {
       const prod = _matchProdutoPorNome((it.produto || it.nome || '').trim());
       if (prod) {
         const comissao = vendaDireta ? 0 : (prod.comissao || 0);
-        cpv += ((prod.custoPuro || 0) + (prod.montagem || 0) + comissao) * qtd;
+        cpv += ((prod.custoPuro || 0) + _montagemCusto(prod) + comissao) * qtd;
       } else {
         cpv += (qtd * (it.valorUnitario || 0)) * (1 - avgMCpct);
       }
@@ -8730,7 +8738,9 @@ async function renderCustosProdutos(){
       <td><span style="font-size:11px;color:var(--text2);">${catLabel}</span></td>
       <td><span class="td-supplier">${escHtml(p.fornecedor||'—')}</span></td>
       <td class="td-mono">${fmt(p.custoPuro||0)}</td>
-      <td class="td-mono">${fmt(p.montagem||0)}</td>
+      <td class="td-mono">${p.vendaNaCaixa
+        ?`<span style="text-decoration:line-through;color:var(--text3);">${fmt(p.montagem||0)}</span> <span title="Vendida na caixa — montagem fora do custo real" style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gold);border:1px solid var(--gold);border-radius:4px;padding:1px 5px;white-space:nowrap;">📦 na caixa</span>`
+        :fmt(p.montagem||0)}</td>
       <td class="td-mono">${fmt(p.comissao||0)}</td>
       <td class="td-mono" style="font-weight:700;">${fmt(ctr)}</td>
       <td class="td-mono">${temVenda?fmt(venda):'<span style="color:var(--text3);">—</span>'}</td>
@@ -8755,6 +8765,7 @@ function cpGetModalP(){
     montagem:+document.getElementById('cp-edit-montagem').value||0,
     comissao:cat==='acessorio'?0:(+document.getElementById('cp-edit-comissao').value||0),
     venda:+document.getElementById('cp-edit-venda').value||0,
+    vendaNaCaixa:document.getElementById('cp-edit-venda-na-caixa').checked,
   };
 }
 function cpUpdateComputed(){
@@ -8778,6 +8789,7 @@ function cpOpenEdit(i){
   document.getElementById('cp-edit-montagem').value=p.montagem||0;
   document.getElementById('cp-edit-comissao').value=p.comissao||0;
   document.getElementById('cp-edit-venda').value=p.venda||0;
+  document.getElementById('cp-edit-venda-na-caixa').checked=!!p.vendaNaCaixa;
   document.getElementById('cp-edit-ativo').checked=p.ativo!==false;
   // modo edição: preço de venda não é editável aqui (só em #precos)
   document.getElementById('cp-edit-venda-wrap').style.display='none';
@@ -8793,6 +8805,7 @@ function cpOpenNovo(){
   document.getElementById('cp-edit-fornecedor').value='';
   document.getElementById('cp-edit-categoria').value='scooter';
   ['cp-edit-custo-puro','cp-edit-montagem','cp-edit-comissao','cp-edit-venda'].forEach(id=>document.getElementById(id).value=0);
+  document.getElementById('cp-edit-venda-na-caixa').checked=false;
   document.getElementById('cp-edit-ativo').checked=true;
   // modo novo: preço de venda inicial é editável
   document.getElementById('cp-edit-venda-wrap').style.display='';
@@ -8811,13 +8824,13 @@ function cpSave(){
   const ativo=document.getElementById('cp-edit-ativo').checked;
   if(i===-1){
     products.push({modelo,fornecedor,categoria:mp.categoria,custoPuro:mp.custoPuro,
-      montagem:mp.montagem,comissao:mp.comissao,venda:mp.venda,ativo});
+      montagem:mp.montagem,comissao:mp.comissao,venda:mp.venda,ativo,vendaNaCaixa:mp.vendaNaCaixa});
   } else {
     const p=products[i];
     if(!p){smAlert('Produto não encontrado');return;}
     p.modelo=modelo; p.fornecedor=fornecedor; p.categoria=mp.categoria;
     p.custoPuro=mp.custoPuro; p.montagem=mp.montagem; p.comissao=mp.comissao;
-    p.ativo=ativo;
+    p.ativo=ativo; p.vendaNaCaixa=mp.vendaNaCaixa;
     // venda NÃO é mexida em modo edição (editável só em #precos)
   }
   cpCloseModal();
