@@ -159,6 +159,57 @@ todo) e o efeito vale **em todo lugar, inclusive a DRE/lucro** (não é só um n
     `_pdvSetItem` marca/desmarca, subtotal intacto; `_montagemCustoVenda` correto (item na caixa→0, montada→110,
     venda antiga→padrão do modelo). **✅ NO AR** (commit a seguir). **Follow-up:** venda real logada pelo dono.
 
+## Contrato de venda — atalho no PDV/Pedidos + trava na finalização (16/07/2026)
+**O que é:** facilita imprimir o contrato (o MESMO documento que a aba **Contratos** já gera — "CONTRATO DE
+CIÊNCIA, GARANTIA E RESPONSABILIDADE", `_contratoMontarHtmlContrato`) sem o vendedor ter que ir na aba caçar o
+pedido, e **força uma decisão consciente** sobre o contrato antes de fechar a venda no PDV. Pedido do dono:
+evitar que o vendedor esqueça de entregar o contrato.
+- **Descoberta que definiu o gatilho:** "Montagens" e "Pedidos" são **módulos desacoplados** — a aba Montagens é
+  de **lotes de motos pro montador (estoque)**, sem `pedido_id`/`cliente_id`. Então o "avise ao finalizar a
+  montagem" não tem como sair da aba Montagens (ela não conhece o cliente). O ponto que conhece o cliente é a
+  **finalização da venda no PDV** (e o pedido salvo). Por isso a trava vive no PDV, não em Montagens.
+- **Trava no PDV (passo 2, finalização):** bloco **"📄 Contrato de venda"** acima do botão "Finalizar venda",
+  com (a) botão **Imprimir contrato de venda** e (b) checkbox **"ciente de que o contrato NÃO será impresso"**.
+  O "Finalizar venda" fica **`disabled` até uma das duas ações** (imprimir OU marcar ciência). Dupla trava:
+  além do `disabled`, um guard em `_pdvFinalizarVenda` barra a finalização. **Gate só em venda NOVA com item**
+  (não trava edição de pedido; some se o carrinho está vazio).
+- **Botão em Pedidos:** `_pedidoImprimirContrato(pedidoId)` na **lista** (`renderPedidosUnif`, ao lado de 2ª
+  via/contabilidade) e no **modal de detalhe** (`_pdvAbrirDetalhe`, ao lado de "Imprimir comprovante") — só p/
+  `origem='pdv'`, qualquer status. Serve pra imprimir depois, caso o vendedor tenha pulado no PDV.
+- **Código (`index.html`):** bloco novo após `_contratoGerarPdf` (~28062). `_contratoFormRapido(cliente, itens,
+  dataCompraISO)` monta o `form` (mesmo shape de `_contratoColetarFormData`) aceitando cliente **camelCase (PDV
+  `_pdvVenda.cliente`) OU snake (`clienteDados`)** e escolhe a **moto de maior valor** (`_contratoExtrairProdutoPrincipal`),
+  deduz cor (`_contratoExtrairCor`) e chassi; endereço = consolidado ou concatenado dos campos; cidade default
+  **Itaguaí**; NF = emissor padrão Smart Motors. `_contratoImprimirForm(form)` = `window.open`+write (reusa o
+  template do contrato, que já tem auto-print). Gate PDV: `_pdvGateContratoAtivo`/`_pdvContratoResolvido`/
+  `_pdvContratoGateHtml`/`_pdvRenderContratoGate`/`_pdvImprimirContratoVenda`/`_pdvSetContratoDispensa`. Flags
+  `_contratoImpresso`/`_contratoDispensado` vivem no `_pdvVenda` (`_pdvVendaNova`). O `disabled` do botão é
+  recalculado em `_pdvRenderFinalizacao` (render) e em `_pdvAtualizaRestante` (ao vivo, quando muda pagamento).
+- **Só imprime, NÃO grava histórico** — a aba Contratos (`INSERT em contratos` com snapshot) segue o registro
+  oficial. Consciente, pra manter o escopo enxuto. **Limitação herdada:** contrato sai com **1 produto** (o de
+  maior valor), igual à aba Contratos.
+- **Layout compacto = 2 páginas (16/07/2026, pedido do dono — economia de papel):** o template
+  `_contratoMontarHtmlContrato` gastava **3 páginas** (a 3ª só com a assinatura = desperdício). Reformado o
+  `<style>`: margem da página 18mm→**11/14mm**, fonte 10.5→**10.3pt**, `line-height` 1.45→**1.4**, e cortados os
+  espaços verticais grandes (assinaturas `margin-top` 60→40px, local-data 26→20px, título de cláusula 14→11px,
+  blocos/parágrafos mais justos) + regras de quebra: `.bloco`/`.assinaturas` com `break-inside:avoid`,
+  `.clausula-tit` com `break-after:avoid` (não deixa título nem a assinatura órfãos). **Medido no navegador
+  (iframe na largura útil A4):** ~**1,7 página** de conteúdo (típico e pior caso com nome/endereço longos), folga
+  de ~80mm na 2ª página → cabe folgado em 2 páginas, sem estourar. **Vale pra TODO contrato** (mesmo gerador da
+  aba Contratos, não só o atalho). Visual conferido por screenshot (legível, assinaturas na pág. 2 junto às
+  cláusulas finais).
+- **Só a assinatura do CLIENTE (16/07/2026, decisão do dono):** removida a linha "ASSINATURA DA SMART MOTORS" —
+  fica **1 linha de assinatura centralizada** ("ASSINATURA DO CLIENTE"). Motivo: o documento é uma *declaração
+  do cliente* (ele declara ter recebido e estar ciente), então a assinatura essencial é a dele; a da loja é
+  dispensável pra validade (liberdade de forma; não é título de dívida). CSS `.assinaturas` virou `flex` centrado
+  (col 62%, max 340px). **Dono vai validar com advogado** — se ele quiser a contra-assinatura de volta, é trivial
+  (restaurar a 2ª `.col` + grid 1fr 1fr).
+- **Validado (navegador, localhost:8791, console 0 erro):** `_contratoFormRapido` (camel+snake), HTML gera
+  preenchido (nome/modelo/chassi/cor), gate ativo/resolvido/toggle/edição-inativa, render travando/liberando o
+  botão certo (pagamento exato + gate pendente = travado; resolve = libera; pagamento errado = trava de novo),
+  visual conferido por screenshot. **Follow-ups:** dono validar logado (1 venda real imprimindo o contrato +
+  imprimir da tela de Pedidos); **commit + push** (deploy GitHub Pages, passo do dono). NÃO commitado ainda.
+
 ## Segurança
 **Estado: ~8–9/10** (era 2/10 antes da auditoria de 28/06/2026). Plano original: `~/.claude/plans/quero-atacar-aquela-pendencia-serene-fox.md`.
 

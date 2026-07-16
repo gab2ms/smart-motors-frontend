@@ -9360,6 +9360,7 @@ function renderPedidosUnif() {
       ? `<button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:6px 10px;" onclick="_pdvAbrirDetalhe('${p.raw.id}')">Ver detalhe</button>`
         + ` <button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:6px 8px;" title="Imprimir comprovante (2ª via)" onclick="_pdvReimprimirDireto('${p.raw.id}')"><svg class="ic ic-sm"><use href="#ic-printer"/></svg></button>`
         + ` <button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:6px 8px;" title="Gerar texto p/ contabilidade" onclick="_pdvTextoContabilidade('${p.raw.id}')"><svg class="ic ic-sm"><use href="#ic-clipboard"/></svg></button>`
+        + ` <button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:6px 8px;" title="Imprimir contrato de venda" onclick="_pedidoImprimirContrato('${p.raw.id}')"><svg class="ic ic-sm"><use href="#ic-file-text"/></svg></button>`
         + (podeEditar ? ` <button class="btn-pro btn-pro--ghost" style="font-size:var(--fs-xs);padding:6px 8px;" title="Editar pedido" onclick="_pdvEditarPedido('${p.raw.id}')"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>` : '')
       : '';
     return `<tr>
@@ -23657,6 +23658,7 @@ function _pdvVendaNova() {
     vendedorId: '', localId: '', afiliadoId: '', itens: [],
     cliente: { nome:'', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'', _consumidorFinal:false, _clienteId:null },
     dataPrevistaEntrega: '', entregaImediata: false, observacao: '', desconto: 0, pagamentos: [],
+    _contratoImpresso: false, _contratoDispensado: false,  // trava do contrato de venda (finalização)
   };
 }
 
@@ -24400,7 +24402,8 @@ function _pdvRenderFinalizacao(root) {
     +   `<div style="display:flex;justify-content:space-between;margin-bottom:14px;font-size:13px;align-items:center;"><span>Desconto (R$)</span><input type="number" min="0" step="0.01" class="form-input" value="${Number(v.desconto).toFixed(2)}" style="width:130px;text-align:right;" oninput="_pdvSetDesconto(this.value)"></div>`
     +   `<div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid var(--border);font-size:16px;font-weight:800;"><span>A PAGAR</span><span style="color:var(--gold);font-family:var(--mono,monospace);" id="pdv-apagar">${_fmtBRMoney(apagar)}</span></div>`
     +   `<div id="pdv-pgto-resumo">${_pdvPgtoResumoInner(soma, apagar)}</div>`
-    +   `<button class="btn btn-gold" id="pdv-btn-finalizar" onclick="_pdvFinalizarVenda()" style="width:100%;margin-top:18px;padding:14px;font-size:13px;font-weight:800;" ${Math.abs(restante)<0.01?'':'disabled'}>${emEdicao ? 'Salvar alterações' : 'Finalizar venda'} <svg class="ic ic-sm"><use href="#ic-check"/></svg></button>`
+    +   `<div id="pdv-contrato-gate">${_pdvContratoGateHtml()}</div>`
+    +   `<button class="btn btn-gold" id="pdv-btn-finalizar" onclick="_pdvFinalizarVenda()" style="width:100%;margin-top:18px;padding:14px;font-size:13px;font-weight:800;" ${(Math.abs(restante)<0.01 && !(_pdvGateContratoAtivo() && !_pdvContratoResolvido()))?'':'disabled'}>${emEdicao ? 'Salvar alterações' : 'Finalizar venda'} <svg class="ic ic-sm"><use href="#ic-check"/></svg></button>`
     + `</div></div>`
     + `</div>`;
 }
@@ -24476,7 +24479,7 @@ function _pdvAtualizaRestante() {
   const ap = document.getElementById('pdv-apagar');      if (ap) ap.textContent = _fmtBRMoney(apagar);
   const rz = document.getElementById('pdv-pgto-resumo'); if (rz) rz.innerHTML   = _pdvPgtoResumoInner(soma, apagar);
   const btn = document.getElementById('pdv-btn-finalizar');
-  if (btn) btn.disabled = !(Math.abs(restante)<0.01);
+  if (btn) btn.disabled = !(Math.abs(restante)<0.01) || (_pdvGateContratoAtivo() && !_pdvContratoResolvido());
 }
 
 async function _pdvFinalizarVenda() {
@@ -24486,6 +24489,11 @@ async function _pdvFinalizarVenda() {
   const total    = Math.max(0, subtotal - desconto);
   const soma     = v.pagamentos.reduce((s, p) => s + Number(p.valor||0), 0);
   if (Math.abs(total - soma) >= 0.01) return smAlert('Soma dos pagamentos não bate com o total a pagar.');
+
+  // Trava do contrato de venda: só finaliza depois de imprimir o contrato OU
+  // marcar a ciência de que não será impresso (decisão consciente do vendedor).
+  if (_pdvGateContratoAtivo() && !_pdvContratoResolvido())
+    return smAlert('Antes de finalizar: imprima o contrato de venda OU marque que o cliente está ciente de que ele não será impresso.');
 
   let user = null;
   try { user = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
@@ -25067,7 +25075,7 @@ async function _pdvAbrirDetalhe(pedidoId) {
           }
           return `<div style="padding:4px 0;border-bottom:1px solid var(--border);">${fmtDT(a.quando)} — <b>${escHtml(a.acao)}</b>${det}</div>`;
         }).join(''):'<div style="color:var(--text3);">sem registros</div>'}</div>`
-    +   `<div class="modal-actions"><button class="btn" type="button" onclick="_pdvImprimirComprovante(_pdvReprintSnap)"><svg class="ic ic-sm"><use href="#ic-printer"/></svg> Imprimir comprovante</button>${acoesHTML}<button class="btn" type="button" onclick="document.getElementById('pdvp-det-modal').remove();">Fechar</button></div>`
+    +   `<div class="modal-actions"><button class="btn" type="button" onclick="_pdvImprimirComprovante(_pdvReprintSnap)"><svg class="ic ic-sm"><use href="#ic-printer"/></svg> Imprimir comprovante</button><button class="btn" type="button" onclick="_pedidoImprimirContrato('${p.id}')"><svg class="ic ic-sm"><use href="#ic-file-text"/></svg> Imprimir contrato</button>${acoesHTML}<button class="btn" type="button" onclick="document.getElementById('pdvp-det-modal').remove();">Fechar</button></div>`
     + `</div>`;
   document.body.appendChild(shell);
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
@@ -27908,28 +27916,31 @@ function _contratoMontarHtmlContrato(form) {
 <meta charset="utf-8">
 <title>Contrato Smart Motors — ${e(form.cliente.nome || 'Cliente')}</title>
 <style>
-  @page { size: A4 portrait; margin: 18mm; }
+  /* Layout compacto: cabe em 2 páginas A4 (economia de papel). Margens e
+     espaçamentos verticais enxutos + regras de quebra pra assinatura não cair
+     órfã numa 3ª página. */
+  @page { size: A4 portrait; margin: 11mm 14mm; }
   * { box-sizing: border-box; }
-  html, body { margin:0; padding:0; background:#fff; color:#111; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 10.5pt; line-height: 1.45; }
-  .header { display:flex; align-items:center; gap:14px; border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
-  .brand-logo { width: 36px; height: 46px; flex-shrink:0; }
+  html, body { margin:0; padding:0; background:#fff; color:#111; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 10.3pt; line-height: 1.4; }
+  .header { display:flex; align-items:center; gap:12px; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 11px; }
+  .brand-logo { width: 34px; height: 43px; flex-shrink:0; }
   .header-text { flex:1; text-align:center; }
   .header-text .titulo { font-size: 13pt; font-weight: 800; letter-spacing: 0.4px; }
   .header-text .sub { font-size: 9.5pt; color:#555; margin-top:3px; }
   .header-text .sub strong { color:#b8860b; }
-  .bloco { border: 1.2px solid #111; border-radius: 3px; padding: 8px 10px; margin-bottom: 8px; }
-  .bloco-titulo { font-size: 8.5pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; color:#555; margin-bottom: 5px; }
+  .bloco { border: 1.2px solid #111; border-radius: 3px; padding: 7px 10px; margin-bottom: 7px; break-inside: avoid; }
+  .bloco-titulo { font-size: 8.5pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; color:#555; margin-bottom: 4px; }
   .bloco .row { display:flex; gap:18px; flex-wrap:wrap; font-size: 10pt; }
   .bloco .row > div { min-width: 0; }
   .bloco .row .lbl { font-weight: 700; color:#333; }
-  .clausulas { margin-top: 10px; }
-  .clausula-tit { font-size: 10.5pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; margin: 14px 0 4px; color:#111; }
-  .clausulas p { margin: 4px 0; text-align: justify; }
-  .clausulas ul { margin: 4px 0 4px 22px; padding: 0; }
-  .clausulas li { margin: 2px 0; text-align: justify; }
-  .local-data { margin-top: 26px; font-size: 11pt; }
-  .assinaturas { display:grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 60px; }
-  .assinaturas .col { text-align: center; }
+  .clausulas { margin-top: 9px; }
+  .clausula-tit { font-size: 10.5pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; margin: 11px 0 3px; color:#111; break-after: avoid; }
+  .clausulas p { margin: 3.5px 0; text-align: justify; }
+  .clausulas ul { margin: 3.5px 0 3.5px 22px; padding: 0; }
+  .clausulas li { margin: 1.5px 0; text-align: justify; }
+  .local-data { margin-top: 20px; font-size: 11pt; break-before: avoid; }
+  .assinaturas { display:flex; justify-content:center; margin-top: 44px; break-inside: avoid; }
+  .assinaturas .col { text-align: center; width: 62%; max-width: 340px; }
   .assinaturas .linha { border-top: 1px solid #111; padding-top: 4px; font-size: 9pt; font-weight: 700; letter-spacing: 0.5px; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style>
@@ -27999,7 +28010,6 @@ function _contratoMontarHtmlContrato(form) {
 
   <div class="assinaturas">
     <div class="col"><div class="linha">ASSINATURA DO CLIENTE</div></div>
-    <div class="col"><div class="linha">ASSINATURA DA SMART MOTORS</div></div>
   </div>
 
   <script>
@@ -28057,6 +28067,120 @@ async function _contratoGerarPdf() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Gerar Contrato PDF'; }
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  Atalho do contrato de venda — imprime o MESMO documento da aba Contratos
+//  (Ciência/Garantia/Responsabilidade) já preenchido, direto do PDV e da tela
+//  de Pedidos, sem o vendedor ter que ir na aba caçar o pedido. Reusa
+//  _contratoMontarHtmlContrato. Só IMPRIME (não grava histórico — a aba
+//  Contratos segue o lugar oficial de registro).
+// ══════════════════════════════════════════════════════════════════════════
+
+// Monta o `form` do contrato (mesmo shape de _contratoColetarFormData) a partir
+// de um objeto cliente (aceita camelCase do PDV OU snake do cliente_dados) +
+// itens de uma venda/pedido. Pega a moto de MAIOR valor como produto principal
+// (mesma regra da aba Contratos). dataCompraISO opcional (default = hoje).
+function _contratoFormRapido(cliente, itens, dataCompraISO) {
+  const c = cliente || {};
+  const nome     = (c.nome || '').trim();
+  const cpfCnpj  = c.cpfCnpj || c.cpf_cnpj || c.cpf || '';
+  const telefone = c.telefone || '';
+  const endereco = (c.endereco && String(c.endereco).trim())
+    ? c.endereco
+    : [c.rua, c.numero, c.complemento, c.bairro, c.cidade, c.uf, c.cep].filter(Boolean).join(', ');
+  const cidade   = c.cidade || 'Itaguaí';
+  // Normaliza itens (camel do PDV `precoUnit`/`produtoNomeTiny`, camel do banco
+  // `valorUnitario`/`produtoNomeTiny`, ou snake) e escolhe o de maior valor.
+  const norm = (itens || []).map(it => ({
+    valorUnitario: Number(it.valorUnitario ?? it.precoUnit ?? it.valor_unitario ?? 0),
+    _nome:   it.produtoNomeTiny || it.produto_nome_tiny || it.produtoModelo || it.produto_modelo || '',
+    _chassi: it.chassi || '',
+  }));
+  const principal = _contratoExtrairProdutoPrincipal(norm);
+  const nomeProd = principal ? principal._nome : '';
+  const chassi   = principal ? (principal._chassi || '') : '';
+  const hoje = new Date();
+  const hojeISO = hoje.getFullYear() + '-' + String(hoje.getMonth()+1).padStart(2,'0') + '-' + String(hoje.getDate()).padStart(2,'0');
+  return {
+    cliente:    { nome, cpfCnpj, telefone, endereco },
+    produto:    { modelo: nomeProd, cor: _contratoExtrairCor(nomeProd), chassi, dataCompra: dataCompraISO || hojeISO },
+    notaFiscal: { empresa: _CONTRATO_NF_EMISSOR_PADRAO_NOME, cnpj: _CONTRATO_NF_EMISSOR_PADRAO_CNPJ, numero: '' },
+    local:      { cidade, data: hojeISO },
+  };
+}
+
+// Abre a janela de impressão com o contrato. DEVE ser chamada no gesto do
+// clique (antes de qualquer await) pra não cair no bloqueio de pop-up.
+function _contratoImprimirForm(form) {
+  const html = _contratoMontarHtmlContrato(form);
+  const w = window.open('', '_blank');
+  if (!w) { smAlert('Permita pop-ups para imprimir o contrato de venda.'); return false; }
+  w.document.open(); w.document.write(html); w.document.close();
+  return true;
+}
+
+// ── Tela de Pedidos: imprime o contrato de um pedido PDV já existente ──
+async function _pedidoImprimirContrato(pedidoId) {
+  const p = (_pdvPedidosLista || []).find(x => x.id === pedidoId);
+  if (!p) return smAlert('Pedido não encontrado — recarregue a lista.');
+  const r = await sb.from('pdv_itens_pedido').select('*').eq('pedido_id', pedidoId).order('ordem');
+  if (r.error) return smAlert('Erro ao buscar os itens do pedido: ' + r.error.message);
+  const itensCam = (r.data || []).map(toCamel);
+  const dataBase = p.dataEntregaReal || p.criadoEm || null;
+  const dataISO  = dataBase ? String(dataBase).slice(0,10) : null;
+  const form = _contratoFormRapido(p.clienteDados || {}, itensCam, dataISO);
+  if (!form.cliente.nome) return smAlert('Este pedido não tem nome de cliente — não dá pra gerar o contrato.');
+  _contratoImprimirForm(form);
+}
+
+// ── PDV: trava de contrato na finalização (imprimir OU marcar ciência) ──
+// Gate ativo em toda venda NOVA com item (não trava edição de pedido).
+function _pdvGateContratoAtivo() {
+  const v = _pdvVenda;
+  if (!v || v._editId) return false;
+  return (v.itens || []).length > 0;
+}
+function _pdvContratoResolvido() {
+  const v = _pdvVenda;
+  return !v || !!(v._contratoImpresso || v._contratoDispensado);
+}
+function _pdvContratoGateHtml() {
+  if (!_pdvGateContratoAtivo()) return '';
+  const v = _pdvVenda;
+  const impresso   = !!v._contratoImpresso;
+  const dispensado = !!v._contratoDispensado;
+  const resolvido  = impresso || dispensado;
+  return `<div style="margin-top:16px;padding:14px;border:1px solid ${resolvido ? 'var(--border)' : 'var(--gold)'};border-radius:var(--r-sm);background:${resolvido ? 'var(--surface2)' : 'var(--gold-dim)'};">`
+    +   `<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text2);font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:6px;"><svg class="ic ic-sm"><use href="#ic-file-text"/></svg> Contrato de venda</div>`
+    +   `<button class="btn ${impresso ? '' : 'btn-gold'}" type="button" onclick="_pdvImprimirContratoVenda()" style="width:100%;padding:11px;font-size:12px;font-weight:700;"><svg class="ic ic-sm"><use href="#ic-printer"/></svg> ${impresso ? 'Reimprimir contrato de venda' : 'Imprimir contrato de venda'}</button>`
+    +   (impresso ? `<div style="text-align:center;font-size:11px;color:var(--green);font-weight:700;margin-top:8px;"><svg class="ic ic-sm"><use href="#ic-check"/></svg> Contrato impresso</div>` : '')
+    +   `<label style="display:flex;align-items:flex-start;gap:8px;margin-top:12px;font-size:11px;color:var(--text2);cursor:pointer;line-height:1.4;"><input type="checkbox" ${dispensado ? 'checked' : ''} onchange="_pdvSetContratoDispensa(this.checked)" style="margin-top:2px;flex-shrink:0;"><span>Estou ciente de que <b>o contrato NÃO será impresso</b> para este cliente.</span></label>`
+    +   (resolvido ? '' : `<div style="text-align:center;font-size:10px;color:var(--text3);margin-top:10px;">Imprima o contrato ou marque a ciência para liberar a finalização.</div>`)
+    + `</div>`;
+}
+function _pdvRenderContratoGate() {
+  const el = document.getElementById('pdv-contrato-gate');
+  if (el) el.innerHTML = _pdvContratoGateHtml();
+}
+function _pdvImprimirContratoVenda() {
+  const v = _pdvVenda;
+  if (!v) return;
+  if (!(v.cliente && (v.cliente.nome || '').trim())) { smAlert('Preencha o nome do cliente (passo 1) antes de gerar o contrato.'); return; }
+  const itens = (v.itens || []).map(it => ({ valorUnitario: it.precoUnit, produtoNomeTiny: it.produtoNomeTiny, chassi: it.chassi }));
+  const form = _contratoFormRapido(v.cliente, itens, null);
+  if (_contratoImprimirForm(form)) {
+    v._contratoImpresso = true;
+    _pdvRenderContratoGate();
+    _pdvAtualizaRestante();
+  }
+}
+function _pdvSetContratoDispensa(checked) {
+  const v = _pdvVenda;
+  if (!v) return;
+  v._contratoDispensado = !!checked;
+  _pdvRenderContratoGate();
+  _pdvAtualizaRestante();
 }
 
 // ══════════════════════════════════════════
