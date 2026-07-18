@@ -246,6 +246,41 @@ simulações". **100% client-side** — não lê nem grava nada no Supabase (é 
   599,93); parser em 9 formatos; textos de cópia (com/sem entrada, simulada 15x/6x incluída sem duplicar 18x/21x);
   visual desktop+mobile (grid empilha ≤520px). **✅ commit `56f2a1e` pushed → GitHub Pages.**
 
+## Foto da scooter no cadastro + galeria de divulgação pro afiliado (18/07/2026)
+**O que é:** o cadastro de produto ganhou **upload de foto** (por cor). A foto fica salva no cadastro e
+é **reaproveitada no portal do afiliado**, agregada por modelo, como um **conjunto de imagens de
+divulgação** (o afiliado vê/baixa). **Decisão do dono:** no CADASTRO a foto é **por cor** (cada linha de
+`produtos`); no AFILIADO é **por modelo** (junta as cores do mesmo `produto_precos_id`).
+- **Onde grava:** coluna **`produtos.imagem_url`** (já existia no schema, nunca tinha sido usada — 0/51
+  preenchidas; herança do Tiny). Guarda a **URL pública completa** (não o path). Uma foto por produto/cor.
+- **Storage:** bucket **público** `produtos` (migração `storage_bucket_produtos`) — leitura pública
+  (URL estável, sem expiração, via `getPublicUrl`), escrita = `authenticated` + `tem_modulo('estoque')`.
+  Espelha o bucket `consignacoes`. Path `<produto_id>/foto-<ts>.<ext>`.
+- **Cadastro (`index.html`):** campo **"📸 Foto da scooter"** no modal do produto (`#prod-foto` +
+  `#prod-foto-preview`, `accept="image/*"` → câmera/galeria no celular), logo após a Descrição. Helpers
+  `_prodPreviewFoto` (preview do arquivo escolhido), `_prodFotoAtualHtml` (mostra a foto atual ao editar)
+  e **`_prodUploadFoto(id,file)`** (sobe pro bucket + grava `imagem_url`; best-effort — se falhar, o
+  produto ainda salva e avisa via toast). Integrado em `prodSave` (passo 2.5) e `prodSaveNovo`. `imagem_url`
+  entrou no `select`/`map` de `carregarProdutosCatalogo` (campo `imagemUrl`). **Thumbnail** (34px) na célula
+  do nome em `renderCatalogoProdutos`. `prodOpenNovo` limpa o campo; `prodOpenEdit` mostra a foto atual.
+- **Portal do afiliado (Edge Function `portal-afiliado` + `portal.html`):** a foto do cadastro entra na
+  **mesma galeria "Imagens & materiais"** que já existia (não criou UI nova). `?acao=dados`: `qtdImagens`
+  por modelo passou a **somar as fotos do cadastro** (`fotosCadPorModelo`) — é o que faz a seção aparecer no
+  card. `?acao=materiais&modelo=<id>`: devolve **primeiro** as fotos do cadastro (`produtos.imagem_url` das
+  cores, URL pública direta — bucket é público) e **depois** os materiais do módulo Afiliados (signed URL 1h).
+  `portal.html`: `matsHTML` inalterado (já renderiza thumbnails + download); **fix `dlUrl(u)`** — o botão
+  Baixar montava `${url}&download=`, que quebra pra URL pública sem query string → agora usa `?` se a URL
+  não tem query, `&` se já tem (signed). Vale pros dois tipos.
+- **Validado no localhost (18/07, navegador real, 0 erro de console):** sintaxe dos 2 `<script>` (new
+  Function); boot do sistema e do portal limpos; funções novas carregadas; modal abre com o campo, preview
+  renderiza ao escolher imagem, foto atual aparece na edição; template do thumbnail gera `<img>` só quando
+  há foto e escapa a URL; portal `matsHTML` + `dlUrl` corretos pra URL pública e signed. **NÃO** validado o
+  fluxo real end-to-end (subir foto→banco→portal) — exige sessão logada + produção (fica pro dono).
+- **PENDÊNCIAS (passos do dono — produção):** **(1)** deploy da Edge Function `portal-afiliado`
+  (verify_jwt=false) — o auto-mode bloqueou (deploy de produção); **(2)** commit + push de `index.html` +
+  `portal.html` → GitHub Pages; **(3)** validar logado. **Follow-up opcional:** exibir as fotos do modelo
+  também na GESTÃO de afiliados (`abrirAflMateriaisModal`) — hoje o admin vê a foto só no cadastro de produto.
+
 ## Segurança
 **Estado: ~8–9/10** (era 2/10 antes da auditoria de 28/06/2026). Plano original: `~/.claude/plans/quero-atacar-aquela-pendencia-serene-fox.md`.
 
@@ -736,6 +771,17 @@ do Supabase e a mudança vale na hora.
   propósito (equipe ainda não usa — aguarda 360dialog).
 
 ## Histórico de mudanças
+
+### 2026-07-18 — Foto da scooter no cadastro + galeria de divulgação pro afiliado (localhost)
+Pedido do dono: subir foto no cadastro de produto e reaproveitar na tela do afiliado. Decisão: foto **por
+cor** no cadastro (`produtos.imagem_url`, coluna que já existia e nunca fora usada), **por modelo** no
+afiliado (junta as cores → conjunto de imagens de divulgação). Feito: bucket público `produtos` (migração
+`storage_bucket_produtos`); campo de upload+preview no modal do produto + thumbnail na lista (index.html);
+Edge Function `portal-afiliado` passou a devolver as fotos do cadastro por modelo (dados+materiais),
+reusando a galeria existente do portal + fix `dlUrl` (download de URL pública). Validado no localhost (0
+erro de console: boot, modal, preview, thumbnail, portal). Seção **"Foto da scooter no cadastro..."**.
+**Pendente do dono (produção, auto-mode bloqueou):** deploy da Edge Function + commit/push do frontend +
+validar logado.
 
 ### 2026-07-18 — Calculadora de Parcelamento no ar (simulador pro vendedor)
 Módulo novo (item de menu solo logo abaixo do PDV) pro vendedor simular o preço no cartão e mandar as condições

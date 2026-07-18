@@ -3954,6 +3954,10 @@ select:not(.input-pro):not(.search-input){
       <div class="form-group"><label>Motor</label><input class="form-input" id="prod-motor" type="text"></div>
       <div class="form-group js-custo"><label>Comissão afiliado (R$ por unidade)</label><input class="form-input" id="prod-comissao-afiliado" type="number" step="0.01" min="0" placeholder="0,00"></div>
       <div class="form-group full"><label>Descrição / características</label><textarea class="form-input" id="prod-descricao" rows="2"></textarea></div>
+      <div class="form-group full"><label>📸 Foto da scooter</label>
+        <input class="form-input" id="prod-foto" type="file" accept="image/*" onchange="_prodPreviewFoto()" style="font-size:11px;padding:8px;">
+        <div style="font-size:10px;color:var(--text3);margin-top:3px;">No celular abre a câmera ou a galeria. Fica salva no cadastro (uma por cor) e as cores de cada modelo viram um conjunto de imagens pros afiliados divulgarem.</div>
+        <div id="prod-foto-preview" style="margin-top:8px;"></div></div>
       <div class="form-group full js-custo" style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:4px;">Custos detalhados</div>
       <div class="form-group js-custo"><label>Custo puro (R$)</label><input class="form-input" id="prod-custo-puro" type="number" oninput="prodUpdateComputed()"></div>
       <div class="form-group js-custo"><label>Custo montagem (R$)</label><input class="form-input" id="prod-montagem" type="number" oninput="prodUpdateComputed()"></div>
@@ -10379,7 +10383,7 @@ async function carregarProdutosCatalogo() {
   setApiStatus('carregando', 'Carregando produtos...');
   try {
     const { data, error } = await sb.from('produtos')
-      .select('id,nome,codigo,preco_venda,custo,categoria,fabricante,cor,motor,descricao,estoque,ativo,comissao_afiliado,produto_precos_id').order('nome');
+      .select('id,nome,codigo,preco_venda,custo,categoria,fabricante,cor,motor,descricao,estoque,ativo,comissao_afiliado,produto_precos_id,imagem_url').order('nome');
     if (error) throw new Error(error.message || 'erro Supabase produtos');
     catSelecionados.clear();   // Commit 1: recarga do banco zera a seleção (evita ids órfãos)
     produtosCatalogo = (data || []).map(p => ({
@@ -10394,6 +10398,7 @@ async function carregarProdutosCatalogo() {
       motor:      p.motor || '',
       comissaoAfiliado: p.comissao_afiliado == null ? null : Number(p.comissao_afiliado),
       produtoPrecosId: p.produto_precos_id || null,   // FK p/ produtos_precos (lookup exato do modelo/preço mínimo)
+      imagemUrl:  p.imagem_url || '',                 // foto do produto (bucket público 'produtos')
       descricao:  p.descricao || '',
       estoque:    Number(p.estoque) || 0,
       ativo:      p.ativo !== false,
@@ -10865,7 +10870,7 @@ function renderCatalogoProdutos() {
     const mcColor = L.mcp == null ? 'var(--text3)' : L.mcp >= 30 ? 'var(--gold)' : L.mcp >= 15 ? 'var(--orange)' : 'var(--red)';
     return `<tr onclick="prodOpenEdit('${p.id}')" style="cursor:pointer;${inativo ? 'opacity:0.5;' : ''}">
       <td class="hide-mobile" style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" ${sel ? 'checked' : ''} onclick="event.stopPropagation();catToggleSel('${p.id}',this.checked)"></td>
-      <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;">${escHtml(p.nome)}${_abcBadge(_ABC_CACHE.classe.get(String(p.id)))}${_paradoBadge(L.parado)}${inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">Inativo</span>' : ''}</td>
+      <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;"><div style="display:flex;align-items:center;gap:8px;">${p.imagemUrl ? `<img src="${escHtml(p.imagemUrl)}" style="width:34px;height:34px;object-fit:cover;border-radius:6px;flex-shrink:0;" alt="" loading="lazy">` : ''}<span>${escHtml(p.nome)}${_abcBadge(_ABC_CACHE.classe.get(String(p.id)))}${_paradoBadge(L.parado)}${inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">Inativo</span>' : ''}</span></div></td>
       <td class="hide-mobile"><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
       <td class="hide-mobile">${_catBadgeProduto(L.categoria)}</td>
       <td class="hide-mobile"><span class="td-supplier">${escHtml(L.fornecedor) || '—'}</span></td>
@@ -11554,6 +11559,9 @@ function prodOpenNovo(){
   document.getElementById('prod-venda').value=0;
   ['prod-nome','prod-codigo','prod-fornecedor','prod-cor','prod-motor','prod-descricao'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('prod-categoria').value='scooter';
+  // Foto: limpa input e preview (produto novo ainda não tem foto).
+  const _fInp=document.getElementById('prod-foto'); if(_fInp) _fInp.value='';
+  const _fPv=document.getElementById('prod-foto-preview'); if(_fPv) _fPv.innerHTML='';
   ['prod-custo-puro','prod-montagem','prod-comissao','prod-comissao-afiliado'].forEach(id=>document.getElementById(id).value=0);
   // Preço editável só no modo novo (no editar muda em Preços & Margens).
   const vd=document.getElementById('prod-venda-display');
@@ -11587,6 +11595,9 @@ function prodOpenEdit(id){
   document.getElementById('prod-montagem').value=pp?(pp.montagem||0):0;
   document.getElementById('prod-comissao').value=pp?(pp.comissao||0):0;
   document.getElementById('prod-comissao-afiliado').value=item.comissaoAfiliado||0;
+  // Foto: limpa o seletor e mostra a foto atual (se houver) no preview.
+  const _fInp=document.getElementById('prod-foto'); if(_fInp) _fInp.value='';
+  const _fPv=document.getElementById('prod-foto-preview'); if(_fPv) _fPv.innerHTML=_prodFotoAtualHtml(item.imagemUrl);
   // Preço read-only no editar (reverte o modo novo, que o deixa editável).
   const vd=document.getElementById('prod-venda-display');
   vd.value=item.precoVenda||0; vd.readOnly=true; vd.style.opacity='0.55';
@@ -11719,6 +11730,32 @@ function prodMovimento(tipo){
   _prodAplicaMovimento(tipo,q);
 }
 
+// ── Foto do produto (bucket público 'produtos'; espelha o padrão da consignação) ──
+// Uma foto por produto (por cor). Fica em produtos.imagem_url (URL pública, estável).
+// As fotos das cores de um modelo são agrupadas pelo portal do afiliado (divulgação).
+function _prodPreviewFoto(){
+  const inp=document.getElementById('prod-foto');
+  const pv=document.getElementById('prod-foto-preview');
+  if(!inp||!pv)return;
+  const f=inp.files&&inp.files[0];
+  pv.innerHTML=f?`<img src="${URL.createObjectURL(f)}" style="max-width:160px;border-radius:8px;" alt="preview">`:'';
+}
+function _prodFotoAtualHtml(url){
+  return url?`<img src="${escHtml(url)}" style="max-width:160px;border-radius:8px;" alt="foto"><div style="font-size:10px;color:var(--text3);margin-top:2px;">Foto atual — escolha outra pra trocar.</div>`:'';
+}
+// Sobe o arquivo pro bucket 'produtos' e grava a URL pública em produtos.imagem_url.
+// Devolve a URL. Lança erro (o chamador decide como avisar).
+async function _prodUploadFoto(produtoId,file){
+  const ext=((file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,''))||'jpg';
+  const path=produtoId+'/foto-'+Date.now()+'.'+ext;
+  const up=await sb.storage.from('produtos').upload(path,file,{upsert:true,contentType:file.type||'image/jpeg'});
+  if(up.error)throw new Error(up.error.message||'falha no upload da foto');
+  const pub=sb.storage.from('produtos').getPublicUrl(path).data.publicUrl;
+  const {error}=await sb.from('produtos').update({imagem_url:pub}).eq('id',produtoId);
+  if(error)throw new Error(error.message||'falha ao gravar a foto no cadastro');
+  return pub;
+}
+
 async function prodSave(){
   const id=document.getElementById('prod-edit-id').value;
   if(!id){ return prodSaveNovo(); }   // id vazio = modo novo (criação no catálogo)
@@ -11765,6 +11802,13 @@ async function prodSave(){
         custoPuro, montagem, comissao, venda:item.precoVenda||0, ativo:true});
       salvarDados();
     } // idx<0 && !temCusto → não cria linha (acessório sem custo não mexe no dashboard)
+
+    // 2.5) FOTO → sobe pro bucket e grava imagem_url (best-effort: não derruba o resto).
+    const fotoFile=document.getElementById('prod-foto')?.files?.[0];
+    if(fotoFile){
+      try{ item.imagemUrl=await _prodUploadFoto(id,fotoFile); }
+      catch(e){ console.warn('[prod] foto:',e.message); if(typeof smToast==='function') smToast('Produto salvo, mas a foto falhou: '+e.message); }
+    }
 
     // 3) Atualiza memória + telas.
     Object.assign(item,{nome,codigo,fabricante:fornecedor,cor,motor,descricao,categoria:cat,comissaoAfiliado:comissaoAfiliado||null});
@@ -11822,11 +11866,18 @@ async function prodSaveNovo(){
         custoPuro, montagem, comissao, venda, ativo:true});
       salvarDados();
     }
+    // 2.5) FOTO (best-effort) → sobe e grava imagem_url no produto recém-criado.
+    let imagemUrl='';
+    const fotoFile=document.getElementById('prod-foto')?.files?.[0];
+    if(fotoFile){
+      try{ imagemUrl=await _prodUploadFoto(data.id,fotoFile); }
+      catch(e){ console.warn('[prod] foto:',e.message); if(typeof smToast==='function') smToast('Produto criado, mas a foto falhou: '+e.message); }
+    }
     // 3) Memória + telas (mesmo shape do carregarProdutosCatalogo).
     produtosCatalogo.push({
       id:data.id, nome, codigo:codigo||'', precoVenda:venda, custo:null,
       categoria:cat, fabricante:fornecedor||'', cor:cor||'', motor:motor||'',
-      comissaoAfiliado:comissaoAfiliado||null,
+      comissaoAfiliado:comissaoAfiliado||null, imagemUrl,
       descricao:descricao||'', estoque:Number(data.estoque)||0, ativo:true,
     });
     renderCatalogoProdutos();

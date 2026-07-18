@@ -226,8 +226,17 @@ Deno.serve(async (req: Request) => {
 
       // produtos: estoque/categoria por variante, ligados ao modelo pela FK.
       const { data: prods } = await sb.from("produtos")
-        .select("id,categoria,estoque,ativo,produto_precos_id,comissao_afiliado");
+        .select("id,categoria,estoque,ativo,produto_precos_id,comissao_afiliado,imagem_url");
       const prodById = new Map((prods || []).map((p) => [p.id, p]));
+
+      // Fotos do cadastro (produtos.imagem_url, uma por cor) por modelo — entram como
+      // material de divulgação agrupado por modelo. Só produtos ativos com foto.
+      const fotosCadPorModelo = new Map<string, number>();
+      for (const p of prods || []) {
+        if (p.ativo === false || !p.produto_precos_id || !p.imagem_url) continue;
+        const k = String(p.produto_precos_id);
+        fotosCadPorModelo.set(k, (fotosCadPorModelo.get(k) || 0) + 1);
+      }
 
       // ── Vitrine: agrega por modelo (FK exata) os produtos que o admin marcou como
       //    visíveis no programa (visivel_afiliado). Qualquer categoria — permite liberar
@@ -270,7 +279,8 @@ Deno.serve(async (req: Request) => {
               ? comissaoUnit(precoSugerido, v.precoMinimo, cfg) : null,
             fichaTecnica: pp.ficha_tecnica || null,
             condicoesPagamento: pp.condicoes_pagamento || null,
-            qtdImagens: mc.imagens,
+            // Imagens = fotos do cadastro (por cor) + materiais de imagem do módulo Afiliados.
+            qtdImagens: mc.imagens + (fotosCadPorModelo.get(v.id) || 0),
             qtdArquivos: mc.arquivos,
           };
         });
@@ -376,6 +386,30 @@ Deno.serve(async (req: Request) => {
       const geral = url.searchParams.get("geral") === "1";
       if (!modelo && !geral) return json({ error: "Informe o modelo." }, 400);
 
+      const materiais: Array<Record<string, unknown>> = [];
+
+      // Fotos do cadastro (produtos.imagem_url, uma por cor) do modelo — entram PRIMEIRO
+      // como material de divulgação. URL pública direta (bucket 'produtos' é público).
+      if (modelo && !geral) {
+        const { data: fotos } = await sb.from("produtos")
+          .select("id,nome,cor,imagem_url,ativo")
+          .eq("produto_precos_id", modelo)
+          .not("imagem_url", "is", null)
+          .order("nome");
+        for (const f of fotos || []) {
+          if (f.ativo === false || !f.imagem_url) continue;
+          const rotulo = String(f.cor || f.nome || "foto").trim();
+          materiais.push({
+            id: "prod-" + f.id,
+            tipo: "imagem",
+            titulo: rotulo || null,
+            nome: rotulo.replace(/[^\p{L}\p{N}\-_ ]/gu, "").slice(0, 60) + ".jpg",
+            tamanho: null,
+            url: f.imagem_url,
+          });
+        }
+      }
+
       let q = sb.from("afiliados_materiais")
         .select("id,tipo,titulo,arquivo_path,arquivo_nome,tamanho")
         .eq("ativo", true)
@@ -384,7 +418,6 @@ Deno.serve(async (req: Request) => {
       const { data: rows, error } = await q.limit(100);
       if (error) return json({ error: "Falha ao listar materiais." }, 500);
 
-      const materiais: Array<Record<string, unknown>> = [];
       for (const m of rows || []) {
         const { data: signed } = await sb.storage.from("afiliados-materiais")
           .createSignedUrl(m.arquivo_path, 60 * 60);

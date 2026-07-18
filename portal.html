@@ -478,6 +478,11 @@ Ao marcar a caixa de aceite, você declara que leu e concorda com este termo.`;
     }
   }
 
+  // Link de download: força o attachment. Signed URL já tem "?token=" → usa "&";
+  // URL pública (fotos do cadastro) não tem query → usa "?". Sem isso o "&download="
+  // vira path inválido e o download quebra pras fotos públicas.
+  function dlUrl(u) { return u + (String(u).indexOf('?') < 0 ? '?' : '&') + 'download='; }
+
   function matsHTML(mats, titulo) {
     const imgs = mats.filter((m) => m.tipo === 'imagem');
     const files = mats.filter((m) => m.tipo !== 'imagem');
@@ -485,12 +490,12 @@ Ao marcar a caixa de aceite, você declara que leu e concorda com este termo.`;
     if (imgs.length) {
       h += '<div class="matgrid">' + imgs.map((m) =>
         `<div class="thumb"><a href="${esc(m.url)}" target="_blank" rel="noopener"><img src="${esc(m.url)}" alt="${esc(m.titulo || m.nome || 'imagem')}" loading="lazy"></a>`
-        + `<a class="dl" href="${esc(m.url)}&download=" target="_blank" rel="noopener">⬇ Baixar</a></div>`).join('') + '</div>';
+        + `<a class="dl" href="${esc(dlUrl(m.url))}" target="_blank" rel="noopener">⬇ Baixar</a></div>`).join('') + '</div>';
     }
     if (files.length) {
       h += files.map((m) =>
         `<div class="filerow"><span class="fn">📄 ${esc(m.titulo || m.nome || 'arquivo')}</span>`
-        + `<span><a href="${esc(m.url)}" target="_blank" rel="noopener">Abrir</a> · <a href="${esc(m.url)}&download=" target="_blank" rel="noopener">Baixar</a></span></div>`).join('');
+        + `<span><a href="${esc(m.url)}" target="_blank" rel="noopener">Abrir</a> · <a href="${esc(dlUrl(m.url))}" target="_blank" rel="noopener">Baixar</a></span></div>`).join('');
     }
     if (!mats.length) h += '<div style="color:var(--text3);font-size:13px;">Nenhum material ainda.</div>';
     return h;
