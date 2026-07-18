@@ -225,22 +225,26 @@ Deno.serve(async (req: Request) => {
       }
 
       // produtos: estoque/categoria por variante, ligados ao modelo pela FK.
+      // imagens[] = galeria (várias fotos por cor); imagem_url = capa (= imagens[0]).
       const { data: prods } = await sb.from("produtos")
-        .select("id,nome,categoria,estoque,ativo,produto_precos_id,comissao_afiliado,imagem_url");
+        .select("id,nome,categoria,estoque,ativo,produto_precos_id,comissao_afiliado,imagem_url,imagens");
       const prodById = new Map((prods || []).map((p) => [p.id, p]));
+      const fotosDoProduto = (p: any): string[] =>
+        (Array.isArray(p?.imagens) && p.imagens.length ? p.imagens : (p?.imagem_url ? [p.imagem_url] : [])).filter(Boolean);
 
-      // Fotos do cadastro (produtos.imagem_url, uma por cor) por modelo — entram como
-      // material de divulgação agrupado por modelo. Só produtos ativos com foto.
+      // Fotos do cadastro por modelo — contam TODAS (galeria) pra decidir a seção do card.
       // capaPorModelo = 1ª cor com foto (por nome) → miniatura do card no portal.
       const fotosCadPorModelo = new Map<string, number>();
       const capaPorModelo = new Map<string, { nome: string; url: string }>();
       for (const p of prods || []) {
-        if (p.ativo === false || !p.produto_precos_id || !p.imagem_url) continue;
+        if (p.ativo === false || !p.produto_precos_id) continue;
+        const urls = fotosDoProduto(p);
+        if (!urls.length) continue;
         const k = String(p.produto_precos_id);
-        fotosCadPorModelo.set(k, (fotosCadPorModelo.get(k) || 0) + 1);
+        fotosCadPorModelo.set(k, (fotosCadPorModelo.get(k) || 0) + urls.length);
         const nome = String(p.nome || "");
         const cur = capaPorModelo.get(k);
-        if (!cur || nome.localeCompare(cur.nome) < 0) capaPorModelo.set(k, { nome, url: String(p.imagem_url) });
+        if (!cur || nome.localeCompare(cur.nome) < 0) capaPorModelo.set(k, { nome, url: String(urls[0]) });
       }
 
       // ── Vitrine: agrega por modelo (FK exata) os produtos que o admin marcou como
@@ -395,24 +399,27 @@ Deno.serve(async (req: Request) => {
 
       const materiais: Array<Record<string, unknown>> = [];
 
-      // Fotos do cadastro (produtos.imagem_url, uma por cor) do modelo — entram PRIMEIRO
-      // como material de divulgação. URL pública direta (bucket 'produtos' é público).
+      // Fotos do cadastro (galeria imagens[] por cor) do modelo — entram PRIMEIRO como
+      // material de divulgação. URL pública direta (bucket 'produtos' é público). Cada
+      // cor pode ter várias fotos (ângulos/detalhes) → todas viram itens da galeria.
       if (modelo && !geral) {
         const { data: fotos } = await sb.from("produtos")
-          .select("id,nome,cor,imagem_url,ativo")
+          .select("id,nome,cor,imagem_url,imagens,ativo")
           .eq("produto_precos_id", modelo)
-          .not("imagem_url", "is", null)
           .order("nome");
         for (const f of fotos || []) {
-          if (f.ativo === false || !f.imagem_url) continue;
+          if (f.ativo === false) continue;
+          const urls = (Array.isArray(f.imagens) && f.imagens.length ? f.imagens : (f.imagem_url ? [f.imagem_url] : [])).filter(Boolean);
           const rotulo = String(f.cor || f.nome || "foto").trim();
-          materiais.push({
-            id: "prod-" + f.id,
-            tipo: "imagem",
-            titulo: rotulo || null,
-            nome: rotulo.replace(/[^\p{L}\p{N}\-_ ]/gu, "").slice(0, 60) + ".jpg",
-            tamanho: null,
-            url: f.imagem_url,
+          urls.forEach((u: string, idx: number) => {
+            materiais.push({
+              id: "prod-" + f.id + "-" + idx,
+              tipo: "imagem",
+              titulo: rotulo + (urls.length > 1 ? " (" + (idx + 1) + ")" : ""),
+              nome: rotulo.replace(/[^\p{L}\p{N}\-_ ]/gu, "").slice(0, 50) + "-" + (idx + 1) + ".jpg",
+              tamanho: null,
+              url: u,
+            });
           });
         }
       }

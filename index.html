@@ -3954,10 +3954,10 @@ select:not(.input-pro):not(.search-input){
       <div class="form-group"><label>Motor</label><input class="form-input" id="prod-motor" type="text"></div>
       <div class="form-group js-custo"><label>Comissão afiliado (R$ por unidade)</label><input class="form-input" id="prod-comissao-afiliado" type="number" step="0.01" min="0" placeholder="0,00"></div>
       <div class="form-group full"><label>Descrição / características</label><textarea class="form-input" id="prod-descricao" rows="2"></textarea></div>
-      <div class="form-group full"><label>📸 Foto da scooter</label>
-        <input class="form-input" id="prod-foto" type="file" accept="image/*" onchange="_prodPreviewFoto()" style="font-size:11px;padding:8px;">
-        <div style="font-size:10px;color:var(--text3);margin-top:3px;">No celular abre a câmera ou a galeria. Fica salva no cadastro (uma por cor) e as cores de cada modelo viram um conjunto de imagens pros afiliados divulgarem.</div>
-        <div id="prod-foto-preview" style="margin-top:8px;"></div></div>
+      <div class="form-group full"><label>📸 Fotos da scooter</label>
+        <div id="gal-prod-grid" style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0;"></div>
+        <input class="form-input" type="file" accept="image/*" multiple onchange="_galAdd('prod', this.files); this.value='';" style="font-size:11px;padding:8px;">
+        <div style="font-size:10px;color:var(--text3);margin-top:3px;">No celular abre a câmera/galeria. Pode adicionar em várias vezes (uma foto por captura). <span id="gal-prod-count">0/6</span> · a 1ª é a capa (★ pra trocar). As fotos das cores viram material de divulgação pros afiliados.</div></div>
       <div class="form-group full js-custo" style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-top:4px;">Custos detalhados</div>
       <div class="form-group js-custo"><label>Custo puro (R$)</label><input class="form-input" id="prod-custo-puro" type="number" oninput="prodUpdateComputed()"></div>
       <div class="form-group js-custo"><label>Custo montagem (R$)</label><input class="form-input" id="prod-montagem" type="number" oninput="prodUpdateComputed()"></div>
@@ -10383,7 +10383,7 @@ async function carregarProdutosCatalogo() {
   setApiStatus('carregando', 'Carregando produtos...');
   try {
     const { data, error } = await sb.from('produtos')
-      .select('id,nome,codigo,preco_venda,custo,categoria,fabricante,cor,motor,descricao,estoque,ativo,comissao_afiliado,produto_precos_id,imagem_url').order('nome');
+      .select('id,nome,codigo,preco_venda,custo,categoria,fabricante,cor,motor,descricao,estoque,ativo,comissao_afiliado,produto_precos_id,imagem_url,imagens').order('nome');
     if (error) throw new Error(error.message || 'erro Supabase produtos');
     catSelecionados.clear();   // Commit 1: recarga do banco zera a seleção (evita ids órfãos)
     produtosCatalogo = (data || []).map(p => ({
@@ -10398,7 +10398,8 @@ async function carregarProdutosCatalogo() {
       motor:      p.motor || '',
       comissaoAfiliado: p.comissao_afiliado == null ? null : Number(p.comissao_afiliado),
       produtoPrecosId: p.produto_precos_id || null,   // FK p/ produtos_precos (lookup exato do modelo/preço mínimo)
-      imagemUrl:  p.imagem_url || '',                 // foto do produto (bucket público 'produtos')
+      imagemUrl:  p.imagem_url || '',                 // capa (bucket público 'produtos')
+      imagens:    Array.isArray(p.imagens) ? p.imagens : [],  // galeria completa (URLs públicas)
       descricao:  p.descricao || '',
       estoque:    Number(p.estoque) || 0,
       ativo:      p.ativo !== false,
@@ -11559,9 +11560,7 @@ function prodOpenNovo(){
   document.getElementById('prod-venda').value=0;
   ['prod-nome','prod-codigo','prod-fornecedor','prod-cor','prod-motor','prod-descricao'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('prod-categoria').value='scooter';
-  // Foto: limpa input e preview (produto novo ainda não tem foto).
-  const _fInp=document.getElementById('prod-foto'); if(_fInp) _fInp.value='';
-  const _fPv=document.getElementById('prod-foto-preview'); if(_fPv) _fPv.innerHTML='';
+  _galReset('prod', []);   // galeria de fotos vazia (produto novo)
   ['prod-custo-puro','prod-montagem','prod-comissao','prod-comissao-afiliado'].forEach(id=>document.getElementById(id).value=0);
   // Preço editável só no modo novo (no editar muda em Preços & Margens).
   const vd=document.getElementById('prod-venda-display');
@@ -11595,9 +11594,9 @@ function prodOpenEdit(id){
   document.getElementById('prod-montagem').value=pp?(pp.montagem||0):0;
   document.getElementById('prod-comissao').value=pp?(pp.comissao||0):0;
   document.getElementById('prod-comissao-afiliado').value=item.comissaoAfiliado||0;
-  // Foto: limpa o seletor e mostra a foto atual (se houver) no preview.
-  const _fInp=document.getElementById('prod-foto'); if(_fInp) _fInp.value='';
-  const _fPv=document.getElementById('prod-foto-preview'); if(_fPv) _fPv.innerHTML=_prodFotoAtualHtml(item.imagemUrl);
+  // Galeria: carrega as fotos existentes (imagens[]; fallback pra imagem_url legado).
+  const _fotos=(item.imagens && item.imagens.length ? item.imagens : (item.imagemUrl ? [item.imagemUrl] : []));
+  _galReset('prod', _fotos.map(u => ({ url:u })));
   // Preço read-only no editar (reverte o modo novo, que o deixa editável).
   const vd=document.getElementById('prod-venda-display');
   vd.value=item.precoVenda||0; vd.readOnly=true; vd.style.opacity='0.55';
@@ -11730,21 +11729,8 @@ function prodMovimento(tipo){
   _prodAplicaMovimento(tipo,q);
 }
 
-// ── Foto do produto (bucket público 'produtos'; espelha o padrão da consignação) ──
-// Uma foto por produto (por cor). Fica em produtos.imagem_url (URL pública, estável).
-// As fotos das cores de um modelo são agrupadas pelo portal do afiliado (divulgação).
-function _prodPreviewFoto(){
-  const inp=document.getElementById('prod-foto');
-  const pv=document.getElementById('prod-foto-preview');
-  if(!inp||!pv)return;
-  const f=inp.files&&inp.files[0];
-  pv.innerHTML=f?`<img src="${URL.createObjectURL(f)}" style="max-width:160px;border-radius:8px;" alt="preview">`:'';
-}
-function _prodFotoAtualHtml(url){
-  return url?`<img src="${escHtml(url)}" style="max-width:160px;border-radius:8px;" alt="foto"><div style="font-size:10px;color:var(--text3);margin-top:2px;">Foto atual — escolha outra pra trocar.</div>`:'';
-}
-// Miniatura pra listagens: foto do produto OU placeholder 🛵 (mantém o alinhamento
-// visual mesmo sem foto). Reusada na lista de Produtos e na gestão de Afiliados.
+// ── Miniatura pra listagens: foto do produto OU placeholder 🛵 (mantém o alinhamento
+//    visual mesmo sem foto). Reusada na lista de Produtos e na gestão de Afiliados. ──
 function _thumbProdutoHtml(url, size){
   size = size || 40;
   if(url) return `<img src="${escHtml(url)}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:7px;flex-shrink:0;background:var(--surface3);" alt="" loading="lazy">`;
@@ -11756,17 +11742,71 @@ function _aflFotoModelo(ppId){
   const hit = arr.find(p => String(p.produtoPrecosId) === String(ppId) && p.imagemUrl);
   return hit ? hit.imagemUrl : '';
 }
-// Sobe o arquivo pro bucket 'produtos' e grava a URL pública em produtos.imagem_url.
-// Devolve a URL. Lança erro (o chamador decide como avisar).
-async function _prodUploadFoto(produtoId,file){
-  const ext=((file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,''))||'jpg';
-  const path=produtoId+'/foto-'+Date.now()+'.'+ext;
-  const up=await sb.storage.from('produtos').upload(path,file,{upsert:true,contentType:file.type||'image/jpeg'});
-  if(up.error)throw new Error(up.error.message||'falha no upload da foto');
-  const pub=sb.storage.from('produtos').getPublicUrl(path).data.publicUrl;
-  const {error}=await sb.from('produtos').update({imagem_url:pub}).eq('id',produtoId);
-  if(error)throw new Error(error.message||'falha ao gravar a foto no cadastro');
-  return pub;
+
+// ══ Galeria de fotos reutilizável (cadastro de produto + moto consignada) ══════════
+// Até _GAL_MAX fotos por item; tira/adiciona quantas quiser (uma por captura no
+// celular), remove, e escolhe a CAPA (1ª). Estado por contexto ('prod' | 'consigr');
+// cada item = {file?, url?, path?}. `url` é sempre o que exibe (createObjectURL do file
+// novo OU URL pronta). No salvar, _galUpload sobe os `file` novos e devolve o array na
+// ordem — urlMode=true guarda URL pública (produtos), false guarda path (consignação).
+const _GAL_MAX = 6;
+const _galState = { prod: [], consigr: [] };
+function _galItens(ctx){ return _galState[ctx] || (_galState[ctx] = []); }
+function _galReset(ctx, itens){
+  (_galState[ctx]||[]).forEach(it => { if(it.file && it.url){ try{ URL.revokeObjectURL(it.url); }catch(e){} } });
+  _galState[ctx] = Array.isArray(itens) ? itens.slice() : [];
+  _galRender(ctx);
+}
+function _galAdd(ctx, fileList){
+  const a = _galItens(ctx);
+  for(const f of Array.from(fileList||[])){
+    if(a.length >= _GAL_MAX){ if(typeof smToast==='function') smToast('Máximo de '+_GAL_MAX+' fotos por item.'); break; }
+    if(!f.type || f.type.indexOf('image/')!==0) continue;
+    a.push({ file:f, url:URL.createObjectURL(f) });
+  }
+  _galRender(ctx);
+}
+function _galRemove(ctx, i){
+  const a=_galItens(ctx);
+  if(i>=0 && i<a.length){ if(a[i].file && a[i].url){ try{ URL.revokeObjectURL(a[i].url); }catch(e){} } a.splice(i,1); _galRender(ctx); }
+}
+function _galCapa(ctx, i){ const a=_galItens(ctx); if(i>0 && i<a.length){ const [x]=a.splice(i,1); a.unshift(x); _galRender(ctx); } }
+function _galRender(ctx){
+  const box=document.getElementById('gal-'+ctx+'-grid'); if(!box) return;
+  const a=_galItens(ctx);
+  box.innerHTML = a.length ? a.map((it,i)=>`
+    <div style="position:relative;width:84px;height:84px;border-radius:8px;overflow:hidden;border:1px solid var(--border);${i===0?'box-shadow:0 0 0 2px var(--gold);':''}">
+      <img src="${escHtml(it.url||'')}" style="width:100%;height:100%;object-fit:cover;display:block;" alt="">
+      ${i===0
+        ? `<span style="position:absolute;left:3px;top:3px;background:var(--gold);color:#000;font-size:9px;font-weight:800;padding:1px 5px;border-radius:5px;">CAPA</span>`
+        : `<button type="button" title="Tornar capa" onclick="_galCapa('${ctx}',${i})" style="position:absolute;left:3px;top:3px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:5px;font-size:11px;padding:1px 6px;cursor:pointer;">★</button>`}
+      <button type="button" title="Remover" onclick="_galRemove('${ctx}',${i})" style="position:absolute;right:3px;top:3px;background:rgba(0,0,0,.65);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:13px;line-height:1;cursor:pointer;">×</button>
+    </div>`).join('') : `<div style="font-size:11px;color:var(--text3);padding:6px 0;">Nenhuma foto ainda.</div>`;
+  const cnt=document.getElementById('gal-'+ctx+'-count'); if(cnt) cnt.textContent=a.length+'/'+_GAL_MAX;
+}
+// Campo de galeria (markup) pra modais gerados por JS (ex.: consignação).
+function _galFieldHtml(ctx, label){
+  return `<label>${label}</label>
+    <div id="gal-${ctx}-grid" style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0;"></div>
+    <input class="form-input" type="file" accept="image/*" multiple onchange="_galAdd('${ctx}', this.files); this.value='';" style="font-size:11px;padding:8px;">
+    <div style="font-size:10px;color:var(--text3);margin-top:3px;">No celular abre a câmera/galeria. Pode adicionar em várias vezes (uma foto por captura). <span id="gal-${ctx}-count">0/${_GAL_MAX}</span> · a 1ª é a capa (★ pra trocar).</div>`;
+}
+// Sobe os itens NOVOS (com .file) pro bucket e devolve o array final na ordem.
+// urlMode=true → URL pública (produtos); false → path (consignação). Reaproveita os já existentes.
+async function _galUpload(ctx, bucket, prefixo, urlMode){
+  const a=_galItens(ctx); const out=[];
+  for(let i=0;i<a.length;i++){
+    const it=a[i];
+    if(it.file){
+      const ext=((it.file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,''))||'jpg';
+      const path=prefixo+'/foto-'+Date.now()+'-'+i+'.'+ext;
+      const up=await sb.storage.from(bucket).upload(path, it.file, {upsert:true, contentType:it.file.type||'image/jpeg'});
+      if(up.error) throw new Error(up.error.message||'falha no upload da foto');
+      out.push(urlMode ? sb.storage.from(bucket).getPublicUrl(path).data.publicUrl : path);
+    } else if(urlMode && it.url){ out.push(it.url); }
+    else if(!urlMode && it.path){ out.push(it.path); }
+  }
+  return out;
 }
 
 async function prodSave(){
@@ -11816,12 +11856,14 @@ async function prodSave(){
       salvarDados();
     } // idx<0 && !temCusto → não cria linha (acessório sem custo não mexe no dashboard)
 
-    // 2.5) FOTO → sobe pro bucket e grava imagem_url (best-effort: não derruba o resto).
-    const fotoFile=document.getElementById('prod-foto')?.files?.[0];
-    if(fotoFile){
-      try{ item.imagemUrl=await _prodUploadFoto(id,fotoFile); }
-      catch(e){ console.warn('[prod] foto:',e.message); if(typeof smToast==='function') smToast('Produto salvo, mas a foto falhou: '+e.message); }
-    }
+    // 2.5) FOTOS → sobe a galeria e grava imagens[] + imagem_url (capa). Best-effort.
+    try{
+      const urls=await _galUpload('prod','produtos',id,true);
+      const cap=urls[0]||null;
+      const {error:eImg}=await sb.from('produtos').update({ imagens:urls, imagem_url:cap }).eq('id',id);
+      if(eImg) throw new Error(eImg.message);
+      item.imagens=urls; item.imagemUrl=cap;
+    }catch(e){ console.warn('[prod] fotos:',e.message); if(typeof smToast==='function') smToast('Produto salvo, mas as fotos falharam: '+e.message); }
 
     // 3) Atualiza memória + telas.
     Object.assign(item,{nome,codigo,fabricante:fornecedor,cor,motor,descricao,categoria:cat,comissaoAfiliado:comissaoAfiliado||null});
@@ -11879,18 +11921,18 @@ async function prodSaveNovo(){
         custoPuro, montagem, comissao, venda, ativo:true});
       salvarDados();
     }
-    // 2.5) FOTO (best-effort) → sobe e grava imagem_url no produto recém-criado.
-    let imagemUrl='';
-    const fotoFile=document.getElementById('prod-foto')?.files?.[0];
-    if(fotoFile){
-      try{ imagemUrl=await _prodUploadFoto(data.id,fotoFile); }
-      catch(e){ console.warn('[prod] foto:',e.message); if(typeof smToast==='function') smToast('Produto criado, mas a foto falhou: '+e.message); }
-    }
+    // 2.5) FOTOS (best-effort) → sobe a galeria e grava imagens[]+imagem_url no produto novo.
+    let imagemUrl='', imagens=[];
+    try{
+      imagens=await _galUpload('prod','produtos',data.id,true);
+      imagemUrl=imagens[0]||'';
+      if(imagens.length){ const {error:eImg}=await sb.from('produtos').update({ imagens, imagem_url:imagemUrl }).eq('id',data.id); if(eImg) throw new Error(eImg.message); }
+    }catch(e){ console.warn('[prod] fotos:',e.message); if(typeof smToast==='function') smToast('Produto criado, mas as fotos falharam: '+e.message); }
     // 3) Memória + telas (mesmo shape do carregarProdutosCatalogo).
     produtosCatalogo.push({
       id:data.id, nome, codigo:codigo||'', precoVenda:venda, custo:null,
       categoria:cat, fabricante:fornecedor||'', cor:cor||'', motor:motor||'',
-      comissaoAfiliado:comissaoAfiliado||null, imagemUrl,
+      comissaoAfiliado:comissaoAfiliado||null, imagemUrl, imagens,
       descricao:descricao||'', estoque:Number(data.estoque)||0, ativo:true,
     });
     renderCatalogoProdutos();
@@ -23474,10 +23516,7 @@ function abrirReceberConsignacaoModal(editId) {
          <select class="form-input" id="consigr-estado"><option value="">—</option>
            <option value="nova"${c&&c.estado==='nova'?' selected':''}>Nova</option>
            <option value="usada"${c&&c.estado==='usada'?' selected':''}>Usada</option></select></div>
-       <div class="form-group full"><label>📸 Foto da moto</label>
-         <input class="form-input" id="consigr-foto" type="file" accept="image/*" onchange="_consigrPreviewFoto()" style="font-size:11px;padding:8px;">
-         <div style="font-size:10px;color:var(--text3);margin-top:3px;">No celular abre a câmera ou a galeria. Aparece na lista e na vitrine pública do WhatsApp.</div>
-         <div id="consigr-foto-preview" style="margin-top:8px;"></div></div>
+       <div class="form-group full">${_galFieldHtml('consigr', '📸 Fotos da moto')}</div>
        <div class="form-group full"><label>📦 Itens que vieram junto</label>
          <div style="margin-top:4px;">${_consigrItensChecklist(itensSel)}</div>
          <input class="form-input" id="consigr-item-extra" placeholder="Outro item (opcional) — ex.: bateria extra" style="margin-top:8px;font-size:11px;" value="${escHtml(itensExtra)}"></div>
@@ -23492,7 +23531,7 @@ function abrirReceberConsignacaoModal(editId) {
   _consigrModalShell(editId ? 'Editar <span>consignação</span>' : 'Receber <span>moto consignada</span>', body, editId ? 'Salvar' : 'Registrar', _consigrSalvar, 640);
   initClienteSearch('consigr-cli-search', { placeholder: 'Buscar dono por nome, telefone ou CPF' });
   if (c && c.consignanteClienteId && typeof clienteSearchSet === 'function') clienteSearchSet('consigr-cli-search', { clienteId: c.consignanteClienteId }, false);
-  if (c && c.fotoPath) { const pv = document.getElementById('consigr-foto-preview'); if (pv) pv.innerHTML = `<img src="${_consigrFotoUrl(c.fotoPath)}" style="max-width:160px;border-radius:8px;" alt="foto"><div style="font-size:10px;color:var(--text3);margin-top:2px;">Foto atual — escolha outra pra trocar.</div>`; }
+  { const _fotos = (c && c.fotos && c.fotos.length ? c.fotos : (c && c.fotoPath ? [c.fotoPath] : [])); _galReset('consigr', _fotos.map(p => ({ path:p, url:_consigrFotoUrl(p) }))); }
   ['consigr-repasse','consigr-preco','consigr-comissao'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', _consigrMargemPreview); });
   _consigrMargemPreview();
 }
@@ -23502,13 +23541,6 @@ function _consigrFotoUrl(path) {
   try { return sb.storage.from('consignacoes').getPublicUrl(path).data.publicUrl; } catch (e) { return ''; }
 }
 
-function _consigrPreviewFoto() {
-  const inp = document.getElementById('consigr-foto');
-  const pv = document.getElementById('consigr-foto-preview');
-  if (!inp || !pv) return;
-  const f = inp.files && inp.files[0];
-  pv.innerHTML = f ? `<img src="${URL.createObjectURL(f)}" style="max-width:160px;border-radius:8px;" alt="preview">` : '';
-}
 
 // Link público da vitrine (lista das consignadas disponíveis) — pra mandar no WhatsApp.
 function _consigrCopiarLinkVitrine(btn) {
@@ -23591,16 +23623,12 @@ async function _consigrSalvar() {
       if (error) throw error;
       consigId = ins.id;
     }
-    // Foto: se escolheu uma, sobe pro bucket público e grava o caminho.
-    const fotoFile = document.getElementById('consigr-foto')?.files?.[0];
-    if (fotoFile && consigId) {
+    // Fotos (galeria): sobe as novas e grava fotos[] + foto_path (capa). Best-effort.
+    if (consigId) {
       try {
-        const ext = ((fotoFile.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'jpg';
-        const path = consigId + '/foto-' + Date.now() + '.' + ext;
-        const up = await sb.storage.from('consignacoes').upload(path, fotoFile, { upsert: true, contentType: fotoFile.type || 'image/jpeg' });
-        if (up.error) console.warn('[consigr] upload foto:', up.error.message);
-        else await sb.from('consignacoes').update({ foto_path: path }).eq('id', consigId);
-      } catch (e) { console.warn('[consigr] foto:', e.message); }
+        const paths = await _galUpload('consigr', 'consignacoes', consigId, false);
+        await sb.from('consignacoes').update({ fotos: paths, foto_path: paths[0] || null }).eq('id', consigId);
+      } catch (e) { console.warn('[consigr] fotos:', e.message); }
     }
     const m = document.getElementById('consigr-modal'); if (m) m.remove();
     await initConsignacaoRecebida();

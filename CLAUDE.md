@@ -246,6 +246,34 @@ simulações". **100% client-side** — não lê nem grava nada no Supabase (é 
   599,93); parser em 9 formatos; textos de cópia (com/sem entrada, simulada 15x/6x incluída sem duplicar 18x/21x);
   visual desktop+mobile (grid empilha ≤520px). **✅ commit `56f2a1e` pushed → GitHub Pages.**
 
+## Galeria de fotos (várias por item) — produto + moto consignada (18/07/2026)
+**Evolução do "1 foto" pra GALERIA (até 6 fotos por item), pedido do dono** (mais de um ângulo/detalhe;
+tira na hora com o celular). Vale no **cadastro de produto** (por cor) e na **moto consignada** (moto de
+cliente). A 1ª foto é a **capa** (aparece na listagem/card/vitrine); todas entram na galeria de divulgação.
+- **Banco (migração `fotos_multiplas_produtos_consignacoes`):** `produtos.imagens jsonb` (array de URLs
+  públicas) + `consignacoes.fotos jsonb` (array de paths). As colunas singulares viram a **capa**
+  (retrocompat total): `produtos.imagem_url` = `imagens[0]` · `consignacoes.foto_path` = `fotos[0]`. Tudo
+  que já lia a capa (lista, portal, vitrine) continua funcionando sem mudança.
+- **Componente reutilizável (`index.html`):** `_gal*` (estado `_galState` por contexto `'prod'`/`'consigr'`,
+  `_GAL_MAX=6`). `_galAdd` (aceita `multiple` + adicionar em várias vezes — 1 captura por vez no celular),
+  `_galRemove`, `_galCapa` (★ move pra 1ª), `_galRender` (grid de miniaturas 84px com selo CAPA/★/×),
+  `_galReset` (carrega as fotos existentes ao editar; revoga object-URLs), `_galFieldHtml` (markup pra modais
+  gerados por JS), **`_galUpload(ctx,bucket,prefixo,urlMode)`** (sobe só os `file` novos, reaproveita os
+  existentes, devolve o array na ordem — `urlMode=true`→URL pública/produtos, `false`→path/consignação).
+- **Produto:** modal usa `#gal-prod-grid`; `prodOpenNovo`/`prodOpenEdit` chamam `_galReset('prod', …)`
+  (edição carrega `item.imagens` com fallback pra `imagemUrl`); `prodSave`/`prodSaveNovo` sobem via
+  `_galUpload` e gravam `imagens` + `imagem_url`(capa); `imagens` entrou no select/map de
+  `carregarProdutosCatalogo`.
+- **Consignação:** modal usa `_galFieldHtml('consigr','📸 Fotos da moto')`; `abrirReceberConsignacaoModal`
+  faz `_galReset('consigr', …)` (fallback `fotoPath`); `_consigrSalvar` grava `fotos` + `foto_path`(capa).
+  `consignacoes` mapeia por `toCamelArr` → `fotos` vem sozinho.
+- **Portal (Edge Function):** `dados` conta TODAS as fotos por modelo (`fotosDoProduto`) e usa `imagens[0]`
+  como capa; `materiais` **expande cada cor em vários itens** (uma por foto da galeria, rotulado "Cor (2)"…).
+  `matsHTML`/`dlUrl` do portal já renderizam N imagens — sem mudança no `portal.html`.
+- **Validado no localhost (18/07, 0 erro de JS):** helpers, add/capa/remover, **limite de 6**, modo edição
+  (fotos existentes), `_galUpload` nos 2 modos (URL/path), campo da consignação, e o grid no modal por
+  screenshot (CAPA/★/× corretos). **Fluxo real de upload → banco:** valida o dono ao vivo.
+
 ## Foto da scooter no cadastro + galeria de divulgação pro afiliado (18/07/2026)
 **O que é:** o cadastro de produto ganhou **upload de foto** (por cor). A foto fica salva no cadastro e
 é **reaproveitada no portal do afiliado**, agregada por modelo, como um **conjunto de imagens de
@@ -782,6 +810,14 @@ do Supabase e a mudança vale na hora.
   propósito (equipe ainda não usa — aguarda 360dialog).
 
 ## Histórico de mudanças
+
+### 2026-07-18 — Galeria de fotos (várias por item): produto + moto consignada
+Evolução do "1 foto" pra **até 6 fotos por item** (ângulos/detalhes; tira na hora no celular), pedido do dono.
+Vale no cadastro de produto (por cor) e na consignação (moto de cliente). 1ª foto = capa. Banco: `produtos.imagens`
++ `consignacoes.fotos` (jsonb; migração `fotos_multiplas_produtos_consignacoes`), com os campos singulares virando
+a capa (retrocompat). Componente `_gal*` reutilizável (add/remover/definir capa/upload, máx 6). Portal: Edge Function
+`materiais` expande cada cor em vários itens (galeria completa). Validado no localhost (0 erro; grid por screenshot).
+Seção **"Galeria de fotos (várias por item)"**. **Migração no ar; frontend/Edge Function a subir.**
 
 ### 2026-07-18 — Foto da scooter no cadastro + galeria de divulgação pro afiliado (NO AR)
 Pedido do dono: subir foto no cadastro de produto e reaproveitar na tela do afiliado. Decisão: foto **por
