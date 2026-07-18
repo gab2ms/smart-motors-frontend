@@ -817,7 +817,7 @@ Vale no cadastro de produto (por cor) e na consignação (moto de cliente). 1ª 
 + `consignacoes.fotos` (jsonb; migração `fotos_multiplas_produtos_consignacoes`), com os campos singulares virando
 a capa (retrocompat). Componente `_gal*` reutilizável (add/remover/definir capa/upload, máx 6). Portal: Edge Function
 `materiais` expande cada cor em vários itens (galeria completa). Validado no localhost (0 erro; grid por screenshot).
-Seção **"Galeria de fotos (várias por item)"**. **Migração no ar; frontend/Edge Function a subir.**
+Seção **"Galeria de fotos (várias por item)"**. **✅ NO AR:** migração + Edge Function **v9** + commit `b1fd6d5` → GitHub Pages.
 
 ### 2026-07-18 — Foto da scooter no cadastro + galeria de divulgação pro afiliado (NO AR)
 Pedido do dono: subir foto no cadastro de produto e reaproveitar na tela do afiliado. Decisão: foto **por
