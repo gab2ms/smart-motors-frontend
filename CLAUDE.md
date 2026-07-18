@@ -210,6 +210,42 @@ evitar que o vendedor esqueça de entregar o contrato.
   visual conferido por screenshot. **Follow-ups:** dono validar logado (1 venda real imprimindo o contrato +
   imprimir da tela de Pedidos); **commit + push** (deploy GitHub Pages, passo do dono). NÃO commitado ainda.
 
+## Calculadora de Parcelamento (simulador pro vendedor) — no ar 18/07/2026
+**O que é:** ferramenta simples pro vendedor simular o preço no cartão e mandar as condições pro cliente no
+WhatsApp. **Item de menu próprio** (`ic-calculator`, solo logo abaixo do PDV na `NAV_TREE`), página
+`#page-calculadora`. Pedido do dono: "calculadora logo abaixo do módulo do PDV pros funcionários fazerem
+simulações". **100% client-side** — não lê nem grava nada no Supabase (é só cálculo).
+- **Regra comercial (definida pelo dono, NÃO é a taxa da adquirente):** `taxa% = nº de parcelas + 2` (1x=3%…
+  21x=23%). `base = valor à vista − entrada` (a **entrada** é paga à vista, Pix/dinheiro, SEM taxa). `total no
+  cartão = base × (1+taxa/100)`; `parcela = round2(total/n)`; **total exibido = parcela × n** (não o total
+  matemático — pra o texto comercial nunca divergir: parcela×n bate com o total). `total geral = entrada +
+  total no cartão` (o desembolso do cliente). Arredondamento robusto `round2 = Math.round((x+EPSILON)*100)/100`.
+- **Entrada (opcional):** abate do saldo antes de aplicar a taxa. Trava se `entrada ≥ vista` (não sobra o que
+  parcelar). Default vazio = comportamento sem entrada.
+- **Copiar formas de pagamento (o recurso central):** o botão gera UMA mensagem com **à vista + 12x + 18x + 21x
+  + a parcela simulada** (sem repetir se a simulada já for uma das principais; ordem decrescente). Se houver
+  entrada, cada opção mostra o Total já com a entrada + uma linha "Entrada de R$ X no Pix ou dinheiro". Formato
+  pronto pro WhatsApp (nome 👇, "FORMAS DE PAGAMENTO:", cada Nx + Total, "Valor à vista:"). Um aviso no card
+  mostra ao vivo quais condições vão na cópia.
+- **Permissão:** const nova **`MODULOS_LIVRES = new Set(['calculadora'])`** (index.html, antes do `showPage`) =
+  módulos liberados a QUALQUER logado, sem passar pelo controle de perfil (não entra em `TODOS_MODULOS`/
+  `PERFIS_DEFAULT_MODULOS`/tela de acessos). `showPage` pula a checagem de permissão pra esses ids;
+  `renderSidebar` (`podeVer`) sempre mostra. Como a calculadora não faz query, **não precisou tocar no banco**
+  (`tem_modulo`). Serve pra futuras ferramentas inofensivas.
+- **Código (`index.html`):** símbolo `ic-calculator` (Lucide) no sprite; markup + `<style>` `.calc-*` logo
+  após `#page-pdv`; `pageMeta`/`BREADCRUMB_MAP` `calculadora`; dispatch `initCalculadora` no `showPage`. Bloco JS
+  `calc*/_calc*` logo após o roteamento (`showPage`/popstate): `_calcParseValor` (aceita `10.999,00`/`10999,00`/
+  `10999.00`/`R$ …`), `_calcCondicao(base,n)`, `_calcMontarTextoFormas`, `_calcParcelasCopia` (principais+simulada),
+  render do resultado (hero verde + linhas) e da tabela 1x–21x (12/18/21 em destaque). Rascunho no localStorage
+  `sm_calc_parcelamento` (nome/valor/entrada/parcelas). Tema do sistema (dourado + valores em verde), responsivo.
+- **Fora de escopo (decisão consciente):** o prompt-base pedia React/TS/Tailwind/PWA — ignorado, o sistema é
+  `index.html` vanilla single-file; reusa `.card`/`.btn-pro`/`.input-pro`/`.table-pro`. Sem PWA (é config do
+  sistema todo, não de um módulo).
+- **Validado (localhost, navegador real, console 0 erro):** cálculo isolado (Node) bate com os casos do dono
+  (12x=1.044,91/12.538,92 · 18x=733,27/13.198,86 · 21x=644,23/13.528,83) e com entrada (18x c/ R$2.000 =
+  599,93); parser em 9 formatos; textos de cópia (com/sem entrada, simulada 15x/6x incluída sem duplicar 18x/21x);
+  visual desktop+mobile (grid empilha ≤520px). **✅ commit `56f2a1e` pushed → GitHub Pages.**
+
 ## Segurança
 **Estado: ~8–9/10** (era 2/10 antes da auditoria de 28/06/2026). Plano original: `~/.claude/plans/quero-atacar-aquela-pendencia-serene-fox.md`.
 
@@ -700,6 +736,16 @@ do Supabase e a mudança vale na hora.
   propósito (equipe ainda não usa — aguarda 360dialog).
 
 ## Histórico de mudanças
+
+### 2026-07-18 — Calculadora de Parcelamento no ar (simulador pro vendedor)
+Módulo novo (item de menu solo logo abaixo do PDV) pro vendedor simular o preço no cartão e mandar as condições
+pro cliente no WhatsApp. Taxa = nº de parcelas + 2%; total = parcela×n; **entrada opcional** (Pix/dinheiro) abate
+do saldo antes da taxa; botão **Copiar** gera uma mensagem única com à vista + 12x/18x/21x **+ a parcela
+simulada** (sem duplicar). 100% client-side (sem banco); liberado a todos via `MODULOS_LIVRES` (não precisou
+tocar em `tem_modulo`). Vanilla, no tema do sistema. Detalhe na seção **"Calculadora de Parcelamento"**. Validado
+no navegador (cálculos batem com os casos do dono, parser, textos de cópia, desktop+mobile). **✅ commit `56f2a1e`
+pushed → GitHub Pages.** Refinado em 3 rodadas de feedback do dono (entrada, cópia das principais, cópia inclui a
+simulada) — tudo aprovado.
 
 ### 2026-07-13 — Consignação: múltiplas formas + recebimento + comissão na automática; CEP no cadastro rápido
 Pedidos do dono na sequência (a venda real da Harley destravou tudo). **(1) Venda pelo atalho** (`_consigrVender`/
