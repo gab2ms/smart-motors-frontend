@@ -226,16 +226,21 @@ Deno.serve(async (req: Request) => {
 
       // produtos: estoque/categoria por variante, ligados ao modelo pela FK.
       const { data: prods } = await sb.from("produtos")
-        .select("id,categoria,estoque,ativo,produto_precos_id,comissao_afiliado,imagem_url");
+        .select("id,nome,categoria,estoque,ativo,produto_precos_id,comissao_afiliado,imagem_url");
       const prodById = new Map((prods || []).map((p) => [p.id, p]));
 
       // Fotos do cadastro (produtos.imagem_url, uma por cor) por modelo — entram como
       // material de divulgação agrupado por modelo. Só produtos ativos com foto.
+      // capaPorModelo = 1ª cor com foto (por nome) → miniatura do card no portal.
       const fotosCadPorModelo = new Map<string, number>();
+      const capaPorModelo = new Map<string, { nome: string; url: string }>();
       for (const p of prods || []) {
         if (p.ativo === false || !p.produto_precos_id || !p.imagem_url) continue;
         const k = String(p.produto_precos_id);
         fotosCadPorModelo.set(k, (fotosCadPorModelo.get(k) || 0) + 1);
+        const nome = String(p.nome || "");
+        const cur = capaPorModelo.get(k);
+        if (!cur || nome.localeCompare(cur.nome) < 0) capaPorModelo.set(k, { nome, url: String(p.imagem_url) });
       }
 
       // ── Vitrine: agrega por modelo (FK exata) os produtos que o admin marcou como
@@ -279,6 +284,8 @@ Deno.serve(async (req: Request) => {
               ? comissaoUnit(precoSugerido, v.precoMinimo, cfg) : null,
             fichaTecnica: pp.ficha_tecnica || null,
             condicoesPagamento: pp.condicoes_pagamento || null,
+            // Miniatura do card (1ª cor com foto do modelo) — aparece no card recolhido.
+            fotoCapa: capaPorModelo.get(v.id)?.url || null,
             // Imagens = fotos do cadastro (por cor) + materiais de imagem do módulo Afiliados.
             qtdImagens: mc.imagens + (fotosCadPorModelo.get(v.id) || 0),
             qtdArquivos: mc.arquivos,

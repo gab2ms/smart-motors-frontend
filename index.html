@@ -10870,7 +10870,7 @@ function renderCatalogoProdutos() {
     const mcColor = L.mcp == null ? 'var(--text3)' : L.mcp >= 30 ? 'var(--gold)' : L.mcp >= 15 ? 'var(--orange)' : 'var(--red)';
     return `<tr onclick="prodOpenEdit('${p.id}')" style="cursor:pointer;${inativo ? 'opacity:0.5;' : ''}">
       <td class="hide-mobile" style="text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" ${sel ? 'checked' : ''} onclick="event.stopPropagation();catToggleSel('${p.id}',this.checked)"></td>
-      <td class="td-model" style="max-width:240px;white-space:normal;line-height:1.4;"><div style="display:flex;align-items:center;gap:8px;">${p.imagemUrl ? `<img src="${escHtml(p.imagemUrl)}" style="width:34px;height:34px;object-fit:cover;border-radius:6px;flex-shrink:0;" alt="" loading="lazy">` : ''}<span>${escHtml(p.nome)}${_abcBadge(_ABC_CACHE.classe.get(String(p.id)))}${_paradoBadge(L.parado)}${inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">Inativo</span>' : ''}</span></div></td>
+      <td class="td-model" style="max-width:260px;white-space:normal;line-height:1.4;"><div style="display:flex;align-items:center;gap:10px;">${_thumbProdutoHtml(p.imagemUrl, 40)}<span>${escHtml(p.nome)}${_abcBadge(_ABC_CACHE.classe.get(String(p.id)))}${_paradoBadge(L.parado)}${inativo ? ' <span class="badge" style="background:var(--surface3);color:var(--text3);">Inativo</span>' : ''}</span></div></td>
       <td class="hide-mobile"><span class="td-supplier">${escHtml(p.codigo) || '—'}</span></td>
       <td class="hide-mobile">${_catBadgeProduto(L.categoria)}</td>
       <td class="hide-mobile"><span class="td-supplier">${escHtml(L.fornecedor) || '—'}</span></td>
@@ -11742,6 +11742,19 @@ function _prodPreviewFoto(){
 }
 function _prodFotoAtualHtml(url){
   return url?`<img src="${escHtml(url)}" style="max-width:160px;border-radius:8px;" alt="foto"><div style="font-size:10px;color:var(--text3);margin-top:2px;">Foto atual — escolha outra pra trocar.</div>`:'';
+}
+// Miniatura pra listagens: foto do produto OU placeholder 🛵 (mantém o alinhamento
+// visual mesmo sem foto). Reusada na lista de Produtos e na gestão de Afiliados.
+function _thumbProdutoHtml(url, size){
+  size = size || 40;
+  if(url) return `<img src="${escHtml(url)}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:7px;flex-shrink:0;background:var(--surface3);" alt="" loading="lazy">`;
+  return `<span style="width:${size}px;height:${size}px;border-radius:7px;flex-shrink:0;background:var(--surface3);display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.52)}px;opacity:.45;" aria-hidden="true">🛵</span>`;
+}
+// Foto de capa de um MODELO (produtos_precos) = 1ª cor com foto no catálogo.
+function _aflFotoModelo(ppId){
+  const arr = (typeof produtosCatalogo !== 'undefined') ? produtosCatalogo : [];
+  const hit = arr.find(p => String(p.produtoPrecosId) === String(ppId) && p.imagemUrl);
+  return hit ? hit.imagemUrl : '';
 }
 // Sobe o arquivo pro bucket 'produtos' e grava a URL pública em produtos.imagem_url.
 // Devolve a URL. Lança erro (o chamador decide como avisar).
@@ -21331,7 +21344,7 @@ function _aflRenderCatalogoInner() {
 
     return `<tr style="border-bottom:1px solid var(--border);${vis && falta.length ? 'background:rgba(245,158,11,0.06);' : ''}${vis ? 'box-shadow:inset 3px 0 0 var(--gold);' : 'opacity:.72;'}">`
       + `<td style="padding:8px 14px;">${btnVis}</td>`
-      + `<td style="padding:8px 14px;font-weight:700;">${escHtml(pp.modelo || '—')}${_aflMatEhScooter(pp.categoria) ? '' : ' <span style="font-weight:400;font-size:10px;color:var(--text3);border:1px solid var(--border2);border-radius:6px;padding:1px 6px;vertical-align:middle;">acessório</span>'}</td>`
+      + `<td style="padding:8px 14px;font-weight:700;"><div style="display:flex;align-items:center;gap:10px;">${_thumbProdutoHtml(_aflFotoModelo(pp.id), 38)}<span>${escHtml(pp.modelo || '—')}${_aflMatEhScooter(pp.categoria) ? '' : ' <span style="font-weight:400;font-size:10px;color:var(--text3);border:1px solid var(--border2);border-radius:6px;padding:1px 6px;vertical-align:middle;">acessório</span>'}</span></div></td>`
       + `<td style="padding:8px 14px;">${situacao}</td>`
       + `<td style="padding:8px 14px;text-align:right;color:var(--text3);">${fmtMoney(pp.venda)}</td>`
       + `<td style="padding:8px 14px;text-align:right;"><input type="number" step="0.01" min="0" value="${pp.precoMinimoAfiliado != null ? Number(pp.precoMinimoAfiliado) : ''}" placeholder="0,00" style="width:120px;text-align:right;padding:6px 8px;background:var(--surface2);border:1px solid ${semPm ? 'rgba(245,158,11,0.5)' : 'var(--border2)'};border-radius:6px;color:var(--text);" onchange="_aflSalvarPrecoMinimo('${pp.id}', this.value, this)"></td>`

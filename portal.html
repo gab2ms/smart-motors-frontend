@@ -66,6 +66,9 @@
   .vhead{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
     padding:14px;background:none;border:none;color:var(--text);font-family:var(--ui);cursor:pointer;text-align:left;}
   .vhead .nome{font-weight:700;font-size:15px;}
+  .vhead .vleft{display:flex;align-items:center;gap:12px;min-width:0;}
+  .vhead .vcapa{width:52px;height:52px;object-fit:cover;border-radius:10px;flex-shrink:0;background:var(--surface3);}
+  .vhead .vcapa-ph{display:inline-flex;align-items:center;justify-content:center;font-size:26px;opacity:.5;}
   .vhead .chev{color:var(--text3);font-size:11px;transition:transform .15s;}
   .vcard.open .chev{transform:rotate(180deg);}
   .vprecos{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 14px 14px;}
@@ -408,7 +411,10 @@ Ao marcar a caixa de aceite, você declara que leu e concorda com este termo.`;
       : '';
     return `<div class="vcard" id="vcard-${i}">
       <button class="vhead" onclick="toggleCard(${i})">
-        <span class="nome">${esc(v.modelo)}</span>
+        <span class="vleft">
+          ${v.fotoCapa ? `<img class="vcapa" src="${esc(v.fotoCapa)}" alt="" loading="lazy">` : `<span class="vcapa vcapa-ph" aria-hidden="true">🛵</span>`}
+          <span class="nome">${esc(v.modelo)}</span>
+        </span>
         <span style="display:flex;align-items:center;gap:10px;">
           <span class="sel ${on ? 'on' : 'off'}">${on ? '🟢 Disponível' : '⛔ Indisponível'}</span>
           <span class="chev">▼</span>
