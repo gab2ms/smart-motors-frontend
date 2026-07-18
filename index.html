@@ -1782,6 +1782,7 @@ select:not(.input-pro):not(.search-input){
     <symbol id="ic-calendar" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></symbol>
     <symbol id="ic-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
     <symbol id="ic-receipt" viewBox="0 0 24 24"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/></symbol>
+    <symbol id="ic-calculator" viewBox="0 0 24 24"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></symbol>
     <symbol id="ic-bar-chart" viewBox="0 0 24 24"><line x1="12" x2="12" y1="20" y2="10"/><line x1="18" x2="18" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="16"/></symbol>
     <symbol id="ic-dollar" viewBox="0 0 24 24"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></symbol>
     <symbol id="ic-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
@@ -3747,6 +3748,79 @@ select:not(.input-pro):not(.search-input){
     <div id="pdv-root"></div>
   </div>
 
+  <!-- ══════════════ CALCULADORA DE PARCELAMENTO ══════════════ -->
+  <style>
+    .calc-label{display:block;font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;letter-spacing:.2px;}
+    .calc-verde{color:var(--green)!important;}
+    .calc-grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+    .calc-res-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px;}
+    .calc-res-nome{font-size:18px;font-weight:800;color:var(--text);margin-bottom:14px;word-break:break-word;}
+    .calc-res-hero{background:var(--green-dim);border:1px solid rgba(0,245,160,0.25);border-radius:var(--r-sm);padding:16px;text-align:center;margin-bottom:8px;}
+    .calc-res-hero-lbl{font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
+    .calc-res-hero-val{font-size:26px;font-weight:800;color:var(--green);font-family:var(--mono);line-height:1.1;}
+    .calc-res-hero-sub{font-size:12px;color:var(--text2);font-weight:600;margin-top:5px;}
+    .calc-res-row{display:flex;justify-content:space-between;align-items:baseline;padding:11px 2px;border-bottom:1px solid var(--border);gap:12px;}
+    .calc-res-row:last-of-type{border-bottom:none;}
+    .calc-res-lbl{font-size:12px;color:var(--text2);font-weight:600;}
+    .calc-res-val{font-size:14px;font-weight:700;color:var(--text);text-align:right;font-family:var(--mono);}
+    @media(max-width:520px){ .calc-grid2{grid-template-columns:1fr;} .calc-res-hero-val{font-size:22px;} }
+  </style>
+  <div class="page content" id="page-calculadora">
+    <div style="max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:16px;">
+
+      <!-- Entrada -->
+      <div class="card" style="padding:20px;">
+        <div style="display:flex;align-items:center;gap:11px;">
+          <svg class="ic" style="width:22px;height:22px;color:var(--gold);flex:none;"><use href="#ic-calculator"/></svg>
+          <div>
+            <div class="card-title" style="font-size:16px;">Simulador de Parcelamento</div>
+            <div class="card-sub">Preço no cartão pra passar pro cliente · taxa = nº de parcelas + 2%</div>
+          </div>
+        </div>
+
+        <div style="margin-top:18px;display:flex;flex-direction:column;gap:14px;">
+          <div>
+            <label class="calc-label" for="calc-nome">Moto ou scooter</label>
+            <input type="text" id="calc-nome" class="input-pro" style="width:100%;" placeholder="Ex.: Scooter Savage" maxlength="60" autocomplete="off" oninput="calcSalvarRascunho()">
+          </div>
+          <div>
+            <label class="calc-label" for="calc-valor">Valor à vista</label>
+            <input type="text" inputmode="decimal" id="calc-valor" class="input-pro" style="width:100%;" placeholder="R$ 0,00" autocomplete="off" oninput="calcSalvarRascunho()" onblur="calcFormatarCampoMoeda('calc-valor')" onkeydown="if(event.key==='Enter'){event.preventDefault();calcCalcular();}">
+          </div>
+          <div class="calc-grid2">
+            <div>
+              <label class="calc-label" for="calc-entrada">Entrada <span style="color:var(--text3);font-weight:500;text-transform:none;letter-spacing:0;">· Pix/dinheiro, opcional</span></label>
+              <input type="text" inputmode="decimal" id="calc-entrada" class="input-pro" style="width:100%;" placeholder="R$ 0,00" autocomplete="off" oninput="calcSalvarRascunho()" onblur="calcFormatarCampoMoeda('calc-entrada')" onkeydown="if(event.key==='Enter'){event.preventDefault();calcCalcular();}">
+            </div>
+            <div>
+              <label class="calc-label" for="calc-parcelas">Parcelas</label>
+              <select id="calc-parcelas" class="input-pro" style="width:100%;" onchange="calcOnChangeParcelas()"></select>
+            </div>
+          </div>
+          <div id="calc-erro" style="display:none;color:var(--red);font-size:12px;font-weight:600;"></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn-pro btn-pro--primary" onclick="calcCalcular()" style="flex:1;justify-content:center;min-width:140px;">
+              <svg class="ic ic-sm"><use href="#ic-zap"/></svg> Calcular
+            </button>
+            <button class="btn-pro" onclick="calcLimpar()" style="justify-content:center;">
+              <svg class="ic ic-sm"><use href="#ic-refresh"/></svg> Limpar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resultado individual (renderizado por JS) -->
+      <div id="calc-resultado" style="display:none;"></div>
+
+      <!-- Toggle da tabela completa -->
+      <button class="btn-pro btn-pro--ghost" id="calc-btn-tabela" onclick="calcToggleTabela()" style="justify-content:center;display:none;">
+        <svg class="ic ic-sm"><use href="#ic-bar-chart"/></svg> Ver todas as formas de pagamento
+      </button>
+      <div id="calc-tabela" style="display:none;"></div>
+
+    </div>
+  </div>
+
   <!-- ══════════════ COMPRA PROGRAMADA ══════════════ -->
   <style>
     /* Assinatura do módulo: a barra de progresso do acúmulo + a trilha de aportes. */
@@ -4445,6 +4519,7 @@ const pageMeta={
   custos:['Custos Operacionais','Análise inteligente baseada em lançamentos reais'],
   'custos-produtos':['Custos de Produtos','Gerencie os componentes de custo de cada produto'],
   pdv:             ['PDV','Painel de operação — criar novas vendas'],
+  calculadora:     ['Calculadora de Parcelamento','Simule o preço no cartão pra passar pro cliente'],
   relatorios:      ['Relatórios','Biblioteca de relatórios e análises de venda'],
   'compra-programada': ['Compra Programada','Clientes juntando crédito até retirar a scooter'],
 };
@@ -4472,6 +4547,7 @@ const BREADCRUMB_MAP = {
   custos:          ['Financeiro', 'Custos Operacionais'],
   'custos-produtos':['Produtos', 'Custos de Produtos'],
   pdv:             ['Vendas', 'PDV'],
+  calculadora:     ['Vendas', 'Calculadora'],
   'compra-programada':['Vendas', 'Compra Programada'],
 };
 // Sub-tabs do módulo Financeiro: troca de sub-tab deve refletir em
@@ -4527,6 +4603,11 @@ async function abrirCRM() {
   window.open(destino, '_blank', 'noopener');
 }
 function _pageDomId(id){ return _osAreaModo(id) ? 'oficina-sac' : id; }
+// Módulos liberados a QUALQUER usuário logado (ferramentas sem dado sensível e
+// sem query ao banco). Não entram no controle de perfil/permissão nem na tela de
+// acessos — ficam sempre visíveis na sidebar e sempre acessíveis no showPage.
+// Ex.: Calculadora de Parcelamento (só cálculo local, nada do Supabase).
+const MODULOS_LIVRES = new Set(['calculadora']);
 // opts.fromHistory=true → veio do popstate, NÃO empilha (evita loop)
 // opts.replace=true     → primeira navegação, replaceState em vez de pushState
 function showPage(id, opts){
@@ -4559,7 +4640,7 @@ function showPage(id, opts){
   // Controle de acesso: redireciona para dashboard se sem permissao
   let _user = null;
   try { _user = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch(e) {}
-  if (_user) {
+  if (_user && !MODULOS_LIVRES.has(id)) {
     const permitidos = modulosPermitidos(_user);
     if (!permitidos.includes(_permModulo(id))) {
       console.warn('[showPage] acesso NEGADO a "' + id + '" (perfil='
@@ -4618,6 +4699,7 @@ function showPage(id, opts){
   if(id==='clientes')initClientes();
   if(id==='contratos')initContratos();
   if(id==='pdv')initPdv();
+  if(id==='calculadora')initCalculadora();
   if(id==='compra-programada')initCompraProgramada();
   if(id==='relatorios')initRelatorios();
 }
@@ -4631,6 +4713,321 @@ window.addEventListener('popstate', function(e) {
     showPage(id, { fromHistory: true });
   }
 });
+
+// ══════════════════════════════════════════
+//  CALCULADORA DE PARCELAMENTO (simulação p/ cliente)
+//  Regra comercial (definida pelo Gabriel, NÃO é a taxa da adquirente):
+//    base    = valor à vista − entrada  (entrada é paga à vista, SEM taxa)
+//    taxa%   = nº de parcelas + 2   ·   total no cartão = base × (1 + taxa/100)
+//    parcela = round2(total / n)   ·   total no cartão exibido = parcela × n
+//    total geral = entrada + total no cartão  (o desembolso do cliente)
+//  O total mostrado/copiado é SEMPRE parcela×n (não o total matemático),
+//  pra o texto comercial nunca divergir (parcela × n = total exato).
+//  100% client-side: não lê nem grava nada no Supabase.
+// ══════════════════════════════════════════
+const CALC_LS_KEY = 'sm_calc_parcelamento';
+const CALC_MAX_PARCELAS = 21;
+const CALC_TAXA_EXTRA_PP = 2;   // pontos percentuais somados ao nº de parcelas
+const CALC_PARCELAS_PADRAO = '18';
+const CALC_PRINCIPAIS = [21, 18, 12];   // parcelamentos-chave que vão SEMPRE na mensagem copiada (+ à vista)
+const _calcBRL = new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL', minimumFractionDigits:2, maximumFractionDigits:2 });
+let _calcInit = false;
+let _calcTabelaAberta = false;
+
+function _calcRound2(x){ return Math.round((x + Number.EPSILON) * 100) / 100; }
+function _calcMoeda(x){ return _calcBRL.format(x); }
+function _calcTaxaPct(n){ return n + CALC_TAXA_EXTRA_PP; }
+function _calcEsc(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Parser robusto: aceita "10.999,00", "10999,00", "10999.00", "10999", "R$ 10.999,00".
+function _calcParseValor(str){
+  if (str == null) return NaN;
+  let s = String(str).trim().replace(/[^\d.,]/g, '');   // tira R$, espaços, letras
+  if (!s) return NaN;
+  const temV = s.includes(','), temP = s.includes('.');
+  if (temV && temP){
+    // formato BR: ponto = milhar, vírgula = decimal
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if (temV){
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if (temP){
+    // só ponto: milhar se houver mais de um ponto OU o último grupo tiver 3 dígitos;
+    // senão é decimal (ex.: "10999.00").
+    const partes = s.split('.');
+    const ultimo = partes[partes.length - 1];
+    if (partes.length > 2 || ultimo.length === 3) s = partes.join('');
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? NaN : n;
+}
+
+// Calcula uma condição de parcelamento sobre a BASE que vai pro cartão
+// (base = valor à vista − entrada; a entrada é paga à vista, sem taxa).
+function _calcCondicao(base, n){
+  const taxa = _calcTaxaPct(n);
+  const totalMat = base * (1 + taxa/100);
+  const parcela = _calcRound2(totalMat / n);
+  const totalCartao = _calcRound2(parcela * n);   // total no cartão = parcela × n
+  return { n, taxa, parcela, totalCartao };
+}
+
+function _calcLerEntrada(){
+  const nome = (document.getElementById('calc-nome').value || '').trim();
+  const vista = _calcParseValor(document.getElementById('calc-valor').value);
+  let entrada = _calcParseValor(document.getElementById('calc-entrada').value);
+  if (isNaN(entrada) || entrada < 0) entrada = 0;   // entrada é opcional
+  const n = parseInt(document.getElementById('calc-parcelas').value, 10) || 1;
+  return { nome, vista, entrada, n };
+}
+
+function _calcMostrarErro(msg){
+  const el = document.getElementById('calc-erro');
+  if (!el) return;
+  if (msg){ el.textContent = msg; el.style.display = 'block'; }
+  else    { el.textContent = ''; el.style.display = 'none'; }
+}
+
+function _calcEsconderResultado(){
+  document.getElementById('calc-resultado').style.display = 'none';
+  document.getElementById('calc-btn-tabela').style.display = 'none';
+  document.getElementById('calc-tabela').style.display = 'none';
+  _calcTabelaAberta = false;
+}
+
+function initCalculadora(){
+  // Popula o seletor de parcelas 1x…21x (idempotente).
+  const sel = document.getElementById('calc-parcelas');
+  if (sel && !sel.options.length){
+    let opts = '';
+    for (let n = 1; n <= CALC_MAX_PARCELAS; n++){
+      opts += '<option value="' + n + '">' + n + 'x — taxa ' + _calcTaxaPct(n) + '%</option>';
+    }
+    sel.innerHTML = opts;
+    sel.value = CALC_PARCELAS_PADRAO;
+  }
+  if (_calcInit) return;   // rascunho só restaura na 1ª abertura
+  _calcInit = true;
+  try {
+    const raw = localStorage.getItem(CALC_LS_KEY);
+    if (raw){
+      const d = JSON.parse(raw) || {};
+      if (d.nome)     document.getElementById('calc-nome').value = d.nome;
+      if (d.valor)    document.getElementById('calc-valor').value = d.valor;
+      if (d.entrada)  document.getElementById('calc-entrada').value = d.entrada;
+      if (d.parcelas && sel) sel.value = d.parcelas;
+    }
+  } catch(e){}
+}
+
+function calcSalvarRascunho(){
+  try {
+    localStorage.setItem(CALC_LS_KEY, JSON.stringify({
+      nome:     document.getElementById('calc-nome').value || '',
+      valor:    document.getElementById('calc-valor').value || '',
+      entrada:  document.getElementById('calc-entrada').value || '',
+      parcelas: document.getElementById('calc-parcelas').value || CALC_PARCELAS_PADRAO,
+    }));
+  } catch(e){}
+}
+
+function calcOnChangeParcelas(){
+  calcSalvarRascunho();
+  // Se já há resultado na tela, recalcula na hora ao trocar a parcela.
+  if (document.getElementById('calc-resultado').style.display !== 'none') calcCalcular();
+}
+
+// Formata um campo de moeda no blur ("10999" → "R$ 10.999,00"). Campo de
+// entrada vazio/zero fica em branco (é opcional).
+function calcFormatarCampoMoeda(id){
+  const el = document.getElementById(id);
+  if (!el) return;
+  const v = _calcParseValor(el.value);
+  if (!isNaN(v) && v > 0) el.value = _calcMoeda(v);
+  else if (id === 'calc-entrada') el.value = '';
+  calcSalvarRascunho();
+}
+
+function calcCalcular(){
+  const { nome, vista, entrada, n } = _calcLerEntrada();
+  if (isNaN(vista) || vista <= 0){
+    _calcMostrarErro('Digite um valor à vista válido, maior que zero.');
+    _calcEsconderResultado();
+    return;
+  }
+  if (entrada >= vista){
+    _calcMostrarErro('A entrada deve ser menor que o valor à vista — senão não sobra saldo pra parcelar no cartão.');
+    _calcEsconderResultado();
+    return;
+  }
+  _calcMostrarErro('');
+  calcFormatarCampoMoeda('calc-valor');
+  calcFormatarCampoMoeda('calc-entrada');
+  const base = _calcRound2(vista - entrada);
+  const c = _calcCondicao(base, n);
+  _calcRenderResultado(nome, vista, entrada, c);
+  document.getElementById('calc-btn-tabela').style.display = 'flex';
+  if (_calcTabelaAberta) _calcRenderTabela(nome, vista, entrada);
+  calcSalvarRascunho();
+}
+
+function _calcRow(lbl, val, cls){
+  return '<div class="calc-res-row"><span class="calc-res-lbl">' + lbl + '</span>' +
+         '<span class="calc-res-val ' + (cls || '') + '">' + val + '</span></div>';
+}
+
+function _calcRenderResultado(nome, vista, entrada, c){
+  const box = document.getElementById('calc-resultado');
+  const temEntrada = entrada > 0;
+  const totalGeral = _calcRound2(entrada + c.totalCartao);
+  const nomeHTML = nome ? '<div class="calc-res-nome">' + _calcEsc(nome) + '</div>' : '';
+  const heroSub = temEntrada ? '<div class="calc-res-hero-sub">após entrada de ' + _calcMoeda(entrada) + '</div>' : '';
+  let rows = '';
+  if (temEntrada){
+    rows += _calcRow('Entrada (Pix/dinheiro)', _calcMoeda(entrada), 'calc-verde');
+    rows += _calcRow('Total no cartão', _calcMoeda(c.totalCartao));
+    rows += _calcRow('Taxa aplicada', c.taxa + '%');
+    rows += _calcRow('Total geral (entrada + cartão)', _calcMoeda(totalGeral));
+    rows += _calcRow('Valor à vista (Pix/dinheiro)', _calcMoeda(vista), 'calc-verde');
+  } else {
+    rows += _calcRow('Valor à vista (Pix/dinheiro)', _calcMoeda(vista), 'calc-verde');
+    rows += _calcRow('Total no cartão', _calcMoeda(c.totalCartao));
+    rows += _calcRow('Taxa aplicada', c.taxa + '%');
+  }
+  box.innerHTML =
+    '<div class="calc-res-card">' +
+      nomeHTML +
+      '<div class="calc-res-hero">' +
+        '<div class="calc-res-hero-lbl">Pagamento no cartão</div>' +
+        '<div class="calc-res-hero-val">' + c.n + 'x de ' + _calcMoeda(c.parcela) + '</div>' +
+        heroSub +
+      '</div>' +
+      rows +
+      '<div style="font-size:11px;color:var(--text3);text-align:center;margin-top:14px;">Copia à vista + ' + _calcParcelasCopia(c.n).map(p => p + 'x').join(', ') + ' numa mensagem só</div>' +
+      '<button class="btn-pro btn-pro--primary" onclick="calcCopiarCondicao()" style="width:100%;justify-content:center;margin-top:8px;">' +
+        '<svg class="ic ic-sm"><use href="#ic-clipboard"/></svg> Copiar formas de pagamento' +
+      '</button>' +
+    '</div>';
+  box.style.display = 'block';
+}
+
+function calcToggleTabela(){
+  const { nome, vista, entrada } = _calcLerEntrada();
+  const btn = document.getElementById('calc-btn-tabela');
+  const tbl = document.getElementById('calc-tabela');
+  _calcTabelaAberta = !_calcTabelaAberta;
+  if (_calcTabelaAberta && !isNaN(vista) && vista > 0 && entrada < vista){
+    _calcRenderTabela(nome, vista, entrada);
+    tbl.style.display = 'block';
+    btn.innerHTML = '<svg class="ic ic-sm"><use href="#ic-eye-off"/></svg> Ocultar tabela';
+  } else {
+    _calcTabelaAberta = false;
+    tbl.style.display = 'none';
+    btn.innerHTML = '<svg class="ic ic-sm"><use href="#ic-bar-chart"/></svg> Ver todas as formas de pagamento';
+  }
+}
+
+function _calcRenderTabela(nome, vista, entrada){
+  const base = _calcRound2(vista - entrada);
+  const temEntrada = entrada > 0;
+  let linhas = '';
+  for (let n = 1; n <= CALC_MAX_PARCELAS; n++){
+    const c = _calcCondicao(base, n);
+    const total = temEntrada ? _calcRound2(entrada + c.totalCartao) : c.totalCartao;
+    const destaque = (n===12 || n===18 || n===21) ? ' style="background:var(--gold-dim);"' : '';
+    linhas +=
+      '<tr' + destaque + '>' +
+        '<td style="font-weight:700;">' + c.n + 'x</td>' +
+        '<td>' + c.taxa + '%</td>' +
+        '<td class="calc-verde" style="font-family:var(--mono);font-weight:700;">' + _calcMoeda(c.parcela) + '</td>' +
+        '<td style="font-family:var(--mono);">' + _calcMoeda(total) + '</td>' +
+      '</tr>';
+  }
+  const sub = temEntrada
+    ? 'Entrada de ' + _calcMoeda(entrada) + ' no Pix/dinheiro + parcelas no cartão · o Total já inclui a entrada.'
+    : 'Do 1x ao 21x — 12x, 18x e 21x em destaque.';
+  const colTotal = temEntrada ? 'Total geral' : 'Total no cartão';
+  document.getElementById('calc-tabela').innerHTML =
+    '<div class="card">' +
+      '<div style="padding:16px 16px 0;">' +
+        '<div class="card-title">Todas as formas de pagamento</div>' +
+        '<div class="card-sub">' + sub + '</div>' +
+      '</div>' +
+      '<div style="overflow-x:auto;margin-top:12px;">' +
+        '<table class="table-pro">' +
+          '<thead><tr><th>Parcelamento</th><th>Taxa</th><th>Valor da parcela</th><th>' + colTotal + '</th></tr></thead>' +
+          '<tbody>' + linhas + '</tbody>' +
+        '</table>' +
+      '</div>' +
+      '<div style="padding:14px 16px;border-top:1px solid var(--border);">' +
+        '<button class="btn-pro btn-pro--primary" onclick="calcCopiarTabela()" style="width:100%;justify-content:center;">' +
+          '<svg class="ic ic-sm"><use href="#ic-clipboard"/></svg> Copiar 12x, 18x e 21x' +
+        '</button>' +
+      '</div>' +
+    '</div>';
+}
+
+// Monta o texto comercial (WhatsApp) com os parcelamentos pedidos + à vista.
+// Se houver entrada, o Total de cada opção já inclui a entrada.
+function _calcMontarTextoFormas(nome, vista, entrada, parcelas){
+  const base = _calcRound2(vista - entrada);
+  const temEntrada = entrada > 0;
+  const linhas = [];
+  if (nome) linhas.push(nome + ' 👇', '');
+  linhas.push('FORMAS DE PAGAMENTO:', '');
+  if (temEntrada) linhas.push('Entrada de ' + _calcMoeda(entrada) + ' no Pix ou dinheiro + parcelas no cartão:', '');
+  parcelas.forEach(n => {
+    const c = _calcCondicao(base, n);
+    const total = temEntrada ? _calcRound2(entrada + c.totalCartao) : c.totalCartao;
+    linhas.push(c.n + 'x de ' + _calcMoeda(c.parcela) + ' no cartão de crédito',
+                'Total: ' + _calcMoeda(total), '');
+  });
+  linhas.push('Valor à vista:', _calcMoeda(vista) + ' no Pix ou dinheiro.');
+  return linhas.join('\n');
+}
+
+// Parcelas que entram na mensagem: as principais + a simulada na tela (sem
+// repetir, ex.: simular 18x não duplica), em ordem decrescente (21x → menor).
+function _calcParcelasCopia(n){
+  return Array.from(new Set(CALC_PRINCIPAIS.concat(n))).sort((a, b) => b - a);
+}
+
+// Os dois botões (card e tabela) copiam as condições principais (à vista + 12x
+// + 18x + 21x) MAIS a parcela simulada (ex.: 15x), sem repetir.
+function calcCopiarCondicao(){
+  const { nome, vista, entrada, n } = _calcLerEntrada();
+  if (isNaN(vista) || vista <= 0 || entrada >= vista) return;
+  _calcCopiar(_calcMontarTextoFormas(nome, vista, entrada, _calcParcelasCopia(n)));
+}
+
+function calcCopiarTabela(){ calcCopiarCondicao(); }
+
+function _calcCopiar(texto){
+  const ok   = () => { if (typeof smToast === 'function') smToast('✅ Condição copiada!'); };
+  const fail = () => { if (typeof smAlert === 'function') smAlert('Não consegui copiar. Selecione e copie manualmente:\n\n' + texto); };
+  if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(texto).then(ok).catch(fail);
+  } else {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = texto; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta); ok();
+    } catch(e){ fail(); }
+  }
+}
+
+function calcLimpar(){
+  document.getElementById('calc-nome').value = '';
+  document.getElementById('calc-valor').value = '';
+  document.getElementById('calc-entrada').value = '';
+  document.getElementById('calc-parcelas').value = CALC_PARCELAS_PADRAO;
+  _calcMostrarErro('');
+  _calcEsconderResultado();
+  try { localStorage.removeItem(CALC_LS_KEY); } catch(e){}
+  document.getElementById('calc-nome').focus();
+}
 
 // Helpers de data
 function toBRDate(iso) {
@@ -9635,6 +10032,7 @@ const NAV_TREE = [
   { kind:'solo',  id:'dashboard',  label:'Dashboard',  icon:'ic-zap' },
   { kind:'solo',  id:'calendario', label:'Calendário', icon:'ic-calendar' },
   { kind:'solo',  id:'pdv',        label:'PDV',        icon:'ic-cart', destaque:true },
+  { kind:'solo',  id:'calculadora', label:'Calculadora', icon:'ic-calculator' },
   { kind:'sep' },
   { kind:'group', label:'Vendas',     icon:'ic-package', children:[
       { id:'pedidos',         label:'Pedidos',        icon:'ic-package'      },
@@ -9756,7 +10154,7 @@ function renderSidebar() {
     const u = JSON.parse(localStorage.getItem('sm_user') || 'null');
     if (u) permitidos = modulosPermitidos(u);
   } catch(e) {}
-  const podeVer = id => !permitidos || permitidos.includes(_permModulo(id));
+  const podeVer = id => MODULOS_LIVRES.has(id) || !permitidos || permitidos.includes(_permModulo(id));
 
   // Garante _navGrupoDaTelaAtual coerente antes da render
   try {
