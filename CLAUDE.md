@@ -276,8 +276,16 @@ divulgação** (o afiliado vê/baixa). **Decisão do dono:** no CADASTRO a foto 
   renderiza ao escolher imagem, foto atual aparece na edição; template do thumbnail gera `<img>` só quando
   há foto e escapa a URL; portal `matsHTML` + `dlUrl` corretos pra URL pública e signed. **NÃO** validado o
   fluxo real end-to-end (subir foto→banco→portal) — exige sessão logada + produção (fica pro dono).
-- **✅ NO AR (18/07/2026):** Edge Function `portal-afiliado` **v7** (verify_jwt=false, smoke test 401 sem
-  token OK) + frontend commit `5c381e2` pushed → GitHub Pages. Bucket `produtos` criado via MCP.
+- **Miniatura nas listagens (18/07/2026):** helper **`_thumbProdutoHtml(url,size)`** (foto ou placeholder
+  🛵 pra manter o alinhamento) na **lista de Produtos** (thumb 40px à esquerda do nome) e na **gestão de
+  Afiliados** (thumb 38px na linha, via **`_aflFotoModelo(ppId)`** = 1ª cor com foto do modelo em
+  `produtosCatalogo`). No **portal**, a Edge Function `dados` devolve **`fotoCapa`** por modelo (=`capaPorModelo`,
+  1ª cor com foto por nome) e o `cardHTML` mostra a **capa 52px** no card recolhido (`.vcapa`/`.vleft`;
+  placeholder 🛵 quando o modelo ainda não tem foto). Layout: foto à esquerda, título à direita, infos abaixo —
+  identifica a scooter sem abrir. Validado no localhost (helpers, thumbnails, card do portal por screenshot).
+- **✅ NO AR (18/07/2026):** Edge Function `portal-afiliado` **v8** (verify_jwt=false, smoke test 401 sem
+  token OK) + frontend commits `5c381e2` (base) + `28e7d69` (miniaturas) pushed → GitHub Pages. Bucket
+  `produtos` criado via MCP.
 - **PENDÊNCIAS (dono, não bloqueiam):** **(1)** validar logado — editar um produto, subir 1 foto, ver o
   thumbnail, abrir o portal de um afiliado visível e ver a galeria + baixar; **(2)** as fotos só aparecem
   pro afiliado nos modelos **`visivel_afiliado=true`** (hoje só o Skylo) — o dono escolhe quais. **Follow-up
@@ -781,10 +789,12 @@ cor** no cadastro (`produtos.imagem_url`, coluna que já existia e nunca fora us
 afiliado (junta as cores → conjunto de imagens de divulgação). Feito: bucket público `produtos` (migração
 `storage_bucket_produtos`); campo de upload+preview no modal do produto + thumbnail na lista (index.html);
 Edge Function `portal-afiliado` passou a devolver as fotos do cadastro por modelo (dados+materiais),
-reusando a galeria existente do portal + fix `dlUrl` (download de URL pública). Validado no localhost (0
-erro de console: boot, modal, preview, thumbnail, portal). Seção **"Foto da scooter no cadastro..."**.
-**Pendente do dono (produção, auto-mode bloqueou):** deploy da Edge Function + commit/push do frontend +
-validar logado.
+reusando a galeria existente do portal + fix `dlUrl` (download de URL pública). **Refino (mesma data):**
+miniatura já na **listagem** (não só ao abrir) — lista de Produtos (thumb 40px + placeholder 🛵), gestão de
+Afiliados (thumb do modelo) e **capa 52px no card do portal** (`fotoCapa` da Edge Function v8). Layout foto à
+esquerda / título à direita / infos abaixo. Validado no localhost (0 erro; card do portal por screenshot).
+**✅ NO AR:** Edge Function v8 + commits `5c381e2`+`28e7d69` → GitHub Pages; bucket `produtos` via MCP.
+Seção **"Foto da scooter no cadastro..."**. Pendência do dono: validar logado + marcar modelos visíveis.
 
 ### 2026-07-18 — Calculadora de Parcelamento no ar (simulador pro vendedor)
 Módulo novo (item de menu solo logo abaixo do PDV) pro vendedor simular o preço no cartão e mandar as condições
