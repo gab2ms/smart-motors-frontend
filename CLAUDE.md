@@ -276,10 +276,13 @@ divulgação** (o afiliado vê/baixa). **Decisão do dono:** no CADASTRO a foto 
   renderiza ao escolher imagem, foto atual aparece na edição; template do thumbnail gera `<img>` só quando
   há foto e escapa a URL; portal `matsHTML` + `dlUrl` corretos pra URL pública e signed. **NÃO** validado o
   fluxo real end-to-end (subir foto→banco→portal) — exige sessão logada + produção (fica pro dono).
-- **PENDÊNCIAS (passos do dono — produção):** **(1)** deploy da Edge Function `portal-afiliado`
-  (verify_jwt=false) — o auto-mode bloqueou (deploy de produção); **(2)** commit + push de `index.html` +
-  `portal.html` → GitHub Pages; **(3)** validar logado. **Follow-up opcional:** exibir as fotos do modelo
-  também na GESTÃO de afiliados (`abrirAflMateriaisModal`) — hoje o admin vê a foto só no cadastro de produto.
+- **✅ NO AR (18/07/2026):** Edge Function `portal-afiliado` **v7** (verify_jwt=false, smoke test 401 sem
+  token OK) + frontend commit `5c381e2` pushed → GitHub Pages. Bucket `produtos` criado via MCP.
+- **PENDÊNCIAS (dono, não bloqueiam):** **(1)** validar logado — editar um produto, subir 1 foto, ver o
+  thumbnail, abrir o portal de um afiliado visível e ver a galeria + baixar; **(2)** as fotos só aparecem
+  pro afiliado nos modelos **`visivel_afiliado=true`** (hoje só o Skylo) — o dono escolhe quais. **Follow-up
+  opcional:** exibir as fotos do modelo também na GESTÃO de afiliados (`abrirAflMateriaisModal`) — hoje o
+  admin vê a foto só no cadastro de produto.
 
 ## Segurança
 **Estado: ~8–9/10** (era 2/10 antes da auditoria de 28/06/2026). Plano original: `~/.claude/plans/quero-atacar-aquela-pendencia-serene-fox.md`.
@@ -772,7 +775,7 @@ do Supabase e a mudança vale na hora.
 
 ## Histórico de mudanças
 
-### 2026-07-18 — Foto da scooter no cadastro + galeria de divulgação pro afiliado (localhost)
+### 2026-07-18 — Foto da scooter no cadastro + galeria de divulgação pro afiliado (NO AR)
 Pedido do dono: subir foto no cadastro de produto e reaproveitar na tela do afiliado. Decisão: foto **por
 cor** no cadastro (`produtos.imagem_url`, coluna que já existia e nunca fora usada), **por modelo** no
 afiliado (junta as cores → conjunto de imagens de divulgação). Feito: bucket público `produtos` (migração
