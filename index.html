@@ -6843,6 +6843,13 @@ function _tokensProduto(s) {
     .filter(t => t.length >= 2);
 }
 
+// Cadastro de unidade SEMINOVA (recebida em troca/trade-in): custo e preço são
+// DAQUELA unidade, não do modelo. Só pode casar por nome EXATO — se entrasse nos
+// fallbacks fuzzy, uma venda antiga do modelo novo passaria a usar o custo da
+// seminova (o fallback do "buddy" abaixo pega o 1º cadastro que casa, e a ordem
+// de `products` é por id = arbitrária) e mudaria o CPV/DRE retroativo.
+const _ehSeminovo = p => /seminov/i.test(p && p.modelo || '');
+
 function _matchProdutoPorNome(itemNome) {
   if (!itemNome || !products || !products.length) return null;
   const exact = products.find(p => p.modelo === itemNome);
@@ -6850,8 +6857,10 @@ function _matchProdutoPorNome(itemNome) {
   const low = itemNome.toLowerCase();
   const ci = products.find(p => (p.modelo || '').toLowerCase() === low);
   if (ci) return ci;
+  // Daqui pra baixo é match aproximado — seminovas ficam de fora (ver acima).
+  const fuzzy = products.filter(p => !_ehSeminovo(p));
   // startsWith no nome original (Tiny sem prefixo, ou cadastro inclui o prefixo)
-  let candidatos = products
+  let candidatos = fuzzy
     .filter(p => p.modelo && low.startsWith(p.modelo.toLowerCase()))
     .sort((a, b) => (b.modelo.length - a.modelo.length));
   if (candidatos.length) return candidatos[0];
@@ -6859,7 +6868,7 @@ function _matchProdutoPorNome(itemNome) {
   // e refaz startsWith.
   const norm = _normalizarNomeTiny(low);
   if (norm !== low) {
-    candidatos = products
+    candidatos = fuzzy
       .filter(p => p.modelo && norm.startsWith(p.modelo.toLowerCase().replace(/-/g, ' ')))
       .sort((a, b) => (b.modelo.length - a.modelo.length));
     if (candidatos.length) return candidatos[0];
@@ -6870,7 +6879,7 @@ function _matchProdutoPorNome(itemNome) {
   // Usa `norm` (hífen já virou espaço) — `_tokensProduto` preserva o hífen,
   // então o token cru seria "x-buddy", não "buddy".
   if (norm.split(' ').includes('buddy')) {
-    const xb = products.find(p => /buddy/i.test(p.modelo || ''));
+    const xb = fuzzy.find(p => /buddy/i.test(p.modelo || ''));
     if (xb) return xb;
   }
   // Fallback final: alias map. Cobre Tiny names que divergem do cadastro.
@@ -6878,7 +6887,7 @@ function _matchProdutoPorNome(itemNome) {
   for (const alias of _PRODUTO_ALIASES) {
     const todosPresentes = alias.triggerTokens.every(t => tokensNome.has(t));
     if (todosPresentes) {
-      const alvo = products.find(p => (p.modelo || '').toLowerCase() === alias.modeloAlvo);
+      const alvo = fuzzy.find(p => (p.modelo || '').toLowerCase() === alias.modeloAlvo);
       if (alvo) return alvo;
     }
   }
@@ -8540,6 +8549,11 @@ const _DRE_CATEGORIAS_FORA_DESPESA = [
   // O custo real já entra no CPV via custo_consignacao na venda pelo PDV; os
   // desembolsos de caixa do repasse são FLUXO, não despesa (senão conta 2×).
   'Consignação',
+  // Troca de Veículo — par casado (entrada+saída de mesmo valor/data) que
+  // registra a permuta do trade-in: o cliente pagou parte da moto nova com a
+  // usada. Não houve caixa (líquido zero) e não é despesa: o valor virou custo
+  // de estoque da unidade seminova, que entra no CPV quando ela for revendida.
+  'Troca de Veículo',
 ];
 
 // Decompõe as parcelas de empréstimo pagas num período em JUROS vs PRINCIPAL.
@@ -12771,6 +12785,11 @@ const FC_BALDES = {
   'empréstimos':'divida',
   'acerto de caixa':'neutro', 'aportes':'neutro', 'bloqueado':'neutro',
   'investimentos':'neutro', 'rendimento conta':'neutro', 'transferência':'neutro',
+  // Troca de veículo (trade-in): par casado entrada+saída de mesmo valor/data,
+  // só pra deixar rastro da permuta. Não entrou nem saiu dinheiro → neutro nos
+  // dois lados (se fosse 'operacao'/'estoque' inflaria a geração de caixa do
+  // Raio-X com um valor que nunca passou em conta).
+  'troca de veículo':'neutro',
 };
 // Saídas operacionais que ficam FORA do custo fixo (_DRE_CATEGORIAS_FORA_
 // DESPESA) mas saem do caixa todo mês — a projeção desconta a média delas.
@@ -24128,11 +24147,17 @@ let _pdvSyncStatus = new Map();
 // API pública gratuita — não precisa de token, retorna 8 dígitos do CEP.
 const VIACEP_URL = 'https://viacep.com.br/ws/{cep}/json/';
 
+// 'troca_veiculo' = trade-in: o cliente paga parte da moto nova entregando a
+// usada. NÃO é caixa — nada entra em `lancamentos` por esse valor; ele vira
+// custo de estoque da unidade seminova (ver "Troca de veículo (trade-in)" no
+// CLAUDE.md). Fica na lista pra o comprovante e o relatório de forma de
+// pagamento não mentirem registrando a permuta como dinheiro/pix.
 const PDV_PAGTO_TIPOS = [
   { code: 'dinheiro',       label: 'Dinheiro' },
   { code: 'pix',            label: 'PIX' },
   { code: 'cartao_credito', label: 'Cartão de Crédito' },
   { code: 'cartao_debito',  label: 'Cartão de Débito' },
+  { code: 'troca_veiculo',  label: 'Veículo na troca (trade-in)' },
 ];
 
 const PDV_STATUS_LABEL = {

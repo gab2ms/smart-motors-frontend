@@ -778,6 +778,18 @@ botão "+ Enviar moto". Inalterada (só migrou pra dentro da sub-aba). Funções
 - **Piloto:** Andrisa (dono, `bfbae8e8…`) + Alessandro (comprador, `efa327fc…`) cadastrados; consignação Harley 16
   Preta (chassi 2025072000122, repasse 7.000/venda 8.000/comissão 100 Michelle) registrada **disponível**
   (`0a997642…`). Venda real Andrisa→Alessandro (cartão R$8.000) o dono marca quando quiser.
+- **Registro RETROATIVO de consignada (venda anterior ao módulo) — 21/07/2026:** a MC20 2000W da
+  **Rosângela de Sá** (que comprou a Pixxel Vermelha, pedido Tiny #226 de 28/05) foi vendida ao **Renato de
+  Assis Couto** por **R$ 8.100** em 30/05 (pedido Tiny **#231**, Michelle) e o repasse de **R$ 7.000** só foi
+  pago em **21/07/2026** (Cora). Como a venda é do **Tiny** (sem `pdv_pedido`), foi registrada direto na
+  tabela: `consignacoes` status `vendida` (`pedido_id` NULL, `produto_precos_id` NULL — a MC20 não está no
+  catálogo) + `consignacoes_pagamentos` amarrando o `lancamento_id` da saída (categoria `Consignação`).
+  **⚠️ Armadilha:** gravar `comissao_vendedor` > 0 nesse caso faz `trg_comissao_vend_consignacoes` **criar
+  conta a pagar de comissão retroativa** (competência = `data_venda`) — comissão que já foi paga por fora no
+  fechamento do mês. Registro retroativo vai com **`comissao_vendedor = 0`** e nota na observação. **Limite
+  conhecido:** o **CPV dessa venda na DRE de maio continua estimado** pela margem média do catálogo (~30%),
+  não pelos R$ 7.000 reais — `custo_consignacao` só existe em `pdv_itens_pedido`, e venda do arquivo Tiny não
+  tem item de PDV. Sem correção retroativa possível; evita-se registrando a moto no módulo **antes** de vender.
 - **Follow-up conhecido:** espelhar `custoConsig` em `buscarLinhasVenda` (~5614, reconciliação DRE×Caixa/
   Relatórios) senão a consignada pode divergir lá (o DRE principal já está certo). `produtosTiny` do PDV cacheia
   na sessão — proteção contra vender 2x = update WHERE status='disponivel'.
@@ -808,6 +820,62 @@ do Supabase e a mudança vale na hora.
   recentes — **3 em destaque:** ⭐ Compra Programada (10/07), ⭐ Compra e Venda Consignada (11/07), ⭐ Sistema de Afiliados
   (08/07); + Comissão de venda automática (11/07) e Raio-X do caixa/DRE nova (09/07). CRM/WhatsApp ficou **de fora** de
   propósito (equipe ainda não usa — aguarda 360dialog).
+
+## Troca de veículo (trade-in) — padrão de registro (25/07/2026)
+
+**O caso que virou padrão:** Gabriel de Almeida Arruda comprou uma X-Buddy cinza em 17/04 (Tiny #194, R$ 8.500),
+teve **módulo** (OS #13 → SAC #31, resolvido 26/05) e depois **autonomia** (resolvido, mas nunca aberto como caso —
+registrado retroativo na timeline do SAC #31). Em **23/07** veio à loja, não quis mais a moto e trocou por uma
+**Pixxel amarela**: crédito **integral de R$ 8.500** pela usada + **R$ 1.000** de diferença.
+
+**Modelagem escolhida (e por quê):** é **venda nova + permuta**, NÃO devolução. Estornar a venda de abril mexeria
+numa competência fechada (arquivo `tiny_pedidos`, DRE de abril) e não houve devolução de dinheiro. Registrar só a
+diferença de R$ 1.000 como venda destruiria margem e faria a usada voltar "de graça".
+
+**Regra de ouro:** `preço da venda nova = dinheiro recebido + valor de ENTRADA do usado + desconto`. O valor de
+entrada é quanto se espera revender **menos** preparo/custos de vender. Crédito concedido acima disso é **desconto
+comercial da venda nova**, não custo do usado — senão o estoque nasce superavaliado e a revenda nasce com prejuízo
+artificial. *Neste caso* crédito (8.500) e revenda esperada (8.000) ficaram a R$ 500 → entrou pelo crédito cheio,
+sem dividir (decisão do dono; a diferença aparece como o custo real da troca na revenda).
+
+**Os 6 passos (repetir em toda troca):**
+1. **SKU próprio por UNIDADE usada** — nunca reusar o SKU do modelo novo (o CPV vem do cadastro!). Par
+   `produtos_precos` + `produtos` com **nome IDÊNTICO** (garante o match exato em `_matchProdutoPorNome`), nome
+   contendo `MOTONETA` (SCOOTER_RE: rankings/comissão/chassi no PDV) e `SEMINOVA` (ver guard abaixo), sufixo com os
+   4 últimos do chassi. Categoria segue `scooter` (senão some dos KPIs de estoque). `custo_puro` = valor de entrada.
+2. **Entrada no ledger:** `registrar_movimento(produto, 'entrada', 1, 'Trade-in pedido #NN — chassi …', 'troca', pedido_id)`.
+3. **Venda nova no PDV** com forma de pagamento **`troca_veiculo`** ("Veículo na troca") pelo valor do crédito + o
+   que entrar em dinheiro. Baixa da moto nova é a normal.
+4. **Caixa:** só o dinheiro real. A permuta vira **par casado** (entrada+saída, mesmo valor/data) na categoria
+   **`Troca de Veículo`** — líquido zero, **neutro** nos baldes e **fora** da despesa da DRE (explica a receita sem
+   caixa na conciliação sem inflar geração de caixa).
+5. **Preparo:** peça comprada entra no custo de entrada da usada (vira CPV da revenda); mão de obra interna não.
+6. **Histórico:** timeline no caso de SAC e observação no pedido amarrando venda antiga ↔ troca. **A venda antiga
+   NUNCA é cancelada/editada.**
+
+**Código (commit desta data):**
+- `PDV_PAGTO_TIPOS` ganhou `troca_veiculo` — sem isso o vendedor registraria a permuta como dinheiro/pix e quebraria
+  a conciliação de caixa e o relatório de forma de pagamento.
+- **`_ehSeminovo(p)` + guard em `_matchProdutoPorNome`:** seminova só casa por nome **EXATO**; fica fora de TODOS os
+  fallbacks fuzzy. **Motivo (bug evitado):** o fallback do "buddy" pega o **1º** cadastro que casa `/buddy/i` e a
+  ordem de `products` é por `id` (arbitrária) — sem o guard, cadastrar a X-Buddy seminova mudaria o **CPV retroativo
+  de abril/maio** das X-Buddy novas. Validado no navegador com a seminova em 1º na lista: venda antiga segue
+  custoPuro 6.100, seminova casa 8.500.
+- `Troca de Veículo` em `_DRE_CATEGORIAS_FORA_DESPESA` + `FC_BALDES` (neutro nos 2 lados).
+
+**Registro do caso (produção, 25/07/2026):** SKU `MOTONETA X-BUDDY SEMINOVA - CINZA #1052` (`produtos_precos`
+`6b90b8df…` custo_puro 8.500 / venda-alvo 8.000; `produtos` `25f0b8ea…`, estoque 1) · **pedido PDV #57**
+(`88546f79…`, competência **23/07**, total 9.500 = troca 8.500 + pix 1.000, vendedor **Smart Motors** = venda direta,
+**sem comissão** — o CPV da Pixxel fica 6.980 e a margem **+2.520**) · Pixxel baixada (estoque 0) · conta a receber
+R$ 1.000 venc. **27/07** · par casado 8.500 na Cora · 2 eventos na timeline do SAC #31.
+**Resultado econômico da troca:** +2.520 na Pixxel − ~630 na revenda da usada a 8.000 (8.000 − 8.500 − NF − comissão)
+≈ **+1.890**. **Riscos anotados:** (a) 8.000 numa seminova com histórico de defeito é otimista — se sair por 7.000 o
+resultado cai pra ~900; (b) crédito integral só se sustenta quando o modelo novo tem margem gorda — régua pra próxima:
+**crédito ≤ preço de revenda − custo de vender**; (c) a seminova entra com MC% negativa no cadastro e puxa levemente
+pra baixo o `avgMCpct` (fallback de CPV estimado de item sem cadastro).
+**Follow-ups não feitos (não bloqueiam):** coluna `condicao` novo/seminovo p/ relatório separado · campo de vínculo
+`troca_origem` no pedido · assistente "Registrar troca" que faz os 6 passos · a forma de pagamento do R$ 1.000 está
+como `pix` (chute) — trocar se ele pagar em dinheiro/cartão.
 
 ## Histórico de mudanças
 
