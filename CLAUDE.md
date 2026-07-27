@@ -740,15 +740,50 @@ botão "+ Enviar moto". Inalterada (só migrou pra dentro da sub-aba). Funções
 - **Lista** (`renderConsignacaoRecebida`/`_consigrCard`): cards com thumbnail, dono, chassi, itens, valores; ações
   Vender/Devolver/Editar/Excluir. **Dashboard** (`renderConsigDashboard`): resume as 2 pontas.
 - **MARGEM escondida dos vendedores** via `.js-custo` (repasse e preço de venda ficam visíveis).
-- **Venda — 2 caminhos, ambos geram repasse a pagar + comissão do vendedor, sem duplicar:**
-  1. **Atalho "Vender"** (`_consigrVender`/`_consigrConfirmarVenda`): modelo PASSAGEM (NÃO cria pdv_pedido/não mexe
-     no DRE) → **conta a receber** do comprador + repasse a pagar + comissão (dia 5, `consigr-<id>-comissao`). P/ admin.
+- **Venda — 2 caminhos, ambos geram PEDIDO + repasse a pagar + comissão do vendedor, sem duplicar
+  (unificado 27/07/2026 — ver "Atalho passou a gerar pedido" abaixo):**
+  1. **Atalho "Vender"** (`_consigrVender`/`_consigrConfirmarVenda`), p/ admin: gera **pdv_pedido**
+     (`origem='consignacao'`, status entregue, `criado_em` = data escolhida no modal) + item com
+     `custo_consignacao` + o recebimento escolhido (a receber / caixa / por fora) + repasse a pagar.
+     Comissão vem pelo **gatilho do pedido**.
   2. **Pelo PDV** (fluxo dos vendedores): a consignada disponível aparece na busca do PDV ("SCOOTER modelo cor ·
      consignada (dono)"), `produto_id=null` (NÃO baixa estoque), item único, chassi pré-preenchido. Ao finalizar →
      pedido `origem='consignacao'` + `pdv_itens_pedido.custo_consignacao`=repasse+comissão; `_pdvProcessarConsignadas`
      marca vendida (WHERE disponivel) + gera repasse; a comissão vem pelo **trigger** do pdv_pedido. **DRE:**
      `calcularDRE` usa `custoConsig` (repasse) no lugar do custo do modelo → margem certa (ex. 8.000−7.000−100=900).
      Migração `pdv_itens_consignacao_vinculo`. **Venda normal do PDV 100% intacta** (validado).
+- **Atalho passou a gerar pedido (27/07/2026) — o atalho era um BURACO de faturamento.** O dono estranhou que
+  o Alessandro (comprador da Harley 16 consignada) não aparecia na tela de Pedidos. Causa: o atalho era
+  "modelo passagem" **por decisão de projeto** — não criava `pdv_pedido`. Efeito colateral que não tinha sido
+  percebido: como a **receita da DRE vem dos PEDIDOS** (`buscarVendasMescladas`), a venda ficava fora de
+  Pedidos, faturamento, DRE, Relatórios, ranking do vendedor e `/meta-do-mes` — e a assimetria era pior que
+  a omissão: o **custo** aparecia (repasse a pagar + comissão da Michelle no consolidado do mês) e a receita
+  não. Julho estava em 14 vendas/R$ 134.956 em vez de **15 / R$ 142.886,50** (~R$ 830 de margem invisível).
+  **Correção:** o atalho virou irmão do PDV — passo 0 de `_consigrConfirmarVenda` cria pedido + item
+  (`produto_id` NULL, `custo_consignacao` = repasse + comissão, nome no padrão `SCOOTER … · consignada (dono)`
+  pro SCOOTER_RE da comissão), grava `consignacoes.pedido_id` e **`criado_em` = data escolhida no modal**
+  (competência da receita sai daí, não de `now()` — venda lançada dias depois cai no mês certo). Detalhes:
+  (a) o modal ganhou **Vendedor** (default = o do cadastro; "Venda direta" = vendedor interno "Smart Motors",
+  comissão 0) e **Local da venda** (default Loja Matriz) — `pdv_pedidos` exige os dois (NOT NULL) e o atalho
+  não pedia nenhum; `initConsignacaoRecebida` passou a carregar `_consigrLocais` (a global `pdvLocais` só é
+  populada na tela do Admin); (b) **formas de pagamento alinhadas ao PDV** (`dinheiro|pix|cartao_credito|
+  cartao_debito`) — os códigos antigos `cartao`/`transferencia` viraram só rótulos de legado
+  (`_CONSIGR_FORMAS_LEGADO`), senão o relatório de forma de pagamento ganharia linha fantasma; **transferência
+  saiu** da lista (não existe no PDV); (c) **rollback** do pedido+item se qualquer passo seguinte falhar (senão
+  sobra pedido órfão inflando faturamento/comissão); (d) o update final ganhou `.eq('status','disponivel')` —
+  mesma guarda anti-venda-dupla do PDV (dá erro claro em vez de sobrescrever). **Comissão NÃO duplica** por
+  construção: `fn_recalc_comissao_vendedor` só soma `consignacoes.comissao_vendedor` quando `pedido_id IS NULL`
+  → com pedido, a comissão vem pelo item (comissao_moto × scooters). **Atenção:** com pedido, quem manda na
+  comissão paga é `pdv_vendedores.comissao_moto` (R$ 100), não o campo `comissao_vendedor` da consignação —
+  esse campo segue valendo só pro CPV (`custo_consignacao`); se algum dia forem valores diferentes, a comissão
+  paga e o CPV divergem (mesmo comportamento do caminho PDV, que já era assim).
+- **CPV da consignada nos Relatórios (`buscarLinhasVenda`) — follow-up ANTIGO resolvido em 27/07/2026:** a
+  função não conhecia `custoConsig`, então a consignada caía no CPV **estimado** pela MC média do catálogo e a
+  margem divergia da DRE (a reconciliação `reconciliarLinhasVendaDRE` acusaria delta). Como agora TODA venda de
+  consignada gera pedido, isso passou a valer pra todas: ramo novo antes do `if (prod)` usa
+  `cpvProduto = custoConsig × qtd` (`cpvEstimado=false`, categoria `scooter`, `comissao` 0 porque vem embutida
+  no CPV, modelo sem o sufixo "· consignada (dono)" pra agrupar bonito). **Validado no navegador:** receita/CPV/
+  lucro de Relatórios × DRE batem **ao centavo** (7.930,50 · CPV 7.100 + NF rateada · lucro 800,87).
 - **Pagamento/adiantamento ao dono (12/07/2026):** a dívida com o dono só nasce na VENDA — antes disso o
   KPI do dashboard mostrava o repasse das disponíveis como se já fosse dívida. Agora: (1) tabela
   `consignacoes_pagamentos` (migração `consignacoes_pagamentos_ao_dono`: consignacao_id FK cascade, valor,
@@ -775,9 +810,20 @@ botão "+ Enviar moto". Inalterada (só migrou pra dentro da sub-aba). Funções
 - **Código:** bloco `consig*/consigr*` em `index.html` logo após `_locAbrirLancamentoConsignacao` + edições no PDV
   (`_pdvGarantirProdutos`, `_pdvAddItemFromIdx`, `_pdvFinalizarVenda`, `_pdvProcessarConsignadas`) + DRE
   (`buscarVendasMescladas`, `calcularDRE`).
-- **Piloto:** Andrisa (dono, `bfbae8e8…`) + Alessandro (comprador, `efa327fc…`) cadastrados; consignação Harley 16
-  Preta (chassi 2025072000122, repasse 7.000/venda 8.000/comissão 100 Michelle) registrada **disponível**
-  (`0a997642…`). Venda real Andrisa→Alessandro (cartão R$8.000) o dono marca quando quiser.
+- **Piloto → venda real fechada (Harley 16 Preta, `0a997642…`):** Andrisa (dona, `bfbae8e8…`) → **Alessandro de
+  Melo Felisbino** (`efa327fc…`), **R$ 7.930,50 no cartão em 11/07/2026**, vendedora Michelle, recebimento
+  lançado por fora (as entradas já estavam no caixa). Repasse de R$ 7.000 **pendente de propósito**: virou
+  **crédito da Andrisa** na compra de outra scooter (decisão do dono 21/07) — abate no acerto quando ela comprar.
+  **Regularização 27/07/2026:** a venda tinha sido registrada pelo atalho antigo (sem pedido) → criado o
+  **pedido #58** retroativo (competência 11/07, `custo_consignacao` 7.100, `produto_id` NULL) e amarrado em
+  `consignacoes.pedido_id`; a comissão da Michelle de julho **não mudou** (R$ 1.100 — a parcela "de consignada"
+  virou "11ª scooter"). Também unificado o **cadastro duplicado** do Alessandro (o do cadastro rápido de 12/07
+  foi apagado; ficou o completo `efa327fc…` com CPF/CEP/endereço/garantia).
+- **⚠️ Sequence do `numero_smart` pode ficar atrasada depois de registro retroativo:** o pedido #57 (trade-in)
+  foi inserido com `numero_smart` explícito, o que **não avança** a identity → o insert seguinte tentou 57 e
+  bateu no unique. Corrigido com `setval('pdv_pedidos_numero_smart_seq', max(numero_smart), true)` (27/07).
+  **Isso quebraria a próxima venda real no PDV** — depois de qualquer insert manual em `pdv_pedidos`, conferir
+  `pg_sequences.last_value` vs `max(numero_smart)`. Melhor ainda: **não** passar `numero_smart` no insert.
 - **Registro RETROATIVO de consignada (venda anterior ao módulo) — 21/07/2026:** a MC20 2000W da
   **Rosângela de Sá** (que comprou a Pixxel Vermelha, pedido Tiny #226 de 28/05) foi vendida ao **Renato de
   Assis Couto** por **R$ 8.100** em 30/05 (pedido Tiny **#231**, Michelle) e o repasse de **R$ 7.000** só foi
@@ -790,9 +836,10 @@ botão "+ Enviar moto". Inalterada (só migrou pra dentro da sub-aba). Funções
   conhecido:** o **CPV dessa venda na DRE de maio continua estimado** pela margem média do catálogo (~30%),
   não pelos R$ 7.000 reais — `custo_consignacao` só existe em `pdv_itens_pedido`, e venda do arquivo Tiny não
   tem item de PDV. Sem correção retroativa possível; evita-se registrando a moto no módulo **antes** de vender.
-- **Follow-up conhecido:** espelhar `custoConsig` em `buscarLinhasVenda` (~5614, reconciliação DRE×Caixa/
-  Relatórios) senão a consignada pode divergir lá (o DRE principal já está certo). `produtosTiny` do PDV cacheia
-  na sessão — proteção contra vender 2x = update WHERE status='disponivel'.
+- **Follow-ups:** ~~espelhar `custoConsig` em `buscarLinhasVenda`~~ ✅ feito 27/07/2026 (ver acima).
+  `produtosTiny` do PDV cacheia na sessão — proteção contra vender 2x = update WHERE status='disponivel' (agora
+  nos DOIS caminhos). **Aberto:** venda de consignada não imprime contrato pelo atalho (o gate do contrato vive
+  no PDV); e o CPV de consignada vendida no arquivo **Tiny** (venda anterior ao módulo) segue estimado.
 
 ## Mural de Novidades (changelog da equipe) — tabela `novidades`
 Changelog que a equipe vê num **pop-up 1×/dia no login** ("📣 Novidades") e é gerenciado no Admin ("Mural de
@@ -878,6 +925,23 @@ pra baixo o `avgMCpct` (fallback de CPV estimado de item sem cadastro).
 como `pix` (chute) — trocar se ele pagar em dinheiro/cartão.
 
 ## Histórico de mudanças
+
+### 2026-07-27 — Consignada vendida pelo atalho agora GERA PEDIDO (buraco de faturamento fechado)
+O dono estranhou que o comprador da Harley consignada (**Alessandro**) não aparecia na tela de Pedidos.
+Diagnóstico: o atalho "Vender" da tela de Consignação era **modelo passagem** por decisão de projeto (não
+criava `pdv_pedido`) e, como a **receita da DRE vem dos pedidos**, a venda ficava fora de Pedidos/faturamento/
+DRE/Relatórios/ranking — **mas o custo aparecia** (repasse + comissão). Julho estava 14 vendas/R$ 134.956 em
+vez de 15/R$ 142.886,50. **Feito:** (1) **retroativo** — pedido **#58** criado no banco pra venda de 11/07
+(R$ 7.930,50, Michelle, `custo_consignacao` 7.100, `produto_id` NULL, amarrado em `consignacoes.pedido_id`);
+comissão da Michelle intacta (R$ 1.100) porque `fn_recalc_comissao_vendedor` ignora consignação com pedido;
+(2) **causa** — `_consigrConfirmarVenda` passou a criar pedido+item igual ao PDV (com Vendedor e Local novos no
+modal, formas alinhadas ao vocabulário do PDV, `criado_em` = data da venda, rollback do pedido e guarda
+`status='disponivel'`); (3) **`buscarLinhasVenda`** ganhou o ramo de `custoConsig` (follow-up antigo) →
+Relatórios × DRE batem ao centavo; (4) cadastro duplicado do Alessandro unificado; (5) **sequence do
+`numero_smart` corrigida** (`setval`) — estava atrasada desde o registro retroativo do trade-in e **quebraria a
+próxima venda do PDV**. Validado: sintaxe, dry-run interceptando o `sb` nos 3 modos de recebimento (payload de
+pedido/item/consignação/caixa/a receber/repasse conferidos), rollback com falha simulada, guarda de moto já
+vendida, e reconciliação Relatórios×DRE no navegador. Detalhe na seção **"Consignação — Enviada e Recebida"**.
 
 ### 2026-07-18 — Galeria de fotos (várias por item): produto + moto consignada
 Evolução do "1 foto" pra **até 6 fotos por item** (ângulos/detalhes; tira na hora no celular), pedido do dono.

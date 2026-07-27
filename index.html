@@ -6059,7 +6059,23 @@ async function buscarLinhasVenda(iniISO, fimISO){
       const receita = qtd * preco;
       const prod    = _matchProdutoPorNome((it.produto || '').trim());
       let cpvProduto, comissao, cpvEstimado, categoria, fabricante, matched, modelo, modeloBase, cor;
-      if (prod) {
+      if (it.custoConsig != null) {
+        // Consignação recebida: o custo real é o REPASSE ao dono (+ comissão),
+        // gravado em `custo_consignacao` na venda — não o custo de um modelo do
+        // catálogo (a moto é de terceiro) nem a MC média. Espelha o `calcularDRE`;
+        // sem este ramo a consignada cairia no CPV estimado e a margem divergiria
+        // da DRE na reconciliação e nos Relatórios. A comissão fica embutida no
+        // CPV (não vem separada no item) → coluna Comissão 0, igual à DRE.
+        matched     = false;
+        cpvProduto  = Number(it.custoConsig) * qtd;
+        comissao    = 0;
+        cpvEstimado = false;
+        categoria   = 'scooter';
+        fabricante  = null;
+        modelo      = (it.produto || '').trim().split(' · consignada')[0].trim();   // sem o sufixo do dono
+        cor         = null;
+        modeloBase  = _modeloBase(modelo, null);
+      } else if (prod) {
         matched     = true;
         const comUnit = vendaDireta ? 0 : (prod.comissao || 0);
         cpvProduto  = ((prod.custoPuro||0) + _montagemCustoVenda(prod, it) + comUnit) * qtd;
@@ -22013,6 +22029,7 @@ let _locAbertos = (() => { try { return new Set(JSON.parse(localStorage.getItem(
 let consignacoesRecebidas = [];   // registros carregados
 let _consigrModelos       = [];   // modelos scooter do catálogo (select do registro)
 let _consigrVendedores    = [];   // vendedores ativos (select do registro)
+let _consigrLocais        = [];   // locais de venda ativos (select da venda → pdv_pedidos.local_venda_id)
 let _consigrDonos         = {};   // mapa id→nome do dono/consignante (pra listagem)
 let _consigrEditId        = null; // id em edição no modal (null = novo registro)
 let _consigrVendaId       = null; // id da consignação no modal de venda (Fase 3)
@@ -23380,10 +23397,13 @@ function _locAbrirLancamentoConsignacao(valor, data, nomeParceiro, motoNome) {
 const _CONSIGR_ITENS_PADRAO = ['Carregador', 'Chave reserva', 'Manual / documentos', 'Capa de chuva', 'Kit de ferramentas'];
 
 async function initConsignacaoRecebida() {
-  const [cRes, mRes, vRes] = await Promise.all([
+  const [cRes, mRes, vRes, lRes] = await Promise.all([
     sb.from('consignacoes').select('*').order('created_at', { ascending: false }),
     sb.from('produtos_precos').select('id,modelo,venda,custo,categoria').eq('ativo', true).eq('categoria', 'scooter').order('modelo'),
     sb.from('pdv_vendedores').select('id,nome,comissao_moto').eq('ativo', true).order('nome'),
+    // Locais de venda: a venda pelo atalho gera pdv_pedido, e `local_venda_id` é
+    // NOT NULL. Carrega aqui porque `pdvLocais` só é populado na tela do Admin.
+    sb.from('pdv_locais_venda').select('id,nome,ativo,ordem').order('ordem').order('nome'),
   ]);
   if (cRes.error) console.warn('[consignr] consignacoes:', cRes.error.message);
   consignacoesRecebidas = (!cRes.error && cRes.data) ? toCamelArr(cRes.data) : [];
@@ -23406,6 +23426,7 @@ async function initConsignacaoRecebida() {
   } catch (e) { console.warn('[consignr] pagamentos ao dono:', e.message); consignacoesRecebidas.forEach(c => { c.pagamentosDono = c.pagamentosDono || []; c.adiantado = c.adiantado || 0; }); }
   _consigrModelos    = (!mRes.error && mRes.data) ? mRes.data : [];
   _consigrVendedores = (!vRes.error && vRes.data) ? vRes.data : [];
+  _consigrLocais     = (!lRes.error && lRes.data) ? lRes.data.filter(l => l.ativo !== false) : [];
   // Nomes dos donos p/ a listagem (sem depender do clientesAll estar carregado).
   const donoIds = [...new Set(consignacoesRecebidas.map(c => c.consignanteClienteId).filter(Boolean))];
   if (donoIds.length) {
@@ -23682,21 +23703,33 @@ function _consigrVender(id) {
   if (!c) return;
   _consigrVendaId = id;
   const margem = (Number(c.precoVenda)||0) - (Number(c.valorRepasse)||0) - (Number(c.comissaoVendedor)||0);
-  const vendNome = (_consigrVendedores || []).find(v => String(v.id) === String(c.vendedorId));
   const _adiant  = Number(c.adiantado) || 0;
   const _saldoRep = Math.max(0, (Number(c.valorRepasse)||0) - _adiant);
   const contasOpt = (contas || []).map(ct =>
     `<option value="${ct.id}">${escHtml(ct.nome)} (${_fmtBRMoney(ct.saldo)})</option>`).join('');
+  // Vendedor e local vão pro pdv_pedido gerado (os dois são NOT NULL lá).
+  // "Venda direta" = o vendedor interno "Smart Motors" (comissão 0).
+  const vendaDiretaId = ((_consigrVendedores || []).find(v => (v.nome || '').trim() === 'Smart Motors') || {}).id || '';
+  const vendVendaOpt = (_consigrVendedores || []).filter(v => v.id !== vendaDiretaId).map(v =>
+    `<option value="${v.id}"${String(v.id) === String(c.vendedorId) ? ' selected' : ''}>${escHtml(v.nome)}</option>`).join('')
+    + (vendaDiretaId ? `<option value="${vendaDiretaId}"${!c.vendedorId ? ' selected' : ''}>— Venda direta (sem comissão) —</option>` : '');
+  const _localPref = (_consigrLocais || []).find(l => (l.nome || '').trim().toLowerCase() === 'loja matriz') || (_consigrLocais || [])[0] || {};
+  const localOpt = (_consigrLocais || []).map(l =>
+    `<option value="${l.id}"${String(l.id) === String(_localPref.id) ? ' selected' : ''}>${escHtml(l.nome)}</option>`).join('');
   const body =
     `<div style="font-size:11px;color:var(--text3);margin-bottom:12px;padding:10px 12px;background:var(--bg2);border-radius:8px;">
        <strong>${escHtml(c.produtoNome||'moto')}${c.cor?' · '+escHtml(c.cor):''}</strong>${c.chassi?' · chassi '+escHtml(c.chassi):''}<br>
-       Dono: ${escHtml(_consigrNomeDono(c))} · Repasse ${_fmtBRMoney(c.valorRepasse)}${_adiant>0?` (já adiantado ${_fmtBRMoney(_adiant)} · falta <strong>${_fmtBRMoney(_saldoRep)}</strong>)`:''}${vendNome?' · Vendedor: '+escHtml(vendNome.nome):''}<span class="js-custo"> · Sua margem ${_fmtBRMoney(margem)}</span>
+       Dono: ${escHtml(_consigrNomeDono(c))} · Repasse ${_fmtBRMoney(c.valorRepasse)}${_adiant>0?` (já adiantado ${_fmtBRMoney(_adiant)} · falta <strong>${_fmtBRMoney(_saldoRep)}</strong>)`:''}<span class="js-custo"> · Sua margem ${_fmtBRMoney(margem)}</span>
      </div>
      <div class="form-grid">
        <div class="form-group full"><label>Comprador</label><div id="consigr-venda-cli"></div>
          <div style="font-size:10px;color:var(--text3);margin-top:4px;">Não achou? Digite o nome e clique em "+ Cadastrar este cliente".</div></div>
        <div class="form-group"><label>Data da venda</label><input class="form-input" id="consigr-venda-data" type="date" value="${_locHojeISO()}"></div>
        <div class="form-group"><label>Valor total da venda</label><input class="form-input" id="consigr-venda-valor" type="number" step="0.01" value="${c.precoVenda??''}" readonly style="background:var(--bg2);font-weight:700;" title="Soma automática das formas de pagamento abaixo"></div>
+       <div class="form-group"><label>Vendedor <span style="color:var(--text3);font-weight:400;">(quem leva a comissão)</span></label>
+         <select class="form-input" id="consigr-venda-vend">${vendVendaOpt}</select></div>
+       <div class="form-group"><label>Local da venda</label>
+         <select class="form-input" id="consigr-venda-local">${localOpt}</select></div>
        <div class="form-group full"><label>Formas de pagamento <span style="color:var(--text3);font-weight:400;">(pode dividir em mais de uma)</span></label>
          <div id="consigr-venda-formas"></div>
          <button class="btn" type="button" onclick="_consigrAddForma()" style="font-size:11px;padding:5px 12px;margin-top:6px;">+ Adicionar forma</button>
@@ -23718,9 +23751,14 @@ function _consigrVender(id) {
   _consigrRecebChg();
 }
 
-// Formas de pagamento da venda consignada (pode dividir em várias: cartão+pix+…)
-const _CONSIGR_FORMAS = [['dinheiro','Dinheiro'],['pix','Pix'],['cartao','Cartão'],['transferencia','Transferência']];
-function _consigrFormaLabel(t) { const m = _CONSIGR_FORMAS.find(x => x[0] === t); return m ? m[1] : (t || '—'); }
+// Formas de pagamento da venda consignada (pode dividir em várias: cartão+pix+…).
+// Usa os MESMOS códigos do PDV (`PDV_PAGTO_TIPOS`) porque a venda pelo atalho
+// agora gera `pdv_pedidos` — código diferente aqui viraria linha fantasma no
+// relatório de forma de pagamento. Os códigos antigos deste modal ('cartao',
+// 'transferencia') ficam só no mapa de rótulos, p/ exibir venda antiga.
+const _CONSIGR_FORMAS = [['dinheiro','Dinheiro'],['pix','Pix'],['cartao_credito','Cartão de Crédito'],['cartao_debito','Cartão de Débito']];
+const _CONSIGR_FORMAS_LEGADO = { cartao: 'Cartão', transferencia: 'Transferência' };
+function _consigrFormaLabel(t) { const m = _CONSIGR_FORMAS.find(x => x[0] === t); return m ? m[1] : (_CONSIGR_FORMAS_LEGADO[t] || t || '—'); }
 
 function _consigrAddForma(valorInicial) {
   const box = document.getElementById('consigr-venda-formas');
@@ -23773,7 +23811,7 @@ function _consigrRecebChg() {
       : receb === 'caixa'
         ? 'Vou <strong>lançar a entrada no caixa agora</strong>, na conta escolhida — sem conta a receber.'
         : 'Só registro a venda como <strong>paga</strong> — <strong>não</strong> mexo no caixa (você já lançou por fora).';
-    nota.innerHTML = como + ' O <strong>repasse ao dono</strong> e a <strong>comissão</strong> do vendedor (se houver) são gerados em qualquer caso.';
+    nota.innerHTML = como + ' Em qualquer caso a venda vira um <strong>pedido de venda</strong> (aparece em Pedidos, no faturamento, na DRE e no ranking do vendedor) e gera o <strong>repasse ao dono</strong> + a <strong>comissão</strong> do vendedor.';
   }
 }
 
@@ -23786,6 +23824,10 @@ async function _consigrConfirmarVenda() {
   if (!sel || sel.tipo !== 'cliente') return smAlert('Selecione o comprador (cliente cadastrado). Se não existir, cadastre pelo "+ Cadastrar este cliente".');
   const data  = document.getElementById('consigr-venda-data').value || _locHojeISO();
   const receb = document.getElementById('consigr-venda-receb')?.value || 'receber';
+  const vendedorId = document.getElementById('consigr-venda-vend')?.value || null;
+  const localId    = document.getElementById('consigr-venda-local')?.value || null;
+  if (!vendedorId) return smAlert('Escolha o vendedor da venda (ou "Venda direta" se foi da loja).');
+  if (!localId)    return smAlert('Escolha o local da venda (cadastre em Admin → Locais de venda, se estiver vazio).');
   const formas = _consigrLerFormas().filter(f => (Number(f.valor)||0) > 0);
   if (!formas.length) return smAlert('Informe ao menos uma forma de pagamento com valor.');
   const valor = formas.reduce((s,f) => s + (Number(f.valor)||0), 0);
@@ -23801,12 +23843,58 @@ async function _consigrConfirmarVenda() {
 
   if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
   let lancEntradaId = null;   // p/ rollback se algo falhar depois de lançar
+  let pedidoId = null, pedidoNum = null;   // idem p/ o pedido de venda
   try {
     const repasse  = Number(c.valorRepasse) || 0;
     const donoNome = _consigrNomeDono(c);
     const moto = (c.produtoNome || 'moto') + (c.cor ? ' ' + c.cor : '');
     const formasTxt = formas.map(f => `${_consigrFormaLabel(f.tipo)} ${_fmtBRMoney(f.valor)}`).join(' + ');
     const formaPag = { metodos: formas, recebimento: receb };
+
+    // 0) PEDIDO DE VENDA — igual à venda pelo PDV. Antes o atalho era "passagem"
+    //    (não criava pedido): a venda não aparecia em Pedidos e ficava FORA da
+    //    receita da DRE, do faturamento e do ranking do vendedor — só o custo
+    //    (repasse + comissão) aparecia. Agora todo caminho de venda gera pedido.
+    //    `criado_em` = data escolhida (a competência da receita sai daqui, não de
+    //    now(); venda lançada depois cai no mês certo). Item com produto_id NULL
+    //    (consignada não baixa estoque próprio) e `custo_consignacao` = repasse +
+    //    comissão → CPV/margem certos na DRE. A comissão passa a vir pelo gatilho
+    //    do pedido; `fn_recalc_comissao_vendedor` ignora consignação com pedido_id,
+    //    então não duplica com o campo `comissao_vendedor` daqui.
+    {
+      let _user = null;
+      try { _user = JSON.parse(localStorage.getItem('sm_user') || 'null'); } catch (e) {}
+      const cli = sel.cliente || {};
+      const clienteDados = { nome: (cli.nome || '').trim() };
+      [['cpfCnpj','cpf_cnpj'],['telefone','telefone'],['email','email'],['cep','cep'],['rua','rua'],
+       ['numero','numero'],['complemento','complemento'],['bairro','bairro'],['cidade','cidade']]
+        .forEach(([de, para]) => { if (String(cli[de] || '').trim()) clienteDados[para] = String(cli[de]).trim(); });
+      if (String(cli.uf || '').trim()) clienteDados.uf = String(cli.uf).trim().toUpperCase();
+      const _dataISO = new Date(data + 'T12:00:00').toISOString();   // meio-dia local: não desloca o dia por fuso
+      const { data: ped, error: errPed } = await sb.from('pdv_pedidos').insert({
+        vendedor_id: vendedorId, local_venda_id: localId,
+        cliente_dados: clienteDados,
+        forma_pagamento: { desconto: 0, metodos: formas.map(f => ({ tipo: f.tipo, valor: Number(f.valor) || 0 })) },
+        desconto: 0, total: valor,
+        status: 'entregue', data_entrega_real: _dataISO, data_prevista_entrega: null,
+        criado_em: _dataISO, criado_por: _user?.id || null,
+        sincronizado_tiny: false, venda_local: true, origem: 'consignacao',
+        observacao: `Venda de moto consignada de ${donoNome} (chassi ${c.chassi || 's/ chassi'}). Repasse ao dono ${_fmtBRMoney(repasse)}. Registrada pela tela de Consignação.`,
+      }).select('id,numero_smart').single();
+      if (errPed) throw new Error('Erro ao gerar o pedido de venda: ' + errPed.message);
+      pedidoId = ped.id; pedidoNum = ped.numero_smart;
+      // Nome no padrão do PDV ("SCOOTER … · consignada (dono)") — o cálculo da
+      // comissão conta itens que casam SCOOTER_RE, e os relatórios agrupam por aqui.
+      const { error: errIt } = await sb.from('pdv_itens_pedido').insert({
+        pedido_id: pedidoId, produto_id: null, tiny_produto_id: null, produto_modelo: null,
+        produto_nome_tiny: `SCOOTER ${c.produtoNome || 'moto'}${c.cor ? ' ' + c.cor : ''} · consignada (${donoNome})`,
+        quantidade: 1, valor_unitario: valor, valor_total: valor,
+        chassi: (c.chassi || '').trim() || null, ordem: 0,
+        consignacao_id: id, custo_consignacao: repasse + (Number(c.comissaoVendedor) || 0), na_caixa: false,
+      });
+      if (errIt) throw new Error('Pedido #' + pedidoNum + ' criado, mas o item falhou: ' + errIt.message);
+      try { await sb.from('pdv_auditoria_log').insert({ pedido_id: pedidoId, acao: 'criou', quem: _user?.id || null }); } catch (e) {}
+    }
 
     // 1) RECEBIMENTO do comprador — 3 modos:
     let crId = null;   // conta a receber (só no modo "receber depois")
@@ -23847,23 +23935,27 @@ async function _consigrConfirmarVenda() {
         id: cpRepId, descricao: `Repasse consignacao · ${donoNome} (${moto})`,
         valor: saldoRepasse, vencimento: data, categoria: 'Consignação', status: 'pendente',
         beneficiario: donoNome, avisar: 1,
-        observacao: `Repasse ao dono da moto consignada vendida pra ${sel.cliente.nome}.` + (adiantado > 0 ? ` Já adiantado ${_fmtBRMoney(adiantado)} de ${_fmtBRMoney(repasse)}.` : ''),
+        observacao: `Repasse ao dono da moto consignada vendida pra ${sel.cliente.nome} (pedido #${pedidoNum || ''}).` + (adiantado > 0 ? ` Já adiantado ${_fmtBRMoney(adiantado)} de ${_fmtBRMoney(repasse)}.` : ''),
       });
       if (r2.error && r2.error.code !== '23505') throw r2.error;
     }
 
-    // 3) COMISSÃO do vendedor: NÃO é criada aqui. O UPDATE status='vendida' abaixo
-    //    dispara o gatilho trg_comissao_vend_consignacoes → a comissão entra na conta
-    //    de comissão automática MENSAL do vendedor (comvend-<mês>-<vendedor>), junto
-    //    com as scooters do PDV, pra pagar tudo de uma vez no dia 5.
+    // 3) COMISSÃO do vendedor: NÃO é criada aqui. Vem pelo gatilho do PEDIDO criado
+    //    no passo 0 (comissao_moto × scooters do mês) → conta de comissão automática
+    //    MENSAL do vendedor (comvend-<mês>-<vendedor>), junto com as vendas do PDV,
+    //    pra pagar tudo de uma vez no dia 5.
 
-    // 4) marca a consignação VENDIDA
-    const { error } = await sb.from('consignacoes').update({
+    // 4) marca a consignação VENDIDA (com o pedido amarrado). O `status='disponivel'`
+    //    no filtro é a proteção contra vender a mesma moto 2× (aba antiga aberta,
+    //    ou venda pelo PDV em paralelo) — mesma guarda do `_pdvProcessarConsignadas`.
+    const { data: updCons, error } = await sb.from('consignacoes').update({
       status: 'vendida', comprador_cliente_id: sel.clienteId, valor_venda: valor,
       data_venda: data, forma_pagamento: formaPag, conta_receber_id: crId, conta_pagar_repasse_id: cpRepId,
+      pedido_id: pedidoId, vendedor_id: vendedorId,
       atualizado_em: new Date().toISOString(),
-    }).eq('id', id);
+    }).eq('id', id).eq('status', 'disponivel').select('id').maybeSingle();
     if (error) throw error;
+    if (!updCons) throw new Error('Essa moto não está mais disponível (já foi vendida ou devolvida). Recarregue a tela.');
 
     if (lancEntradaId && typeof salvarDados === 'function') salvarDados();
     if (typeof renderContas === 'function')      renderContas();
@@ -23871,9 +23963,10 @@ async function _consigrConfirmarVenda() {
     if (typeof renderLancamentos === 'function') renderLancamentos();
     const m = document.getElementById('consigr-modal'); if (m) m.remove();
     await initConsignacaoRecebida();
-    const msg = receb === 'receber' ? '✅ Venda registrada. Conta a receber gerada.'
+    const _ped = pedidoNum ? ` Pedido #${pedidoNum} gerado.` : '';
+    const msg = (receb === 'receber' ? '✅ Venda registrada. Conta a receber gerada.'
       : receb === 'caixa' ? '✅ Venda registrada e recebida no caixa.'
-      : '✅ Venda registrada (recebimento já lançado por fora).';
+      : '✅ Venda registrada (recebimento já lançado por fora).') + _ped;
     if (typeof smToast === 'function') smToast(msg);
   } catch (e) {
     // rollback do lançamento de entrada (sem transação no client)
@@ -23882,6 +23975,14 @@ async function _consigrConfirmarVenda() {
         await sb.from('lancamentos').delete().eq('id', lancEntradaId);
         lancamentos = lancamentos.filter(l => l.id !== lancEntradaId);
         if (ctaBanco) ctaBanco.saldo = Number(ctaBanco.saldo || 0) - valor;
+      } catch (_) {}
+    }
+    // rollback do pedido de venda — senão sobra um pedido órfão contando
+    // faturamento/comissão de uma venda que não foi registrada.
+    if (pedidoId) {
+      try {
+        await sb.from('pdv_itens_pedido').delete().eq('pedido_id', pedidoId);
+        await sb.from('pdv_pedidos').delete().eq('id', pedidoId);
       } catch (_) {}
     }
     smAlert('Erro ao registrar venda: ' + (e.message || e));
