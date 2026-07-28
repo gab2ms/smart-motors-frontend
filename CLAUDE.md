@@ -728,6 +728,27 @@ Consignação Recebida**. `pageMeta`/`BREADCRUMB_MAP` = "Consignação".
 Motos que a loja DÁ a parceiros/quiosque + estoque da Matriz. `renderLocalizacao`, tabela `estoque_unidades`,
 botão "+ Enviar moto". Inalterada (só migrou pra dentro da sub-aba). Funções `_loc*`.
 
+#### PERMUTA com o parceiro (moto por moto) — padrão criado 28/07/2026
+Acontece quando o parceiro, em vez de vender a nossa moto consignada, **fica com ela e entrega outra moto
+no lugar**. Não existe botão pra isso na tela (a tela só tem Vender / Devolver) — se registra **por SQL**.
+**Não é venda:** o estoque troca de item, o caixa não se mexe e o patrimônio fica igual. Registrar como venda
+criaria receita e lucro sem caixa e faria a moto recebida nascer com custo inflado (prejuízo artificial na
+revenda). **Modelo = permuta pura, sem faturamento**, pelo **custo** dos dois lados:
+1. **Moto recebida** → cadastro novo se o modelo não existe (`produtos_precos` + `produtos` da cor) com
+   `custo_puro` = custo da moto entregue, e entrada no ledger via
+   `registrar_movimento(prod,'entrada',1,'Troca com <parceiro> — permuta pela <moto>','troca',<unidade_id>)`.
+2. **Moto entregue** (`estoque_unidades`) → `status='vendida'` + `pago=true` + `preco_venda`/`valor_pago` = **custo**
+   (não o preço B2B) + `pedido_id` NULL + a explicação em `observacao`. O status `vendida`+`pago` some da tela
+   (fica no histórico) e **não** entra no "A receber" do parceiro (`renderLocalizacao` filtra `vendida && !pago`);
+   `devolvida` seria mentira (a moto não voltou) e o CHECK da tabela só aceita esses 3 status.
+3. **Estoque NÃO volta** pra moto entregue (ela já baixou no envio ao parceiro e não retornou) e **nenhum**
+   lançamento/pedido/conta é criado. O ganho da troca aparece inteiro na margem quando a moto recebida vender.
+**Caso-base:** 25/07/2026 — Savage 1000W **Preta** (custo 7.590) ficou com a **Top Scooter Leandro**; entrou
+**MOTONETA TANK 1000W - VERDE MILITAR** (60V 32Ah, 0km montada), modelo novo `Tank 1000W` no catálogo com os
+mesmos custos/preço da Savage (custo real 7.830 · venda 11.499). Troca seca, sem dinheiro dos dois lados.
+Diferente do **trade-in com cliente** (seção "Troca de veículo"), que é venda nova + permuta e gera pedido —
+lá entra um consumidor final pagando; aqui é estoque por estoque entre lojistas.
+
 ### 🤝 Consignação Recebida (moto de TERCEIRO que a loja recebe pra vender)
 - **Tabela `consignacoes`** (migração `consignacoes_recebidas_base`, RLS `tem_modulo('localizacao')`):
   consignante_cliente_id, produto_precos_id, produto_nome/cor/motor/fabricante/ano/estado/km, `itens_acompanham`
