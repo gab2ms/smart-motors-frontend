@@ -945,7 +945,50 @@ pra baixo o `avgMCpct` (fallback de CPV estimado de item sem cadastro).
 `troca_origem` no pedido · assistente "Registrar troca" que faz os 6 passos · a forma de pagamento do R$ 1.000 está
 como `pix` (chute) — trocar se ele pagar em dinheiro/cartão.
 
+## Oficina / Pós-venda (SAC) — custo do serviço liberado + trava anti-duplicata (28/07/2026)
+
+Painel unificado (`renderOficinaSac`) com as duas visões; modais `abrirOfModal` (OS, tabela
+`oficina_ordens`) e `abrirSacModal` (garantia, `sac_casos`). Dois ajustes pedidos pelo dono depois que o
+**Henrique** relatou os problemas na loja:
+
+- **Custo do serviço agora aparece pra TODOS os perfis.** Os campos `Mão de obra (custo R$)` (= o que a
+  loja paga ao técnico terceirizado) e `Peças usadas (custo)` existiam desde 22/06/2026 (`oficina_sac_custo.sql`),
+  mas estavam com a classe **`js-custo`** → escondidos de quem não tem módulo financeiro/custos. O vendedor
+  (perfil `vendedor`, caso do Henrique) só via "Valor do serviço" e não tinha onde lançar o custo. **Decisão
+  do dono (28/07):** liberar **campos + resumo Receita/Custo/Lucro** dentro da OS, e também a linha
+  `Lucro`/`Custo` de cada card na lista — quem atende precisa registrar o combinado com o técnico, e o
+  resultado do serviço é derivável do que ele mesmo digitou. Mesma liberação no **SAC** (custo da garantia).
+  **NÃO muda** custo/margem de PRODUTO (moto), que segue escondido pelos gates de sempre; os 2 KPIs
+  agregados do mês ("Lucro de serviços" / "Custo de garantias", `renderOficinaSacKpis`) **continuam** com
+  `_podeVerCusto()` — são visão de gestão. Pontos tocados: `abrirOfModal`/`abrirSacModal` (classes),
+  `ofRecalcResumo`/`sacRecalcResumo` (gate removido), `renderOficinaSac` (sublinhas Lucro/Custo).
+- **OS duplicada — corrigido.** Sintoma do Henrique: "de vez em quando salva duas OS iguais e eu excluo uma
+  na mão". **Causa:** `_ofSalvarReal` não travava o botão durante o `await` do insert (o PDV e as Montagens
+  já travavam) — dois cliques (ou toque duplo no celular, ou clicar de novo achando que travou) disparavam
+  dois inserts. **Evidência:** OS **#75 e #76** (Ana Romina, PIT, "pneu furado", R$ 450) idênticas, criadas
+  com **6 microssegundos** de diferença — os dois requests saíram juntos, típico de rede lenta segurando o
+  1º envio. **Fix:** flag síncrona `_ofSalvando` + `btn.disabled`/"Salvando..." (id novo `of-btn-salvar`),
+  com o corpo antigo extraído pra `_ofSalvarExec` e `try/finally` restaurando o botão em caso de erro. A
+  flag é o que realmente segura (pega os dois cliques no mesmo tick); o disabled é o aviso visual. **Mesma
+  trava no SAC** (`_sacSalvando`, `sac-btn-salvar`, `_sacSalvarExec`) — tinha o mesmo furo.
+- **Validado (localhost:8791, navegador real, 0 erro de console novo):** com sessão simulada de `vendedor`
+  e `body.sem-kpi-custo` ativo, os campos de custo aparecem e o resumo mostra "Receita 450 · Custo 250 ·
+  Lucro 200"; dry-run interceptando o `sb`: **3 cliques → 1 insert** na OS e no SAC, botão volta ao normal
+  quando o insert dá erro e a 2ª tentativa passa (flag não fica presa).
+- **Limite conhecido:** a trava vive no front — navegador com o `index.html` antigo em cache segue
+  vulnerável até recarregar. Se voltar a acontecer, a rede de segurança seria um guard no banco (rejeitar OS
+  igual criada em < 2 min); não foi feito pra não arriscar falso positivo.
+
 ## Histórico de mudanças
+
+### 2026-07-28 — Oficina: custo do serviço visível pro vendedor + fim da OS duplicada
+Dois relatos do Henrique pelo dono. (1) Só aparecia "Valor do serviço" ao registrar OS — os campos de custo
+(mão de obra do técnico terceirizado + peças) existiam mas estavam atrás da classe `js-custo`, que esconde
+margem de quem não tem módulo financeiro; **dono decidiu liberar campos + Custo/Lucro do serviço pra todos**
+(na OS, no SAC e nas sublinhas da lista; custo/margem de moto e os KPIs do mês seguem restritos). (2) OS
+duplicando "de vez em quando" — confirmado no banco: **#75/#76 idênticas com 6µs de diferença**, duplo envio
+sem trava no botão. Adicionada trava anti-duplo-clique na OS e no SAC (flag + `disabled`, padrão do PDV).
+Validado no navegador (3 cliques → 1 insert; campos visíveis como vendedor). Seção **"Oficina / Pós-venda (SAC)"**.
 
 ### 2026-07-27 — Consignada vendida pelo atalho agora GERA PEDIDO (buraco de faturamento fechado)
 O dono estranhou que o comprador da Harley consignada (**Alessandro**) não aparecia na tela de Pedidos.

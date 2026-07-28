@@ -19333,8 +19333,8 @@ function abrirOfModal(id) {
     +     `<div class="form-group full"><label>Tipo de atendimento ${ofTaRevisar?'<span style="color:#1a1a1a;background:var(--gold-bright);font-weight:800;font-size:10px;border-radius:4px;padding:1px 5px;">⚠ A CLASSIFICAR — confirme e salve</span>':'<span style="color:var(--text3);font-weight:400;font-size:10px;">(serviço pago = cliente paga; garantia/loja = não cobra)</span>'}</label><select class="form-input" id="of-tipo-atend">${ofTaOpts}</select></div>`
     +     `<div class="form-group full"><label>Localização do item <span style="color:var(--text3);font-weight:400;font-size:10px;">(onde está a scooter ou peça)</span></label><select class="form-input" id="of-localizacao">${ofLocOpts}</select></div>`
     +     `<div class="form-group"><label>Valor do serviço (R$)</label><input class="form-input" id="of-valor" type="number" step="0.01" value="${(o&&o.valorServico)||0}" oninput="ofRecalcResumo()"></div>`
-    +     `<div class="form-group js-custo"><label>Mão de obra (custo R$)</label><input class="form-input" id="of-custo-mo" type="number" step="0.01" value="${(o&&o.custoMaoObra)||0}" oninput="ofRecalcResumo()"></div>`
-    +     `<div class="form-group full js-custo"><label>Peças usadas (custo)</label>`
+    +     `<div class="form-group"><label>Mão de obra (custo R$) <span style="color:var(--text3);font-weight:400;font-size:10px;">(o que a loja paga ao técnico)</span></label><input class="form-input" id="of-custo-mo" type="number" step="0.01" value="${(o&&o.custoMaoObra)||0}" oninput="ofRecalcResumo()"></div>`
+    +     `<div class="form-group full"><label>Peças usadas (custo)</label>`
     +       `<table style="width:100%;border-collapse:collapse;"><tbody id="of-pecas-tbody"></tbody></table>`
     +       `<button type="button" class="btn" style="margin-top:6px;padding:4px 10px;font-size:13px;" onclick="ofAddPeca()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Peça</button>`
     +     `</div>`
@@ -19360,7 +19360,7 @@ function abrirOfModal(id) {
     + `<div class="modal-actions">`
     +   `<button class="btn" onclick="document.getElementById('of-modal').remove();">Cancelar</button>`
     +   (podeMover ? `<button class="btn" style="border-color:var(--red);color:var(--red);" onclick="ofMoverParaSac('${o.id}')" title="Mover esta OS para o SAC (garantia)">🛡️ Mover pro SAC</button>` : '')
-    +   `<button class="btn btn-gold" onclick="ofSalvar('${isEdit?o.id:''}')">${isEdit?'Salvar':'Cadastrar OS'}</button>`
+    +   `<button class="btn btn-gold" id="of-btn-salvar" onclick="ofSalvar('${isEdit?o.id:''}')">${isEdit?'Salvar':'Cadastrar OS'}</button>`
     + `</div>`
     + `</div>`;
   document.body.appendChild(shell);
@@ -19440,12 +19440,14 @@ function ofRecalcResumo() {
   const lucro = receita - custo;
   const lucroCor = lucro >= 0 ? 'var(--green)' : 'var(--red)';
   const linha = (lbl, val, extra) => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;${extra||''}"><span style="color:var(--text2);">${lbl}</span><b>${val}</b></div>`;
+  // Custo/Lucro do SERVIÇO ficam visíveis pra todos os perfis (decisão do dono,
+  // 28/07/2026): quem atende precisa registrar o combinado com o técnico e o
+  // resultado do serviço é derivável do que ele mesmo digitou. Custo/margem de
+  // PRODUTO (moto) continua escondido pelos gates de sempre.
   el.innerHTML =
       linha('Receita', fmt(receita))
-    + (_podeVerCusto()
-        ? linha('Custo (mão de obra + peças)', fmt(custo))
-          + linha('Lucro', `<span style="color:${lucroCor};">${fmtSigned(lucro)}</span>`, 'border-top:1px solid var(--border);margin-top:4px;padding-top:6px;font-size:14px;')
-        : '');
+    + linha('Custo (mão de obra + peças)', fmt(custo))
+    + linha('Lucro', `<span style="color:${lucroCor};">${fmtSigned(lucro)}</span>`, 'border-top:1px solid var(--border);margin-top:4px;padding-top:6px;font-size:14px;');
 }
 
 function _ofToggleExcluidos(casoId) {
@@ -19507,7 +19509,29 @@ async function ofSalvar(editId) {
   _ofSalvarReal(editId);
 }
 
+// Trava anti-duplo-envio. O botão "Cadastrar OS" continuava clicável durante o
+// await do insert: dois cliques (ou um toque duplo no celular, ou clicar de novo
+// achando que travou) criavam DUAS OS idênticas. Aconteceu de verdade — OS #75 e
+// #76 (28/07/2026) nasceram com 6 microssegundos de diferença. A flag é síncrona,
+// então segura mesmo os dois cliques no mesmo tick; o disabled do botão é o aviso
+// visual. Mesmo padrão do PDV/Montagens.
+let _ofSalvando = false;
 async function _ofSalvarReal(editId) {
+  if (_ofSalvando) return;
+  _ofSalvando = true;
+  const btn = document.getElementById('of-btn-salvar');
+  const btnHtml = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    await _ofSalvarExec(editId);
+  } finally {
+    _ofSalvando = false;
+    // O modal some no sucesso — só restaura se o botão ainda existir (erro/validação).
+    if (btn && document.body.contains(btn)) { btn.disabled = false; btn.innerHTML = btnHtml; }
+  }
+}
+
+async function _ofSalvarExec(editId) {
   const cliSel    = clienteSearchGet('of-cli-search');
   const clienteId = cliSel.tipo === 'cliente' ? cliSel.clienteId : null;
   const cliNome   = cliSel.tipo === 'cliente' ? (cliSel.cliente.nome || '') : (cliSel.texto || '');
@@ -26623,11 +26647,12 @@ function renderOficinaSac() {
     if (ehPago) {
       const v = r.valorServico ? fmt(r.valorServico) : '—';
       const l = ofLucro(r);
-      const lsub = (l === null || !_podeVerCusto()) ? '' : `<div style="font-size:10px;font-weight:600;margin-top:2px;color:${l>=0?'var(--green)':'var(--red)'};">Lucro ${fmtSigned(l)}</div>`;
+      // Sem gate de perfil: é o mesmo número que a OS mostra ao ser aberta (28/07/2026).
+      const lsub = (l === null) ? '' : `<div style="font-size:10px;font-weight:600;margin-top:2px;color:${l>=0?'var(--green)':'var(--red)'};">Lucro ${fmtSigned(l)}</div>`;
       valCol = `<div><div class="td-mono" style="font-weight:700;color:var(--green);">${v}${lsub}</div><div style="margin-top:4px;">${locPill}</div></div>`;
     } else {
       const cg = custoServico(r);
-      const custoSub = (cg > 0 && _podeVerCusto()) ? `<div style="font-size:10px;font-weight:600;margin-top:3px;color:var(--orange);">Custo ${fmt(cg)}</div>` : '';
+      const custoSub = (cg > 0) ? `<div style="font-size:10px;font-weight:600;margin-top:3px;color:var(--orange);">Custo ${fmt(cg)}</div>` : '';
       valCol = `<div>${locPill}${custoSub}</div>`;
     }
     const editFn = isOf ? `abrirOfModal('${r.id}')` : `abrirSacModal('${r.id}')`;
@@ -26776,8 +26801,8 @@ function abrirSacModal(id) {
     +     `<div class="form-group full"><label>Tipo de atendimento ${sacTaRevisar?'<span style="color:#1a1a1a;background:var(--gold-bright);font-weight:800;font-size:10px;border-radius:4px;padding:1px 5px;">⚠ A CLASSIFICAR — confirme e salve</span>':'<span style="color:var(--text3);font-weight:400;font-size:10px;">(serviço pago = cliente paga; garantia/loja = não cobra)</span>'}</label><select class="form-input" id="sac-tipo-atend">${sacTaOpts}</select></div>`
     +     `<div class="form-group full"><label>Localização do item <span style="color:var(--text3);font-weight:400;font-size:10px;">(onde está a scooter ou peça · "Na loja" mostra também na aba Oficina)</span></label><select class="form-input" id="sac-localizacao">${locOpts}</select></div>`
     +     `<div class="form-group full"><label>Fornecedor</label><input class="form-input" id="sac-forn" value="${escAttr(c&&c.fornecedor)}"></div>`
-    +     `<div class="form-group js-custo"><label>Mão de obra (custo R$)</label><input class="form-input" id="sac-custo-mo" type="number" step="0.01" value="${(c&&c.custoMaoObra)||0}" oninput="sacRecalcResumo()"></div>`
-    +     `<div class="form-group full js-custo"><label>Peças usadas (custo)</label>`
+    +     `<div class="form-group"><label>Mão de obra (custo R$) <span style="color:var(--text3);font-weight:400;font-size:10px;">(o que a loja paga ao técnico)</span></label><input class="form-input" id="sac-custo-mo" type="number" step="0.01" value="${(c&&c.custoMaoObra)||0}" oninput="sacRecalcResumo()"></div>`
+    +     `<div class="form-group full"><label>Peças usadas (custo)</label>`
     +       `<table style="width:100%;border-collapse:collapse;"><tbody id="sac-pecas-tbody"></tbody></table>`
     +       `<button type="button" class="btn" style="margin-top:6px;padding:4px 10px;font-size:13px;" onclick="sacAddPeca()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Peça</button>`
     +     `</div>`
@@ -26802,7 +26827,7 @@ function abrirSacModal(id) {
     +   `<button class="btn" onclick="document.getElementById('sac-modal').remove();">Cancelar</button>`
     +   (podeReverter ? `<button class="btn" style="border-color:var(--orange);color:var(--orange);" onclick="sacVoltarParaOficina('${c.id}')" title="Reverter pra OS de origem (apenas admin)">↩ Voltar pra Oficina</button>` : '')
     +   (podeMoverOf  ? `<button class="btn" style="border-color:var(--gold);color:var(--gold);" onclick="sacMoverParaOficina('${c.id}')" title="Mover pra Oficina — cria OS nova"><svg class="ic ic-sm"><use href="#ic-wrench"/></svg> Mover pra Oficina</button>` : '')
-    +   `<button class="btn btn-gold" onclick="sacSalvar('${isEdit?c.id:''}')">${isEdit?'Salvar':'Cadastrar caso'}</button>`
+    +   `<button class="btn btn-gold" id="sac-btn-salvar" onclick="sacSalvar('${isEdit?c.id:''}')">${isEdit?'Salvar':'Cadastrar caso'}</button>`
     + `</div>`
     + `</div>`;
   document.body.appendChild(shell);
@@ -26877,9 +26902,8 @@ function sacRecalcResumo() {
     pecasTot += parseFloat(r.querySelector('.sac-peca-custo')?.value) || 0;
   });
   const custo = mo + pecasTot;
-  el.innerHTML = _podeVerCusto()
-    ? `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:14px;"><span style="color:var(--text2);">Custo da garantia (mão de obra + peças)</span><b style="color:var(--orange);">${fmt(custo)}</b></div>`
-    : '';
+  // Visível pra todos os perfis (mesma decisão da OS — ver ofRecalcResumo).
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:14px;"><span style="color:var(--text2);">Custo da garantia (mão de obra + peças)</span><b style="color:var(--orange);">${fmt(custo)}</b></div>`;
 }
 
 function _sacToggleExcluidos(casoId) {
@@ -26930,7 +26954,23 @@ async function sacSalvar(editId) {
   _sacSalvarReal(editId);
 }
 
+// Trava anti-duplo-envio — mesma história da OS (ver _ofSalvarReal).
+let _sacSalvando = false;
 async function _sacSalvarReal(editId) {
+  if (_sacSalvando) return;
+  _sacSalvando = true;
+  const btn = document.getElementById('sac-btn-salvar');
+  const btnHtml = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    await _sacSalvarExec(editId);
+  } finally {
+    _sacSalvando = false;
+    if (btn && document.body.contains(btn)) { btn.disabled = false; btn.innerHTML = btnHtml; }
+  }
+}
+
+async function _sacSalvarExec(editId) {
   const cliSel          = clienteSearchGet('sac-cli-search');
   const clienteId       = cliSel.tipo === 'cliente' ? cliSel.clienteId : null;
   const clienteNome     = cliSel.tipo === 'cliente' ? (cliSel.cliente.nome || '') : (cliSel.texto || '');
