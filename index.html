@@ -23091,6 +23091,42 @@ function _locMargemPreview() {
   if (box) box.style.color = m < 0 ? 'var(--red)' : (m > 0 ? 'var(--green)' : 'var(--text2)');
 }
 
+// Destino legível de uma unidade — mesma regra da lista e do modal de venda.
+function _locDestinoNome(u) {
+  if (!u) return 'um destino não identificado';
+  if (u.parceiroId)  return (_locParceiros.find(p => p.id === u.parceiroId) || {}).nome || 'um parceiro';
+  if (u.localProprio) return u.localProprio.charAt(0).toUpperCase() + u.localProprio.slice(1);
+  return 'na matriz';
+}
+
+// Erro 23505 aqui = índice único `uq_eu_chassi_ativo` (chassi + status
+// 'no_parceiro'). A mensagem antiga só dizia "já está numa moto no parceiro" e
+// NÃO dizia onde — quem cadastrava achava que a moto estava na mão de terceiro
+// (aconteceu em 01/08/2026: a Savage 0488 tinha sido salva no Quiosque por
+// engano e a 2ª tentativa pro JR Scooter bateu no índice). Agora a gente busca a
+// unidade dona do chassi e diz modelo, destino e data do envio.
+async function _locMsgChassiDuplicado(chassi, exceptId) {
+  const generico = `Chassi ${chassi} já está registrado em outra moto que está fora da matriz.\n\n`
+    + 'Busque por esse chassi na lista de Consignação Enviada pra ver onde ela está.';
+  if (!chassi) return generico;
+  let u = null;
+  try {
+    const { data } = await sb.from('estoque_unidades')
+      .select('id,produto_nome,cor,parceiro_id,local_proprio,data_entrada')
+      .eq('chassi', chassi).eq('status', 'no_parceiro').limit(2);
+    u = toCamelArr(data || []).find(x => x.id !== exceptId) || null;
+  } catch (e) { /* rede/RLS: cai pro que já está carregado na tela */ }
+  if (!u) u = (estoqueUnidades || []).find(x =>
+    x.chassi === chassi && x.status === 'no_parceiro' && x.id !== exceptId) || null;
+  if (!u) return generico;
+  const dt = u.dataEntrada ? ` (enviada em ${String(u.dataEntrada).split('-').reverse().join('/')})` : '';
+  return `Chassi ${chassi} já está registrado:\n\n`
+    + `${u.produtoNome || 'Moto'}${u.cor ? ' · ' + u.cor : ''}\n`
+    + `está em ${_locDestinoNome(u)}${dt}.\n\n`
+    + 'Se for a MESMA moto, edite o registro que já existe (não precisa criar outro).\n'
+    + 'Se for outra moto, confira o chassi.';
+}
+
 async function _salvarRegistroMoto() {
   const btn = document.getElementById('loc-btn-salvar');
   if (btn?.disabled) return;
@@ -23126,7 +23162,9 @@ async function _salvarRegistroMoto() {
       document.getElementById('loc-modal').classList.remove('open');
       await initLocalizacao();
     } catch (e) {
-      smAlert(e.code === '23505' ? `Chassi ${chassi} já está numa moto no parceiro.` : 'Erro ao salvar: ' + (e.message || e));
+      smAlert(e.code === '23505'
+        ? await _locMsgChassiDuplicado(chassi, editId)
+        : 'Erro ao salvar: ' + (e.message || e));
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = 'Salvar alterações'; }
     }
@@ -23182,7 +23220,7 @@ async function _salvarRegistroMoto() {
     await initLocalizacao();
   } catch (e) {
     const msg = e.code === '23505'
-      ? `Chassi ${chassi} já está numa moto no parceiro.`
+      ? await _locMsgChassiDuplicado(chassi, null)
       : 'Erro ao enviar: ' + (e.message || e);
     smAlert(msg);
   } finally {

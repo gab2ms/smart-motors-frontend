@@ -728,6 +728,26 @@ Consignação Recebida**. `pageMeta`/`BREADCRUMB_MAP` = "Consignação".
 Motos que a loja DÁ a parceiros/quiosque + estoque da Matriz. `renderLocalizacao`, tabela `estoque_unidades`,
 botão "+ Enviar moto". Inalterada (só migrou pra dentro da sub-aba). Funções `_loc*`.
 
+#### Erro de chassi duplicado agora diz ONDE a moto está (01/08/2026)
+O índice único **`uq_eu_chassi_ativo`** (`chassi` WHERE `status='no_parceiro'`) impede o mesmo chassi em duas
+unidades ativas. A mensagem antiga do 23505 era *"Chassi X já está numa moto no parceiro."* — **não dizia onde**,
+e quem cadastrava entendia que a moto estava na posse de terceiro. **Caso que motivou (01/08/2026):** o dono
+enviou 4 motos ao **JR Scooter**; a 4ª (Savage Preta chassi **0488**) foi salva com destino **Quiosque** por
+engano e a 2ª tentativa, agora pro JR, bateu no índice → ele parou e veio perguntar. **Fix:** helper
+**`_locMsgChassiDuplicado(chassi, exceptId)`** (+ `_locDestinoNome(u)`), logo antes de `_salvarRegistroMoto`:
+no 23505 busca a unidade dona do chassi (`status='no_parceiro'`, ignorando o próprio id na edição) e monta
+*"Chassi 0488 já está registrado: MOTONETA SAVAGE 1000W - PRETA · PRETA está em Quiosque (enviada em
+01/08/2026). Se for a MESMA moto, edite o registro que já existe…"*. Query só roda **no caminho de erro**
+(custo zero no fluxo normal); se ela falhar (rede/RLS), cai pro `estoqueUnidades` já carregado na tela; sem
+achar nada, texto genérico mandando buscar o chassi na lista. Usado nos **dois** pontos de 23505 (envio novo e
+edição). `smAlert` renderiza `\n` (CSS `.sm-modal-msg` é `white-space:pre-wrap`).
+**Validado (localhost:8791, navegador real, 0 erro de JS):** 5 cenários do helper (parceiro · quiosque · só a
+própria linha na edição · fallback de memória com o `sb` offline · não-encontrado) + E2E com `sb` interceptado —
+envio que estoura o índice mostra a mensagem certa, faz **1 insert**, **não** baixa estoque e devolve o botão pra
+"Enviar"; edição aponta a OUTRA unidade (não a própria); **caminho feliz intacto** (payload + `registrar_movimento`
++ modal fecha). ⚠️ Ao stubar globais nesse arquivo, atribuir **sem `window.`** — `sb`/`estoqueUnidades`/
+`_locParceiros` são `let` de escopo de script e não viram propriedade de `window`.
+
 #### PERMUTA com o parceiro (moto por moto) — padrão criado 28/07/2026
 Acontece quando o parceiro, em vez de vender a nossa moto consignada, **fica com ela e entrega outra moto
 no lugar**. Não existe botão pra isso na tela (a tela só tem Vender / Devolver) — se registra **por SQL**.
@@ -980,6 +1000,18 @@ Painel unificado (`renderOficinaSac`) com as duas visões; modais `abrirOfModal`
   igual criada em < 2 min); não foi feito pra não arriscar falso positivo.
 
 ## Histórico de mudanças
+
+### 2026-08-01 — Chassi duplicado: erro passou a dizer onde a moto está (+ correção de dado no JR Scooter)
+Dono enviou 4 motos ao **JR Scooter - Junior** e travou na 4ª ("fala que já está na posse de alguém").
+Diagnóstico: a Savage Preta chassi **0488** tinha sido salva com destino **Quiosque** por engano (12:45:55,
+logo depois das outras 3) e a 2ª tentativa bateu no índice único `uq_eu_chassi_ativo`. **Dado corrigido no
+banco:** unidade `b3fe221d…` movida pra JR Scooter (estoque não mudou — a baixa de 1 já tinha ocorrido no
+envio; o motivo do movimento `5e80824d…` ganhou nota da correção). JR Scooter fica com 4 motos ativas:
+Savage Vermelha B0017 + Savage Preta 0488 (8.600 cada) e Konek 800 Preta 6203 + Cinza 6164 (5.300 cada) =
+**R$ 27.800 a receber**. **Causa raiz atacada:** a mensagem do 23505 não dizia ONDE o chassi estava — agora diz
+modelo, destino e data (`_locMsgChassiDuplicado`), ver seção "Consignação Enviada". ⚠️ **Aberto:** o Konek
+saiu a R$ 5.300 pro parceiro, R$ 200 abaixo da política de atacado de 01/08 (R$ 5.500) — confirmar com o dono
+se foi negociação por volume ou digitação.
 
 ### 2026-07-28 — Oficina: custo do serviço visível pro vendedor + fim da OS duplicada
 Dois relatos do Henrique pelo dono. (1) Só aparecia "Valor do serviço" ao registrar OS — os campos de custo
