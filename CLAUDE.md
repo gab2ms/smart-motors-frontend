@@ -728,6 +728,30 @@ Consignação Recebida**. `pageMeta`/`BREADCRUMB_MAP` = "Consignação".
 Motos que a loja DÁ a parceiros/quiosque + estoque da Matriz. `renderLocalizacao`, tabela `estoque_unidades`,
 botão "+ Enviar moto". Inalterada (só migrou pra dentro da sub-aba). Funções `_loc*`.
 
+#### "Marcar como pago" (moto que o parceiro vendeu) — estava QUEBRADO desde sempre (01/08/2026)
+Sintoma do dono: *"Erro ao registrar pagamento: falha ao gerar pedido"*. **Causa:** `_locConfirmarPagar` gera um
+`pdv_pedidos` (é o que faz a venda no parceiro entrar em faturamento/DRE) e mandava **`local_venda_id: null`** —
+coluna **NOT NULL**. O insert era rejeitado sempre, então **esse botão nunca criou um pedido desde que foi
+escrito** (conferido: 0 pedidos com `origem='consignacao'` vindos desse fluxo; o único é o #58, da consignação
+RECEBIDA). Era o único insert do arquivo com `local_venda_id` nulo — todos os outros já passavam um id. Nada
+ficava sujo: o código grava o pagamento **depois** do pedido, então a moto continuava em "A receber".
+- **Decisão do dono (01/08/2026):** venda feita pelo parceiro entra num local próprio — criado
+  **`pdv_locais_venda` "Parceiros"** (`codigo='parceiros'`, ordem 7, id `f4b91c55…`), pra não misturar com a
+  Loja Matriz no relatório por local. Aparece também no select do PDV.
+- **Fix:** helper **`_locIdLocalVenda()`** resolve o local **pelo código** (`parceiros`), não por UUID cravado:
+  tenta `_consigrLocais` (memória, já carregado quando a tela de Consignação abre) → query no banco → fallback
+  **Loja Matriz** se alguém apagar/inativar o "Parceiros" → `null` só se não houver local nenhum, e aí o erro é
+  explícito ("Cadastre um em PDV › Locais de venda") sem gravar nada. O select de `_consigrLocais` passou a
+  trazer `codigo`.
+- **Numeração:** as tentativas que falharam **consumiram número** (`numero_smart` é identity — `nextval` não
+  volta atrás): a sequence estava em 62 com o maior pedido real 60. Corrigida com `setval(...,60,true)` pra não
+  abrir buraco na numeração. Vale a mesma conferência depois de qualquer insert que falhe em `pdv_pedidos`.
+- **Validado (localhost:8791, navegador real, 0 erro de JS):** 6 cenários do `_locIdLocalVenda` (memória ·
+  banco · fallback matriz · Parceiros inativo · offline · nenhum local) + E2E com o `sb` interceptado usando a
+  moto real do Leandro — pedido sai com `local_venda_id` preenchido, item com produto/chassi, unidade marcada
+  paga com `pedido_id`, **estoque NÃO baixa de novo** (já baixou no envio) e o lançamento de caixa abre;
+  sem local cadastrado, erro claro e **zero** gravação.
+
 #### Erro de chassi duplicado agora diz ONDE a moto está (01/08/2026)
 O índice único **`uq_eu_chassi_ativo`** (`chassi` WHERE `status='no_parceiro'`) impede o mesmo chassi em duas
 unidades ativas. A mensagem antiga do 23505 era *"Chassi X já está numa moto no parceiro."* — **não dizia onde**,
@@ -1000,6 +1024,16 @@ Painel unificado (`renderOficinaSac`) com as duas visões; modais `abrirOfModal`
   igual criada em < 2 min); não foi feito pra não arriscar falso positivo.
 
 ## Histórico de mudanças
+
+### 2026-08-01 (tarde) — "Marcar como pago" da consignação enviada consertado (nunca tinha funcionado)
+Leandro (Top Scooter) vendeu a Savage Vermelha 0347 e pagou; ao registrar, o dono tomou *"Erro ao registrar
+pagamento: falha ao gerar pedido"*. Causa: o insert de `pdv_pedidos` mandava `local_venda_id: null` numa coluna
+NOT NULL — **o botão nunca gerou pedido desde que foi escrito** (0 pedidos por esse fluxo no banco). Criado o
+local de venda **"Parceiros"** (decisão do dono: separar venda de parceiro da Loja Matriz no relatório) e o
+insert passou a resolvê-lo pelo código via `_locIdLocalVenda()`, com fallback pra matriz e erro claro se não
+houver local. Sequence do `numero_smart` (adiantada em 2 pelas tentativas que falharam) reajustada pra 60.
+Validado no navegador (6 cenários do helper + E2E com `sb` interceptado; estoque não baixa 2×). Seção
+"Consignação Enviada". **Falta o dono clicar em Confirmar pagamento na moto do Leandro** (R$ 8.500).
 
 ### 2026-08-01 — Chassi duplicado: erro passou a dizer onde a moto está (+ correção de dado no JR Scooter)
 Dono enviou 4 motos ao **JR Scooter - Junior** e travou na 4ª ("fala que já está na posse de alguém").

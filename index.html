@@ -23359,6 +23359,30 @@ function _locAbrirPagar(id) {
   document.getElementById('loc-pagar-modal').classList.add('open');
 }
 
+// Local de venda do pedido gerado quando o PARCEIRO vende a moto.
+// `pdv_pedidos.local_venda_id` é NOT NULL — mandar `null` aqui era o motivo do
+// "Falha ao gerar o pedido" (01/08/2026): esse botão nunca chegou a criar um
+// pedido desde que foi escrito. Resolve pelo CÓDIGO (não por UUID cravado), pra
+// sobreviver a recadastro; se o local "Parceiros" sumir, cai pra Loja Matriz.
+async function _locIdLocalVenda() {
+  const acha = (arr) => (arr || []).find(l =>
+    String(l.codigo || '').toLowerCase() === 'parceiros' ||
+    String(l.nome   || '').trim().toLowerCase() === 'parceiros');
+  const achaMatriz = (arr) => (arr || []).find(l =>
+    String(l.codigo || '').toLowerCase() === 'matriz' ||
+    String(l.nome   || '').trim().toLowerCase() === 'loja matriz');
+  let l = acha(_consigrLocais);
+  if (!l) {
+    try {
+      const { data } = await sb.from('pdv_locais_venda').select('id,nome,codigo,ativo').order('ordem');
+      const ativos = (data || []).filter(x => x.ativo !== false);
+      l = acha(ativos) || achaMatriz(ativos) || ativos[0] || null;
+    } catch (e) { /* rede: tenta o que já está em memória */ }
+  }
+  if (!l) l = achaMatriz(_consigrLocais) || (_consigrLocais || [])[0] || null;
+  return l ? l.id : null;
+}
+
 async function _locConfirmarPagar() {
   const btn = document.getElementById('loc-pagar-btn');
   if (btn?.disabled) return;
@@ -23382,9 +23406,11 @@ async function _locConfirmarPagar() {
     // 1) Gera o pedido PDV (1 por moto — anti-dup via pedido_id). Sem baixa de
     //    estoque (já baixou no envio). Conta no Dashboard/DRE no mês de criado_em.
     if (!pedidoId) {
+      const localVendaId = await _locIdLocalVenda();
+      if (!localVendaId) throw new Error('Nenhum local de venda cadastrado. Cadastre um em PDV › Locais de venda e tente de novo.');
       const { data: ped, error: pedErr } = await sb.from('pdv_pedidos').insert({
         vendedor_id: 'a2e4d378-d537-49c3-83ef-6dfd5c2133d3', // Smart Motors → zera comissão no CPV
-        local_venda_id: null,
+        local_venda_id: localVendaId,
         cliente_dados: { nome: 'Consignação · ' + nomeParceiro },
         forma_pagamento: { desconto: 0, metodos: [{ tipo: 'dinheiro', valor: valor }] },
         desconto: 0,
@@ -23465,7 +23491,7 @@ async function initConsignacaoRecebida() {
     sb.from('pdv_vendedores').select('id,nome,comissao_moto').eq('ativo', true).order('nome'),
     // Locais de venda: a venda pelo atalho gera pdv_pedido, e `local_venda_id` é
     // NOT NULL. Carrega aqui porque `pdvLocais` só é populado na tela do Admin.
-    sb.from('pdv_locais_venda').select('id,nome,ativo,ordem').order('ordem').order('nome'),
+    sb.from('pdv_locais_venda').select('id,nome,codigo,ativo,ordem').order('ordem').order('nome'),
   ]);
   if (cRes.error) console.warn('[consignr] consignacoes:', cRes.error.message);
   consignacoesRecebidas = (!cRes.error && cRes.data) ? toCamelArr(cRes.data) : [];
