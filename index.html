@@ -22715,7 +22715,10 @@ function _fecharNovidades() {
 async function initLocalizacao() {
   await _pdvGarantirProdutos(); // catálogo p/ a busca de produto (produtosTiny)
   const [uRes, pRes, prRes] = await Promise.all([
-    sb.from('estoque_unidades').select('*').in('status', ['no_parceiro', 'vendida']).order('created_at', { ascending: false }),
+    // 'devolvida' entra pro histórico de desempenho do parceiro (moto que voltou
+    // sem vender é justamente o sinal negativo). As listas da tela filtram por
+    // status, então nada de devolvida aparece em "Na posse"/"A receber".
+    sb.from('estoque_unidades').select('*').in('status', ['no_parceiro', 'vendida', 'devolvida']).order('created_at', { ascending: false }),
     sb.from('parceiros').select('*').order('ordem').order('nome'),
     sb.from('produtos').select('id,nome,estoque,categoria,custo,cor,ativo').eq('ativo', true),
   ]);
@@ -24272,6 +24275,136 @@ function _consigKpi(label, value, change, valColor, borderColor, cls) {
   </div>`;
 }
 
+// ── Desempenho por parceiro (01/08/2026) ────────────────────
+// Pra decidir "deixo mais ou menos scooter nesse parceiro?". Duas leituras:
+// (a) SITUAÇÃO — quantas estão lá agora, quanto custo está parado e há quanto
+// tempo está a mais antiga (é o que diz se ele já está abarrotado);
+// (b) HISTÓRICO — quantas vendeu, em quantos dias, e quanto demora pra pagar.
+// PERMUTA NÃO É VENDA: o parceiro ficou com a moto e entregou outra em troca —
+// contar como venda infla a conversão dele (`tipo_saida='permuta'` no banco).
+// DEVOLVIDA conta contra: moto que voltou sem vender.
+const CONSIG_MIN_AMOSTRA = 3;   // abaixo disso, média de dias é indicativa, não estatística
+
+function _consigDiasEntre(aISO, bISO) {
+  if (!aISO || !bISO) return null;
+  const ms = Date.parse(bISO) - Date.parse(aISO);
+  return isNaN(ms) ? null : Math.round(ms / 86400000);
+}
+
+// Agrupa as unidades por destino (parceiro ou local próprio) e calcula tudo.
+function _consigDesempenho() {
+  const linhas = new Map();
+  const chaveDe = (u) => u.parceiroId ? 'p:' + u.parceiroId : (u.localProprio ? 'l:' + u.localProprio : null);
+  const nomeDe  = (u) => u.parceiroId
+    ? ((_locParceiros.find(p => p.id === u.parceiroId) || {}).nome || 'Parceiro')
+    : (u.localProprio ? u.localProprio.charAt(0).toUpperCase() + u.localProprio.slice(1) : '');
+
+  (estoqueUnidades || []).forEach(u => {
+    const k = chaveDe(u);
+    if (!k) return;
+    if (!linhas.has(k)) linhas.set(k, {
+      chave: k, nome: nomeDe(u), ehParceiro: !!u.parceiroId,
+      agora: 0, custoParado: 0, maisAntigaDias: null,
+      vendidas: 0, permutas: 0, devolvidas: 0,
+      diasVenda: [], diasPagar: [], margem: 0, aguardandoPagto: 0,
+    });
+    const r = linhas.get(k);
+
+    if (u.status === 'no_parceiro') {
+      r.agora++;
+      r.custoParado += Number(u.custo) || 0;
+      const d = _consigDiasEntre(u.dataEntrada, _locHojeISO());
+      if (d != null && (r.maisAntigaDias == null || d > r.maisAntigaDias)) r.maisAntigaDias = d;
+    } else if (u.status === 'devolvida') {
+      r.devolvidas++;
+    } else if (u.status === 'vendida') {
+      if (u.tipoSaida === 'permuta') { r.permutas++; return; }   // trocou, não vendeu
+      r.vendidas++;
+      r.margem += (Number(u.precoVenda) || 0) - (Number(u.custo) || 0);
+      const dv = _consigDiasEntre(u.dataEntrada, u.dataVenda);
+      if (dv != null && dv >= 0) r.diasVenda.push(dv);
+      if (u.pago) {
+        const dp = _consigDiasEntre(u.dataVenda, u.dataPagamento);
+        if (dp != null && dp >= 0) r.diasPagar.push(dp);
+      } else r.aguardandoPagto++;
+    }
+  });
+
+  const med = arr => arr.length ? Math.round(arr.reduce((s, n) => s + n, 0) / arr.length) : null;
+  return [...linhas.values()].map(r => ({
+    ...r,
+    mediaVenda: med(r.diasVenda),
+    mediaPagar: med(r.diasPagar),
+    // Só faz sentido falar em "taxa" depois que a moto teve desfecho.
+    concluidas: r.vendidas + r.devolvidas,
+  })).sort((a, b) => (b.agora - a.agora) || (b.vendidas - a.vendidas) || a.nome.localeCompare(b.nome));
+}
+
+// "8 dias (1 venda)" · "12 dias (4 vendas · 5 a 20)" — o intervalo evita que uma
+// média de 2 amostras pareça uma verdade consolidada.
+function _consigTxtDias(arr, media, sufixo) {
+  if (!arr.length) return null;
+  const min = Math.min(...arr), max = Math.max(...arr);
+  const n = `${arr.length} ${arr.length === 1 ? sufixo.um : sufixo.varios}`;
+  const faixa = (arr.length > 1 && min !== max) ? ` · de ${min} a ${max}` : '';
+  return `${media} ${media === 1 ? 'dia' : 'dias'} <span style="color:var(--text3);font-weight:400;">(${n}${faixa})</span>`;
+}
+
+function _consigDesempenhoHtml() {
+  const linhas = _consigDesempenho();
+  if (!linhas.length) return '';
+  const chip = (txt, cor) => `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:var(--surface3);color:${cor || 'var(--text2)'};">${txt}</span>`;
+
+  const corpo = linhas.map(r => {
+    const parado = r.agora
+      ? `<b>${r.agora}</b> moto${r.agora === 1 ? '' : 's'} lá agora`
+        + `<span class="js-custo"> · ${_fmtBRMoney(r.custoParado)} em custo parado</span>`
+        + (r.maisAntigaDias != null
+            ? ` · mais antiga há <b style="color:${r.maisAntigaDias >= LOC_DIAS_ALERTA ? 'var(--orange)' : 'inherit'};">${r.maisAntigaDias} dia${r.maisAntigaDias === 1 ? '' : 's'}</b>` : '')
+      : '<span style="color:var(--text3);">nenhuma moto lá no momento</span>';
+
+    const txtVenda = _consigTxtDias(r.diasVenda, r.mediaVenda, { um: 'venda', varios: 'vendas' });
+    const txtPagar = _consigTxtDias(r.diasPagar, r.mediaPagar, { um: 'pagamento', varios: 'pagamentos' });
+
+    const hist = [];
+    if (r.vendidas)   hist.push(chip(`✓ ${r.vendidas} vendida${r.vendidas === 1 ? '' : 's'}`, 'var(--green)'));
+    if (r.permutas)   hist.push(chip(`⇄ ${r.permutas} permuta${r.permutas === 1 ? '' : 's'}`, 'var(--text2)'));
+    if (r.devolvidas) hist.push(chip(`↩ ${r.devolvidas} devolvida${r.devolvidas === 1 ? '' : 's'}`, 'var(--orange)'));
+    if (r.aguardandoPagto) hist.push(chip(`⏳ ${r.aguardandoPagto} sem pagar`, 'var(--orange)'));
+    if (!hist.length) hist.push(chip('sem desfecho ainda', 'var(--text3)'));
+
+    const det = [];
+    if (txtVenda) det.push(`<div>Leva <b>${txtVenda}</b> pra vender</div>`);
+    if (txtPagar) det.push(`<div>Paga em <b>${txtPagar}</b> depois da venda</div>`);
+    if (r.margem) det.push(`<div class="js-custo">Margem já gerada: <b style="color:var(--green);">${_fmtBRMoney(r.margem)}</b></div>`);
+
+    // Aviso honesto de amostra — sem isso, "100% em 4 dias" com 1 venda vira decisão.
+    const poucaAmostra = r.concluidas > 0 && r.concluidas < CONSIG_MIN_AMOSTRA
+      ? `<div style="font-size:10px;color:var(--text3);margin-top:6px;">Base pequena (${r.concluidas} moto${r.concluidas === 1 ? '' : 's'} com desfecho) — serve de indício, ainda não de média.</div>`
+      : '';
+
+    return `<div style="padding:14px 18px;border-bottom:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+        <div style="font-weight:700;font-size:13px;">${r.ehParceiro ? '🤝' : '📍'} ${escHtml(r.nome)}</div>
+        ${hist.join(' ')}
+      </div>
+      <div style="font-size:12px;color:var(--text2);">${parado}</div>
+      ${det.length ? `<div style="font-size:12px;color:var(--text2);margin-top:4px;display:grid;gap:2px;">${det.join('')}</div>` : ''}
+      ${poucaAmostra}
+    </div>`;
+  }).join('');
+
+  return `<div class="card" style="margin-top:22px;">
+    <div class="card-header"><div class="card-title">📈 Desempenho por parceiro</div>
+      <div style="font-size:10px;color:var(--text3);">quem gira melhor o estoque</div></div>
+    ${corpo}
+    <div style="padding:10px 18px;font-size:10px;color:var(--text3);background:var(--surface3);">
+      Permuta não conta como venda (o parceiro ficou com a moto e entregou outra em troca).
+      O tempo de venda conta do envio até a venda; o de pagamento, da venda até o dinheiro entrar.
+    </div>
+  </div>`;
+}
+
 // Dashboard: feedback das duas pontas (enviada + recebida).
 function renderConsigDashboard() {
   const box = document.getElementById('consig-dash');
@@ -24310,7 +24443,8 @@ function renderConsigDashboard() {
        ${_consigKpi('Vendidas', crVend.length, 'já negociadas')}
        ${_consigKpi('Devolvidas', crDev.length, 'voltaram pro dono')}
      </div>
-     ${semNada ? '<div class="empty" style="padding:20px;font-size:11px;margin-top:16px;">Sem movimento ainda. Use "Consignação Enviada" ou "Consignação Recebida" pra registrar a primeira moto.</div>' : ''}`;
+     ${semNada ? '<div class="empty" style="padding:20px;font-size:11px;margin-top:16px;">Sem movimento ainda. Use "Consignação Enviada" ou "Consignação Recebida" pra registrar a primeira moto.</div>' : ''}
+     ${_consigDesempenhoHtml()}`;
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -728,6 +728,32 @@ Consignação Recebida**. `pageMeta`/`BREADCRUMB_MAP` = "Consignação".
 Motos que a loja DÁ a parceiros/quiosque + estoque da Matriz. `renderLocalizacao`, tabela `estoque_unidades`,
 botão "+ Enviar moto". Inalterada (só migrou pra dentro da sub-aba). Funções `_loc*`.
 
+#### 📈 Desempenho por parceiro — quem gira melhor o estoque (01/08/2026)
+Pedido do dono: *"saber se o parceiro vende bem ou não, tempo médio pra vender/pagar… pra sabermos se
+deixamos mais ou menos scooters lá"*. Card no **Dashboard** da aba Consignação (`renderConsigDashboard` →
+`_consigDesempenhoHtml`), uma linha por **parceiro OU local próprio** (quiosque entra também), ordenado por
+motos lá agora. Duas leituras por linha: **(a) situação** — quantas estão lá, `custo parado` (`.js-custo`) e
+**há quantos dias está a mais antiga** (laranja acima de `LOC_DIAS_ALERTA`=30; é o indicador que diz se o
+parceiro já está abarrotado); **(b) histórico** — chips de vendidas/permutas/devolvidas/sem pagar, dias médios
+**até vender** (envio→venda) e **até pagar** (venda→dinheiro), e margem já gerada (`.js-custo`).
+- **PERMUTA NÃO É VENDA** — coluna nova **`estoque_unidades.tipo_saida`** (`'venda'` default | `'permuta'`,
+  migração `estoque_unidades_tipo_saida` + CHECK). Sem isso a troca do Leandro (ficou com a Savage e entregou
+  a Tank) contava como venda e o painel dizia *"100% de conversão em 4,5 dias"* pra quem tinha vendido **1**
+  moto em 8 dias. A unidade da permuta de 25/07 foi marcada. **Toda permuta registrada por SQL (ver seção
+  acima) tem que gravar `tipo_saida='permuta'`.**
+- **DEVOLVIDA conta contra** — `initLocalizacao` passou a carregar também `status='devolvida'` (antes só
+  `no_parceiro`+`vendida`, então a taxa de venda seria sempre 100%). As listas da tela filtram por status, então
+  nada de devolvida aparece em "Na posse"/"A receber".
+- **Honestidade estatística (o ponto do card):** média vem sempre com **n e faixa** (`14 dias (4 vendas · de 5
+  a 20)`) e, com menos de `CONSIG_MIN_AMOSTRA`=3 desfechos, sai o aviso *"Base pequena — serve de indício,
+  ainda não de média"*. Com 8 motos e 1 venda real, ler o painel cru levaria à decisão errada (tirar do JR e do
+  Caio, que receberam moto há 1–2 dias, e concentrar no Leandro).
+- **Validado (localhost:8791, navegador real, 0 erro de JS):** cálculo com os dados reais de hoje (JR 4/R$
+  22.440/0d · Caio 2/R$ 15.460/2d · Leandro 1 venda 8d + 1 permuta separada, margem 770) e com cenário maduro
+  sintético (4 vendas 5–20 → média 14; 3 pagamentos 2–10 → média 5; 2 devolvidas; 1 sem pagar; mais antiga 47d
+  em laranja; quiosque como local próprio). Gate `.js-custo` conferido com `body.sem-kpi-custo`: custo parado e
+  margem **não** renderizam pro vendedor; giro e prazos continuam visíveis. Visual por screenshot.
+
 #### "Marcar como pago" (moto que o parceiro vendeu) — estava QUEBRADO desde sempre (01/08/2026)
 Sintoma do dono: *"Erro ao registrar pagamento: falha ao gerar pedido"*. **Causa:** `_locConfirmarPagar` gera um
 `pdv_pedidos` (é o que faz a venda no parceiro entrar em faturamento/DRE) e mandava **`local_venda_id: null`** —
@@ -1024,6 +1050,16 @@ Painel unificado (`renderOficinaSac`) com as duas visões; modais `abrirOfModal`
   igual criada em < 2 min); não foi feito pra não arriscar falso positivo.
 
 ## Histórico de mudanças
+
+### 2026-08-01 (tarde) — Desempenho por parceiro no Dashboard da Consignação
+Pedido do dono, pra decidir quantas scooters deixar em cada parceiro. Card novo com motos lá agora + custo
+parado + dias da mais antiga, e histórico de vendidas/permutas/devolvidas com tempo médio pra vender e pra
+pagar. Duas correções de fundo pra métrica não mentir: coluna `estoque_unidades.tipo_saida` separando
+**permuta de venda** (a troca com o Leandro inflava a conversão dele pra 100%) e carregamento das
+**devolvidas** (sem elas, taxa de venda seria sempre 100%). Média sempre com n + faixa e aviso de base
+pequena abaixo de 3 desfechos. Validado no navegador com dados reais e cenário maduro; gate `.js-custo`
+conferido. Seção "Desempenho por parceiro". **Ressalva dita ao dono:** com 1 venda real na base, o painel
+ainda não sustenta decisão de alocação — ele passa a valer conforme acumula.
 
 ### 2026-08-01 (tarde) — "Marcar como pago" da consignação enviada consertado (nunca tinha funcionado)
 Leandro (Top Scooter) vendeu a Savage Vermelha 0347 e pagou; ao registrar, o dono tomou *"Erro ao registrar
