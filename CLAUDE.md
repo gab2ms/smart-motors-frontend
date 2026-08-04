@@ -1049,7 +1049,63 @@ Painel unificado (`renderOficinaSac`) com as duas visões; modais `abrirOfModal`
   vulnerável até recarregar. Se voltar a acontecer, a rede de segurança seria um guard no banco (rejeitar OS
   igual criada em < 2 min); não foi feito pra não arriscar falso positivo.
 
+## Sincronização com o Supabase — o `salvar` manda só o que mudou (04/08/2026)
+
+**O bug estrutural que isso corrige:** `salvarDados()` → `_enviarParaBanco()` → `_syncTable(tabela, array)`
+fazia **`upsert` da lista INTEIRA em memória** a cada gravação (5 tabelas: `contas_bancarias`,
+`lancamentos`, `contas_pagar`, `contas_receber`, `produtos_precos`). Uma aba aberta há horas regravava
+centenas de linhas que ela **nunca tocou** — desfazendo o que mudou no banco no meio-tempo, viesse de onde
+viesse: outra aba, **trigger do Postgres**, ou correção manual/MCP. Sintoma pro dono: *"corrigi e voltou
+sozinho"*.
+- **Casos reais que expuseram (04/08/2026):** (1) o cancelamento do pedido **#60** fez
+  `fn_recalc_comissao_vendedor` baixar a comissão do Rafael de **R$ 400 → R$ 300** no banco, e a aba do dono
+  devolveu 400 (a conta ficou "pendente" com R$ 100 fantasma, embora ele tivesse pago os 300 certos);
+  (2) marquei a comissão da Michelle como paga às 21:21 e às 21:24 o dono lançou "SALARIO RAFAEL" na tela —
+  o salvar regravou `contas_pagar` inteira e a conta voltou pra `pendente`, com a observação perdida. O
+  **trigger não tinha defeito** (testado: valor sujado pra 999 → um UPDATE no pedido cancelado recalculou
+  pra 300 sozinho); o defeito era a sobrescrita.
+- **Como ficou:** `_syncBaseline` (mapa por tabela: `id` → JSON de chaves ordenadas, via `_syncRowKey`)
+  guarda a forma canônica de cada linha. `_syncBaselineSnapshot(tabela, lista)` fotografa esse estado no
+  fim do `carregarDados()` (**depois** do `seed`, **antes** do `recalcularSaldos()` — se ele curar um saldo
+  descolado, a linha fica suja de propósito e sobe). O `_syncTable` compara `toDb(item)` com a baseline e
+  **só faz upsert do que difere**; depois do upsert/insert OK, a baseline acompanha (não reenvia em loop).
+- **Comparação é maçã com maçã:** a baseline guarda `toDb(item)` do MESMO objeto que o `_syncTable` vai
+  converter — não depende do round-trip `fromDb→toDb` bater com a linha crua do banco. Chaves ordenadas no
+  nível 1 evitam upsert falso por ordem de propriedade.
+- **Degradação segura:** sem baseline (ex.: `carregarDados` ainda não rodou, ou falhou) o `_syncTable`
+  **envia tudo**, como antes — nunca perde dado numa primeira gravação. Campo mutado só cosmeticamente
+  sobe à toa (envia a mais, não perde). Linha deletada localmente deixa entrada órfã na baseline
+  (inofensiva — não é enviada).
+- **Não muda o fluxo normal:** marcar conta como paga, lançar, editar saldo — tudo continua subindo (é
+  exatamente o que fica "sujo"). Só o **ruído** parou.
+- **Único ponto que repopula essas listas do banco é o `carregarDados`** (linhas ~5192-5199); o resto são
+  `filter` de remoção local, que acompanham `delete` explícito. Se algum dia outra função recarregar uma
+  dessas tabelas, **chamar `_syncBaselineSnapshot` junto** — senão as linhas recarregadas contam como sujas
+  e voltam ao comportamento antigo (seguro, mas sem o ganho).
+- **Validado (04/08/2026):** sintaxe dos 2 blocos `<script>` (`new Function`); **15 testes** num harness com
+  o código REAL extraído do arquivo (sem baseline manda tudo · aba parada não regrava · só a linha alterada
+  sobe · não reenvia em loop · 5 gravações seguidas = 0 upsert · linha nova ainda insere e entra na baseline
+  · comparador imune a ordem de chaves, sensível a valor/null/jsonb aninhado · `lancamentos` e
+  `contas_bancarias` idem · saldo curado ainda sobe · camel→snake preservado); e **no navegador real**
+  (localhost:8123, boot limpo — os únicos erros são favicon 404 e 401 do RLS por não estar logado) com o
+  `sb` interceptado: reproduzido o cenário da noite (lançar salário sobe **só** o lançamento + o saldo,
+  `contas_pagar` intacta) e o fluxo normal (marcar a comissão do Rafael como paga sobe **só ela**, com
+  `status='pago'`; a da Michelle não é regravada; 2º salvar manda 0 linhas).
+- ⚠️ **Enquanto uma aba com o `index.html` ANTIGO estiver aberta, ela continua sobrescrevendo** — o fix só
+  vale depois de recarregar (Cmd+Shift+R). Ao corrigir dado financeiro por SQL/MCP, seguir avisando o dono
+  pra recarregar e **reconferir** o registro depois.
+
 ## Histórico de mudanças
+
+### 2026-08-04 — `salvar` deixou de regravar a lista inteira (bug estrutural de sobrescrita)
+Fechamento financeiro do dia expôs o problema: a comissão do Rafael voltava pra R$ 400 depois do
+cancelamento do pedido #60 (o trigger acertava 300 e a aba devolvia 400), e a comissão da Michelle marcada
+como paga voltou pra pendente quando ele lançou um salário 3 minutos depois. Causa: `_syncTable` fazia
+`upsert` de **todo** o array em memória a cada gravação. Agora há uma **baseline por tabela** e só sobe o
+que a aba realmente alterou. Detalhe na seção **"Sincronização com o Supabase"**. Validado com 15 testes
+sobre o código real + navegador com `sb` interceptado. Também no dia: conciliação do extrato Cora
+(diferença de R$ 4,38 = taxa de baixa do boleto Veloster NF 2082-004, lançada em Taxas) e comissão da
+Michelle de 07/2026 quitada por compensação com o vale de R$ 2.500 (par casado, sem saída de caixa).
 
 ### 2026-08-01 (tarde) — Desempenho por parceiro no Dashboard da Consignação
 Pedido do dono, pra decidir quantas scooters deixar em cada parceiro. Card novo com motos lá agora + custo

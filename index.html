@@ -5064,22 +5064,71 @@ function salvarDados() {
   _saveTimer = setTimeout(_enviarParaBanco, 1000);
 }
 
+// ── Baseline de sincronização: "o que o banco já tem" ──────────────────────
+// Guarda, por tabela, a forma canônica (JSON de chaves ordenadas) de cada linha
+// no momento em que ela foi carregada/enviada. O _syncTable compara contra isso
+// e só manda o que a ABA realmente mexeu.
+//
+// POR QUE ISSO EXISTE: antes, todo salvarDados() fazia upsert da lista INTEIRA
+// em memória. Uma aba aberta há horas regravava linhas que ela nunca tocou,
+// desfazendo o que tinha mudado no banco no meio-tempo — por outra aba, por
+// trigger (comissão de vendedor recalculada num cancelamento) ou por correção
+// manual. Caso real (04/08/2026): o cancelamento do pedido #60 baixou a comissão
+// do Rafael de R$400 pra R$300 no banco e a aba do dono devolveu R$400; na mesma
+// noite, lançar um salário desfez a comissão da Michelle marcada como paga.
+const _syncBaseline = {};
+
+// JSON estável (chaves ordenadas) — duas linhas iguais viram a MESMA string.
+function _syncRowKey(rowDb) {
+  if (!rowDb || typeof rowDb !== 'object') return JSON.stringify(rowDb);
+  const out = {};
+  for (const k of Object.keys(rowDb).sort()) out[k] = rowDb[k];
+  return JSON.stringify(out);
+}
+
+// Fotografa o estado conhecido do banco pra uma tabela. Recebe a lista JÁ no
+// formato do JS (o mesmo que o _syncTable vai converter com toDb), pra comparar
+// maçã com maçã — o round-trip fromDb→toDb precisa bater.
+function _syncBaselineSnapshot(table, list) {
+  const map = TABLE_MAP[table] || { toDb: toSnake, fromDb: toCamel };
+  const m = new Map();
+  for (const item of (list || [])) {
+    if (item?.id === undefined || item?.id === null) continue;
+    m.set(String(item.id), _syncRowKey(map.toDb(item)));
+  }
+  _syncBaseline[table] = m;
+}
+
 // Sincroniza um array com uma tabela Supabase.
-// Itens com id → upsert; itens sem id → insert + captura de id gerado.
+// Itens ALTERADOS (vs baseline) → upsert; itens sem id → insert + captura de id.
+// Sem baseline (ex.: carregarDados ainda não rodou), envia tudo — comportamento
+// antigo, pra nunca perder dado numa primeira sincronização.
 async function _syncTable(table, list) {
   if (!list?.length) return;
   const map = TABLE_MAP[table] || { toDb: toSnake, fromDb: toCamel };
   const withId    = list.filter(x => x.id !== undefined && x.id !== null);
   const withoutId = list.filter(x => x.id === undefined || x.id === null);
 
-  if (withId.length) {
-    const { error } = await sb.from(table).upsert(withId.map(map.toDb));
+  const base = _syncBaseline[table];
+  // Converte 1× e reaproveita (toDb pode ser caro em tabela grande).
+  const comLinha = withId.map(x => ({ item: x, row: map.toDb(x) }));
+  const sujos = base
+    ? comLinha.filter(({ item, row }) => base.get(String(item.id)) !== _syncRowKey(row))
+    : comLinha;
+
+  if (sujos.length) {
+    const { error } = await sb.from(table).upsert(sujos.map(s => s.row));
     if (error) {
       console.error('[sync] ERRO upsert ' + table + ':', error.message, error);
     } else {
-      console.log('[sync] upsert ' + table + ': ' + withId.length + ' rows OK');
+      console.log('[sync] upsert ' + table + ': ' + sujos.length + '/' + withId.length + ' rows (só o que mudou)');
+      // O que subiu agora É o estado do banco.
+      if (base) sujos.forEach(({ item, row }) => base.set(String(item.id), _syncRowKey(row)));
     }
+  } else if (base) {
+    console.log('[sync] ' + table + ': nada mudou nesta aba (' + withId.length + ' linhas preservadas)');
   }
+
   if (withoutId.length) {
     const { data, error } = await sb.from(table).insert(withoutId.map(map.toDb)).select();
     if (error) {
@@ -5087,7 +5136,10 @@ async function _syncTable(table, list) {
       return;
     }
     console.log('[sync] insert ' + table + ': ' + (data?.length || 0) + ' rows OK');
-    if (data) data.forEach((row, i) => Object.assign(withoutId[i], map.fromDb(row)));
+    if (data) data.forEach((row, i) => {
+      Object.assign(withoutId[i], map.fromDb(row));
+      if (base && withoutId[i]?.id != null) base.set(String(withoutId[i].id), _syncRowKey(map.toDb(withoutId[i])));
+    });
   }
 }
 
@@ -5168,6 +5220,18 @@ async function carregarDados() {
     };
     if (!c.error)  contas      = await seed('contas_bancarias', contas,      CONTAS_SEED);
     if (!pr.error) products    = await seed('produtos_precos',  products,    PRODUCTS_SEED);
+
+    // Fotografa o que acabou de vir do banco: daqui pra frente o salvarDados()
+    // só reenvia as linhas que ESTA aba alterar. Sem isso, uma aba aberta há
+    // horas regrava tudo e desfaz mudanças feitas no banco no meio-tempo
+    // (trigger de comissão, outra aba, correção manual). Snapshot ANTES do
+    // recalcularSaldos() — se ele corrigir um saldo descolado, a linha fica
+    // "suja" de propósito e sobe na próxima gravação.
+    _syncBaselineSnapshot('contas_bancarias', contas);
+    _syncBaselineSnapshot('lancamentos',      lancamentos);
+    _syncBaselineSnapshot('contas_pagar',     contasPagar);
+    _syncBaselineSnapshot('contas_receber',   contasReceber);
+    _syncBaselineSnapshot('produtos_precos',  products);
 
     // Rede de segurança da corrida preço×custo: o renderDashboard de nível de
     // módulo (linha ~20335) dispara carregarTinyPrecos ANTES daqui. Com o preço
