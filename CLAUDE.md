@@ -1095,7 +1095,61 @@ sozinho"*.
   vale depois de recarregar (Cmd+Shift+R). Ao corrigir dado financeiro por SQL/MCP, seguir avisando o dono
   pra recarregar e **reconferir** o registro depois.
 
+## Margem: TABELA vs REALIZADA — duas contas, dois lugares (05/08/2026)
+
+O dono viu no Dashboard a **X-Buddy seminova cinza #1052 com MC −7,9%** e estranhou ("o custo dela é uns 6
+mil e pouco"). Nada estava errado no cálculo — estavam **misturadas duas perguntas diferentes**, e o painel
+só respondia a errada.
+
+- **MC de TABELA** (`mcReal`/`mcpReal`, ~4494) = `preço anunciado − ctReal`. Responde **"o preço que estou
+  anunciando cobre o custo?"**. Existe mesmo sem nenhuma venda → é a ferramenta de **precificação**.
+- **MC REALIZADA** (`mcRealVendido`/`carregarMcRealIdx`, ~4500) = `Σreceita − ΣCPV` das linhas de venda
+  (`buscarLinhasVenda`) por modelo. Responde **"quanto sobrou de fato?"**. Só existe se vendeu → é a
+  **medição**. Índice em memória, janela de **180 dias** (não misturar preço de épocas diferentes), cache de
+  5 min (`renderPrecos` roda a cada tecla da busca), só linha `matched` (item sem cadastro tem CPV estimado
+  por `avgMCpct` — margem fictícia, não mede nada), CPV = `cpvTotal` (com NF rateada = mesma régua do ctReal).
+- **Trocar uma pela outra cega um lado.** Por isso as duas convivem: **Preços & Margens** ganhou a coluna
+  **"MC real (180d)"** (pct + qtd entre parênteses; `—` quando não vendeu na janela) ao lado das colunas de
+  tabela — dá pra ler "anuncio a X, vendo a Y" na mesma linha.
+
+**KPI do Dashboard trocado** (`renderDashInternal`, ~5760): "MC% Média Bruta" → **"MC% real do período"**
+= `calcularDRE(ini,fim).pctLB`, no MESMO range escolhido no topo do painel (re-renderizado no fim de
+`carregarFaturamentoDash`, senão ficaria preso no período do boot). Bate com a margem bruta da DRE. O KPI
+antigo era **média aritmética simples** da MC de tabela de TODOS os registros de `produtos_precos`: não
+ponderava volume (um SKU de troca vendido 1× pesava igual a um modelo de 20 unidades), contava produto que
+não vendeu e produto **inativo**, e ignorava o preço praticado — não servia pra decisão nenhuma. Sem venda no
+período mostra `—` (não 0%); erro na DRE degrada pro mesmo `—` sem derrubar o painel. O alerta que o KPI
+antigo dava ("N produtos abaixo de 15%") virou **"⚠ N anunciados abaixo do custo"** no subtítulo (critério
+que pede ação de verdade; só produtos ativos).
+
+**Código morto removido:** `renderDashMargens` ("Top 5 margens" + "alertas de margem baixa", ~33 linhas)
+escrevia em `#dash-top-margins`/`#dash-low-margins`, que **não existem** desde que o Dashboard virou widgets
+configuráveis (`DB_WIDGETS_DEF`). 0 chamadas — nunca rodava.
+
+**Validado (localhost:8123, navegador real, 0 erro de console novo — só favicon 404 e 401 do RLS por não
+estar logado):** índice de MC realizada (agregação por modelo, case-insensitive, `matched=false` ignorado,
+cache de 5 min respeitado, falha de rede preserva o índice anterior); KPI nos 4 cenários (com venda / sem
+venda / margem negativa / DRE com erro), período do filtro repassado à DRE, alerta contando só ativos; tabela
+de Preços com 9 colunas, `colspan` do vazio corrigido e a seminova mostrando **−7,88% (tabela) vs +1,93%
+(real, 1 un.)** lado a lado; visual conferido por screenshot.
+
+**Limite conhecido:** a MC realizada é por **modelo do catálogo** (chave = `products[].modelo`), então SKU de
+trade-in — que é 1 por unidade — sempre terá amostra de 1. É o esperado; o alerta útil pra esses é o de
+tabela.
+
 ## Histórico de mudanças
+
+### 2026-08-05 — Margem do Dashboard passou a ser a REALIZADA (era preço de tabela)
+Dono viu a X-Buddy seminova #1052 com −7,9% no painel e perguntou por quê, já que o custo "é uns 6 mil e
+pouco". Investigado: o −7,9% era `preço cadastrado 8.000 − ctReal 8.630` (o custo é o **crédito de R$ 8.500
+dado na troca** de 23/07, não o custo de fábrica do X-Buddy novo); a moto foi **vendida por 8.800** na venda
+#66 de 04/08 → margem real **+1,93%**. Ou seja: número certo respondendo a pergunta errada. Ele pediu que a
+margem do painel considerasse **preço vendido × custo**. Feito: KPI do Dashboard virou **MC% real do
+período** (= margem bruta da DRE, no range do filtro) e **Preços & Margens** ganhou a coluna **MC real
+(180d)** ao lado da de tabela — que fica, porque é ela que avisa "anunciando abaixo do custo" antes de
+vender. Removida a função morta `renderDashMargens`. Seção **"Margem: TABELA vs REALIZADA"**. Validado no
+navegador. **Follow-up do dono:** o preço cadastrado da seminova (8.000) segue desatualizado — foi vendida a
+8.800.
 
 ### 2026-08-04 — `salvar` deixou de regravar a lista inteira (bug estrutural de sobrescrita)
 Fechamento financeiro do dia expôs o problema: a comissão do Rafael voltava pra R$ 400 depois do

@@ -2014,7 +2014,9 @@ select:not(.input-pro):not(.search-input){
             <tr>
               <th>Modelo</th><th>Fornecedor</th><th>Custo</th>
               <th>Custo Total</th><th>Preço Venda</th>
-              <th>MC R$</th><th>Margem %</th><th>Ações</th>
+              <th>MC R$</th><th>Margem %</th>
+              <th title="Margem de contribuição REALIZADA: (receita − CPV) das vendas dos últimos 180 dias. Entre parênteses, quantas unidades. As colunas à esquerda usam o preço ANUNCIADO — servem pra precificar; esta mostra o que sobrou de fato.">MC real (180d)</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody id="precos-table"></tbody>
@@ -4497,6 +4499,62 @@ const mcpReal = p => {
   return v > 0 ? (mcReal(p) / v) * 100 : 0;
 };
 
+// ── MC REALIZADA (o que foi VENDIDO de verdade) ───────────────────────────
+// Σreceita e ΣCPV das linhas de venda agrupadas por modelo do catálogo.
+// COMPLEMENTA — não substitui — a MC de tabela (mcReal/mcpReal acima):
+//   • tabela     → "o preço que estou anunciando cobre o custo?" (existe mesmo
+//                   sem nenhuma venda; é a ferramenta de PRECIFICAÇÃO)
+//   • realizada  → "quanto sobrou de fato?" (só existe se vendeu; é a MEDIÇÃO)
+// Trocar uma pela outra cega um dos dois lados — por isso as duas convivem na
+// tabela de Preços. Ver a MC% real do período no KPI do Dashboard
+// (renderDashInternal), que usa a margem bruta da DRE.
+// Janela de 180 dias pra não misturar preço praticado em épocas diferentes.
+const MC_REAL_JANELA_DIAS = 180;
+const MC_REAL_TTL_MS = 5 * 60 * 1000;
+let _MC_REAL_IDX = new Map();
+let _MC_REAL_TS = 0;
+let _MC_REAL_FETCH = null;
+const _mcRealKey = m => String(m || '').trim().toLowerCase();
+// Cache curto: renderPrecos roda a cada tecla da busca e isto faz rede.
+async function carregarMcRealIdx({ force = false } = {}) {
+  if (!force && _MC_REAL_TS && (Date.now() - _MC_REAL_TS) < MC_REAL_TTL_MS) return;
+  if (_MC_REAL_FETCH) return _MC_REAL_FETCH;
+  _MC_REAL_FETCH = (async () => {
+    try {
+      const _fim = new Date();
+      const _ini = new Date(_fim.getTime() - MC_REAL_JANELA_DIAS * 86400000);
+      const iso = d => d.toISOString().slice(0, 10);
+      const linhas = await buscarLinhasVenda(iso(_ini), iso(_fim));
+      const idx = new Map();
+      (linhas || []).forEach(l => {
+        // Item sem cadastro cai no CPV ESTIMADO (avgMCpct) — margem fictícia,
+        // não mede nada. Só linha matchada entra.
+        if (!l.matched || !l.modelo) return;
+        const k = _mcRealKey(l.modelo);
+        const a = idx.get(k) || { receita: 0, cpv: 0, qtd: 0 };
+        a.receita += l.receita  || 0;
+        a.cpv     += l.cpvTotal || 0;   // cpvTotal (com NF rateada) = mesma régua do ctReal
+        a.qtd     += l.quantidade || 0;
+        idx.set(k, a);
+      });
+      _MC_REAL_IDX = idx;
+      _MC_REAL_TS  = Date.now();
+    } catch (e) {
+      // Degrada: índice velho/vazio, coluna mostra "—". Não derruba a tela.
+      console.warn('[mc-real] falha ao montar índice:', e.message);
+    } finally {
+      _MC_REAL_FETCH = null;
+    }
+  })();
+  return _MC_REAL_FETCH;
+}
+// {pct, mc, qtd} do modelo, ou null quando não houve venda na janela.
+function mcRealVendido(p) {
+  const a = _MC_REAL_IDX.get(_mcRealKey(p && p.modelo));
+  if (!a || a.receita <= 0) return null;
+  return { pct: (a.receita - a.cpv) / a.receita * 100, mc: a.receita - a.cpv, qtd: a.qtd };
+}
+
 // ══════════════════════════════════════════
 //  PAGE ROUTING
 // ══════════════════════════════════════════
@@ -5702,8 +5760,30 @@ function esconderBootLoader() {
 // ── KPIs internos (sem API) ─────────────────
 async function renderDashInternal(){
   await carregarTinyPrecos();
-  const avgMC      = products.length ? products.reduce((s,p)=>s+mcpReal(p),0)/products.length : 0;
-  const lowCount   = products.filter(p=>mcpReal(p)<15).length;
+  // MC% REAL do período (margem de contribuição realizada) = (receita − CPV) /
+  // receita das vendas do período selecionado no topo do Dashboard. É o MESMO
+  // número da margem bruta da DRE (calcularDRE.pctLB), então painel e DRE não
+  // divergem. ANTES aqui havia "MC% Média Bruta": média ARITMÉTICA SIMPLES da
+  // MC de TABELA de todos os registros de produtos_precos — não ponderava
+  // volume (um SKU de troca vendido 1× pesava igual a um modelo de 20
+  // unidades), contava produto que não vendeu e produto inativo, e ignorava o
+  // preço realmente praticado (um seminovo com preço de tabela desatualizado
+  // aparecia como margem negativa mesmo tendo sido vendido no lucro). A MC de
+  // TABELA continua existindo em Preços & Margens — lá ela responde outra
+  // pergunta ("o anunciado cobre o custo?"), que a realizada não responde.
+  const _dfIni = document.getElementById('dash-fat-ini')?.value || '';
+  const _dfFim = document.getElementById('dash-fat-fim')?.value || '';
+  const [_mcIni, _mcFim] = (_dfIni && _dfFim) ? [_dfIni, _dfFim] : _periodoRange('mes-atual');
+  let mcRealPct = null, mcNVendas = 0, mcReceita = 0;
+  try {
+    const _dreMC = await calcularDRE(_mcIni, _mcFim);
+    mcReceita = _dreMC.receita || 0;
+    mcNVendas = (_dreMC.pedidos || []).length;
+    mcRealPct = mcReceita > 0 ? _dreMC.pctLB : null;   // sem venda no período → "—", não 0%
+  } catch(e) { console.warn('[dash-mc-real] falhou:', e.message); }
+  // Alerta de PRECIFICAÇÃO que o KPI antigo dava ("N produtos abaixo de 15%"),
+  // agora no critério que realmente pede ação: anunciado ABAIXO DO CUSTO.
+  const abaixoCusto = (products||[]).filter(p => p.ativo !== false && _precoTinyDe(p) > 0 && mcpReal(p) < 0).length;
   // Achata parcelas mantendo referência ao credor pra título/click.
   const todasParc = (emprestimos||[]).flatMap(e =>
     (e.pagamentos||[]).map(p => ({ ...p, _credor: e.nome }))
@@ -5745,10 +5825,14 @@ async function renderDashInternal(){
   }
 
   document.getElementById('dash-int-kpis').innerHTML = `
-    <div class="kpi" onclick="showPage('precos')" style="cursor:pointer;" onmouseenter="this.style.borderColor='var(--gold)'" onmouseleave="this.style.borderColor='var(--border)'">
-      <div class="kpi-label">MC% Média Bruta</div>
-      <div class="kpi-value ${avgMC>=20?'green':'red'}">${avgMC.toFixed(1)}%</div>
-      <div class="kpi-change">${lowCount} produto${lowCount!==1?'s':''} abaixo de 15%</div>
+    <div class="kpi" onclick="showPage('precos')" style="cursor:pointer;" onmouseenter="this.style.borderColor='var(--gold)'" onmouseleave="this.style.borderColor='var(--border)'"
+         title="Margem de contribuição REALIZADA: (receita − CPV) ÷ receita das vendas do período. Mesmo número da margem bruta da DRE.">
+      <div class="kpi-label">MC% real do período</div>
+      <div class="kpi-value ${mcRealPct == null ? '' : (mcRealPct>=20?'green':'red')}">${mcRealPct == null ? '—' : mcRealPct.toFixed(1)+'%'}</div>
+      <div class="kpi-change">${mcRealPct == null
+        ? 'Sem venda no período'
+        : `${mcNVendas} venda${mcNVendas!==1?'s':''} · ${fmt(mcReceita)} de receita`}${
+        abaixoCusto ? ` · <span style="color:var(--red);">⚠ ${abaixoCusto} anunciado${abaixoCusto!==1?'s':''} abaixo do custo</span>` : ''}</div>
     </div>
     <div class="kpi" onclick="showPage('custos')" style="cursor:pointer;" onmouseenter="this.style.borderColor='var(--gold)'" onmouseleave="this.style.borderColor='var(--border)'">
       <div class="kpi-label">Empréstimo em aberto</div>
@@ -5757,39 +5841,6 @@ async function renderDashInternal(){
     </div>
     ${proxCard}
   `;
-}
-
-// ── Top 5 e alertas ────────────────────────
-async function renderDashMargens(){
-  if (!products || !products.length) {
-    document.getElementById('dash-top-margins').innerHTML = '<tr><td colspan="3" class="empty" style="padding:16px;font-size:11px;">Sincronize os produtos na aba Cadastros</td></tr>';
-    document.getElementById('dash-low-margins').innerHTML = '<tr><td colspan="3" class="empty" style="padding:16px;font-size:11px;">—</td></tr>';
-    return;
-  }
-  await carregarTinyPrecos();
-  const sorted = [...products].sort(function(a,b){return mcpReal(b)-mcpReal(a);});
-  var topRows = '';
-  sorted.slice(0,5).forEach(function(p){
-    var vendaTiny = _precoTinyDe(p);
-    topRows += '<tr onclick="showPage(&quot;precos&quot;)" style="cursor:pointer;">'
-      + '<td class="td-model" style="font-size:12px;">' + p.modelo + '</td>'
-      + '<td class="td-mono" style="font-size:11px;">' + (vendaTiny > 0 ? fmt(vendaTiny) : '—') + '</td>'
-      + '<td>' + mcBadge(mcpReal(p)) + '</td></tr>';
-  });
-  document.getElementById('dash-top-margins').innerHTML = topRows || '<tr><td colspan="3" class="empty">—</td></tr>';
-
-  const low = products.filter(function(p){return mcpReal(p)<15;});
-  var lowRows = '';
-  low.forEach(function(p){
-    var vendaTiny = _precoTinyDe(p);
-    lowRows += '<tr onclick="showPage(&quot;precos&quot;)" style="cursor:pointer;">'
-      + '<td class="td-model" style="font-size:12px;">' + p.modelo + '</td>'
-      + '<td class="td-mono" style="font-size:11px;">' + (vendaTiny > 0 ? fmt(vendaTiny) : '—') + '</td>'
-      + '<td>' + mcBadge(mcpReal(p)) + '</td></tr>';
-  });
-  document.getElementById('dash-low-margins').innerHTML = low.length
-    ? lowRows
-    : '<tr><td colspan="3" class="empty" style="padding:20px;">Nenhum alerta</td></tr>';
 }
 
 // ── Ranking de vendas por modelo ──────────────
@@ -8365,6 +8416,12 @@ async function carregarFaturamentoDash(forcar) {
     var rankingVendedores = calcularRankingVendedores(pedidos);
     renderizarRankingVendedores(rankingVendedores);
 
+    // KPI "MC% real do período" segue o MESMO range escolhido aqui em cima.
+    // renderDashboard só roda no boot, então sem este re-render a margem
+    // ficaria presa no período do carregamento inicial quando o usuário troca
+    // o preset/data. Só admin (o widget kpis-int é admin-only).
+    if (_kpisIsAdmin) { renderDashInternal().catch(function(){}); }
+
     // Marca timestamp da última carga bem-sucedida (Sprint UI etapa 3)
     dashUltimaAtualizacao = Date.now();
     renderDashUltimaAtualizacao();
@@ -9153,6 +9210,7 @@ async function renderPrecos(){
     });
   }
   await carregarTinyPrecos();
+  await carregarMcRealIdx();   // MC realizada (cacheada 5min) — coluna "MC real"
   const q=(document.getElementById('search-modelo')?.value||'').toLowerCase();
   const forn=document.getElementById('filter-fornecedor')?.value||'';
   const marg=document.getElementById('filter-margem')?.value||'';
@@ -9173,6 +9231,9 @@ async function renderPrecos(){
   document.getElementById('precos-table').innerHTML=filtered.length?filtered.map(p=>{
     const vendaTiny=_precoTinyDe(p);
     const mR=mcReal(p), mpR=mcpReal(p);
+    // Realizada: null = não vendeu na janela (mostra "—", não 0%).
+    const rV=mcRealVendido(p);
+    const rCor=!rV?'var(--text3)':rV.pct>=30?'var(--gold)':rV.pct>=15?'var(--orange)':rV.pct>=0?'var(--text)':'var(--red)';
     return `
     <tr${p.ativo===false?' style="opacity:0.5;"':''}>
       <td class="td-model">${p.ativo===false
@@ -9184,13 +9245,16 @@ async function renderPrecos(){
       <td class="td-mono" style="font-weight:700;">${vendaTiny>0?fmt(vendaTiny):'<span style="color:var(--text3);">—</span>'}</td>
       <td class="td-mono" style="color:${vendaTiny>0?(mR>=0?'var(--green)':'var(--red)'):'var(--text3)'};">${vendaTiny>0?((mR<0?'-':'')+fmt(Math.abs(mR))):'—'}</td>
       <td>${vendaTiny>0?mcBar(mpR):'<span style="color:var(--text3);font-size:11px;">—</span>'}</td>
+      <td class="td-mono" style="color:${rCor};font-weight:700;white-space:nowrap;">${rV
+        ? `${fmtP(rV.pct)} <span style="color:var(--text3);font-weight:400;font-size:10px;">(${rV.qtd})</span>`
+        : '<span style="color:var(--text3);font-weight:400;">—</span>'}</td>
       <td><div class="row-actions">
         <button class="action-btn edit-btn" onclick="openEdit(${p._i})">Editar</button>
         <button class="action-btn del-btn" onclick="delProduct(${p._i})">Del</button>
       </div></td>
     </tr>`;
   }).join('')
-    :`<tr><td colspan="8" class="empty">Nenhum produto encontrado</td></tr>`;
+    :`<tr><td colspan="9" class="empty">Nenhum produto encontrado</td></tr>`;
 }
 
 // ══════════════════════════════════════════
