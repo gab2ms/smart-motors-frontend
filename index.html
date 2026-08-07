@@ -2913,10 +2913,11 @@ select:not(.input-pro):not(.search-input){
     <div class="fin-tabs">
       <button class="fin-tab-btn active" data-oftab="abertas"     onclick="switchOfTab('abertas')">Em aberto (<span id="of-cnt-abertas">0</span>)</button>
       <button class="fin-tab-btn"        data-oftab="finalizadas" onclick="switchOfTab('finalizadas')">Finalizadas (<span id="of-cnt-finalizadas">0</span>)</button>
-      <button class="fin-tab-btn"        data-oftab="pagamentos"  onclick="switchOfTab('pagamentos')" id="of-tab-btn-pagamentos" style="display:none;">A pagar (<span id="of-cnt-pagamentos">0</span>)</button>
     </div>
 
-    <!-- ── Bloco OS (abas "Em aberto" / "Finalizadas") ── -->
+    <!-- ⚠️ TELA LEGADA: o menu "Oficina" e "Pós-venda" abrem o painel unificado
+         (#page-oficina-sac), não esta página. Mantida só por back-compat — o
+         painel "A pagar" vive lá, junto do que o usuário realmente usa. -->
     <div id="of-bloco-os">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
         <div>
@@ -2944,30 +2945,6 @@ select:not(.input-pro):not(.search-input){
     </div>
 
     <!-- ── Bloco Pagamentos aos prestadores (aba "A pagar") ── -->
-    <div id="of-bloco-pag" style="display:none;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
-        <div>
-          <div style="font-size:13px;font-weight:700;">Pagamento aos prestadores</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="of-pag-sub">—</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <select class="search-input" id="of-pag-filtro" onchange="renderOficinaPagamentos()" style="max-width:190px;">
-            <option value="pendentes">Só pendentes</option>
-            <option value="todos">Pendentes e pagos</option>
-            <option value="pagos">Só pagos</option>
-          </select>
-          <input type="date" class="search-input" id="of-pag-ini" onchange="renderOficinaPagamentos()" title="Data de execução — de" style="max-width:150px;">
-          <input type="date" class="search-input" id="of-pag-fim" onchange="renderOficinaPagamentos()" title="Data de execução — até" style="max-width:150px;">
-        </div>
-      </div>
-
-      <div class="kpi-grid" id="of-pag-kpis"></div>
-
-      <div class="card">
-        <div class="card-header"><div><div class="card-sub" id="of-pag-count">—</div></div></div>
-        <div id="of-pag-lista"></div>
-      </div>
-    </div>
   </div>
 
   <!-- ══════════════ SAC ══════════════ -->
@@ -3058,9 +3035,39 @@ select:not(.input-pro):not(.search-input){
 
     <div class="kpi-grid" id="os-kpis"></div>
 
-    <div class="card">
-      <div class="card-header"><div><div class="card-sub" id="os-count">—</div></div></div>
-      <div id="os-lista"></div>
+    <!-- Lista de OS/pós-venda (visão padrão) -->
+    <div id="os-bloco-lista">
+      <div class="card">
+        <div class="card-header"><div><div class="card-sub" id="os-count">—</div></div></div>
+        <div id="os-lista"></div>
+      </div>
+    </div>
+
+    <!-- Pagamento ao prestador (diárias). Abre pelo KPI "A pagar ao prestador". -->
+    <div id="of-bloco-pag" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;">Pagamento ao prestador</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="of-pag-sub">—</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select class="search-input" id="of-pag-filtro" onchange="renderOficinaPagamentos()" style="max-width:190px;">
+            <option value="pendentes">Só pendentes</option>
+            <option value="todos">Pendentes e pagos</option>
+            <option value="pagos">Só pagos</option>
+          </select>
+          <input type="date" class="search-input" id="of-pag-ini" onchange="renderOficinaPagamentos()" title="Data — de" style="max-width:150px;">
+          <input type="date" class="search-input" id="of-pag-fim" onchange="renderOficinaPagamentos()" title="Data — até" style="max-width:150px;">
+          <button class="btn" type="button" onclick="_osMostrarPagamentos(false)">← Voltar pras OS</button>
+        </div>
+      </div>
+
+      <div class="kpi-grid" id="of-pag-kpis"></div>
+
+      <div class="card">
+        <div class="card-header"><div><div class="card-sub" id="of-pag-count">—</div></div></div>
+        <div id="of-pag-lista"></div>
+      </div>
     </div>
   </div>
 
@@ -18834,15 +18841,9 @@ async function initOficina() {
   oficinaDiarias    = (!od.error && od.data) ? toCamelArr(od.data) : [];
   if (op.error) console.warn('[oficina] pagamentos indisponíveis (migração pendente?):', op.error.message);
   if (od.error) console.warn('[oficina] diárias indisponíveis (migração pendente?):', od.error.message);
-  // A aba de pagamento é financeira: só pra quem vê custo. O custo do serviço
-  // em si continua visível pra todos (decisão de 28/07/2026).
-  const podePag = !op.error && !od.error && _podeVerCusto();
-  const btnPag = document.getElementById('of-tab-btn-pagamentos');
-  if (btnPag) btnPag.style.display = podePag ? '' : 'none';
   console.log('[oficina] clientes=' + oficinaClientes.length + ' ordens=' + oficinaOrdens.length + ' pagamentos=' + oficinaPagamentos.length);
   const selOf = document.getElementById('of-filtro-status'); if (selOf) selOf.value = ''; // estado inicial: sem filtro
   renderOficinaKpis();
-  if (podePag) { try { renderOficinaPagamentos(); } catch(e) { console.warn('[oficina] painel de pagamentos:', e.message); } }
   switchOfTab('abertas'); // reseta a aba ao abrir o módulo (não persiste) + renderiza
   // Notifica OS prontas pendentes (1x/dia/item)
   checarWhatsAppOficinaPronto();
@@ -18908,16 +18909,9 @@ function _aplicarOfCardAtivo() {
 }
 
 function switchOfTab(t) {
-  if (!['abertas','finalizadas','pagamentos'].includes(t)) return;
+  if (!['abertas','finalizadas'].includes(t)) return;
   ofAbaAtiva = t;
   document.querySelectorAll('.fin-tab-btn[data-oftab]').forEach(b => b.classList.toggle('active', b.dataset.oftab === t));
-  // "A pagar" troca o corpo inteiro da página (filtros e KPIs são outros).
-  const ehPag = t === 'pagamentos';
-  const blocoOs  = document.getElementById('of-bloco-os');
-  const blocoPag = document.getElementById('of-bloco-pag');
-  if (blocoOs)  blocoOs.style.display  = ehPag ? 'none' : '';
-  if (blocoPag) blocoPag.style.display = ehPag ? '' : 'none';
-  if (ehPag) { renderOficinaPagamentos(); return; }
   renderOficina();
 }
 
@@ -27560,8 +27554,52 @@ function initOficinaSac() {
   }
   const tit = document.getElementById('os-titulo');
   if (tit) tit.textContent = (osTipoAtivo === 'oficina') ? 'Oficina' : 'Pós-venda / SAC';
+  _osMostrarPagamentos(false);     // sempre abre na lista de OS
   renderOficinaSacKpis();
   renderOficinaSac();
+  // Diárias/pagamentos ao prestador: carrega em segundo plano e re-renderiza o
+  // KPI "A pagar" quando chegar (não segura a tela). Tolerante a erro — sem as
+  // migrações, o KPI e o painel simplesmente não aparecem.
+  _osCarregarPagamentos();
+}
+
+// Alterna entre a lista de OS e o painel de pagamento ao prestador.
+function _osMostrarPagamentos(mostrar) {
+  const lista = document.getElementById('os-bloco-lista');
+  const pag   = document.getElementById('of-bloco-pag');
+  if (!lista || !pag) return;
+  lista.style.display = mostrar ? 'none' : '';
+  pag.style.display   = mostrar ? '' : 'none';
+  if (mostrar && typeof renderOficinaPagamentos === 'function') renderOficinaPagamentos();
+}
+
+// Quantas quartas ainda não têm diária registrada (0 se não der pra saber).
+function _ofQuartasSemDiaria() {
+  try {
+    const ativos = (montadores || []).filter(m => m.ativo !== false);
+    const p = ativos.find(m => m.principal) || ativos[0];
+    return p ? _ofQuartasFaltando(p.id).length : 0;
+  } catch (e) { return 0; }
+}
+
+let _osPagCarregado = false;
+async function _osCarregarPagamentos() {
+  if (_osPagCarregado) return;
+  try {
+    const [op, od] = await Promise.all([
+      sb.from('oficina_pagamentos').select('*').order('data_pagamento'),
+      sb.from('oficina_diarias').select('*').order('data', { ascending: false }),
+    ]);
+    if (op.error || od.error) {
+      console.warn('[oficina] pagamento ao prestador indisponível (migração pendente?)');
+      return;
+    }
+    oficinaPagamentos = toCamelArr(op.data || []);
+    oficinaDiarias    = toCamelArr(od.data || []);
+    _osPagCarregado = true;
+    renderOficinaSacKpis();                       // agora o KPI "A pagar" aparece
+    if (document.getElementById('of-bloco-pag')?.style.display !== 'none') renderOficinaPagamentos();
+  } catch (e) { console.warn('[oficina] pagamentos:', e.message); }
 }
 
 function switchOsTipo(t) {
@@ -27625,6 +27663,18 @@ function renderOficinaSacKpis() {
     const lucroMes = arr.filter(x => x.tipoAtend === 'servico_pago' && !x.aberto && _dataConcl(x).startsWith(prefMes))
       .reduce((s, x) => { const l = ofLucro(x.rec); return s + (l === null ? 0 : l); }, 0);
     if (_podeVerCusto()) cards += `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Lucro de serviços no mês</div><div class="kpi-value" style="color:${lucroMes>=0?'var(--green)':'var(--red)'};">${fmtSigned(lucroMes)}</div><div class="kpi-change">serviço pago · ${mesNome}</div></div>`;
+    // A PAGAR ao prestador: dinheiro que ainda vai sair (diárias em aberto).
+    // Clicável — abre o painel de pagamento. É a resposta pra "quanto eu tenho
+    // que pagar", que os outros KPIs (todos de resultado) não davam.
+    if (_podeVerCusto() && typeof _ofDiariasPagaveis === 'function') {
+      const pend = _ofDiariasPagaveis().filter(d => d.status !== 'pago');
+      const aPagar = pend.reduce((s, d) => s + d.saldo, 0);
+      const qFalta = _ofQuartasSemDiaria();
+      cards += `<div class="kpi kpi-clickable" onclick="_osMostrarPagamentos(true)" style="border-top:2px solid var(--gold);cursor:pointer;" title="Abrir o pagamento ao prestador">`
+             + `<div class="kpi-label">A pagar ao prestador</div>`
+             + `<div class="kpi-value gold">${fmt(aPagar)}</div>`
+             + `<div class="kpi-change">${pend.length} diária${pend.length===1?'':'s'} em aberto${qFalta ? ' · ⚠️ '+qFalta+' quarta'+(qFalta===1?'':'s')+' sem registrar' : ''}</div></div>`;
+    }
   } else {
     // Custo de garantias = todos os não-pagos finalizados no mês (qualquer tabela).
     const custoGarMes = arr.filter(x => !x.aberto && _dataConcl(x).startsWith(prefMes))
