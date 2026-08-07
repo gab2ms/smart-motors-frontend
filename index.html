@@ -19997,8 +19997,38 @@ function _ofDiariasPagaveis() {
   }).sort((a,b) => String(b.data).localeCompare(String(a.data)));
 }
 
+// ── O QUE SE DEVE AO PRESTADOR = diárias + serviços cobrados à parte ───────
+// Regime real (dono, 07/08/2026): a diária de quarta cobre os serviços feitos
+// NAQUELE DIA — esses entram com `custo_mao_obra` ZERO ("sai de graça dentro da
+// diária"). Quando o serviço é feito FORA da quarta, o custo é lançado na OS e
+// aí sim é cobrado À PARTE, somando à diária. Ou seja: `custo_mao_obra > 0` é o
+// sinal de "extra a pagar", não de rateio.
+//
+// Normaliza diária e serviço no MESMO formato pro painel e pro modal poderem
+// misturar os dois num pagamento só (um Pix cobrindo 2 quartas + 1 serviço).
+function _ofItensPagaveis() {
+  const diarias = _ofDiariasPagaveis().map(d => ({
+    ...d, tipo: 'diaria',
+    titulo: 'Diária', valorPagar: d.valorDiaria,
+    detalhe: `${d.servicosNoDia} serviço${d.servicosNoDia===1?'':'s'} no dia`
+           + (d.servicosNoDia ? ` (${d.servicosOf} of · ${d.servicosSac} pós-v)` : ''),
+    extraLabel: d.valorAlimentacao > 0.005 ? '+ ' + fmt(d.valorAlimentacao) : '—',
+  }));
+  const servicos = _ofServicosPagaveis().map(s => ({
+    ...s, tipo: 'servico',
+    data: s.dataServico,
+    titulo: (s.origem === 'sac' ? 'Pós-venda' : 'Oficina') + ' ' + (s.origem==='sac'?'S':'#') + (s.numero ?? '—'),
+    valorPagar: s.custo,
+    detalhe: s.clienteNome + (s.modelo ? ' · ' + s.modelo : ''),
+    extraLabel: '—',                       // peça nunca entra: já é paga na compra
+    valorAlimentacao: 0,
+    custoTotal: s.custo,
+  }));
+  return [...diarias, ...servicos].sort((a,b) => String(b.data||'').localeCompare(String(a.data||'')));
+}
+
 function _ofDiariaPorChave(chave) {
-  return _ofDiariasPagaveis().find(d => d.chave === chave) || null;
+  return _ofItensPagaveis().find(d => d.chave === chave) || null;
 }
 
 // Quartas-feiras de OFICINA_DIARIAS_INICIO até hoje que ainda não têm diária.
@@ -20123,13 +20153,13 @@ function renderOficinaPagamentos() {
   const fim    = document.getElementById('of-pag-fim')?.value || '';
   const noPeriodo = d => !!d && (!ini || d >= ini) && (!fim || d <= fim);
 
-  let lista = _ofDiariasPagaveis();
+  let lista = _ofItensPagaveis();
   if (ini || fim) lista = lista.filter(d => noPeriodo(d.data));
   if (filtro === 'pendentes')  lista = lista.filter(d => d.status !== 'pago');
   else if (filtro === 'pagos') lista = lista.filter(d => d.status === 'pago');
 
   // Contador da aba = pendentes SEM filtro de tela (é um alerta, não um recorte).
-  const pendentesGlobal = _ofDiariasPagaveis().filter(d => d.status !== 'pago');
+  const pendentesGlobal = _ofItensPagaveis().filter(d => d.status !== 'pago');
   const elCnt = document.getElementById('of-cnt-pagamentos');
   if (elCnt) elCnt.textContent = pendentesGlobal.length;
 
@@ -20207,20 +20237,28 @@ function renderOficinaPagamentos() {
         const chk = podeSel
           ? `<input type="checkbox" ${_ofPagSelecionados.has(d.chave)?'checked':''} ${trava?'disabled':''} onchange="_ofPagToggle('${d.chave}')" title="${trava?'Cancele a seleção pra pagar outro prestador':'Selecionar pra pagar'}">`
           : '<span style="display:inline-block;width:13px;"></span>';
-        return `<div style="display:grid;grid-template-columns:26px 1.1fr 1fr 96px 104px 96px 104px 92px auto;gap:10px;align-items:center;padding:10px 20px;border-top:1px solid var(--border);font-size:12px;">
+        const ehDiaria = d.tipo === 'diaria';
+        // Etiqueta que separa o que é diária do que é serviço cobrado à parte —
+        // a diferença que define se aquilo já estava pago pela quarta ou não.
+        const tag = ehDiaria
+          ? '<span class="badge" style="background:rgba(245,197,24,.14);color:var(--gold);border:1px solid rgba(245,197,24,.4);">DIÁRIA</span>'
+          : `<span class="badge" style="background:rgba(56,139,253,.14);color:#5aa9ff;border:1px solid rgba(56,139,253,.4);">À PARTE</span>`;
+        return `<div style="display:grid;grid-template-columns:26px 1.15fr 1.25fr 96px 104px 96px 104px 92px auto;gap:10px;align-items:center;padding:10px 20px;border-top:1px solid var(--border);font-size:12px;">
           <div>${chk}</div>
-          <div><strong style="color:var(--gold);">${dBR(d.data)}</strong><div style="font-size:10px;color:var(--text3);">${diaSemana(d.data)}</div></div>
-          <div style="font-size:10px;color:var(--text3);" title="Serviços executados nesse dia — a diária cobre todos, seja oficina ou garantia">${d.servicosNoDia} serviço${d.servicosNoDia===1?'':'s'} no dia${d.servicosNoDia?` <span style="color:var(--text3);">(${d.servicosOf} of · ${d.servicosSac} pós-v)</span>`:''}${d.observacoes?`<br><span title="${escHtml(d.observacoes)}">${escHtml(String(d.observacoes).slice(0,28))}</span>`:''}</div>
-          <div class="td-mono" style="font-weight:700;" title="Diária">${fmt(d.valorDiaria)}</div>
-          <div class="td-mono" style="color:var(--text3);" title="${d.valorAlimentacao>0.005?('Alimentação — já lançada no caixa à parte' + (d.alimAuto?' (achada automaticamente: "'+escHtml(d.alimAuto.descricao||'')+'")':'')):'Sem alimentação lançada nesse dia'}">${d.valorAlimentacao>0.005?'+ '+fmt(d.valorAlimentacao)+(d.alimAuto?' <span style="color:var(--gold);font-size:9px;" >auto</span>':''):'—'}</div>
+          <div><strong style="color:var(--gold);">${dBR(d.data)}</strong><div style="font-size:10px;color:var(--text3);">${d.data?diaSemana(d.data):''}</div></div>
+          <div style="min-width:0;">${tag} <span style="font-size:10px;color:var(--text2);">${escHtml(d.titulo)}</span>
+            <div style="font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(d.detalhe||'')}">${escHtml(d.detalhe||'')}</div>
+            ${d.observacoes?`<div style="font-size:10px;color:var(--text3);" title="${escHtml(d.observacoes)}">${escHtml(String(d.observacoes).slice(0,28))}</div>`:''}</div>
+          <div class="td-mono" style="font-weight:700;" title="${ehDiaria?'Diária':'Mão de obra cobrada à parte'}">${fmt(d.valorPagar)}</div>
+          <div class="td-mono" style="color:var(--text3);" title="${ehDiaria?(d.valorAlimentacao>0.005?('Alimentação — já lançada no caixa à parte' + (d.alimAuto?' (achada automaticamente: "'+escHtml(d.alimAuto.descricao||'')+'")':'')):'Sem alimentação lançada nesse dia'):'Peça não entra: você compra e lança no financeiro na hora'}">${ehDiaria&&d.valorAlimentacao>0.005?'+ '+fmt(d.valorAlimentacao)+(d.alimAuto?' <span style="color:var(--gold);font-size:9px;" >auto</span>':''):'—'}</div>
           <div class="td-mono" style="color:${d.pago>0.005?'var(--green)':'var(--text3)'};" title="Já pago">${d.pago>0.005?fmt(d.pago):'—'}</div>
           <div class="td-mono" style="font-weight:700;color:${d.saldo>0.005?'var(--gold)':'var(--green)'};" title="A pagar">${fmt(d.saldo)}</div>
           <div>${stBadge[d.status]}${d.dataPagamento?`<div style="font-size:10px;color:var(--text3);margin-top:2px;">${dBR(d.dataPagamento)}</div>`:''}</div>
           <div style="display:flex;gap:5px;justify-content:flex-end;">
             ${podeSel ? `<button class="btn btn-gold" style="font-size:10px;padding:5px 10px;" onclick="_ofPagarUm('${d.chave}')">Pagar</button>` : ''}
             ${d.pagamentos.length ? `<button class="action-btn" onclick="_ofVerPagamentos('${d.chave}')" title="Ver/estornar pagamentos">🧾</button>` : ''}
-            <button class="action-btn edit-btn" onclick="_ofEditarDiaria('${d.chave}')" title="Editar valor da diária"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
-            ${!d.pagamentos.length ? `<button class="action-btn del-btn" onclick="_ofExcluirDiaria('${d.chave}')" title="Excluir (não veio nessa quarta)"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>` : ''}
+            ${ehDiaria ? `<button class="action-btn edit-btn" onclick="_ofEditarDiaria('${d.chave}')" title="Editar valor da diária"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>` : `<button class="action-btn edit-btn" onclick="${d.origem==='sac'?`abrirSacModal('${d.id}')`:`abrirOfModal('${d.id}')`}" title="Abrir ${d.origem==='sac'?'o caso':'a OS'}"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>`}
+            ${ehDiaria && !d.pagamentos.length ? `<button class="action-btn del-btn" onclick="_ofExcluirDiaria('${d.chave}')" title="Excluir (não veio nessa quarta)"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>` : ''}
           </div>
         </div>`;
       }).join('')}
@@ -20279,10 +20317,15 @@ function abrirOfPagarModal(chaves) {
   const hoje = new Date().toISOString().split('T')[0];
   const dBR = d => d ? String(d).split('-').reverse().join('/') : '—';
 
+  const _nDia = servicos.filter(s => s.tipo === 'diaria').length;
+  const _nSrv = servicos.length - _nDia;
+  const _resumo = [_nDia ? _nDia + ' diária' + (_nDia>1?'s':'') : '', _nSrv ? _nSrv + ' serviço' + (_nSrv>1?'s':'') + ' à parte' : '']
+    .filter(Boolean).join(' + ');
+
   const listaHTML = `<div style="margin-bottom:12px;padding:10px 12px;background:var(--surface2);border-radius:var(--r-sm);font-size:11px;max-height:170px;overflow-y:auto;">
-      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Diária${isMulti?'s':''} selecionada${isMulti?'s':''}</div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Selecionado${isMulti?'s':''}</div>
       ${servicos.map(s => `<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed var(--border);">
-        <span><span style="font-family:var(--mono,monospace);color:var(--gold);">${dBR(s.data)}</span> <span style="color:var(--text3);">· ${s.servicosNoDia} serviço${s.servicosNoDia===1?'':'s'}${s.valorAlimentacao>0.005?' · alimentação '+fmt(s.valorAlimentacao)+' (já no caixa)':''}</span></span>
+        <span><span style="font-family:var(--mono,monospace);color:var(--gold);">${dBR(s.data)}</span> <span style="color:${s.tipo==='diaria'?'var(--gold)':'#5aa9ff'};">${s.tipo==='diaria'?'diária':'à parte'}</span> <span style="color:var(--text3);">· ${escHtml(s.detalhe || s.titulo || '')}${s.tipo==='diaria'&&s.valorAlimentacao>0.005?' · alimentação '+fmt(s.valorAlimentacao)+' (já no caixa)':''}</span></span>
         <span><strong style="color:var(--gold);">${fmt(s.saldo)}</strong></span>
       </div>`).join('')}
     </div>`;
@@ -20293,10 +20336,10 @@ function abrirOfPagarModal(chaves) {
   shell.dataset.chaves = JSON.stringify(chaves);
   shell.innerHTML =
       `<div class="modal" style="width:600px;max-width:96vw;">`
-    +   `<div class="modal-title">Pagar <span>${isMulti ? servicos.length + ' diárias' : 'diária'}</span> de ${escHtml(nome)}</div>`
+    +   `<div class="modal-title">Pagar <span>${escHtml(_resumo)}</span> de ${escHtml(nome)}</div>`
     +   `<div style="margin-bottom:14px;padding:10px 12px;background:var(--surface2);border-radius:var(--r-sm);font-size:12px;">`
     +     `<div><strong>Prestador:</strong> ${escHtml(nome)}</div>`
-    +     `<div style="margin-top:4px;color:var(--text2);font-size:11px;">Total a pagar: <strong style="color:var(--gold);">${fmt(totalSaldo)}</strong> · ${servicos.length} diária${isMulti?'s':''}${totalAlim>0.005?` <span style="color:var(--text3);">(+ ${fmt(totalAlim)} de alimentação já lançados no caixa — não entram aqui)</span>`:''}</div>`
+    +     `<div style="margin-top:4px;color:var(--text2);font-size:11px;">Total a pagar: <strong style="color:var(--gold);">${fmt(totalSaldo)}</strong> · ${escHtml(_resumo)}${totalAlim>0.005?` <span style="color:var(--text3);">(+ ${fmt(totalAlim)} de alimentação já lançados no caixa — não entram aqui)</span>`:''}</div>`
     +   `</div>`
     +   listaHTML
     +   `<div class="form-grid">`
@@ -20369,17 +20412,25 @@ async function _ofConfirmarPagamento() {
       const ctaBanco = (contas || []).find(c => c.nome === contaNm);
       if (!ctaBanco) throw new Error('Conta bancária inválida.');
       lancamentoId = 'oficinapag_' + Date.now();
-      const refs = servicos.map(s => String(s.data).split('-').reverse().slice(0,2).join('/')).join(', ');
+      // Descrição diz o que está sendo pago: N diárias e/ou N serviços à parte.
+      const nDia = servicos.filter(s => s.tipo === 'diaria').length;
+      const nSrv = servicos.length - nDia;
+      const partes = [];
+      if (nDia) partes.push(nDia + ' diária' + (nDia>1?'s':''));
+      if (nSrv) partes.push(nSrv + ' serviço' + (nSrv>1?'s':'') + ' à parte');
+      const refs = servicos.map(s => s.tipo === 'diaria'
+        ? String(s.data).split('-').reverse().slice(0,2).join('/')
+        : ((s.origem==='sac'?'SAC-':'OS-') + (s.numero ?? '?'))).join(', ');
       const lancPayload = {
         id: lancamentoId,
         tipo: 'saida',
-        descricao: 'Diária' + (servicos.length>1?'s':'') + ' da oficina · ' + nome + ' (' + refs + ')',
+        descricao: 'Mão de obra da oficina · ' + nome + ' — ' + partes.join(' + ') + ' (' + refs + ')',
         valor: valorTotal,
         data,
         categoria: 'Oficina - Peças e Serviços',
         conta_id: ctaBanco.id,
         conta_nome: ctaBanco.nome,
-        observacao: obs || (servicos.length + ' diária' + (servicos.length>1?'s':'') + ' — ' + refs + '. Alimentação lançada à parte.'),
+        observacao: obs || (partes.join(' + ') + ' — ' + refs + '. Peça e alimentação são lançadas à parte.'),
       };
       const { error: errL } = await sb.from('lancamentos').insert(lancPayload);
       if (errL) throw new Error('Erro ao criar lançamento: ' + errL.message);
@@ -20391,8 +20442,12 @@ async function _ofConfirmarPagamento() {
       ctaBanco.saldo = Number(ctaBanco.saldo || 0) - valorTotal;
     }
 
+    // Cada baixa aponta pra sua origem — o CHECK do banco exige exatamente uma
+    // das três (diária, OS da oficina ou caso do SAC).
     const payload = distrib.map(d => ({
-      diaria_id: d.servico.id,
+      diaria_id:   d.servico.tipo === 'diaria' ? d.servico.id : null,
+      ordem_id:    d.servico.tipo === 'servico' && d.servico.origem === 'of'  ? d.servico.id : null,
+      sac_caso_id: d.servico.tipo === 'servico' && d.servico.origem === 'sac' ? d.servico.id : null,
       prestador_id: prestadorId,
       valor: d.valor,
       data_pagamento: data,
@@ -27708,7 +27763,7 @@ function renderOficinaSacKpis() {
   // É a resposta pra "quanto eu tenho que pagar" — os outros KPIs são todos de
   // resultado (lucro, custo do mês), nenhum mostra desembolso futuro.
   if (_podeVerCusto() && typeof _ofDiariasPagaveis === 'function') {
-    const pend   = _ofDiariasPagaveis().filter(d => d.status !== 'pago');
+    const pend   = _ofItensPagaveis().filter(d => d.status !== 'pago');
     const aPagar = pend.reduce((s, d) => s + d.saldo, 0);
     const qFalta = _ofQuartasSemDiaria();
     cards += `<div class="kpi kpi-clickable" onclick="_osMostrarPagamentos(true)" style="border-top:2px solid var(--gold);cursor:pointer;" title="Mão de obra terceirizada a pagar (oficina + pós-venda) — clique pra abrir">`
