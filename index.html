@@ -19978,7 +19978,10 @@ function _ofDiariasPagaveis() {
     }
     const saldo = Math.max(0, +(valorDiaria - pago).toFixed(2));
     // Serviços executados naquele dia — informativo, ajuda a conferir a visita.
-    const servicosNoDia = _ofServicosPagaveis().filter(s => s.dataServico === d.data).length;
+    const doDia = _ofServicosPagaveis().filter(s => s.dataServico === d.data);
+    const servicosNoDia = doDia.length;
+    const servicosOf    = doDia.filter(s => s.origem === 'of').length;   // oficina
+    const servicosSac   = doDia.length - servicosOf;                     // pós-venda/garantia
     return {
       chave: _ofPagChave('diaria', d.id), origem: 'diaria', id: d.id,
       data: d.data,
@@ -19988,7 +19991,7 @@ function _ofDiariasPagaveis() {
       pago, saldo,
       status: saldo <= 0.005 ? 'pago' : (pago > 0.005 ? 'parcial' : 'pendente'),
       dataPagamento: pags.length ? pags[pags.length - 1].dataPagamento : null,
-      pagamentos: pags, servicosNoDia,
+      pagamentos: pags, servicosNoDia, servicosOf, servicosSac,
       observacoes: d.observacoes || null,
     };
   }).sort((a,b) => String(b.data).localeCompare(String(a.data)));
@@ -20207,7 +20210,7 @@ function renderOficinaPagamentos() {
         return `<div style="display:grid;grid-template-columns:26px 1.1fr 1fr 96px 104px 96px 104px 92px auto;gap:10px;align-items:center;padding:10px 20px;border-top:1px solid var(--border);font-size:12px;">
           <div>${chk}</div>
           <div><strong style="color:var(--gold);">${dBR(d.data)}</strong><div style="font-size:10px;color:var(--text3);">${diaSemana(d.data)}</div></div>
-          <div style="font-size:10px;color:var(--text3);">${d.servicosNoDia} serviço${d.servicosNoDia===1?'':'s'} no dia${d.observacoes?`<br><span title="${escHtml(d.observacoes)}">${escHtml(String(d.observacoes).slice(0,28))}</span>`:''}</div>
+          <div style="font-size:10px;color:var(--text3);" title="Serviços executados nesse dia — a diária cobre todos, seja oficina ou garantia">${d.servicosNoDia} serviço${d.servicosNoDia===1?'':'s'} no dia${d.servicosNoDia?` <span style="color:var(--text3);">(${d.servicosOf} of · ${d.servicosSac} pós-v)</span>`:''}${d.observacoes?`<br><span title="${escHtml(d.observacoes)}">${escHtml(String(d.observacoes).slice(0,28))}</span>`:''}</div>
           <div class="td-mono" style="font-weight:700;" title="Diária">${fmt(d.valorDiaria)}</div>
           <div class="td-mono" style="color:var(--text3);" title="${d.valorAlimentacao>0.005?('Alimentação — já lançada no caixa à parte' + (d.alimAuto?' (achada automaticamente: "'+escHtml(d.alimAuto.descricao||'')+'")':'')):'Sem alimentação lançada nesse dia'}">${d.valorAlimentacao>0.005?'+ '+fmt(d.valorAlimentacao)+(d.alimAuto?' <span style="color:var(--gold);font-size:9px;" >auto</span>':''):'—'}</div>
           <div class="td-mono" style="color:${d.pago>0.005?'var(--green)':'var(--text3)'};" title="Já pago">${d.pago>0.005?fmt(d.pago):'—'}</div>
@@ -27693,23 +27696,25 @@ function renderOficinaSacKpis() {
     const lucroMes = arr.filter(x => x.tipoAtend === 'servico_pago' && !x.aberto && _dataConcl(x).startsWith(prefMes))
       .reduce((s, x) => { const l = ofLucro(x.rec); return s + (l === null ? 0 : l); }, 0);
     if (_podeVerCusto()) cards += `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Lucro de serviços no mês</div><div class="kpi-value" style="color:${lucroMes>=0?'var(--green)':'var(--red)'};">${fmtSigned(lucroMes)}</div><div class="kpi-change">serviço pago · ${mesNome}</div></div>`;
-    // A PAGAR ao prestador: dinheiro que ainda vai sair (diárias em aberto).
-    // Clicável — abre o painel de pagamento. É a resposta pra "quanto eu tenho
-    // que pagar", que os outros KPIs (todos de resultado) não davam.
-    if (_podeVerCusto() && typeof _ofDiariasPagaveis === 'function') {
-      const pend = _ofDiariasPagaveis().filter(d => d.status !== 'pago');
-      const aPagar = pend.reduce((s, d) => s + d.saldo, 0);
-      const qFalta = _ofQuartasSemDiaria();
-      cards += `<div class="kpi kpi-clickable" onclick="_osMostrarPagamentos(true)" style="border-top:2px solid var(--gold);cursor:pointer;" title="Abrir o pagamento ao prestador">`
-             + `<div class="kpi-label">A pagar ao prestador</div>`
-             + `<div class="kpi-value gold">${fmt(aPagar)}</div>`
-             + `<div class="kpi-change">${pend.length} diária${pend.length===1?'':'s'} em aberto${qFalta ? ' · ⚠️ '+qFalta+' quarta'+(qFalta===1?'':'s')+' sem registrar' : ''}</div></div>`;
-    }
   } else {
     // Custo de garantias = todos os não-pagos finalizados no mês (qualquer tabela).
     const custoGarMes = arr.filter(x => !x.aberto && _dataConcl(x).startsWith(prefMes))
       .reduce((s, x) => s + custoServico(x.rec), 0);
     if (_podeVerCusto()) cards += `<div class="kpi" style="border-top:2px solid var(--orange);"><div class="kpi-label">Custo de garantias no mês</div><div class="kpi-value" style="color:var(--orange);">${fmt(custoGarMes)}</div><div class="kpi-change">pós-venda · ${mesNome}</div></div>`;
+  }
+  // A PAGAR ao prestador — nas DUAS visões: a dívida com o Marcos é uma só, ele
+  // recebe por DIA de visita (não por serviço nem por origem), então oficina e
+  // pós-venda do mesmo dia estão na mesma diária. Clicável, abre o painel.
+  // É a resposta pra "quanto eu tenho que pagar" — os outros KPIs são todos de
+  // resultado (lucro, custo do mês), nenhum mostra desembolso futuro.
+  if (_podeVerCusto() && typeof _ofDiariasPagaveis === 'function') {
+    const pend   = _ofDiariasPagaveis().filter(d => d.status !== 'pago');
+    const aPagar = pend.reduce((s, d) => s + d.saldo, 0);
+    const qFalta = _ofQuartasSemDiaria();
+    cards += `<div class="kpi kpi-clickable" onclick="_osMostrarPagamentos(true)" style="border-top:2px solid var(--gold);cursor:pointer;" title="Mão de obra terceirizada a pagar (oficina + pós-venda) — clique pra abrir">`
+           + `<div class="kpi-label">A pagar ao prestador</div>`
+           + `<div class="kpi-value gold">${fmt(aPagar)}</div>`
+           + `<div class="kpi-change">${pend.length} diária${pend.length===1?'':'s'} em aberto${qFalta ? ' · ⚠️ '+qFalta+' quarta'+(qFalta===1?'':'s')+' sem registrar' : ''}</div></div>`;
   }
   el.innerHTML = cards;
 }
