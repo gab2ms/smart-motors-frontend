@@ -1164,6 +1164,81 @@ mudança de modelo, mas agora só alimenta o contador "N serviços no dia" de ca
   não expõe mais pagamento por serviço, mas a estrutura está lá se o regime virar híbrido (diária + serviço
   grande à parte, opção que o dono considerou e descartou por ora).
 
+## Prestadores — central de pagamento por QUEM RECEBE (07/08/2026)
+
+Módulo novo (**Financeiro → Prestadores**, `#page-prestadores`). Pedido do dono depois da entrega do "a pagar"
+da Oficina: *"não estou pagando uma montagem ou um serviço de oficina, estou pagando o Marcos, que é um técnico
+terceirizado. Quero o sistema orientado por quem recebe, não pelo módulo de origem."* Uma tela só, com tudo o
+que se deve a cada terceirizado, seleção múltipla e baixa em lote — o fluxo que as Montagens já tinham.
+
+**Agrega 5 origens** (`_prestItens()` normaliza todas no mesmo formato, ordenado por data):
+`montagem` (lote de `montagens_lotes`) · `diaria` (reusa `_ofDiariasPagaveis`) · `oficina` e `sac` (serviços
+`a_parte`, reusa `_ofServicosPagaveis`) · `avulso` (tabela nova `prestador_servicos`).
+
+**⚠️ 1 Pix vira N lançamentos — a regra que sustenta a DRE.** `Montagem` está em
+`_DRE_CATEGORIAS_FORA_DESPESA` (já entra no CPV da moto) e `Oficina - Peças e Serviços` é despesa real. Um
+lançamento único misturando os dois erra nos dois sentidos: ou a montagem conta 2× (CPV + despesa), ou a
+manutenção some da despesa. Então `_prestConfirmarPagamento` **agrupa por natureza** e cria **1 lançamento por
+natureza**, com a observação amarrando (`"Pagamento único de R$ 1.140,00 a Marcos — parte 1/2 (Montagem)"`).
+O modal e a barra de seleção **mostram a quebra antes de confirmar** — não é surpresa. É o que o dono fez na
+mão em 04/08 (Pix de R$ 4.566,20 = R$ 3.300 Montagem + R$ 1.266,20 Oficina) e que motivou tudo isso.
+
+**Decisões do dono (perguntadas antes de programar, 07/08/2026):**
+- **Módulo novo**, não dentro de Montagens — que continua **operacional** (enviar lote / receber moto). O que
+  se reusa são as **funções** (distribuição proporcional, baixa em lote, estorno), não a página.
+- **Os painéis antigos CONTINUAM funcionando** (aba "A pagar" da Oficina + "Pagar lote" das Montagens). Ele
+  escolheu contra a sugestão de aposentá-los — e é seguro: gravam nas MESMAS tabelas de baixa, então o saldo é
+  compartilhado e não existe pagar 2× sem ver. O que sobra é redundância de tela, não risco de dado.
+- **Serviço avulso SIM**, com natureza escolhida. Fecha o buraco dos pagamentos que nasciam direto no caixa e
+  nunca apareciam no "a pagar" (casos reais: `manutencao-marcos-2026-08-04` R$ 1.266,20 e
+  `mautencoes realizadas marcos` R$ 208,52).
+
+**Arquitetura: agrega na TELA, tabelas de origem intactas.** Montagem cobra por moto agregada em LOTE (com
+trigger no banco mantendo `valor_pago`/`status_pagamento`); Oficina cobra por DIÁRIA ou serviço `a_parte`
+(saldo somado no cliente). Fundir num tabelão exigiria migrar o histórico de pagamentos e reescrever o
+trigger — risco alto e **invisível na tela**.
+
+**Banco** (migração `prestadores_servico_avulso`, espelho em `migration-prestadores.sql`): tabela
+`prestador_servicos` (`prestador_id`→`montadores`, data, descricao, valor, `natureza` CHECK
+`montagem|oficina`, observacoes) com RLS `tem_modulo('financeiro')` + coluna `oficina_pagamentos.servico_avulso_id`
+e o CHECK de origem única passando de 3 pra **4** opções (superset — 0 linhas violaram, conferido antes e depois).
+
+**⚠️ Consequência do avulso: um lançamento pode agregar as DUAS tabelas de baixa.** Um avulso de natureza
+`montagem` grava em `oficina_pagamentos` mas entra no lançamento de categoria Montagem, junto com lotes que
+gravam em `montagens_pagamentos`. Por isso nasceu **`_pagIrmaosLancamento(lancId, exceto)`**, que conta irmãos
+nas duas — e os **três** pontos de estorno passaram a usá-lo (`_prestEstornar`, `_ofEstornarPagamento` e
+`_montagensCancelarPagamento`). Sem isso, estornar por um lado apagaria um lançamento com irmão vivo do outro.
+
+**Permissão sem módulo novo:** `_permModulo('prestadores')` devolve **`'financeiro'`**. Evita ter que manter
+`TODOS_MODULOS`/`PERFIS_DEFAULT_MODULOS` no front **e** o ramo da função `tem_modulo` no banco em sincronia
+pra sempre — e é semanticamente certo (pagar terceirizado é financeiro). A RLS da tabela nova usa o mesmo módulo.
+
+**Funções:** `initPrestadores` (carrega as 9 fontes — a tela pode ser aberta sem passar por Montagens/Oficina,
+então não confia nas globais) · `_prestItens` · `_prestItemPorChave` · `_prestFiltrados` · `renderPrestadores` +
+`renderPrestadoresKpis` · `_prestToggle`/`_prestSelecionarTodos`/`_prestCancelarSel` (trava por prestador) ·
+`abrirPrestPagarModal`/`_prestConfirmarPagamento` · `_prestVerPagamentos`/`_prestEstornar` ·
+`abrirPrestAvulsoModal`/`_prestSalvarAvulso`/`_prestExcluirAvulso`.
+
+**Detalhes que valem lembrar:**
+- **KPIs falam do quadro geral** (sem o filtro de status), senão "Total a pagar" mudaria conforme o filtro e
+  deixaria de ser o número que se olha antes de fazer o Pix. Só "Já pago" respeita o filtro.
+- **Chave por origem** (`mont:`/`diaria:`/`of:`/`sac:`/`avulso:`) — origens diferentes podem ter o mesmo UUID.
+- **Rollback na mão** (não há transação no client): falha na baixa → apaga as baixas já inseridas E os
+  lançamentos criados, restaura o saldo, e o modal fica **aberto** com o botão liberado pra tentar de novo.
+- **Trava anti-duplo-clique** síncrona no pagamento e no avulso (padrão do PDV/Oficina).
+- **Colunas de valor e de ações com largura FIXA** no grid da linha: com `auto` no fim, linha com menos botões
+  (a diária, que não tem "abrir origem") devolvia espaço pras colunas `fr` e desalinhava os valores entre as
+  linhas — medido e corrigido (todas as linhas em x=771/991).
+- Serviço avulso **com pagamento não pode ser excluído** (estorna primeiro) — mesma regra da diária.
+- **Validado (localhost:8791, navegador real, 0 erro de console novo):** agregação das 5 origens com os dados
+  reais do dono (R$ 1.140 do Marcos: LOTE-0039 440 + LOTE-0037 330 + OS#99 70 + diária 100 + avulso 200);
+  pagamento cross-origem gerando **2 lançamentos** (Montagem 970 / Oficina 170, soma 1.140, saldo debitado 1×,
+  em memória com `conta` e não `contaNome`); baixas em `montagens_pagamentos` e `oficina_pagamentos` com o
+  lançamento da natureza certa (inclusive o avulso 'montagem' apontando pro lançamento de Montagem); estorno
+  cross-tabela (irmãos = 3, avulso reduz 970→770 sem apagar, último lote apaga e restaura saldo ao centavo);
+  rollback com falha simulada (2 lançamentos criados → 2 apagados, saldo restaurado, modal aberto); 3 cliques →
+  1 pagamento; trava de prestador diferente; 5 validações do avulso; screenshot da tela.
+
 ## Sincronização com o Supabase — o `salvar` manda só o que mudou (04/08/2026)
 
 **O bug estrutural que isso corrige:** `salvarDados()` → `_enviarParaBanco()` → `_syncTable(tabela, array)`
@@ -1253,6 +1328,18 @@ trade-in — que é 1 por unidade — sempre terá amostra de 1. É o esperado; 
 tabela.
 
 ## Histórico de mudanças
+
+### 2026-08-07 (noite) — Prestadores: pagamento deixou de ser por módulo e passou a ser por QUEM RECEBE
+Evolução de arquitetura pedida pelo dono logo depois do "a pagar" da Oficina: *"não estou pagando uma montagem
+ou um serviço de oficina, estou pagando o Marcos"*. Módulo novo **Financeiro → Prestadores** agregando 5
+origens (lote de montagem · diária · serviço de oficina · pós-venda · **serviço avulso**, tabela nova) numa
+lista só, agrupada por prestador, com seleção múltipla e baixa em lote. **O ponto técnico central:** um Pix
+único vira **N lançamentos, um por natureza** (Montagem entra no CPV e está fora da despesa; Oficina é despesa
+real) — juntar num lançamento só quebraria a DRE, e o modal mostra a quebra antes de confirmar. Duas decisões
+do dono contra o meu palpite inicial, ambas mantidas: painéis antigos continuam funcionando (é seguro — mesmas
+tabelas de baixa) e a central não mora dentro de Montagens. Efeito colateral tratado: com o avulso, um
+lançamento pode agregar as duas tabelas de baixa → `_pagIrmaosLancamento()` e os **três** estornos passaram a
+contar irmãos nas duas. Migração `prestadores_servico_avulso`. Seção **"Prestadores"**.
 
 ### 2026-08-07 — Oficina: histórico classificado, diária avulsa e o bug do "Recalcular saldos" fechado
 Quatro pendências que estavam anotadas foram fechadas de uma vez. **(1)** As **45 OS + 14 casos de SAC**

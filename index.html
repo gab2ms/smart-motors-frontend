@@ -3207,6 +3207,44 @@ select:not(.input-pro):not(.search-input){
     </div>
   </div>
 
+  <!-- ══════════════ PRESTADORES (central de pagamento por quem recebe) ══════════════ -->
+  <div class="page content" id="page-prestadores">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;">O que se deve a cada prestador</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="prest-sub">—</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select class="search-input" id="prest-filtro-prestador" onchange="renderPrestadores()" style="max-width:180px;">
+          <option value="">Todos os prestadores</option>
+        </select>
+        <select class="search-input" id="prest-filtro-origem" onchange="renderPrestadores()" style="max-width:170px;">
+          <option value="">Todas as origens</option>
+          <option value="montagem">Montagem</option>
+          <option value="diaria">Diária</option>
+          <option value="oficina">Oficina</option>
+          <option value="sac">Pós-venda</option>
+          <option value="avulso">Avulso</option>
+        </select>
+        <select class="search-input" id="prest-filtro-status" onchange="renderPrestadores()" style="max-width:160px;">
+          <option value="pendentes">Só pendentes</option>
+          <option value="todos">Pendentes e pagos</option>
+          <option value="pagos">Só pagos</option>
+        </select>
+        <input type="date" class="search-input" id="prest-ini" onchange="renderPrestadores()" title="Data — de" style="max-width:145px;">
+        <input type="date" class="search-input" id="prest-fim" onchange="renderPrestadores()" title="Data — até" style="max-width:145px;">
+        <button class="btn btn-gold" type="button" onclick="abrirPrestAvulsoModal()" title="Serviço que não veio de módulo nenhum">+ Serviço avulso</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid" id="prest-kpis"></div>
+
+    <div class="card">
+      <div class="card-header"><div><div class="card-sub" id="prest-count">—</div></div></div>
+      <div id="prest-lista"></div>
+    </div>
+  </div>
+
   <!-- ══════════════ CLIENTES ══════════════ -->
   <div class="page content" id="page-clientes">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
@@ -4622,6 +4660,7 @@ const pageMeta={
   calculadora:     ['Calculadora de Parcelamento','Simule o preço no cartão pra passar pro cliente'],
   relatorios:      ['Relatórios','Biblioteca de relatórios e análises de venda'],
   'compra-programada': ['Compra Programada','Clientes juntando crédito até retirar a scooter'],
+  prestadores:     ['Prestadores','Tudo o que se deve a cada terceirizado — venha de onde vier'],
 };
 // Breadcrumb hierárquico — pai não-clicável (etiqueta visual), atual em destaque.
 // Dashboard NÃO aparece (raiz). Pais espelham os agrupadores da sidebar.
@@ -4649,6 +4688,7 @@ const BREADCRUMB_MAP = {
   pdv:             ['Vendas', 'PDV'],
   calculadora:     ['Vendas', 'Calculadora'],
   'compra-programada':['Vendas', 'Compra Programada'],
+  prestadores:     ['Financeiro', 'Prestadores'],
 };
 // Sub-tabs do módulo Financeiro: troca de sub-tab deve refletir em
 // título, subtítulo e breadcrumb (não rerenderiza pelo showPage).
@@ -4682,7 +4722,15 @@ function renderBreadcrumb(id) {
 // (#page-oficina-sac) em modos diferentes (osTipoAtivo). Ambas usam a mesma
 // permissão 'oficina-sac' — o modelo de permissão não muda.
 function _osAreaModo(id){ return id === 'posvenda' ? 'posvenda' : (id === 'oficina' ? 'oficina' : null); }
-function _permModulo(id){ return _osAreaModo(id) ? 'oficina-sac' : id; }
+// Prestadores é página própria mas NÃO é módulo próprio: quem paga terceirizado
+// é o financeiro, e a tabela nova (`prestador_servicos`) tem RLS
+// `tem_modulo('financeiro')`. Mapear aqui evita criar módulo novo em
+// TODOS_MODULOS/PERFIS_DEFAULT_MODULOS **e** na função tem_modulo do banco —
+// que teriam de ficar em sincronia pra sempre.
+function _permModulo(id){
+  if (id === 'prestadores') return 'financeiro';
+  return _osAreaModo(id) ? 'oficina-sac' : id;
+}
 
 // ── CRM / Atendimento (app dedicado na Vercel) ──
 // Mesmo projeto Supabase → mesmo login. O SSO passa a sessão no FRAGMENT (#)
@@ -4801,6 +4849,7 @@ function showPage(id, opts){
   if(id==='pdv')initPdv();
   if(id==='calculadora')initCalculadora();
   if(id==='compra-programada')initCompraProgramada();
+  if(id==='prestadores')initPrestadores();
   if(id==='relatorios')initRelatorios();
 }
 
@@ -10259,6 +10308,8 @@ const NAV_TREE = [
       { id:'financeiro',     label:'Financeiro',           icon:'ic-wallet'  },
       { id:'contas-pagar',   label:'Contas a Pagar',       icon:'ic-calendar', dotId:'dot-contas-pagar' },
       { id:'contas-receber', label:'Contas a Receber',     icon:'ic-inbox'   },
+      // Central por PRESTADOR — permissão mapeada pro módulo 'financeiro' (_permModulo).
+      { id:'prestadores',    label:'Prestadores',          icon:'ic-tool'    },
       // "Custos Operacionais" saiu do menu — agora é sub-aba do Financeiro
       // (#fin-tab-custos). showPage('custos') ainda redireciona pra lá (KPI do dashboard).
   ]},
@@ -20658,11 +20709,15 @@ async function _ofEstornarPagamento(pagId, chave) {
   if (!p) return;
   // O lançamento pode agregar VÁRIOS serviços — só apaga o lançamento se este
   // for o último pagamento preso a ele; senão, abate o valor.
-  const irmaos = (oficinaPagamentos || []).filter(x => p.lancamentoId && x.lancamentoId === p.lancamentoId);
-  const ehUltimo = irmaos.length <= 1;
+  // ⚠️ Conta irmãos nas DUAS tabelas de baixa (`_pagIrmaosLancamento`): desde a
+  // central de Prestadores, um lançamento pode juntar lote de montagem com
+  // serviço avulso de mesma natureza. Olhar só `oficinaPagamentos` apagaria um
+  // lançamento que ainda tem irmão vivo do outro lado.
+  const irmaos = _pagIrmaosLancamento(p.lancamentoId, pagId);
+  const ehUltimo = irmaos.length === 0;
   const aviso = p.lancamentoId
     ? (ehUltimo ? '\n\nO lançamento no caixa também vai ser apagado e o saldo da conta restaurado.'
-                : `\n\nO lançamento no caixa agrega ${irmaos.length} serviços — ele vai ser reduzido em ${fmt(p.valor)}.`)
+                : `\n\nO lançamento no caixa agrega ${irmaos.length + 1} serviços — ele vai ser reduzido em ${fmt(p.valor)}.`)
     : '';
   if (!(await smConfirm(`Estornar o pagamento de ${fmt(p.valor)}?${aviso}`))) return;
 
@@ -22960,9 +23015,9 @@ async function _montagensCancelarPagamento(pagamentoId) {
       const lanc = lancamentos.find(l => l.id === pag.lancamentoId);
       if (lanc) {
         // Quantos OUTROS pagamentos compartilham esse lançamento? (Não inclui o atual.)
-        const compartilhado = montagensPagamentos
-          .filter(p => p.id !== pagamentoId && p.lancamentoId === pag.lancamentoId)
-          .length > 0;
+        // Olha as DUAS tabelas de baixa — desde a central de Prestadores um
+        // lançamento pode juntar lote de montagem com serviço avulso.
+        const compartilhado = _pagIrmaosLancamento(pag.lancamentoId, pagamentoId).length > 0;
         const ctBanco = (contas || []).find(c => c.nome === lanc.conta);
         if (compartilhado) {
           // Reduz valor do lançamento (lançamento agregado multi-lote).
@@ -23121,6 +23176,754 @@ async function _alternarStatusMontador(montadorId, novoAtivo) {
   const { error } = await sb.from('montadores').update(upd).eq('id', montadorId);
   if (error) { smAlert('Erro ao ' + acao + ': ' + error.message); return; }
   await initMontagens();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PRESTADORES — central de pagamento por QUEM RECEBE (07/08/2026)
+//
+// Pedido do dono: "não estou pagando uma montagem ou um serviço de oficina,
+// estou pagando o Marcos". Uma tela só com tudo o que se deve a cada
+// terceirizado, venha de onde vier, com baixa em lote — igual às Montagens.
+//
+// ⚠️ DECISÃO ARQUITETURAL: agrega na TELA, as tabelas de origem ficam intactas.
+// Montagem cobra por moto agregada em LOTE (com trigger no banco mantendo
+// `valor_pago`/`status_pagamento`); Oficina cobra por DIÁRIA ou serviço
+// `a_parte` (saldo somado no cliente). Fundir num tabelão só exigiria migrar o
+// histórico de pagamentos e reescrever o trigger — risco alto e invisível na
+// tela. Os painéis antigos (aba "A pagar" da Oficina e "Pagar lote" das
+// Montagens) continuam funcionando de propósito: gravam nas MESMAS tabelas de
+// baixa, então o saldo é compartilhado e não existe pagar 2× sem ver.
+//
+// ⚠️ A REGRA QUE NÃO PODE SER QUEBRADA — 1 Pix vira N lançamentos:
+// `Montagem` está em `_DRE_CATEGORIAS_FORA_DESPESA` (já entra no CPV da moto) e
+// `Oficina - Peças e Serviços` é despesa real. Um lançamento único misturando
+// os dois quebra a DRE nos dois sentidos: ou a montagem conta 2× (CPV +
+// despesa), ou a manutenção some da despesa. Por isso o pagamento agrupa por
+// NATUREZA antes de lançar, e amarra as partes pela mesma observação.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Natureza → como o dinheiro é tratado no caixa e na DRE.
+const PREST_NATUREZAS = {
+  montagem: { label: 'Montagem', categoria: 'Montagem',
+              nota: 'entra no custo da moto (CPV) — não conta como despesa na DRE' },
+  oficina:  { label: 'Oficina',  categoria: 'Oficina - Peças e Serviços',
+              nota: 'despesa operacional da DRE' },
+};
+// Origem → etiqueta na lista. `natureza` fixa, menos no avulso (o dono escolhe).
+const PREST_ORIGENS = {
+  montagem: { label: 'MONTAGEM',  natureza: 'montagem', cor: '#f5c518' },
+  diaria:   { label: 'DIÁRIA',    natureza: 'oficina',  cor: '#f5c518' },
+  oficina:  { label: 'OFICINA',   natureza: 'oficina',  cor: '#5aa9ff' },
+  sac:      { label: 'PÓS-VENDA', natureza: 'oficina',  cor: '#5aa9ff' },
+  avulso:   { label: 'AVULSO',    natureza: null,       cor: '#c792ea' },
+};
+
+let prestadorServicos = [];        // tabela prestador_servicos (serviço avulso)
+let _prestSel         = new Set(); // chaves selecionadas
+let _prestLock        = null;      // prestador travado pela seleção
+
+async function initPrestadores() {
+  // Carrega tudo o que a central agrega — ela pode ser aberta sem passar por
+  // Montagens nem pela Oficina, então não dá pra confiar nas globais.
+  const [mt, ml, mi, mp, oo, sc, od, op, ps] = await Promise.all([
+    sb.from('montadores').select('*').order('principal', { ascending: false }).order('nome'),
+    sb.from('montagens_lotes').select('*').order('numero_lote', { ascending: false }),
+    sb.from('montagens_itens').select('*'),
+    sb.from('montagens_pagamentos').select('*'),
+    sb.from('oficina_ordens').select('*'),
+    sb.from('sac_casos').select('*'),
+    sb.from('oficina_diarias').select('*'),
+    sb.from('oficina_pagamentos').select('*'),
+    sb.from('prestador_servicos').select('*'),
+  ]);
+  if (!mt.error && mt.data) montadores          = toCamelArr(mt.data);
+  if (!ml.error && ml.data) montagensLotes      = toCamelArr(ml.data);
+  if (!mi.error && mi.data) montagensItens      = toCamelArr(mi.data);
+  if (!mp.error && mp.data) montagensPagamentos = toCamelArr(mp.data);
+  if (!oo.error && oo.data) oficinaOrdens       = toCamelArr(oo.data);
+  if (!sc.error && sc.data) sacCasos            = toCamelArr(sc.data);
+  // Tolera erro nas 3 últimas (sem a migração, a tela ainda mostra o resto).
+  oficinaDiarias    = (!od.error && od.data) ? toCamelArr(od.data) : (oficinaDiarias || []);
+  oficinaPagamentos = (!op.error && op.data) ? toCamelArr(op.data) : (oficinaPagamentos || []);
+  prestadorServicos = (!ps.error && ps.data) ? toCamelArr(ps.data) : [];
+  if (ps.error) console.warn('[prestadores] prestador_servicos indisponível:', ps.error.message);
+
+  _prestSel.clear(); _prestLock = null;
+
+  const sel = document.getElementById('prest-filtro-prestador');
+  if (sel) {
+    const antes = sel.value;
+    sel.innerHTML = '<option value="">Todos os prestadores</option>'
+      + (montadores || []).map(m => `<option value="${escHtml(String(m.id))}">${escHtml(m.nome)}${m.principal ? ' ⭐' : ''}</option>`).join('');
+    sel.value = antes || '';
+  }
+  renderPrestadores();
+}
+
+// Normaliza as 5 origens no MESMO formato. `tabela`/`campoOrigem` dizem onde a
+// baixa é gravada; `natureza` decide a categoria do lançamento.
+function _prestItens() {
+  const out = [];
+  const nomeDe = id => (typeof _ofNomePrestador === 'function' ? _ofNomePrestador(id) : null) || 'Sem responsável';
+  const ordena = pags => (pags || []).slice()
+    .sort((a,b) => String(a.dataPagamento||'').localeCompare(String(b.dataPagamento||'')));
+
+  // 1) Lotes de montagem — a unidade de cobrança é o LOTE (N motos).
+  (montagensLotes || []).forEach(l => {
+    const total = Number(l.valorTotal || 0);
+    if (!(total > 0)) return;
+    const pago  = Number(l.valorPago || 0);
+    const saldo = Math.max(0, +(total - pago).toFixed(2));
+    const pags  = ordena((montagensPagamentos || []).filter(p => String(p.loteId) === String(l.id)));
+    const motos = (montagensItens || []).filter(i => String(i.loteId) === String(l.id)).length;
+    out.push({
+      chave: 'mont:' + l.id, origem: 'montagem', natureza: 'montagem',
+      tabela: 'montagens_pagamentos', campoOrigem: 'lote_id', id: l.id,
+      prestadorId: l.montadorId || null, prestadorNome: nomeDe(l.montadorId),
+      data: l.dataEnvio || null,
+      titulo: 'LOTE-' + String(l.numeroLote).padStart(4, '0'),
+      detalhe: motos + ' moto' + (motos === 1 ? '' : 's'),
+      valorTotal: total, pago, saldo,
+      status: saldo <= 0.005 ? 'pago' : (pago > 0.005 ? 'parcial' : 'pendente'),
+      pagamentos: pags, observacoes: l.observacoes || null,
+      irPara: "showPage('montagens')",
+    });
+  });
+
+  // 2) Diárias da oficina (reusa o cálculo que já existe lá).
+  (typeof _ofDiariasPagaveis === 'function' ? _ofDiariasPagaveis() : []).forEach(d => {
+    out.push({
+      chave: 'diaria:' + d.id, origem: 'diaria', natureza: 'oficina',
+      tabela: 'oficina_pagamentos', campoOrigem: 'diaria_id', id: d.id,
+      prestadorId: d.prestadorId || null, prestadorNome: d.prestadorNome,
+      data: d.data, titulo: 'Diária',
+      detalhe: d.servicosNoDia + ' serviço' + (d.servicosNoDia === 1 ? '' : 's') + ' no dia'
+             + (d.valorAlimentacao > 0.005 ? ' · + ' + fmt(d.valorAlimentacao) + ' de alimentação (já no caixa)' : ''),
+      valorTotal: d.valorDiaria, pago: d.pago, saldo: d.saldo, status: d.status,
+      pagamentos: d.pagamentos, observacoes: d.observacoes || null,
+      irPara: null,
+    });
+  });
+
+  // 3) Serviços de oficina/pós-venda cobrados À PARTE.
+  (typeof _ofServicosPagaveis === 'function' ? _ofServicosPagaveis() : []).forEach(s => {
+    const ehSac = s.origem === 'sac';
+    out.push({
+      chave: (ehSac ? 'sac:' : 'of:') + s.id, origem: ehSac ? 'sac' : 'oficina', natureza: 'oficina',
+      tabela: 'oficina_pagamentos', campoOrigem: ehSac ? 'sac_caso_id' : 'ordem_id', id: s.id,
+      prestadorId: s.prestadorId || null, prestadorNome: s.prestadorNome,
+      data: s.dataServico,
+      titulo: (ehSac ? 'Pós-venda S' : 'Oficina #') + (s.numero ?? '—'),
+      detalhe: s.clienteNome + (s.modelo ? ' · ' + s.modelo : ''),
+      valorTotal: s.custo, pago: s.pago, saldo: s.saldo, status: s.status,
+      pagamentos: s.pagamentos, observacoes: null,
+      irPara: ehSac ? `abrirSacModal('${s.id}')` : `abrirOfModal('${s.id}')`,
+    });
+  });
+
+  // 4) Serviço avulso — o que ele fez e não nasceu de módulo nenhum.
+  (prestadorServicos || []).forEach(a => {
+    const total = Number(a.valor || 0);
+    const pags  = ordena((oficinaPagamentos || []).filter(p => String(p.servicoAvulsoId || '') === String(a.id)));
+    const pago  = pags.reduce((s, p) => s + Number(p.valor || 0), 0);
+    const saldo = Math.max(0, +(total - pago).toFixed(2));
+    out.push({
+      chave: 'avulso:' + a.id, origem: 'avulso',
+      natureza: (a.natureza === 'montagem' ? 'montagem' : 'oficina'),
+      tabela: 'oficina_pagamentos', campoOrigem: 'servico_avulso_id', id: a.id,
+      prestadorId: a.prestadorId || null, prestadorNome: nomeDe(a.prestadorId),
+      data: a.data, titulo: a.descricao || 'Serviço avulso',
+      detalhe: 'Lançado à mão · ' + (PREST_NATUREZAS[a.natureza]?.label || a.natureza),
+      valorTotal: total, pago, saldo,
+      status: saldo <= 0.005 ? 'pago' : (pago > 0.005 ? 'parcial' : 'pendente'),
+      pagamentos: pags, observacoes: a.observacoes || null,
+      irPara: null, podeExcluir: true,
+    });
+  });
+
+  return out.sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
+}
+
+function _prestItemPorChave(chave) {
+  return _prestItens().find(i => i.chave === chave) || null;
+}
+
+// Pagamentos que dividem o MESMO lançamento — nas DUAS tabelas de baixa.
+// Precisa olhar as duas porque um serviço avulso de natureza 'montagem' grava
+// em `oficina_pagamentos` mas entra no lançamento de categoria Montagem, junto
+// com lotes que gravam em `montagens_pagamentos`. Contar só uma tabela faria o
+// estorno apagar um lançamento que ainda tem irmão vivo do outro lado.
+function _pagIrmaosLancamento(lancId, exceto) {
+  if (!lancId) return [];
+  const marca = (arr, tabela) => (arr || [])
+    .filter(p => p.lancamentoId === lancId)
+    .map(p => ({ id: p.id, valor: Number(p.valor || 0), tabela }));
+  return [
+    ...marca(montagensPagamentos, 'montagens_pagamentos'),
+    ...marca(oficinaPagamentos,   'oficina_pagamentos'),
+  ].filter(p => String(p.id) !== String(exceto));
+}
+
+function _prestFiltrados() {
+  const prest  = document.getElementById('prest-filtro-prestador')?.value || '';
+  const origem = document.getElementById('prest-filtro-origem')?.value || '';
+  const status = document.getElementById('prest-filtro-status')?.value || 'pendentes';
+  const ini    = document.getElementById('prest-ini')?.value || '';
+  const fim    = document.getElementById('prest-fim')?.value || '';
+  return _prestItens().filter(i => {
+    if (prest  && String(i.prestadorId || '') !== String(prest)) return false;
+    if (origem && i.origem !== origem) return false;
+    if (status === 'pendentes' && i.status === 'pago') return false;
+    if (status === 'pagos'     && i.status !== 'pago') return false;
+    if (ini && !(i.data && i.data >= ini)) return false;
+    if (fim && !(i.data && i.data <= fim)) return false;
+    return true;
+  });
+}
+
+function renderPrestadoresKpis(lista) {
+  const el = document.getElementById('prest-kpis');
+  if (!el) return;
+  // Os KPIs de total falam do QUADRO GERAL (sem filtro de status), senão
+  // "Total a pagar" mudaria conforme o filtro e deixaria de ser o número que
+  // o dono quer olhar antes de fazer o Pix.
+  const todos     = _prestItens();
+  const pendentes = todos.filter(i => i.status !== 'pago');
+  const aPagar    = pendentes.reduce((s, i) => s + i.saldo, 0);
+  const porPrest  = {};
+  pendentes.forEach(i => { porPrest[i.prestadorNome] = (porPrest[i.prestadorNome] || 0) + i.saldo; });
+  const nomes = Object.keys(porPrest).sort((a, b) => porPrest[b] - porPrest[a]);
+  const maior = nomes[0];
+  const pagoNoFiltro = lista.reduce((s, i) => s + i.pago, 0);
+  const porOrigem = {};
+  pendentes.forEach(i => { porOrigem[i.origem] = (porOrigem[i.origem] || 0) + i.saldo; });
+  const detOrigem = Object.keys(porOrigem)
+    .sort((a, b) => porOrigem[b] - porOrigem[a])
+    .map(o => (PREST_ORIGENS[o]?.label || o).toLowerCase() + ' ' + fmt(porOrigem[o]))
+    .join(' · ') || 'nada em aberto';
+
+  el.innerHTML =
+      `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">Total a pagar</div><div class="kpi-value gold">${fmt(aPagar)}</div><div class="kpi-change">${nomes.length} prestador${nomes.length===1?'':'es'} com saldo</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">Serviços pendentes</div><div class="kpi-value red">${pendentes.length}</div><div class="kpi-change">${escHtml(detOrigem)}</div></div>`
+    + `<div class="kpi"><div class="kpi-label">Maior dívida</div><div class="kpi-value">${maior ? escHtml(maior) : '—'}</div><div class="kpi-change">${maior ? fmt(porPrest[maior]) : 'ninguém a receber'}</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Já pago</div><div class="kpi-value green">${fmt(pagoNoFiltro)}</div><div class="kpi-change">no filtro atual</div></div>`;
+}
+
+function renderPrestadores() {
+  const el = document.getElementById('prest-lista');
+  if (!el) return;
+  const lista = _prestFiltrados();
+  renderPrestadoresKpis(lista);
+
+  const todos     = _prestItens();
+  const pendGlob  = todos.filter(i => i.status !== 'pago');
+  const sub = document.getElementById('prest-sub');
+  if (sub) sub.textContent = lista.length + ' serviço' + (lista.length === 1 ? '' : 's') + ' no filtro';
+  const cnt = document.getElementById('prest-count');
+  if (cnt) cnt.textContent = fmt(pendGlob.reduce((s, i) => s + i.saldo, 0)) + ' pendente no total';
+
+  // Barra da seleção múltipla — mostra a quebra por natureza ANTES de pagar,
+  // pra não ser surpresa que 1 Pix vira 2 lançamentos.
+  let barra = '';
+  if (_prestSel.size > 0) {
+    const sel = todos.filter(i => _prestSel.has(i.chave));
+    const total = sel.reduce((a, i) => a + i.saldo, 0);
+    const porNat = {};
+    sel.forEach(i => { porNat[i.natureza] = (porNat[i.natureza] || 0) + i.saldo; });
+    const nats = Object.keys(porNat);
+    const quebra = nats.map(n => PREST_NATUREZAS[n].label + ' ' + fmt(porNat[n])).join(' + ');
+    barra = `<div style="position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:2px solid var(--gold);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div style="font-size:12px;">
+        ☑ <strong>${sel.length}</strong> serviço${sel.length===1?'':'s'}
+        <span style="color:var(--text3);">· ${escHtml(sel[0]?.prestadorNome || '—')}</span>
+        · Total: <strong style="color:var(--gold);">${fmt(total)}</strong>
+        ${nats.length > 1 ? `<div style="font-size:10px;color:var(--text3);margin-top:3px;">${escHtml(quebra)} → vira <strong>${nats.length} lançamentos</strong> no caixa (um por natureza, pra DRE não errar)</div>` : ''}
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" type="button" onclick="_prestCancelarSel()">Cancelar seleção</button>
+        <button class="btn btn-gold" type="button" onclick="_prestPagarSelecionados()"><svg class="ic ic-sm"><use href="#ic-wallet"/></svg> Pagar selecionados</button>
+      </div>
+    </div>`;
+  }
+
+  if (!lista.length) {
+    const st = document.getElementById('prest-filtro-status')?.value || 'pendentes';
+    const vazio = st === 'pagos' ? 'Nenhum serviço pago no filtro'
+                : st === 'pendentes' ? 'Ninguém a receber 🎉'
+                : 'Nenhum serviço no filtro';
+    el.innerHTML = barra + '<div class="empty" style="padding:32px;">' + vazio + '</div>';
+    return;
+  }
+
+  const stBadge = {
+    pendente: '<span class="badge badge-orange">Pendente</span>',
+    parcial:  '<span class="badge" style="background:rgba(56,139,253,.16);color:#5aa9ff;border:1px solid rgba(56,139,253,.4);">Parcial</span>',
+    pago:     '<span class="badge badge-green">Pago</span>',
+  };
+  const dBR = d => d ? String(d).split('-').reverse().join('/') : '—';
+
+  // Agrupado por prestador — é a leitura que o dono pediu ("quanto devo pro Marcos").
+  const grupos = {};
+  lista.forEach(i => { (grupos[i.prestadorNome] = grupos[i.prestadorNome] || []).push(i); });
+  const nomes = Object.keys(grupos).sort((a, b) => a.localeCompare(b));
+
+  el.innerHTML = barra + nomes.map(nome => {
+    const itens   = grupos[nome];
+    const pend    = itens.filter(i => i.status !== 'pago');
+    const saldoG  = pend.reduce((a, i) => a + i.saldo, 0);
+    const chaves  = pend.map(i => i.chave);
+    return `<div style="border-bottom:1px solid var(--border);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 20px;background:var(--surface2);flex-wrap:wrap;">
+        <div style="font-size:12px;font-weight:800;">${escHtml(nome)}
+          <span style="font-weight:500;color:var(--text3);">· ${itens.length} serviço${itens.length===1?'':'s'}${pend.length ? ' · '+pend.length+' pendente'+(pend.length===1?'':'s') : ''}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="font-size:12px;">A pagar: <strong style="color:${saldoG>0.005?'var(--gold)':'var(--green)'};">${fmt(saldoG)}</strong></div>
+          ${pend.length > 1 ? `<button class="btn" type="button" style="font-size:10px;padding:4px 9px;" onclick='_prestSelecionarTodos(${JSON.stringify(chaves)})'>Selecionar tudo</button>` : ''}
+        </div>
+      </div>
+      ${itens.map(i => {
+        const trava   = _prestLock && String(_prestLock) !== String(i.prestadorId || '');
+        const podeSel = i.status !== 'pago';
+        const chk = podeSel
+          ? `<input type="checkbox" ${_prestSel.has(i.chave)?'checked':''} ${trava?'disabled':''} onchange="_prestToggle('${i.chave}')" title="${trava?'Cancele a seleção pra pagar outro prestador':'Selecionar pra pagar'}">`
+          : '<span style="display:inline-block;width:13px;"></span>';
+        const org = PREST_ORIGENS[i.origem] || { label: i.origem, cor: 'var(--text3)' };
+        const tag = `<span class="badge" style="background:${org.cor}22;color:${org.cor};border:1px solid ${org.cor}66;">${org.label}</span>`;
+        const natLbl = PREST_NATUREZAS[i.natureza];
+        // Colunas de valor e de ações com largura FIXA (e minmax(0,…) nas
+        // flexíveis): com `auto` no fim, linha com menos botões — a diária, que
+        // não tem "abrir origem" — devolvia espaço pras colunas fr e os valores
+        // saíam desalinhados entre as linhas.
+        return `<div style="display:grid;grid-template-columns:26px minmax(0,0.9fr) minmax(0,1.4fr) 100px 100px 100px 92px 150px;gap:10px;align-items:center;padding:10px 20px;border-top:1px solid var(--border);font-size:12px;">
+          <div>${chk}</div>
+          <div><strong style="color:var(--gold);">${dBR(i.data)}</strong></div>
+          <div style="min-width:0;overflow:hidden;">${tag} <span style="font-size:10px;color:var(--text2);">${escHtml(i.titulo)}</span>
+            <div style="font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(i.detalhe||'')}">${escHtml(i.detalhe||'')}</div>
+            ${i.observacoes?`<div style="font-size:10px;color:var(--text3);" title="${escHtml(i.observacoes)}">${escHtml(String(i.observacoes).slice(0,40))}</div>`:''}</div>
+          <div class="td-mono" style="font-weight:700;" title="Valor do serviço · ${escHtml(natLbl?.nota||'')}">${fmt(i.valorTotal)}</div>
+          <div class="td-mono" style="color:${i.pago>0.005?'var(--green)':'var(--text3)'};" title="Já pago">${i.pago>0.005?fmt(i.pago):'—'}</div>
+          <div class="td-mono" style="font-weight:700;color:${i.saldo>0.005?'var(--gold)':'var(--green)'};" title="A pagar">${fmt(i.saldo)}</div>
+          <div>${stBadge[i.status]}</div>
+          <div style="display:flex;gap:5px;justify-content:flex-end;">
+            ${podeSel ? `<button class="btn btn-gold" style="font-size:10px;padding:5px 10px;" onclick="_prestPagarUm('${i.chave}')">Pagar</button>` : ''}
+            ${i.pagamentos.length ? `<button class="action-btn" onclick="_prestVerPagamentos('${i.chave}')" title="Ver/estornar pagamentos">🧾</button>` : ''}
+            ${i.irPara ? `<button class="action-btn edit-btn" onclick="${i.irPara}" title="Abrir a origem"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>` : ''}
+            ${i.podeExcluir && !i.pagamentos.length ? `<button class="action-btn del-btn" onclick="_prestExcluirAvulso('${i.id}')" title="Excluir serviço avulso"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+}
+
+function _prestToggle(chave) {
+  const i = _prestItemPorChave(chave);
+  if (!i) return;
+  if (_prestSel.has(chave)) {
+    _prestSel.delete(chave);
+    if (!_prestSel.size) _prestLock = null;
+  } else {
+    if (_prestLock && String(_prestLock) !== String(i.prestadorId || '')) {
+      smAlert('Só dá pra pagar serviços do mesmo prestador num pagamento. Cancele a seleção pra trocar.');
+      return;
+    }
+    _prestSel.add(chave);
+    _prestLock = i.prestadorId || null;
+  }
+  renderPrestadores();
+}
+
+function _prestSelecionarTodos(chaves) {
+  const itens = (chaves || []).map(_prestItemPorChave).filter(Boolean);
+  if (!itens.length) return;
+  const pid = itens[0].prestadorId || null;
+  if (_prestLock && String(_prestLock) !== String(pid)) {
+    smAlert('Já há serviços de outro prestador selecionados. Cancele a seleção primeiro.');
+    return;
+  }
+  itens.forEach(i => _prestSel.add(i.chave));
+  _prestLock = pid;
+  renderPrestadores();
+}
+
+function _prestCancelarSel() { _prestSel.clear(); _prestLock = null; renderPrestadores(); }
+function _prestPagarUm(chave) { _prestSel.clear(); _prestSel.add(chave); _prestLock = _prestItemPorChave(chave)?.prestadorId || null; abrirPrestPagarModal([chave]); }
+function _prestPagarSelecionados() {
+  if (!_prestSel.size) return smAlert('Selecione ao menos um serviço.');
+  abrirPrestPagarModal([..._prestSel]);
+}
+
+// ── Modal de pagamento (o que junta as origens num Pix só) ──
+function abrirPrestPagarModal(chaves) {
+  if (!_podeVerCusto()) { smAlert('Sem permissão.'); return; }
+  document.getElementById('prest-pagar-modal')?.remove();
+  const itens = (chaves || []).map(_prestItemPorChave).filter(Boolean);
+  if (!itens.length) { smAlert('Nenhum serviço selecionado.'); return; }
+
+  const pid = itens[0].prestadorId;
+  if (itens.some(i => String(i.prestadorId || '') !== String(pid || ''))) {
+    smAlert('Não dá pra pagar prestadores diferentes no mesmo pagamento.'); return;
+  }
+  const nome  = itens[0].prestadorNome;
+  const total = +itens.reduce((a, i) => a + i.saldo, 0).toFixed(2);
+  if (total <= 0) { smAlert('Esses serviços já estão pagos.'); return; }
+
+  const porNat = {};
+  itens.forEach(i => { porNat[i.natureza] = (porNat[i.natureza] || 0) + i.saldo; });
+  const nats = Object.keys(porNat).filter(n => porNat[n] > 0.005);
+
+  const contaOpts = '<option value="">Selecione uma conta...</option>'
+    + (contas || []).map(c => `<option value="${escHtml(c.nome).replace(/"/g,'&quot;')}">${escHtml(c.nome)}</option>`).join('');
+  const hoje = _locHojeISO ? _locHojeISO() : new Date().toISOString().slice(0,10);
+  const dBR  = d => d ? String(d).split('-').reverse().join('/') : '—';
+
+  const listaHTML = `<div style="margin-bottom:12px;padding:10px 12px;background:var(--surface2);border-radius:var(--r-sm);font-size:11px;max-height:180px;overflow-y:auto;">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Selecionado${itens.length>1?'s':''}</div>
+      ${itens.map(i => {
+        const org = PREST_ORIGENS[i.origem] || { label: i.origem, cor: 'var(--text3)' };
+        return `<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed var(--border);">
+          <span><span style="font-family:var(--mono,monospace);color:var(--gold);">${dBR(i.data)}</span>
+            <span style="color:${org.cor};">${org.label.toLowerCase()}</span>
+            <span style="color:var(--text3);">· ${escHtml(i.titulo)}</span></span>
+          <span><strong style="color:var(--gold);">${fmt(i.saldo)}</strong></span>
+        </div>`; }).join('')}
+    </div>`;
+
+  const quebraHTML = `<div style="margin-bottom:14px;padding:10px 12px;border-radius:var(--r-sm);font-size:11px;background:${nats.length>1?'rgba(245,197,24,0.08)':'var(--surface2)'};${nats.length>1?'border:1px solid var(--gold);':''}">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Como entra no caixa</div>
+      ${nats.map(n => `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;">
+        <span>${PREST_NATUREZAS[n].label} <span style="color:var(--text3);font-size:10px;">— ${PREST_NATUREZAS[n].nota}</span></span>
+        <strong>${fmt(porNat[n])}</strong></div>`).join('')}
+      ${nats.length > 1
+        ? `<div style="margin-top:6px;font-size:10px;color:var(--text2);">Você faz <strong>1 Pix de ${fmt(total)}</strong> e o sistema grava <strong>${nats.length} lançamentos</strong> (um por natureza), amarrados pela mesma observação. É o que mantém a DRE certa.</div>`
+        : ''}
+    </div>`;
+
+  const shell = document.createElement('div');
+  shell.id = 'prest-pagar-modal';
+  shell.className = 'modal-overlay open';
+  shell.dataset.chaves = JSON.stringify(chaves);
+  shell.innerHTML =
+      `<div class="modal" style="width:620px;max-width:96vw;">`
+    +   `<div class="modal-title">Pagar <span>${escHtml(nome)}</span></div>`
+    +   `<div style="margin-bottom:12px;font-size:12px;color:var(--text2);">${itens.length} serviço${itens.length===1?'':'s'} · total a pagar <strong style="color:var(--gold);">${fmt(total)}</strong></div>`
+    +   listaHTML
+    +   quebraHTML
+    +   `<div class="form-grid">`
+    +     `<div class="form-group"><label>Pagar agora (R$)</label><input class="form-input" id="prest-pag-valor" type="number" step="0.01" min="0.01" value="${total.toFixed(2)}"></div>`
+    +     `<div class="form-group"><label>Data do pagamento</label><input class="form-input" id="prest-pag-data" type="date" value="${hoje}"></div>`
+    +     `<div class="form-group full"><label>Conta</label><select class="form-input" id="prest-pag-conta">${contaOpts}</select></div>`
+    +     `<div class="form-group full"><label>Observações (opcional)</label><textarea class="form-input" id="prest-pag-obs" rows="2" placeholder="—"></textarea></div>`
+    +   `</div>`
+    +   `<div class="modal-bloco" style="margin-top:14px;">`
+    +     `<div class="modal-bloco-titulo">Tipo de registro</div>`
+    +     `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;cursor:pointer;padding:6px 0;">`
+    +       `<input type="radio" name="prest-pag-tipo" value="lancamento" checked style="margin-top:2px;">`
+    +       `<span><strong>Gerar lançamento no financeiro</strong> <span style="color:var(--text3);font-size:10px;">(padrão)</span><br><span style="color:var(--text3);font-size:10px;">Sai da conta escolhida acima${nats.length>1?` — <strong>${nats.length} lançamentos</strong>, um por natureza`:''}.</span></span>`
+    +     `</label>`
+    +     `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;cursor:pointer;padding:6px 0;">`
+    +       `<input type="radio" name="prest-pag-tipo" value="so-registrar" style="margin-top:2px;">`
+    +       `<span><strong>Já paguei externamente</strong> <span style="color:var(--text3);font-size:10px;">(só registrar)</span><br><span style="color:var(--text3);font-size:10px;">Dá baixa aqui sem mexer no financeiro.</span></span>`
+    +     `</label>`
+    +   `</div>`
+    +   (itens.length > 1 ? `<div style="margin-top:10px;padding:8px 10px;background:rgba(245,197,24,0.08);border:1px solid var(--gold);border-radius:var(--r-sm);font-size:10px;color:var(--text2);">ℹ️ Valor menor que o total é distribuído proporcionalmente entre os serviços (centavos residuais vão pro último).</div>` : '')
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('prest-pagar-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="prest-pag-btn" onclick="_prestConfirmarPagamento()">Confirmar pagamento</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _prestConfirmarPagamento() {
+  const btn = document.getElementById('prest-pag-btn');
+  if (btn?.disabled) return;                       // trava anti-duplo-clique (síncrona)
+  const modal = document.getElementById('prest-pagar-modal');
+  if (!modal) return;
+  let chaves = [];
+  try { chaves = JSON.parse(modal.dataset.chaves || '[]'); } catch(e) { chaves = []; }
+  const itens = chaves.map(_prestItemPorChave).filter(Boolean);
+  if (!itens.length) return smAlert('Serviços não encontrados. Feche e tente de novo.');
+
+  const valorTotal = parseFloat(String(document.getElementById('prest-pag-valor').value || '').replace(',','.'));
+  const data       = document.getElementById('prest-pag-data').value;
+  const contaNm    = document.getElementById('prest-pag-conta').value;
+  const obs        = (document.getElementById('prest-pag-obs').value || '').trim();
+  const gerarLanc  = (document.querySelector('input[name="prest-pag-tipo"]:checked')?.value || 'lancamento') === 'lancamento';
+
+  if (!(valorTotal > 0))     return smAlert('Informe um valor maior que zero.');
+  if (!data)                 return smAlert('Escolha a data do pagamento.');
+  if (gerarLanc && !contaNm) return smAlert('Escolha a conta de onde o dinheiro saiu (ou use "já paguei externamente").');
+  const ctaBanco = gerarLanc ? (contas || []).find(c => c.nome === contaNm) : null;
+  if (gerarLanc && !ctaBanco) return smAlert('Conta bancária inválida.');
+
+  const saldoTotal = +itens.reduce((a, i) => a + i.saldo, 0).toFixed(2);
+  if (valorTotal > saldoTotal + 0.005) return smAlert(`Valor acima do saldo. A pagar: ${fmt(saldoTotal)}.`);
+
+  // Distribuição proporcional ao saldo; resíduo de centavos no último.
+  const distrib = [];
+  let acum = 0;
+  itens.forEach((i, idx) => {
+    const v = (idx === itens.length - 1) ? +(valorTotal - acum).toFixed(2)
+                                         : +(valorTotal * (i.saldo / saldoTotal)).toFixed(2);
+    if (idx < itens.length - 1) acum += v;
+    if (v > 0) distrib.push({ item: i, valor: v });
+  });
+
+  // Agrupa por NATUREZA — é o que decide a categoria de cada lançamento.
+  const porNat = {};
+  distrib.forEach(d => { porNat[d.item.natureza] = +((porNat[d.item.natureza] || 0) + d.valor).toFixed(2); });
+  const nats = Object.keys(porNat).filter(n => porNat[n] > 0.005);
+
+  btn.disabled = true; btn.textContent = 'Salvando...';
+  const nome = itens[0].prestadorNome;
+  const lancIds  = [];                 // pra rollback
+  const inseridos = [];                // {tabela, ids[]} pra rollback
+  try {
+    // 1) Lançamentos — um por natureza, amarrados pela observação.
+    const lancPorNat = {};
+    if (gerarLanc) {
+      const ts = Date.now();
+      const nPartes = nats.length;
+      nats.forEach((nat, idx) => {
+        const meta = PREST_NATUREZAS[nat];
+        const doNat = distrib.filter(d => d.item.natureza === nat);
+        const refs  = doNat.map(d => d.item.titulo).join(', ');
+        const amarra = nPartes > 1
+          ? `Pagamento único de ${fmt(valorTotal)} a ${nome} — parte ${idx+1}/${nPartes} (${meta.label}). `
+          : '';
+        lancPorNat[nat] = {
+          id: 'prest_' + nat + '_' + (ts + idx),
+          tipo: 'saida',
+          descricao: meta.label + ' · ' + nome + ' — ' + doNat.length + ' serviço' + (doNat.length===1?'':'s'),
+          valor: porNat[nat],
+          data,
+          categoria: meta.categoria,
+          conta_id: ctaBanco.id,
+          conta_nome: ctaBanco.nome,
+          observacao: amarra + (obs || refs),
+        };
+      });
+      for (const nat of nats) {
+        const payload = lancPorNat[nat];
+        const { error } = await sb.from('lancamentos').insert(payload);
+        if (error) throw new Error('Erro ao criar lançamento: ' + error.message);
+        lancIds.push(payload.id);
+        // fromDb (não toCamel cru): com `contaNome` no lugar de `conta` o
+        // lançamento fica invisível pra recalcularSaldos().
+        lancamentos.unshift(TABLE_MAP.lancamentos.fromDb(payload));
+      }
+      ctaBanco.saldo = Number(ctaBanco.saldo || 0) - valorTotal;
+    }
+
+    // 2) Baixas — cada uma na tabela da sua origem, com o lançamento da SUA natureza.
+    const lancIdDe = nat => (gerarLanc ? lancPorNat[nat].id : null);
+    const pagsMont = distrib.filter(d => d.item.tabela === 'montagens_pagamentos').map(d => ({
+      lote_id: d.item.id, data_pagamento: data, valor: d.valor,
+      lancamento_id: lancIdDe(d.item.natureza), observacoes: obs || null,
+    }));
+    const pagsOf = distrib.filter(d => d.item.tabela === 'oficina_pagamentos').map(d => {
+      const linha = {
+        diaria_id: null, ordem_id: null, sac_caso_id: null, servico_avulso_id: null,
+        prestador_id: d.item.prestadorId || null,
+        valor: d.valor, data_pagamento: data,
+        lancamento_id: lancIdDe(d.item.natureza), observacoes: obs || null,
+      };
+      linha[d.item.campoOrigem] = d.item.id;
+      return linha;
+    });
+
+    if (pagsMont.length) {
+      const { data: rows, error } = await sb.from('montagens_pagamentos').insert(pagsMont).select();
+      if (error) throw new Error('Erro ao registrar pagamento de montagem: ' + error.message);
+      inseridos.push({ tabela: 'montagens_pagamentos', ids: (rows || []).map(r => r.id) });
+    }
+    if (pagsOf.length) {
+      const { data: rows, error } = await sb.from('oficina_pagamentos').insert(pagsOf).select();
+      if (error) throw new Error('Erro ao registrar pagamento de serviço: ' + error.message);
+      inseridos.push({ tabela: 'oficina_pagamentos', ids: (rows || []).map(r => r.id) });
+    }
+
+    modal.remove();
+    _prestSel.clear(); _prestLock = null;
+    if (gerarLanc && typeof salvarDados === 'function') salvarDados();
+    await initPrestadores();
+    ['renderContas','renderFinKpis','renderLancamentos'].forEach(fn => { if (typeof window[fn] === 'function') { try { window[fn](); } catch(e){} } });
+    if (typeof smToast === 'function') {
+      smToast('✅ Pagamento de ' + fmt(valorTotal) + ' registrado'
+        + (nats.length > 1 ? ' (' + nats.length + ' lançamentos).' : '.'));
+    }
+  } catch (e) {
+    // Rollback na mão — não há transação no client.
+    for (const bloco of inseridos) {
+      for (const id of bloco.ids) { try { await sb.from(bloco.tabela).delete().eq('id', id); } catch(_){} }
+    }
+    for (const id of lancIds) {
+      try { await sb.from('lancamentos').delete().eq('id', id); } catch(_){}
+      lancamentos = (lancamentos || []).filter(l => l.id !== id);
+    }
+    if (gerarLanc && ctaBanco && lancIds.length) ctaBanco.saldo = Number(ctaBanco.saldo || 0) + valorTotal;
+    smAlert(e.message || 'Erro ao registrar pagamento.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar pagamento'; }
+  }
+}
+
+// ── Histórico + estorno (funciona nas duas tabelas de baixa) ──
+function _prestVerPagamentos(chave) {
+  const i = _prestItemPorChave(chave);
+  if (!i || !i.pagamentos.length) return;
+  document.getElementById('prest-hist-modal')?.remove();
+  const dBR = d => d ? String(d).split('-').reverse().join('/') : '—';
+  const shell = document.createElement('div');
+  shell.id = 'prest-hist-modal';
+  shell.className = 'modal-overlay open';
+  shell.innerHTML =
+      `<div class="modal" style="width:540px;max-width:96vw;">`
+    +   `<div class="modal-title">Pagamentos · <span>${escHtml(i.titulo)}</span></div>`
+    +   `<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">${escHtml(i.prestadorNome)} · valor ${fmt(i.valorTotal)} · pago <strong style="color:var(--green);">${fmt(i.pago)}</strong> · falta <strong style="color:${i.saldo>0.005?'var(--gold)':'var(--green)'};">${fmt(i.saldo)}</strong></div>`
+    +   i.pagamentos.map(p => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;padding:7px 2px;border-bottom:1px solid var(--border);">
+          <span>${dBR(p.dataPagamento)} · <strong>${fmt(p.valor)}</strong> ${p.lancamentoId ? '<span style="color:var(--text3);font-size:10px;">(no caixa)</span>' : '<span style="color:var(--text3);font-size:10px;">(só registro)</span>'}${p.observacoes?`<br><span style="color:var(--text3);font-size:10px;">${escHtml(p.observacoes)}</span>`:''}</span>
+          <button class="action-btn del-btn" style="font-size:10px;padding:3px 8px;" onclick="_prestEstornar('${p.id}','${i.tabela}')">estornar</button>
+        </div>`).join('')
+    +   `<div class="modal-actions"><button class="btn" onclick="document.getElementById('prest-hist-modal').remove();">Fechar</button></div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _prestEstornar(pagId, tabela) {
+  const lista = tabela === 'montagens_pagamentos' ? montagensPagamentos : oficinaPagamentos;
+  const p = (lista || []).find(x => String(x.id) === String(pagId));
+  if (!p) return;
+  // Irmãos nas DUAS tabelas — um lançamento pode agregar lote de montagem e
+  // serviço avulso de mesma natureza.
+  const irmaos  = _pagIrmaosLancamento(p.lancamentoId, pagId);
+  const ehUltimo = irmaos.length === 0;
+  const aviso = p.lancamentoId
+    ? (ehUltimo ? '\n\nO lançamento no caixa também vai ser apagado e o saldo da conta restaurado.'
+                : `\n\nO lançamento no caixa agrega ${irmaos.length + 1} serviços — ele vai ser reduzido em ${fmt(p.valor)}.`)
+    : '';
+  if (!(await smConfirm(`Estornar o pagamento de ${fmt(p.valor)}?${aviso}`))) return;
+
+  try {
+    const { error } = await sb.from(tabela).delete().eq('id', pagId);
+    if (error) throw error;
+
+    if (p.lancamentoId) {
+      const lanc = (lancamentos || []).find(l => l.id === p.lancamentoId);
+      const cta  = lanc ? (contas || []).find(c => c.nome === (lanc.conta || lanc.contaNome)) : null;
+      if (ehUltimo) {
+        await sb.from('lancamentos').delete().eq('id', p.lancamentoId);
+        lancamentos = (lancamentos || []).filter(l => l.id !== p.lancamentoId);
+        if (cta) cta.saldo = Number(cta.saldo || 0) + Number(p.valor || 0);
+      } else if (lanc) {
+        const novoValor = +(Number(lanc.valor || 0) - Number(p.valor || 0)).toFixed(2);
+        await sb.from('lancamentos').update({ valor: novoValor }).eq('id', p.lancamentoId);
+        lanc.valor = novoValor;
+        if (cta) cta.saldo = Number(cta.saldo || 0) + Number(p.valor || 0);
+      }
+      if (typeof salvarDados === 'function') salvarDados();
+      ['renderContas','renderFinKpis','renderLancamentos'].forEach(fn => { if (typeof window[fn] === 'function') { try { window[fn](); } catch(e){} } });
+    }
+    document.getElementById('prest-hist-modal')?.remove();
+    await initPrestadores();
+    if (typeof smToast === 'function') smToast('Pagamento estornado.');
+  } catch (e) {
+    smAlert('Erro ao estornar: ' + (e.message || e));
+  }
+}
+
+// ── Serviço avulso (o que não veio de módulo nenhum) ──
+function abrirPrestAvulsoModal() {
+  if (!_podeVerCusto()) { smAlert('Sem permissão.'); return; }
+  document.getElementById('prest-avulso-modal')?.remove();
+  const ativos = (montadores || []).filter(m => m.ativo !== false);
+  if (!ativos.length) return smAlert('Cadastre um prestador ativo antes (Montagens → Montadores).');
+  const principal = ativos.find(m => m.principal) || ativos[0];
+  const hoje = _locHojeISO ? _locHojeISO() : new Date().toISOString().slice(0,10);
+
+  const shell = document.createElement('div');
+  shell.id = 'prest-avulso-modal';
+  shell.className = 'modal-overlay open';
+  shell.innerHTML =
+      `<div class="modal" style="width:560px;max-width:96vw;">`
+    +   `<div class="modal-title">Novo <span>serviço avulso</span></div>`
+    +   `<div style="margin-bottom:14px;padding:10px 12px;background:rgba(56,139,253,0.08);border:1px solid rgba(56,139,253,.4);border-radius:var(--r-sm);font-size:11px;color:var(--text2);">`
+    +     `Pro serviço que o prestador fez e <strong>não veio de módulo nenhum</strong> — antes esse tipo de pagamento era digitado direto no caixa e não aparecia no "a pagar".`
+    +   `</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group"><label>Prestador</label><select class="form-input" id="prest-av-prestador">`
+    +       ativos.map(m => `<option value="${escHtml(String(m.id))}" ${String(m.id)===String(principal.id)?'selected':''}>${escHtml(m.nome)}</option>`).join('')
+    +     `</select></div>`
+    +     `<div class="form-group"><label>Data do serviço</label><input class="form-input" id="prest-av-data" type="date" value="${hoje}" max="${hoje}"></div>`
+    +     `<div class="form-group full"><label>O que foi feito</label><input class="form-input" id="prest-av-desc" placeholder="Ex.: manutenção das motos do quiosque"></div>`
+    +     `<div class="form-group"><label>Valor (R$)</label><input class="form-input" id="prest-av-valor" type="number" step="0.01" min="0.01" placeholder="0,00"></div>`
+    +     `<div class="form-group"><label>Natureza</label><select class="form-input" id="prest-av-natureza">`
+    +       `<option value="oficina" selected>Oficina — despesa</option>`
+    +       `<option value="montagem">Montagem — custo da moto</option>`
+    +     `</select></div>`
+    +     `<div class="form-group full"><label>Observação (opcional)</label><input class="form-input" id="prest-av-obs" placeholder="—"></div>`
+    +   `</div>`
+    +   `<div style="margin-top:8px;font-size:10px;color:var(--text3);">A natureza decide a categoria do lançamento quando você pagar: <strong>Oficina</strong> vira despesa na DRE; <strong>Montagem</strong> entra no custo da moto e fica fora da despesa.</div>`
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('prest-avulso-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="prest-av-btn" onclick="_prestSalvarAvulso()">Registrar serviço</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _prestSalvarAvulso() {
+  const btn = document.getElementById('prest-av-btn');
+  if (btn?.disabled) return;                       // trava anti-duplo-clique (síncrona)
+  const prestadorId = document.getElementById('prest-av-prestador')?.value || '';
+  const data        = document.getElementById('prest-av-data')?.value || '';
+  const descricao   = (document.getElementById('prest-av-desc')?.value || '').trim();
+  const valor       = parseFloat(String(document.getElementById('prest-av-valor')?.value || '').replace(',','.'));
+  const natureza    = document.getElementById('prest-av-natureza')?.value || 'oficina';
+  const obs         = (document.getElementById('prest-av-obs')?.value || '').trim() || null;
+  const hoje = _locHojeISO ? _locHojeISO() : new Date().toISOString().slice(0,10);
+
+  if (!prestadorId) return smAlert('Escolha o prestador.');
+  if (!data)        return smAlert('Escolha a data do serviço.');
+  if (data > hoje)  return smAlert('Não dá pra registrar serviço de um dia que ainda não aconteceu.');
+  if (!descricao)   return smAlert('Descreva o que foi feito.');
+  if (!(valor > 0)) return smAlert('Informe um valor maior que zero.');
+  if (!PREST_NATUREZAS[natureza]) return smAlert('Natureza inválida.');
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    const { data: rows, error } = await sb.from('prestador_servicos')
+      .insert({ prestador_id: prestadorId, data, descricao, valor, natureza, observacoes: obs })
+      .select();
+    if (error) throw error;
+    prestadorServicos.push(...toCamelArr(rows || []));
+    document.getElementById('prest-avulso-modal')?.remove();
+    renderPrestadores();
+    if (typeof smToast === 'function') smToast('✅ Serviço avulso registrado — já entrou no "a pagar".');
+  } catch (e) {
+    smAlert('Erro ao registrar: ' + (e.message || e));
+    if (btn) { btn.disabled = false; btn.textContent = 'Registrar serviço'; }
+  }
+}
+
+async function _prestExcluirAvulso(id) {
+  const a = (prestadorServicos || []).find(x => String(x.id) === String(id));
+  if (!a) return;
+  const temPag = (oficinaPagamentos || []).some(p => String(p.servicoAvulsoId || '') === String(id));
+  if (temPag) return smAlert('Esse serviço já tem pagamento registrado. Estorne o pagamento antes de excluir.');
+  if (!(await smConfirm(`Excluir o serviço avulso "${a.descricao}" (${fmt(a.valor)})?`))) return;
+  try {
+    const { error } = await sb.from('prestador_servicos').delete().eq('id', id);
+    if (error) throw error;
+    prestadorServicos = prestadorServicos.filter(x => String(x.id) !== String(id));
+    _prestSel.delete('avulso:' + id);
+    if (!_prestSel.size) _prestLock = null;
+    renderPrestadores();
+  } catch (e) { smAlert('Erro ao excluir: ' + (e.message || e)); }
 }
 
 // ═══════════════════════════════════════════════════════════
