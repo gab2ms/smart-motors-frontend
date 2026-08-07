@@ -1049,6 +1049,78 @@ Painel unificado (`renderOficinaSac`) com as duas visões; modais `abrirOfModal`
   vulnerável até recarregar. Se voltar a acontecer, a rede de segurança seria um guard no banco (rejeitar OS
   igual criada em < 2 min); não foi feito pra não arriscar falso positivo.
 
+## Oficina — controle de pagamento aos prestadores (06/08/2026)
+
+Aba **"A pagar"** na Oficina, espelhando o conceito das Montagens: ver o que falta pagar por prestador,
+selecionar vários serviços e dar baixa numa operação só. Pedido do dono depois que o Pix de **R$ 4.566,20**
+ao Marcos (04/08/2026) misturou **montagem + manutenção** e só apareceu na conciliação do extrato.
+
+**⚠️ A unidade de cobrança é a QUARTA-FEIRA, não a OS.** O dono corrigiu a premissa em 06/08/2026: o Marcos
+vai à loja **toda quarta** e recebe uma **diária fixa (R$ 100) + alimentação (~R$ 16)**, *independente de
+quantos serviços fez*. Somar `custo_mao_obra` das OS como dívida criaria conta que não existe — 3 serviços de
+R$ 70 numa quarta não viram R$ 210 a pagar, viram R$ 116. E quarta sem serviço nenhum **ainda** custa R$ 116.
+Por isso o painel lista **diárias**; `custo_mao_obra` continua na OS só pra medir o lucro do serviço.
+
+**Decisões (todas do dono, 06/08/2026):**
+- **Prestador = a mesma tabela `montadores`.** O Marcos monta E conserta; lista única deixa a dívida total
+  com ele visível num lugar só. Na UI da Oficina o rótulo é "Responsável pelo serviço"; a tabela não foi
+  renomeada pra não quebrar Montagens. Hoje **só o Marcos** presta serviço (Helder e Danton parados).
+- **Alimentação entra no CUSTO, nunca no "a pagar".** A marmita já saiu do caixa em lançamento próprio
+  (historicamente em "Compras Gerais"/"Serviços Terceirizados"/"Oficina"); o painel amarra esse lançamento à
+  diária pra compor o custo real da quarta (100 + 16 = 116) sem cobrar 2×.
+- **Corte histórico em 04/08/2026:** tudo anterior está quitado — vinha embutido nos acertos acumulados de
+  manutenção (`manutencao-marcos-2026-08-04` R$ 1.266,20 e `mautencoes realizadas marcos` R$ 208,52 de 20/06).
+  Não há diária em espécie sem lançar. O controle começa na quarta **05/08/2026** (`OFICINA_DIARIAS_INICIO`).
+- **Backfill feito:** as 8 OS com `custo_mao_obra` (R$ 710) receberam o Marcos como responsável e baixa
+  "só registro" em `oficina_pagamentos` (sem lançamento — o caixa da Cora estava conciliado ao centavo e não
+  podia ser tocado).
+
+**Estrutura** (duas migrações, ambas aditivas):
+- `migration-oficina-pagamentos.sql`: `oficina_ordens.prestador_id` / `sac_casos.prestador_id` →
+  `montadores(id)` `ON DELETE SET NULL`; `data_servico` (DATE) nas duas — **data de execução**, campo próprio
+  porque `data_conclusao` não serve (em 04/08/2026 oito OS de jun/jul foram finalizadas em lote no mesmo dia);
+  e `oficina_pagamentos` (1 linha por baixa; várias podem dividir o mesmo `lancamento_id`, igual
+  `montagens_pagamentos`).
+- `migration-oficina-diarias.sql`: **`oficina_diarias`** (`prestador_id`, `data`, `valor_diaria`,
+  `valor_alimentacao`, `lancamento_alimentacao_id` → o lançamento da marmita que já existe, UNIQUE
+  `(prestador_id, data)` pra não duplicar ao gerar as quartas) + `oficina_pagamentos.diaria_id` + o CHECK de
+  origem passa de XOR-de-2 pra "exatamente uma das três" + `config_custos.oficina_diaria_valor` (100).
+
+**Diferença consciente pra Montagens: sem coluna derivada e sem trigger.** Lá o lote agrega N motos, então
+`valor_pago`/`status_pagamento` são mantidos por trigger. Aqui cada serviço é uma unidade só — o saldo
+(`custo_mao_obra − Σ pagamentos`) é somado no cliente em `_ofServicosPagaveis()`, mesmo padrão do `_cpSaldo()`
+de Contas a Pagar. Menos superfície pra dessincronizar.
+
+**Categoria do lançamento: `Oficina - Peças e Serviços`** (despesa real na DRE), **não** `Montagem` — esta
+está em `_DRE_CATEGORIAS_FORA_DESPESA` porque já entra no CPV da moto. Manutenção não entra em CPV nenhum.
+
+**Pontos tocados:** HTML `#of-bloco-os`/`#of-bloco-pag` (a aba troca o corpo da página); `switchOfTab`
+ganhou `'pagamentos'`; `initOficina` carrega `oficina_pagamentos` + `oficina_diarias` **tolerando erro** (sem
+as migrações, a aba só não aparece e o resto da Oficina funciona); `_ofDiariasPagaveis`, `_ofQuartasFaltando`,
+`_ofGerarQuartas`, `_ofEditarDiaria`, `_ofExcluirDiaria`, `renderOficinaPagamentos`, `abrirOfPagarModal`,
+`_ofConfirmarPagamento`, `_ofVerPagamentos`, `_ofEstornarPagamento`. `_ofServicosPagaveis` sobreviveu à
+mudança de modelo, mas agora só alimenta o contador "N serviços no dia" de cada diária.
+
+**Detalhes que valem lembrar:**
+- **"+ Gerar quartas"** cria as diárias das quartas de `OFICINA_DIARIAS_INICIO` até hoje que ainda não
+  existem (nunca futuras), já vinculando o lançamento de alimentação do mesmo dia quando a descrição casa
+  com `marmit|quentinh|comida|almoç` + primeiro nome do prestador. É explícito, não automático — quarta em
+  que ele não veio é só excluir (bloqueado se já houver pagamento).
+- **Estorno de pagamento agregado:** se o lançamento cobre N diárias, estornar 1 **reduz** o valor do
+  lançamento; só apaga o lançamento quando é o último preso a ele.
+- **Lançamento novo entra na memória via `TABLE_MAP.lancamentos.fromDb(...)`, não `toCamel` cru.** O resto do
+  app lê `l.conta`, e `toCamel` geraria `contaNome` — com a chave errada o lançamento fica invisível pra
+  `recalcularSaldos()`, e clicar "Recalcular saldos" na mesma sessão desfaria o débito e gravaria o saldo
+  antigo. ⚠️ **Montagens e Consignação ainda usam `toCamel` cru** (`lancamentos.unshift(toCamel(lancPayload))`)
+  — mesmo furo, não corrigido aqui pra não misturar frentes.
+- Quarta-feira **sem diária registrada** vira aviso dourado no topo do painel com o botão de gerar — é o
+  "não deixar esquecer" que o dono pediu.
+- A aba é gated por `_podeVerCusto()` — o custo do serviço segue visível pra todos (decisão de 28/07/2026),
+  mas **pagar** é financeiro.
+- **`oficina_pagamentos` ainda aceita `ordem_id`/`sac_caso_id`** (usado no backfill das 8 OS antigas). A UI
+  não expõe mais pagamento por serviço, mas a estrutura está lá se o regime virar híbrido (diária + serviço
+  grande à parte, opção que o dono considerou e descartou por ora).
+
 ## Sincronização com o Supabase — o `salvar` manda só o que mudou (04/08/2026)
 
 **O bug estrutural que isso corrige:** `salvarDados()` → `_enviarParaBanco()` → `_syncTable(tabela, array)`

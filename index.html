@@ -2913,30 +2913,60 @@ select:not(.input-pro):not(.search-input){
     <div class="fin-tabs">
       <button class="fin-tab-btn active" data-oftab="abertas"     onclick="switchOfTab('abertas')">Em aberto (<span id="of-cnt-abertas">0</span>)</button>
       <button class="fin-tab-btn"        data-oftab="finalizadas" onclick="switchOfTab('finalizadas')">Finalizadas (<span id="of-cnt-finalizadas">0</span>)</button>
+      <button class="fin-tab-btn"        data-oftab="pagamentos"  onclick="switchOfTab('pagamentos')" id="of-tab-btn-pagamentos" style="display:none;">A pagar (<span id="of-cnt-pagamentos">0</span>)</button>
     </div>
 
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
-      <div>
-        <div style="font-size:13px;font-weight:700;">Ordens de serviço</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="of-sub">—</div>
+    <!-- ── Bloco OS (abas "Em aberto" / "Finalizadas") ── -->
+    <div id="of-bloco-os">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;">Ordens de serviço</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="of-sub">—</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select class="search-input" id="of-filtro-status" onchange="renderOficina()" style="max-width:200px;">
+            <option value="">Todos status</option>
+            <option value="acao_interna">Ação interna</option>
+            <option value="aguardando_terceiro">Aguardando terceiro</option>
+            <option value="pronto_entrega">Pronto pra entrega</option>
+          </select>
+          <input type="text" class="search-input" id="of-busca" placeholder="Cliente, modelo, chassi..." oninput="renderOficina()" style="min-width:220px;">
+          <button class="btn btn-gold" onclick="abrirOfModal()">+ Nova OS</button>
+        </div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <select class="search-input" id="of-filtro-status" onchange="renderOficina()" style="max-width:200px;">
-          <option value="">Todos status</option>
-          <option value="acao_interna">Ação interna</option>
-          <option value="aguardando_terceiro">Aguardando terceiro</option>
-          <option value="pronto_entrega">Pronto pra entrega</option>
-        </select>
-        <input type="text" class="search-input" id="of-busca" placeholder="Cliente, modelo, chassi..." oninput="renderOficina()" style="min-width:220px;">
-        <button class="btn btn-gold" onclick="abrirOfModal()">+ Nova OS</button>
+
+      <div class="kpi-grid" id="of-kpis"></div>
+
+      <div class="card">
+        <div class="card-header"><div><div class="card-sub" id="of-count">—</div></div></div>
+        <div id="of-lista"></div>
       </div>
     </div>
 
-    <div class="kpi-grid" id="of-kpis"></div>
+    <!-- ── Bloco Pagamentos aos prestadores (aba "A pagar") ── -->
+    <div id="of-bloco-pag" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;">Pagamento aos prestadores</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;" id="of-pag-sub">—</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select class="search-input" id="of-pag-filtro" onchange="renderOficinaPagamentos()" style="max-width:190px;">
+            <option value="pendentes">Só pendentes</option>
+            <option value="todos">Pendentes e pagos</option>
+            <option value="pagos">Só pagos</option>
+          </select>
+          <input type="date" class="search-input" id="of-pag-ini" onchange="renderOficinaPagamentos()" title="Data de execução — de" style="max-width:150px;">
+          <input type="date" class="search-input" id="of-pag-fim" onchange="renderOficinaPagamentos()" title="Data de execução — até" style="max-width:150px;">
+        </div>
+      </div>
 
-    <div class="card">
-      <div class="card-header"><div><div class="card-sub" id="of-count">—</div></div></div>
-      <div id="of-lista"></div>
+      <div class="kpi-grid" id="of-pag-kpis"></div>
+
+      <div class="card">
+        <div class="card-header"><div><div class="card-sub" id="of-pag-count">—</div></div></div>
+        <div id="of-pag-lista"></div>
+      </div>
     </div>
   </div>
 
@@ -18787,16 +18817,32 @@ let ofAbaAtiva      = 'abertas'; // 'abertas' | 'finalizadas' — não persiste 
 const OF_STATUS = OS_STATUS;
 
 async function initOficina() {
-  const [oc, oo] = await Promise.all([
+  const [oc, oo, op, od] = await Promise.all([
     sb.from('clientes').select('*').order('nome'),
     sb.from('oficina_ordens').select('*').order('numero', { ascending: false }),
+    // Pagamentos e diárias. Tolerante a erro: se as migrações
+    // `migration-oficina-pagamentos.sql` / `migration-oficina-diarias.sql`
+    // ainda não rodaram, a aba "A pagar" não aparece e o resto da Oficina
+    // segue normal.
+    sb.from('oficina_pagamentos').select('*').order('data_pagamento'),
+    sb.from('oficina_diarias').select('*').order('data', { ascending: false }),
   ]);
   clientesAll     = oc.data ? toCamelArr(oc.data) : [];
   oficinaClientes = clientesAll.slice();
   oficinaOrdens   = oo.data ? toCamelArr(oo.data) : [];
-  console.log('[oficina] clientes=' + oficinaClientes.length + ' ordens=' + oficinaOrdens.length);
+  oficinaPagamentos = (!op.error && op.data) ? toCamelArr(op.data) : [];
+  oficinaDiarias    = (!od.error && od.data) ? toCamelArr(od.data) : [];
+  if (op.error) console.warn('[oficina] pagamentos indisponíveis (migração pendente?):', op.error.message);
+  if (od.error) console.warn('[oficina] diárias indisponíveis (migração pendente?):', od.error.message);
+  // A aba de pagamento é financeira: só pra quem vê custo. O custo do serviço
+  // em si continua visível pra todos (decisão de 28/07/2026).
+  const podePag = !op.error && !od.error && _podeVerCusto();
+  const btnPag = document.getElementById('of-tab-btn-pagamentos');
+  if (btnPag) btnPag.style.display = podePag ? '' : 'none';
+  console.log('[oficina] clientes=' + oficinaClientes.length + ' ordens=' + oficinaOrdens.length + ' pagamentos=' + oficinaPagamentos.length);
   const selOf = document.getElementById('of-filtro-status'); if (selOf) selOf.value = ''; // estado inicial: sem filtro
   renderOficinaKpis();
+  if (podePag) { try { renderOficinaPagamentos(); } catch(e) { console.warn('[oficina] painel de pagamentos:', e.message); } }
   switchOfTab('abertas'); // reseta a aba ao abrir o módulo (não persiste) + renderiza
   // Notifica OS prontas pendentes (1x/dia/item)
   checarWhatsAppOficinaPronto();
@@ -18862,9 +18908,16 @@ function _aplicarOfCardAtivo() {
 }
 
 function switchOfTab(t) {
-  if (!['abertas','finalizadas'].includes(t)) return;
+  if (!['abertas','finalizadas','pagamentos'].includes(t)) return;
   ofAbaAtiva = t;
   document.querySelectorAll('.fin-tab-btn[data-oftab]').forEach(b => b.classList.toggle('active', b.dataset.oftab === t));
+  // "A pagar" troca o corpo inteiro da página (filtros e KPIs são outros).
+  const ehPag = t === 'pagamentos';
+  const blocoOs  = document.getElementById('of-bloco-os');
+  const blocoPag = document.getElementById('of-bloco-pag');
+  if (blocoOs)  blocoOs.style.display  = ehPag ? 'none' : '';
+  if (blocoPag) blocoPag.style.display = ehPag ? '' : 'none';
+  if (ehPag) { renderOficinaPagamentos(); return; }
   renderOficina();
 }
 
@@ -19461,7 +19514,12 @@ function abrirOfModal(id) {
     +     `<div class="form-group full"><label>Tipo de atendimento ${ofTaRevisar?'<span style="color:#1a1a1a;background:var(--gold-bright);font-weight:800;font-size:10px;border-radius:4px;padding:1px 5px;">⚠ A CLASSIFICAR — confirme e salve</span>':'<span style="color:var(--text3);font-weight:400;font-size:10px;">(serviço pago = cliente paga; garantia/loja = não cobra)</span>'}</label><select class="form-input" id="of-tipo-atend">${ofTaOpts}</select></div>`
     +     `<div class="form-group full"><label>Localização do item <span style="color:var(--text3);font-weight:400;font-size:10px;">(onde está a scooter ou peça)</span></label><select class="form-input" id="of-localizacao">${ofLocOpts}</select></div>`
     +     `<div class="form-group"><label>Valor do serviço (R$)</label><input class="form-input" id="of-valor" type="number" step="0.01" value="${(o&&o.valorServico)||0}" oninput="ofRecalcResumo()"></div>`
-    +     `<div class="form-group"><label>Mão de obra (custo R$) <span style="color:var(--text3);font-weight:400;font-size:10px;">(o que a loja paga ao técnico)</span></label><input class="form-input" id="of-custo-mo" type="number" step="0.01" value="${(o&&o.custoMaoObra)||0}" oninput="ofRecalcResumo()"></div>`
+    +     `<div class="form-group"><label>Mão de obra (custo R$) <span style="color:var(--text3);font-weight:400;font-size:10px;">(o que a loja paga ao técnico)</span></label><input class="form-input" id="of-custo-mo" type="number" step="0.01" value="${(o&&o.custoMaoObra)||0}" oninput="ofRecalcResumo();_ofSyncCamposPrestador()"></div>`
+    // Responsável + data de execução alimentam o painel "A pagar" (aba da Oficina).
+    // Só fazem sentido quando há mão de obra a pagar; _ofSyncCamposPrestador()
+    // destaca os dois quando o custo é preenchido e o responsável está vazio.
+    +     `<div class="form-group"><label>Responsável pelo serviço <span style="color:var(--text3);font-weight:400;font-size:10px;">(quem recebe a mão de obra)</span></label><select class="form-input" id="of-prestador" onchange="_ofSyncCamposPrestador()">${_ofPrestadorOpts(o&&o.prestadorId)}</select></div>`
+    +     `<div class="form-group"><label>Data de execução <span style="color:var(--text3);font-weight:400;font-size:10px;">(quando o serviço foi feito)</span></label><input class="form-input" id="of-data-servico" type="date" value="${(o&&o.dataServico)||''}"></div>`
     +     `<div class="form-group full"><label>Peças usadas (custo)</label>`
     +       `<table style="width:100%;border-collapse:collapse;"><tbody id="of-pecas-tbody"></tbody></table>`
     +       `<button type="button" class="btn" style="margin-top:6px;padding:4px 10px;font-size:13px;" onclick="ofAddPeca()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Peça</button>`
@@ -19495,6 +19553,7 @@ function abrirOfModal(id) {
   shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
   ((o && Array.isArray(o.pecas)) ? o.pecas : []).forEach(p => ofAddPeca(p));
   ofRecalcResumo();
+  _ofSyncCamposPrestador();   // destaca "Responsável" se já há mão de obra sem dono
   initClienteSearch('of-cli-search', {
     onSelect: ofClienteOnSelect,
     initial: o ? (o.clienteId ? { clienteId: o.clienteId }
@@ -19681,6 +19740,8 @@ async function _ofSalvarExec(editId) {
   const tipoAtend = document.getElementById('of-tipo-atend')?.value || 'servico_pago';
   const valor     = parseFloat(document.getElementById('of-valor').value) || 0;
   const custoMo   = parseFloat(document.getElementById('of-custo-mo').value) || 0;
+  const prestador = document.getElementById('of-prestador')?.value || '';
+  const dataServ  = document.getElementById('of-data-servico')?.value || '';
   const pecas     = [...document.querySelectorAll('#of-pecas-tbody .of-peca-row')]
     .map(r => ({ descricao: (r.querySelector('.of-peca-desc').value || '').trim(),
                  custo: parseFloat(r.querySelector('.of-peca-custo').value) || 0 }))
@@ -19709,6 +19770,10 @@ async function _ofSalvarExec(editId) {
     valor_servico: valor,
     custo_mao_obra: custoMo,
     pecas: pecas,
+    prestador_id: prestador || null,
+    // Data de execução: quando não informada, assume a data em que a OS foi
+    // aberta (só faz sentido guardar se há mão de obra a pagar).
+    data_servico: dataServ || (custoMo > 0 ? (dataAbert || new Date().toISOString().split('T')[0]) : null),
     data_abertura: dataAbert || new Date().toISOString().split('T')[0],
     data_proximo_contato: dataProx || null,
   };
@@ -19739,6 +19804,665 @@ async function _ofSalvarExec(editId) {
   }
   document.getElementById('of-modal').remove();
   renderOficinaKpis(); renderOficina();
+  if (typeof renderOficinaPagamentos === 'function') { try { renderOficinaPagamentos(); } catch(e){} }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  OFICINA — PAGAMENTO AOS PRESTADORES
+//  Espelha o conceito de Montagens: o que falta pagar por
+//  prestador, seleção múltipla e baixa numa única operação.
+//
+//  Fonte do "a pagar": `custo_mao_obra` da OS (Oficina) e do
+//  caso (SAC) — só mão de obra. PEÇA NÃO ENTRA: a loja já paga
+//  na compra (lançamentos "peca manutencao" etc.); cobrar aqui
+//  contaria o mesmo gasto 2×.
+//
+//  O prestador é o mesmo cadastro das Montagens (`montadores`):
+//  o Marcos monta E faz manutenção — o Pix de R$ 4.566,20 de
+//  04/08/2026 misturou os dois e só apareceu na conciliação.
+//  Lista única = dívida total por pessoa num lugar só.
+//
+//  Saldo é somado no cliente (não há coluna derivada nem trigger):
+//  saldo = custo_mao_obra − Σ pagamentos. Mesmo padrão do
+//  `_cpSaldo()` de Contas a Pagar. Diferente de Montagens, aqui
+//  cada serviço é uma unidade só (o lote agrega N motos, a OS não).
+// ══════════════════════════════════════════════════════════════
+let oficinaPagamentos    = [];
+let oficinaDiarias       = [];
+// Seleção múltipla. Chave = 'of:<id>' (Oficina) ou 'sac:<id>' (SAC) — o painel
+// mistura as duas origens, então id puro não basta.
+let _ofPagSelecionados   = new Set();
+// Trava o prestador da 1ª seleção: não dá pra pagar gente diferente no mesmo
+// lançamento (mesma regra do montador em Montagens).
+let _ofPagPrestadorLock  = null;
+
+const _ofPagChave = (origem, id) => origem + ':' + id;
+
+// Options do select de prestador (reusa `montadores`; inativo só aparece se já
+// estiver selecionado, pra não sumir do registro histórico).
+function _ofPrestadorOpts(selecionadoId) {
+  const lista = (montadores || []).filter(m => m.ativo !== false || String(m.id) === String(selecionadoId || ''));
+  return '<option value="">— sem responsável —</option>'
+    + lista.map(m => `<option value="${m.id}"${String(m.id) === String(selecionadoId || '') ? ' selected' : ''}>${escHtml(m.nome)}${m.principal ? ' ⭐' : ''}${m.ativo === false ? ' (inativo)' : ''}</option>`).join('');
+}
+
+function _ofNomePrestador(id) {
+  const m = (montadores || []).find(x => String(x.id) === String(id));
+  return m ? m.nome : null;
+}
+
+// Destaque suave: custo de mão de obra preenchido sem responsável = o serviço
+// não vai aparecer agrupado no painel. Não bloqueia o salvamento (pode ser um
+// custo que a loja absorve), só avisa.
+function _ofSyncCamposPrestador() {
+  const custo = parseFloat(document.getElementById('of-custo-mo')?.value) || 0;
+  const sel   = document.getElementById('of-prestador');
+  const data  = document.getElementById('of-data-servico');
+  if (!sel) return;
+  const faltando = custo > 0 && !sel.value;
+  sel.style.borderColor = faltando ? 'var(--gold)' : '';
+  if (data && custo > 0 && !data.value) data.value = document.getElementById('of-data-abert')?.value || new Date().toISOString().split('T')[0];
+}
+
+// Lista unificada Oficina + SAC dos serviços com mão de obra a pagar.
+// Cada linha: origem, ids, número, cliente, prestador, data de execução,
+// custo, quanto já foi pago, saldo, status e data do último pagamento.
+function _ofServicosPagaveis() {
+  const pagsPor = {};
+  (oficinaPagamentos || []).forEach(p => {
+    const k = p.ordemId ? _ofPagChave('of', p.ordemId) : (p.sacCasoId ? _ofPagChave('sac', p.sacCasoId) : null);
+    if (!k) return;
+    (pagsPor[k] = pagsPor[k] || []).push(p);
+  });
+
+  const monta = (reg, origem) => {
+    const custo = Number(reg.custoMaoObra || 0);
+    if (!(custo > 0)) return null;                      // sem mão de obra = nada a pagar
+    const chave = _ofPagChave(origem, reg.id);
+    const pags  = (pagsPor[chave] || []).slice().sort((a,b) => String(a.dataPagamento||'').localeCompare(String(b.dataPagamento||'')));
+    const pago  = pags.reduce((s,p) => s + Number(p.valor || 0), 0);
+    const saldo = Math.max(0, +(custo - pago).toFixed(2));
+    return {
+      chave, origem, id: reg.id,
+      numero: reg.numero,
+      clienteNome: reg.clienteNome || '—',
+      modelo: reg.modeloScooter || '',
+      prestadorId: reg.prestadorId || null,
+      prestadorNome: _ofNomePrestador(reg.prestadorId) || 'Sem responsável',
+      // Data de execução: o campo próprio manda; sem ele cai na abertura
+      // (data_conclusao não serve — em 04/08/2026 oito OS de jun/jul foram
+      // finalizadas em lote no mesmo dia).
+      dataServico: reg.dataServico || reg.dataAbertura || null,
+      custo, pago, saldo,
+      status: saldo <= 0.005 ? 'pago' : (pago > 0.005 ? 'parcial' : 'pendente'),
+      dataPagamento: pags.length ? pags[pags.length - 1].dataPagamento : null,
+      pagamentos: pags,
+    };
+  };
+
+  return [
+    ...(oficinaOrdens || []).map(o => monta(o, 'of')),
+    ...(sacCasos || []).map(c => monta(c, 'sac')),
+  ].filter(Boolean);
+}
+
+// ── DIÁRIAS: o que realmente se paga ao prestador ──────────────────────────
+// Regime real (dono, 06/08/2026): o Marcos vai à loja toda QUARTA e recebe uma
+// diária fixa, INDEPENDENTE de quantos serviços fez. Por isso a conta a pagar é
+// a quarta-feira, não a OS — `custo_mao_obra` fica só medindo o lucro do serviço.
+// Tudo anterior a 04/08/2026 está quitado; o controle começa em 05/08/2026.
+const OFICINA_DIARIAS_INICIO = '2026-08-05';
+const _ofValorDiariaPadrao = () => Number((CONFIG_CUSTOS && CONFIG_CUSTOS.oficina_diaria_valor) || 100);
+
+// Palavras que identificam o lançamento de alimentação do prestador no caixa
+// (marmita/quentinha/almoço já pagos e lançados à parte).
+const _OF_ALIM_RX = /marmit|quentinh|comida|almo[cç]/i;
+
+// Lançamento de alimentação do prestador naquele dia, se existir no caixa.
+// Casa por data + palavra-chave + primeiro nome do prestador na descrição.
+function _ofLancAlimentacaoDoDia(data, prestadorId) {
+  const nome = String(_ofNomePrestador(prestadorId) || '').trim().split(/\s+/)[0].toLowerCase();
+  if (!nome) return null;
+  return (lancamentos || []).find(l =>
+    l.data === data && l.tipo === 'saida'
+    && _OF_ALIM_RX.test(l.descricao || '')
+    && String(l.descricao || '').toLowerCase().includes(nome)) || null;
+}
+
+function _ofDiariasPagaveis() {
+  const pagsPor = {};
+  (oficinaPagamentos || []).forEach(p => {
+    if (!p.diariaId) return;
+    (pagsPor[p.diariaId] = pagsPor[p.diariaId] || []).push(p);
+  });
+  return (oficinaDiarias || []).map(d => {
+    const pags  = (pagsPor[d.id] || []).slice().sort((a,b) => String(a.dataPagamento||'').localeCompare(String(b.dataPagamento||'')));
+    const pago  = pags.reduce((s,p) => s + Number(p.valor || 0), 0);
+    // Só a diária vira dívida. A alimentação já saiu do caixa no lançamento
+    // próprio — entra no custo da quarta, não no "a pagar" (senão paga 2×).
+    const valorDiaria = Number(d.valorDiaria || 0);
+    // Alimentação gravada manda; se estiver zerada, procura o lançamento do dia
+    // AGORA. Sem isso, gerar a quarta antes de lançar a marmita (o normal, já
+    // que o financeiro entra com 1-2 dias de atraso) deixaria o custo zerado
+    // pra sempre — a detecção é dinâmica, então passa a valer quando o
+    // lançamento aparecer.
+    let alim = Number(d.valorAlimentacao || 0);
+    let alimAuto = null;
+    if (!(alim > 0)) {
+      const l = _ofLancAlimentacaoDoDia(d.data, d.prestadorId);
+      if (l) { alim = Number(l.valor || 0); alimAuto = l; }
+    }
+    const saldo = Math.max(0, +(valorDiaria - pago).toFixed(2));
+    // Serviços executados naquele dia — informativo, ajuda a conferir a visita.
+    const servicosNoDia = _ofServicosPagaveis().filter(s => s.dataServico === d.data).length;
+    return {
+      chave: _ofPagChave('diaria', d.id), origem: 'diaria', id: d.id,
+      data: d.data,
+      prestadorId: d.prestadorId,
+      prestadorNome: _ofNomePrestador(d.prestadorId) || 'Sem responsável',
+      valorDiaria, valorAlimentacao: alim, alimAuto, custoTotal: +(valorDiaria + alim).toFixed(2),
+      pago, saldo,
+      status: saldo <= 0.005 ? 'pago' : (pago > 0.005 ? 'parcial' : 'pendente'),
+      dataPagamento: pags.length ? pags[pags.length - 1].dataPagamento : null,
+      pagamentos: pags, servicosNoDia,
+      observacoes: d.observacoes || null,
+    };
+  }).sort((a,b) => String(b.data).localeCompare(String(a.data)));
+}
+
+function _ofDiariaPorChave(chave) {
+  return _ofDiariasPagaveis().find(d => d.chave === chave) || null;
+}
+
+// Quartas-feiras de OFICINA_DIARIAS_INICIO até hoje que ainda não têm diária.
+function _ofQuartasFaltando(prestadorId) {
+  const existentes = new Set((oficinaDiarias || [])
+    .filter(d => String(d.prestadorId) === String(prestadorId)).map(d => d.data));
+  const hoje = _locHojeISO ? _locHojeISO() : new Date().toISOString().slice(0,10);
+  const out = [];
+  // Percorre dia a dia em UTC (Date puro daria fuso); só quarta (getUTCDay()===3).
+  for (let t = new Date(OFICINA_DIARIAS_INICIO + 'T12:00:00Z'); ; t.setUTCDate(t.getUTCDate() + 1)) {
+    const iso = t.toISOString().slice(0,10);
+    if (iso > hoje) break;
+    if (t.getUTCDay() === 3 && !existentes.has(iso)) out.push(iso);
+  }
+  return out;
+}
+
+// Gera as diárias das quartas que faltam. Vincula automaticamente o lançamento
+// de alimentação do mesmo dia (marmita já lançada) — sem relançar nada no caixa.
+async function _ofGerarQuartas() {
+  const btn = document.getElementById('of-btn-gerar-quartas');
+  if (btn?.disabled) return;                       // trava anti-duplo-clique
+  const ativos = (montadores || []).filter(m => m.ativo !== false);
+  const prestador = ativos.find(m => m.principal) || ativos[0];
+  if (!prestador) return smAlert('Cadastre um prestador ativo antes.');
+
+  const faltando = _ofQuartasFaltando(prestador.id);
+  if (!faltando.length) return smAlert('Nenhuma quarta-feira em aberto — todas já estão registradas.');
+
+  const linhas = faltando.map(data => {
+    // Alimentação do dia: lançamento de saída com marmita/quentinha/comida +
+    // o nome do prestador na descrição.
+    const alim = _ofLancAlimentacaoDoDia(data, prestador.id);
+    return {
+      prestador_id: prestador.id,
+      data,
+      valor_diaria: _ofValorDiariaPadrao(),
+      valor_alimentacao: alim ? Number(alim.valor || 0) : 0,
+      lancamento_alimentacao_id: alim ? alim.id : null,
+      observacoes: null,
+    };
+  });
+
+  const ok = await smConfirm(
+    `Registrar ${linhas.length} diária${linhas.length>1?'s':''} de ${prestador.nome}?\n\n`
+    + linhas.map(l => '• ' + l.data.split('-').reverse().join('/') + ' — ' + fmt(l.valor_diaria)
+        + (l.valor_alimentacao ? ' + ' + fmt(l.valor_alimentacao) + ' de alimentação (já no caixa)' : '')).join('\n')
+    + '\n\nSe ele não foi em alguma dessas quartas, é só excluir a linha depois.');
+  if (!ok) return;
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
+  try {
+    const { data, error } = await sb.from('oficina_diarias').insert(linhas).select();
+    if (error) throw error;
+    oficinaDiarias.push(...toCamelArr(data || []));
+    renderOficinaPagamentos();
+    if (typeof smToast === 'function') smToast(`✅ ${(data||[]).length} diária(s) registrada(s).`);
+  } catch (e) {
+    smAlert('Erro ao gerar diárias: ' + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '+ Gerar quartas'; }
+  }
+}
+
+// Excluir diária (ex.: o prestador não veio naquela quarta). Bloqueia se já
+// houver pagamento — estorne primeiro, pra não sumir com dinheiro registrado.
+async function _ofExcluirDiaria(chave) {
+  const d = _ofDiariaPorChave(chave);
+  if (!d) return;
+  if (d.pagamentos.length) return smAlert('Essa diária já tem pagamento registrado. Estorne o pagamento antes de excluir.');
+  if (!(await smConfirm(`Excluir a diária de ${String(d.data).split('-').reverse().join('/')} (${d.prestadorNome})?\n\nUse quando ele não veio nessa quarta. O lançamento da alimentação no caixa NÃO é apagado.`))) return;
+  try {
+    const { error } = await sb.from('oficina_diarias').delete().eq('id', d.id);
+    if (error) throw error;
+    oficinaDiarias = oficinaDiarias.filter(x => String(x.id) !== String(d.id));
+    _ofPagSelecionados.delete(chave);
+    if (!_ofPagSelecionados.size) _ofPagPrestadorLock = null;
+    renderOficinaPagamentos();
+  } catch (e) { smAlert('Erro ao excluir: ' + (e.message || e)); }
+}
+
+// Editar valores de uma diária (diária cheia/meia, alimentação avulsa).
+async function _ofEditarDiaria(chave) {
+  const d = _ofDiariaPorChave(chave);
+  if (!d) return;
+  const novo = await smPrompt(`Valor da diária de ${String(d.data).split('-').reverse().join('/')} (R$):`, String(d.valorDiaria));
+  if (novo === null) return;
+  const v = parseFloat(String(novo).replace(',','.'));
+  if (!(v >= 0)) return smAlert('Valor inválido.');
+  if (v < d.pago - 0.005) return smAlert(`Já foram pagos ${fmt(d.pago)} nessa diária. Estorne antes de baixar o valor.`);
+  try {
+    const { error } = await sb.from('oficina_diarias').update({ valor_diaria: v }).eq('id', d.id);
+    if (error) throw error;
+    const reg = (oficinaDiarias || []).find(x => String(x.id) === String(d.id));
+    if (reg) reg.valorDiaria = v;
+    renderOficinaPagamentos();
+  } catch (e) { smAlert('Erro ao editar: ' + (e.message || e)); }
+}
+
+function renderOficinaPagamentosKpis(lista) {
+  const el = document.getElementById('of-pag-kpis');
+  if (!el) return;
+  const pendentes = lista.filter(d => d.status !== 'pago');
+  const totalPend = pendentes.reduce((s,x) => s + x.saldo, 0);
+  const totalPago = lista.reduce((s,x) => s + x.pago, 0);
+  // Custo real da oficina no recorte: diária + alimentação (a marmita já saiu
+  // do caixa em lançamento próprio, mas faz parte do custo da quarta).
+  const custoTotal = lista.reduce((s,x) => s + x.custoTotal, 0);
+  const comDivida  = new Set(pendentes.map(d => d.prestadorNome)).size;
+  el.innerHTML =
+      `<div class="kpi" style="border-top:2px solid var(--gold);"><div class="kpi-label">Total pendente</div><div class="kpi-value gold">${fmt(totalPend)}</div><div class="kpi-change">${comDivida} prestador${comDivida===1?'':'es'} com saldo</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--red);"><div class="kpi-label">Diárias pendentes</div><div class="kpi-value red">${pendentes.length}</div><div class="kpi-change">de ${lista.length} no filtro</div></div>`
+    + `<div class="kpi" style="border-top:2px solid var(--green);"><div class="kpi-label">Já pago</div><div class="kpi-value green">${fmt(totalPago)}</div><div class="kpi-change">diárias do filtro</div></div>`
+    + `<div class="kpi"><div class="kpi-label">Custo da oficina</div><div class="kpi-value">${fmt(custoTotal)}</div><div class="kpi-change">diárias + alimentação</div></div>`;
+}
+
+function renderOficinaPagamentos() {
+  const el = document.getElementById('of-pag-lista');
+  if (!el) return;
+  const filtro = document.getElementById('of-pag-filtro')?.value || 'pendentes';
+  const ini    = document.getElementById('of-pag-ini')?.value || '';
+  const fim    = document.getElementById('of-pag-fim')?.value || '';
+  const noPeriodo = d => !!d && (!ini || d >= ini) && (!fim || d <= fim);
+
+  let lista = _ofDiariasPagaveis();
+  if (ini || fim) lista = lista.filter(d => noPeriodo(d.data));
+  if (filtro === 'pendentes')  lista = lista.filter(d => d.status !== 'pago');
+  else if (filtro === 'pagos') lista = lista.filter(d => d.status === 'pago');
+
+  // Contador da aba = pendentes SEM filtro de tela (é um alerta, não um recorte).
+  const pendentesGlobal = _ofDiariasPagaveis().filter(d => d.status !== 'pago');
+  const elCnt = document.getElementById('of-cnt-pagamentos');
+  if (elCnt) elCnt.textContent = pendentesGlobal.length;
+
+  renderOficinaPagamentosKpis(lista);
+  const sub = document.getElementById('of-pag-sub');
+  if (sub) sub.textContent = lista.length + ' diária' + (lista.length===1?'':'s') + ' exibida' + (lista.length===1?'':'s');
+  const cnt = document.getElementById('of-pag-count');
+  if (cnt) cnt.textContent = fmt(pendentesGlobal.reduce((s,x)=>s+x.saldo,0)) + ' pendente no total';
+
+  // Aviso de quarta-feira sem diária registrada — é o "não deixar esquecer".
+  const ativos = (montadores || []).filter(m => m.ativo !== false);
+  const principal = ativos.find(m => m.principal) || ativos[0];
+  const faltando = principal ? _ofQuartasFaltando(principal.id) : [];
+  const avisoQuartas = faltando.length
+    ? `<div style="padding:10px 20px;background:rgba(245,197,24,0.10);border-bottom:1px solid var(--gold);font-size:11px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+         <span>⚠️ <strong>${faltando.length}</strong> quarta-feira${faltando.length===1?'':'s'} sem diária registrada (${faltando.map(d => d.split('-').reverse().join('/')).join(', ')}) — ${escHtml(principal.nome)}</span>
+         <button class="btn btn-gold" type="button" id="of-btn-gerar-quartas" onclick="_ofGerarQuartas()" style="font-size:11px;padding:5px 12px;">+ Gerar quartas</button>
+       </div>`
+    : '';
+
+  // Sticky bar da seleção múltipla.
+  let barra = '';
+  if (_ofPagSelecionados.size > 0) {
+    const sel = lista.filter(d => _ofPagSelecionados.has(d.chave));
+    const total = sel.reduce((a,d) => a + d.saldo, 0);
+    barra = `<div style="position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:2px solid var(--gold);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div style="font-size:12px;">
+        ☑ <strong>${sel.length}</strong> diária${sel.length===1?'':'s'} selecionada${sel.length===1?'':'s'}
+        <span style="color:var(--text3);">· ${escHtml(_ofNomePrestador(_ofPagPrestadorLock) || '—')}</span>
+        · Total a pagar: <strong style="color:var(--gold);">${fmt(total)}</strong>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" type="button" onclick="_ofCancelarSelPag()">Cancelar seleção</button>
+        <button class="btn btn-gold" type="button" onclick="_ofPagarSelecionados()"><svg class="ic ic-sm"><use href="#ic-wallet"/></svg> Pagar selecionadas</button>
+      </div>
+    </div>`;
+  }
+
+  if (!lista.length) {
+    const vazio = filtro === 'pagos' ? 'Nenhuma diária paga no filtro'
+                : filtro === 'pendentes' ? 'Nenhuma diária pendente 🎉'
+                : 'Nenhuma diária registrada no filtro';
+    el.innerHTML = avisoQuartas + barra + '<div class="empty" style="padding:32px;">' + vazio + '</div>';
+    return;
+  }
+
+  // Agrupado por prestador (como Montagens agrupa por montador).
+  const grupos = {};
+  lista.forEach(d => { (grupos[d.prestadorNome] = grupos[d.prestadorNome] || []).push(d); });
+  const nomes = Object.keys(grupos).sort((a,b) => a.localeCompare(b));
+
+  const stBadge = {
+    pendente: '<span class="badge badge-orange">Pendente</span>',
+    parcial:  '<span class="badge" style="background:rgba(56,139,253,.16);color:#5aa9ff;border:1px solid rgba(56,139,253,.4);">Parcial</span>',
+    pago:     '<span class="badge badge-green">Pago</span>',
+  };
+  const dBR  = d => d ? String(d).split('-').reverse().join('/') : '—';
+  const DSEM = ['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
+  const diaSemana = iso => DSEM[new Date(iso + 'T12:00:00Z').getUTCDay()];
+
+  el.innerHTML = avisoQuartas + barra + nomes.map(nome => {
+    const itens    = grupos[nome];
+    const pendGrp  = itens.filter(d => d.status !== 'pago');
+    const saldoGrp = pendGrp.reduce((a,d) => a + d.saldo, 0);
+    return `<div style="border-bottom:1px solid var(--border);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 20px;background:var(--surface2);flex-wrap:wrap;">
+        <div style="font-size:12px;font-weight:800;">${escHtml(nome)}
+          <span style="font-weight:500;color:var(--text3);">· ${itens.length} diária${itens.length===1?'':'s'}${pendGrp.length ? ' · '+pendGrp.length+' pendente'+(pendGrp.length===1?'':'s') : ''}</span>
+        </div>
+        <div style="font-size:12px;">A pagar: <strong style="color:${saldoGrp>0.005?'var(--gold)':'var(--green)'};">${fmt(saldoGrp)}</strong></div>
+      </div>
+      ${itens.map(d => {
+        const trava   = _ofPagPrestadorLock && String(_ofPagPrestadorLock) !== String(d.prestadorId || '');
+        const podeSel = d.status !== 'pago';
+        const chk = podeSel
+          ? `<input type="checkbox" ${_ofPagSelecionados.has(d.chave)?'checked':''} ${trava?'disabled':''} onchange="_ofPagToggle('${d.chave}')" title="${trava?'Cancele a seleção pra pagar outro prestador':'Selecionar pra pagar'}">`
+          : '<span style="display:inline-block;width:13px;"></span>';
+        return `<div style="display:grid;grid-template-columns:26px 1.1fr 1fr 96px 104px 96px 104px 92px auto;gap:10px;align-items:center;padding:10px 20px;border-top:1px solid var(--border);font-size:12px;">
+          <div>${chk}</div>
+          <div><strong style="color:var(--gold);">${dBR(d.data)}</strong><div style="font-size:10px;color:var(--text3);">${diaSemana(d.data)}</div></div>
+          <div style="font-size:10px;color:var(--text3);">${d.servicosNoDia} serviço${d.servicosNoDia===1?'':'s'} no dia${d.observacoes?`<br><span title="${escHtml(d.observacoes)}">${escHtml(String(d.observacoes).slice(0,28))}</span>`:''}</div>
+          <div class="td-mono" style="font-weight:700;" title="Diária">${fmt(d.valorDiaria)}</div>
+          <div class="td-mono" style="color:var(--text3);" title="${d.valorAlimentacao>0.005?('Alimentação — já lançada no caixa à parte' + (d.alimAuto?' (achada automaticamente: "'+escHtml(d.alimAuto.descricao||'')+'")':'')):'Sem alimentação lançada nesse dia'}">${d.valorAlimentacao>0.005?'+ '+fmt(d.valorAlimentacao)+(d.alimAuto?' <span style="color:var(--gold);font-size:9px;" >auto</span>':''):'—'}</div>
+          <div class="td-mono" style="color:${d.pago>0.005?'var(--green)':'var(--text3)'};" title="Já pago">${d.pago>0.005?fmt(d.pago):'—'}</div>
+          <div class="td-mono" style="font-weight:700;color:${d.saldo>0.005?'var(--gold)':'var(--green)'};" title="A pagar">${fmt(d.saldo)}</div>
+          <div>${stBadge[d.status]}${d.dataPagamento?`<div style="font-size:10px;color:var(--text3);margin-top:2px;">${dBR(d.dataPagamento)}</div>`:''}</div>
+          <div style="display:flex;gap:5px;justify-content:flex-end;">
+            ${podeSel ? `<button class="btn btn-gold" style="font-size:10px;padding:5px 10px;" onclick="_ofPagarUm('${d.chave}')">Pagar</button>` : ''}
+            ${d.pagamentos.length ? `<button class="action-btn" onclick="_ofVerPagamentos('${d.chave}')" title="Ver/estornar pagamentos">🧾</button>` : ''}
+            <button class="action-btn edit-btn" onclick="_ofEditarDiaria('${d.chave}')" title="Editar valor da diária"><svg class="ic ic-sm"><use href="#ic-edit"/></svg></button>
+            ${!d.pagamentos.length ? `<button class="action-btn del-btn" onclick="_ofExcluirDiaria('${d.chave}')" title="Excluir (não veio nessa quarta)"><svg class="ic ic-sm"><use href="#ic-x"/></svg></button>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+}
+
+function _ofPagToggle(chave) {
+  const s = _ofDiariaPorChave(chave);
+  if (!s) return;
+  if (_ofPagSelecionados.has(chave)) {
+    _ofPagSelecionados.delete(chave);
+    if (_ofPagSelecionados.size === 0) _ofPagPrestadorLock = null;
+  } else {
+    if (_ofPagPrestadorLock && String(_ofPagPrestadorLock) !== String(s.prestadorId)) {
+      smAlert('Só dá pra pagar serviços do mesmo prestador num lançamento. Cancele a seleção pra trocar.');
+      return;
+    }
+    _ofPagSelecionados.add(chave);
+    _ofPagPrestadorLock = s.prestadorId;
+  }
+  renderOficinaPagamentos();
+}
+
+function _ofCancelarSelPag() {
+  _ofPagSelecionados.clear();
+  _ofPagPrestadorLock = null;
+  renderOficinaPagamentos();
+}
+
+function _ofPagarUm(chave)      { abrirOfPagarModal([chave]); }
+function _ofPagarSelecionados() { if (_ofPagSelecionados.size) abrirOfPagarModal([..._ofPagSelecionados]); }
+
+// ── Modal de pagamento (1 ou N diárias do mesmo prestador) ──
+function abrirOfPagarModal(chaves) {
+  if (!_podeVerCusto()) { smAlert('Sem permissão.'); return; }
+  document.getElementById('of-pagar-modal')?.remove();
+  const servicos = chaves.map(_ofDiariaPorChave).filter(Boolean);
+  if (!servicos.length) { smAlert('Nenhuma diária selecionada.'); return; }
+
+  const prestadorId = servicos[0].prestadorId;
+  if (servicos.some(s => String(s.prestadorId) !== String(prestadorId))) {
+    smAlert('Não dá pra pagar prestadores diferentes no mesmo lançamento.');
+    return;
+  }
+  const nome    = _ofNomePrestador(prestadorId) || '—';
+  const isMulti = servicos.length > 1;
+  const totalSaldo = +servicos.reduce((a,s) => a + s.saldo, 0).toFixed(2);
+  if (totalSaldo <= 0) { smAlert('Essas diárias já estão pagas.'); return; }
+  // A alimentação já saiu do caixa em lançamento próprio — mostra como
+  // informação de custo, nunca somada ao valor a pagar.
+  const totalAlim = +servicos.reduce((a,s) => a + Number(s.valorAlimentacao || 0), 0).toFixed(2);
+
+  const contaOpts = '<option value="">Selecione uma conta...</option>'
+    + (contas || []).map(c => `<option value="${escHtml(c.nome).replace(/"/g,'&quot;')}">${escHtml(c.nome)}</option>`).join('');
+  const hoje = new Date().toISOString().split('T')[0];
+  const dBR = d => d ? String(d).split('-').reverse().join('/') : '—';
+
+  const listaHTML = `<div style="margin-bottom:12px;padding:10px 12px;background:var(--surface2);border-radius:var(--r-sm);font-size:11px;max-height:170px;overflow-y:auto;">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Diária${isMulti?'s':''} selecionada${isMulti?'s':''}</div>
+      ${servicos.map(s => `<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed var(--border);">
+        <span><span style="font-family:var(--mono,monospace);color:var(--gold);">${dBR(s.data)}</span> <span style="color:var(--text3);">· ${s.servicosNoDia} serviço${s.servicosNoDia===1?'':'s'}${s.valorAlimentacao>0.005?' · alimentação '+fmt(s.valorAlimentacao)+' (já no caixa)':''}</span></span>
+        <span><strong style="color:var(--gold);">${fmt(s.saldo)}</strong></span>
+      </div>`).join('')}
+    </div>`;
+
+  const shell = document.createElement('div');
+  shell.id = 'of-pagar-modal';
+  shell.className = 'modal-overlay open';
+  shell.dataset.chaves = JSON.stringify(chaves);
+  shell.innerHTML =
+      `<div class="modal" style="width:600px;max-width:96vw;">`
+    +   `<div class="modal-title">Pagar <span>${isMulti ? servicos.length + ' diárias' : 'diária'}</span> de ${escHtml(nome)}</div>`
+    +   `<div style="margin-bottom:14px;padding:10px 12px;background:var(--surface2);border-radius:var(--r-sm);font-size:12px;">`
+    +     `<div><strong>Prestador:</strong> ${escHtml(nome)}</div>`
+    +     `<div style="margin-top:4px;color:var(--text2);font-size:11px;">Total a pagar: <strong style="color:var(--gold);">${fmt(totalSaldo)}</strong> · ${servicos.length} diária${isMulti?'s':''}${totalAlim>0.005?` <span style="color:var(--text3);">(+ ${fmt(totalAlim)} de alimentação já lançados no caixa — não entram aqui)</span>`:''}</div>`
+    +   `</div>`
+    +   listaHTML
+    +   `<div class="form-grid">`
+    +     `<div class="form-group"><label>Pagar agora (R$)</label><input class="form-input" id="of-pag-valor" type="number" step="0.01" min="0.01" value="${totalSaldo.toFixed(2)}"></div>`
+    +     `<div class="form-group"><label>Data pagamento</label><input class="form-input" id="of-pag-data" type="date" value="${hoje}"></div>`
+    +     `<div class="form-group full"><label>Conta</label><select class="form-input" id="of-pag-conta">${contaOpts}</select></div>`
+    +     `<div class="form-group full"><label>Observações (opcional)</label><textarea class="form-input" id="of-pag-obs" rows="2" placeholder="—"></textarea></div>`
+    +   `</div>`
+    +   `<div class="modal-bloco" style="margin-top:14px;">`
+    +     `<div class="modal-bloco-titulo">Tipo de registro</div>`
+    +     `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;cursor:pointer;padding:6px 0;">`
+    +       `<input type="radio" name="of-pag-tipo" value="lancamento" checked style="margin-top:2px;">`
+    +       `<span><strong>Gerar lançamento no financeiro</strong> <span style="color:var(--text3);font-size:10px;">(padrão)</span><br><span style="color:var(--text3);font-size:10px;">Cria <strong>1</strong> saída em lançamentos${isMulti ? ' agregando os '+servicos.length+' serviços' : ''} · categoria <em>Oficina - Peças e Serviços</em> · conta escolhida acima.</span></span>`
+    +     `</label>`
+    +     `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;cursor:pointer;padding:6px 0;">`
+    +       `<input type="radio" name="of-pag-tipo" value="so-registrar" style="margin-top:2px;">`
+    +       `<span><strong>Já paguei externamente</strong> <span style="color:var(--text3);font-size:10px;">(só registrar)</span><br><span style="color:var(--text3);font-size:10px;">Dá baixa aqui sem mexer no financeiro (use quando o pagamento já foi lançado por fora).</span></span>`
+    +     `</label>`
+    +   `</div>`
+    +   (isMulti ? `<div style="margin-top:10px;padding:8px 10px;background:rgba(245,197,24,0.08);border:1px solid var(--gold);border-radius:var(--r-sm);font-size:10px;color:var(--text2);">ℹ️ Valor menor que o total é distribuído proporcionalmente entre os serviços (centavos residuais vão pro último).</div>` : '')
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('of-pagar-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="of-pag-btn-confirmar" onclick="_ofConfirmarPagamento()">Confirmar pagamento</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _ofConfirmarPagamento() {
+  const btn = document.getElementById('of-pag-btn-confirmar');
+  if (btn?.disabled) return;                       // trava anti-duplo-clique (síncrona)
+  const modal = document.getElementById('of-pagar-modal');
+  if (!modal) return;
+  let chaves = [];
+  try { chaves = JSON.parse(modal.dataset.chaves || '[]'); } catch(e) { chaves = []; }
+  const servicos = chaves.map(_ofDiariaPorChave).filter(Boolean);
+  if (!servicos.length) { smAlert('Diárias não encontradas. Feche e tente de novo.'); return; }
+
+  const valorTotal = parseFloat(String(document.getElementById('of-pag-valor').value || '').replace(',','.'));
+  const data       = document.getElementById('of-pag-data').value;
+  const contaNm    = document.getElementById('of-pag-conta').value;
+  const obs        = (document.getElementById('of-pag-obs').value || '').trim();
+  const gerarLanc  = (document.querySelector('input[name="of-pag-tipo"]:checked')?.value || 'lancamento') === 'lancamento';
+
+  if (!(valorTotal > 0)) return smAlert('Informe um valor maior que zero.');
+  if (!data)             return smAlert('Escolha a data do pagamento.');
+  if (gerarLanc && !contaNm) return smAlert('Escolha a conta de onde o dinheiro saiu (ou use "já paguei externamente").');
+
+  const saldoTotal = +servicos.reduce((a,s) => a + s.saldo, 0).toFixed(2);
+  if (valorTotal > saldoTotal + 0.005) return smAlert(`Valor acima do saldo. A pagar: ${fmt(saldoTotal)}.`);
+
+  // Distribuição proporcional ao saldo; resíduo de centavos no último.
+  const distrib = [];
+  let acum = 0;
+  servicos.forEach((s, i) => {
+    const v = (i === servicos.length - 1)
+      ? +(valorTotal - acum).toFixed(2)
+      : +(valorTotal * (s.saldo / saldoTotal)).toFixed(2);
+    if (i < servicos.length - 1) acum += v;
+    if (v > 0) distrib.push({ servico: s, valor: v });
+  });
+
+  btn.disabled = true; btn.textContent = 'Salvando...';
+  const prestadorId = servicos[0].prestadorId;
+  const nome = _ofNomePrestador(prestadorId) || 'prestador';
+  let lancamentoId = null;
+  try {
+    if (gerarLanc) {
+      const ctaBanco = (contas || []).find(c => c.nome === contaNm);
+      if (!ctaBanco) throw new Error('Conta bancária inválida.');
+      lancamentoId = 'oficinapag_' + Date.now();
+      const refs = servicos.map(s => String(s.data).split('-').reverse().slice(0,2).join('/')).join(', ');
+      const lancPayload = {
+        id: lancamentoId,
+        tipo: 'saida',
+        descricao: 'Diária' + (servicos.length>1?'s':'') + ' da oficina · ' + nome + ' (' + refs + ')',
+        valor: valorTotal,
+        data,
+        categoria: 'Oficina - Peças e Serviços',
+        conta_id: ctaBanco.id,
+        conta_nome: ctaBanco.nome,
+        observacao: obs || (servicos.length + ' diária' + (servicos.length>1?'s':'') + ' — ' + refs + '. Alimentação lançada à parte.'),
+      };
+      const { error: errL } = await sb.from('lancamentos').insert(lancPayload);
+      if (errL) throw new Error('Erro ao criar lançamento: ' + errL.message);
+      // fromDb (não toCamel cru): o resto do app lê `l.conta`, e toCamel geraria
+      // `contaNome`. Com a chave errada o lançamento fica invisível pra
+      // `recalcularSaldos()`/`_somaLancamentosConta()` — aí "Recalcular saldos"
+      // na mesma sessão desfaria este débito e gravaria o saldo antigo.
+      lancamentos.unshift(TABLE_MAP.lancamentos.fromDb(lancPayload));
+      ctaBanco.saldo = Number(ctaBanco.saldo || 0) - valorTotal;
+    }
+
+    const payload = distrib.map(d => ({
+      diaria_id: d.servico.id,
+      prestador_id: prestadorId,
+      valor: d.valor,
+      data_pagamento: data,
+      lancamento_id: lancamentoId,
+      observacoes: obs || null,
+    }));
+    const { data: inseridos, error: errP } = await sb.from('oficina_pagamentos').insert(payload).select();
+    if (errP) {
+      // Sem transação no client: desfaz o lançamento na mão.
+      if (lancamentoId) {
+        await sb.from('lancamentos').delete().eq('id', lancamentoId);
+        lancamentos = lancamentos.filter(l => l.id !== lancamentoId);
+        const cta = (contas || []).find(c => c.nome === contaNm);
+        if (cta) cta.saldo = Number(cta.saldo || 0) + valorTotal;
+      }
+      throw new Error('Erro ao registrar pagamento: ' + errP.message);
+    }
+    oficinaPagamentos.push(...toCamelArr(inseridos || []));
+
+    modal.remove();
+    _ofCancelarSelPag();
+    if (gerarLanc && typeof salvarDados === 'function') salvarDados();
+    ['renderContas','renderFinKpis','renderLancamentos'].forEach(fn => { if (typeof window[fn] === 'function') { try { window[fn](); } catch(e){} } });
+    renderOficinaPagamentos();
+    if (typeof smToast === 'function') smToast('✅ Pagamento registrado.');
+  } catch (e) {
+    smAlert(e.message || 'Erro ao registrar pagamento.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar pagamento'; }
+  }
+}
+
+// ── Histórico + estorno de pagamento de uma diária ──
+function _ofVerPagamentos(chave) {
+  const s = _ofDiariaPorChave(chave);
+  if (!s || !s.pagamentos.length) return;
+  document.getElementById('of-hist-modal')?.remove();
+  const dBR = d => d ? String(d).split('-').reverse().join('/') : '—';
+  const shell = document.createElement('div');
+  shell.id = 'of-hist-modal';
+  shell.className = 'modal-overlay open';
+  shell.innerHTML =
+      `<div class="modal" style="width:520px;max-width:96vw;">`
+    +   `<div class="modal-title">Pagamentos · <span>diária de ${dBR(s.data)}</span></div>`
+    +   `<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">${escHtml(s.prestadorNome)} · diária ${fmt(s.valorDiaria)} · pago <strong style="color:var(--green);">${fmt(s.pago)}</strong> · falta <strong style="color:${s.saldo>0.005?'var(--gold)':'var(--green)'};">${fmt(s.saldo)}</strong></div>`
+    +   s.pagamentos.map(p => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;padding:7px 2px;border-bottom:1px solid var(--border);">
+          <span>${dBR(p.dataPagamento)} · <strong>${fmt(p.valor)}</strong> ${p.lancamentoId ? '<span style="color:var(--text3);font-size:10px;">(no caixa)</span>' : '<span style="color:var(--text3);font-size:10px;">(só registro)</span>'}${p.observacoes?`<br><span style="color:var(--text3);font-size:10px;">${escHtml(p.observacoes)}</span>`:''}</span>
+          <button class="action-btn del-btn" style="font-size:10px;padding:3px 8px;" onclick="_ofEstornarPagamento('${p.id}','${chave}')">estornar</button>
+        </div>`).join('')
+    +   `<div class="modal-actions"><button class="btn" onclick="document.getElementById('of-hist-modal').remove();">Fechar</button></div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _ofEstornarPagamento(pagId, chave) {
+  const p = (oficinaPagamentos || []).find(x => String(x.id) === String(pagId));
+  if (!p) return;
+  // O lançamento pode agregar VÁRIOS serviços — só apaga o lançamento se este
+  // for o último pagamento preso a ele; senão, abate o valor.
+  const irmaos = (oficinaPagamentos || []).filter(x => p.lancamentoId && x.lancamentoId === p.lancamentoId);
+  const ehUltimo = irmaos.length <= 1;
+  const aviso = p.lancamentoId
+    ? (ehUltimo ? '\n\nO lançamento no caixa também vai ser apagado e o saldo da conta restaurado.'
+                : `\n\nO lançamento no caixa agrega ${irmaos.length} serviços — ele vai ser reduzido em ${fmt(p.valor)}.`)
+    : '';
+  if (!(await smConfirm(`Estornar o pagamento de ${fmt(p.valor)}?${aviso}`))) return;
+
+  try {
+    const { error } = await sb.from('oficina_pagamentos').delete().eq('id', pagId);
+    if (error) throw error;
+    oficinaPagamentos = oficinaPagamentos.filter(x => String(x.id) !== String(pagId));
+
+    if (p.lancamentoId) {
+      const lanc = (lancamentos || []).find(l => l.id === p.lancamentoId);
+      // `conta` é a chave canônica; `contaNome` cobre lançamento inserido na
+      // sessão por telas que ainda usam toCamel cru (Montagens/Consignação).
+      const cta  = lanc ? (contas || []).find(c => c.nome === (lanc.conta || lanc.contaNome)) : null;
+      if (ehUltimo) {
+        await sb.from('lancamentos').delete().eq('id', p.lancamentoId);
+        lancamentos = (lancamentos || []).filter(l => l.id !== p.lancamentoId);
+        if (cta) cta.saldo = Number(cta.saldo || 0) + Number(p.valor || 0);
+      } else if (lanc) {
+        const novoValor = +(Number(lanc.valor || 0) - Number(p.valor || 0)).toFixed(2);
+        await sb.from('lancamentos').update({ valor: novoValor }).eq('id', p.lancamentoId);
+        lanc.valor = novoValor;
+        if (cta) cta.saldo = Number(cta.saldo || 0) + Number(p.valor || 0);
+      }
+      if (typeof salvarDados === 'function') salvarDados();
+      ['renderContas','renderFinKpis','renderLancamentos'].forEach(fn => { if (typeof window[fn] === 'function') { try { window[fn](); } catch(e){} } });
+    }
+    document.getElementById('of-hist-modal')?.remove();
+    renderOficinaPagamentos();
+    if (typeof smToast === 'function') smToast('Pagamento estornado.');
+  } catch (e) {
+    smAlert('Erro ao estornar: ' + (e.message || e));
+  }
 }
 
 // ══════════════════════════════════════════
@@ -27128,6 +27852,10 @@ function abrirSacModal(id) {
     +     `<div class="form-group full"><label>Localização do item <span style="color:var(--text3);font-weight:400;font-size:10px;">(onde está a scooter ou peça · "Na loja" mostra também na aba Oficina)</span></label><select class="form-input" id="sac-localizacao">${locOpts}</select></div>`
     +     `<div class="form-group full"><label>Fornecedor</label><input class="form-input" id="sac-forn" value="${escAttr(c&&c.fornecedor)}"></div>`
     +     `<div class="form-group"><label>Mão de obra (custo R$) <span style="color:var(--text3);font-weight:400;font-size:10px;">(o que a loja paga ao técnico)</span></label><input class="form-input" id="sac-custo-mo" type="number" step="0.01" value="${(c&&c.custoMaoObra)||0}" oninput="sacRecalcResumo()"></div>`
+    // Espelha a Oficina: responsável + data de execução alimentam o painel
+    // "A pagar" (que soma Oficina + SAC do mesmo prestador).
+    +     `<div class="form-group"><label>Responsável pelo serviço <span style="color:var(--text3);font-weight:400;font-size:10px;">(quem recebe a mão de obra)</span></label><select class="form-input" id="sac-prestador">${_ofPrestadorOpts(c&&c.prestadorId)}</select></div>`
+    +     `<div class="form-group"><label>Data de execução <span style="color:var(--text3);font-weight:400;font-size:10px;">(quando o serviço foi feito)</span></label><input class="form-input" id="sac-data-servico" type="date" value="${(c&&c.dataServico)||''}"></div>`
     +     `<div class="form-group full"><label>Peças usadas (custo)</label>`
     +       `<table style="width:100%;border-collapse:collapse;"><tbody id="sac-pecas-tbody"></tbody></table>`
     +       `<button type="button" class="btn" style="margin-top:6px;padding:4px 10px;font-size:13px;" onclick="sacAddPeca()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Peça</button>`
@@ -27316,6 +28044,8 @@ async function _sacSalvarExec(editId) {
   const problemaRelatado= document.getElementById('sac-desc').value.trim();
   const itensDeixados   = document.getElementById('sac-itens').value.trim();
   const custoMo         = parseFloat(document.getElementById('sac-custo-mo').value) || 0;
+  const prestadorSac    = document.getElementById('sac-prestador')?.value || '';
+  const dataServSac     = document.getElementById('sac-data-servico')?.value || '';
   const localizacao     = document.getElementById('sac-localizacao')?.value || 'com_cliente';
   const tipoAtend       = document.getElementById('sac-tipo-atend')?.value || 'pos_venda';
   const pecas           = [...document.querySelectorAll('#sac-pecas-tbody .sac-peca-row')]
@@ -27343,6 +28073,8 @@ async function _sacSalvarExec(editId) {
     itens_deixados: itensDeixados || null,
     custo_mao_obra: custoMo,
     pecas: pecas,
+    prestador_id: prestadorSac || null,
+    data_servico: dataServSac || (custoMo > 0 ? (dataAbertura || new Date().toISOString().split('T')[0]) : null),
     localizacao: localizacao,
     tipo_atendimento: tipoAtend,
     classificacao_revisar: false,
@@ -27372,6 +28104,10 @@ async function _sacSalvarExec(editId) {
   }
   document.getElementById('sac-modal').remove();
   renderSacKpis(); renderSac(); atualizarDotSac();
+  // O caso do SAC também alimenta o painel "A pagar" da Oficina.
+  if (typeof renderOficinaPagamentos === 'function' && document.getElementById('of-pag-lista')) {
+    try { renderOficinaPagamentos(); } catch(e){}
+  }
 }
 
 async function sacExcluir(id) {

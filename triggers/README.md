@@ -15,6 +15,29 @@ Link: `contas_pagar.emprestimo_parcela_id UUID REFERENCES emprestimo_parcelas(id
 
 ## Migrations recentes
 
+- **Oficina — diárias do prestador** (`migration-oficina-diarias.sql`, 07/08/2026). Nova tabela
+  **`oficina_diarias`** (`prestador_id` → `montadores` `ON DELETE RESTRICT`, `data`, `valor_diaria` default
+  100, `valor_alimentacao`, `lancamento_alimentacao_id TEXT → lancamentos ON DELETE SET NULL`, `observacoes`;
+  **UNIQUE (prestador_id, data)** pra a geração de quartas ser idempotente), RLS + `acesso_total`, 2 índices.
+  `oficina_pagamentos` ganhou **`diaria_id`** (`ON DELETE CASCADE`) e o CHECK `oficina_pagamentos_origem_unica`
+  foi **recriado** — de `(ordem_id IS NOT NULL) <> (sac_caso_id IS NOT NULL)` para "exatamente uma das três
+  origens". Seed `config_custos.oficina_diaria_valor = 100` (`ON CONFLICT DO NOTHING`). **Por quê:** o
+  prestador recebe por DIA de visita (quarta), não por serviço — ver `frontend/CLAUDE.md` → "Oficina —
+  controle de pagamento aos prestadores". `valor_alimentacao` compõe o custo da quarta mas **não** é dívida
+  (a marmita já saiu do caixa em lançamento próprio).
+
+- **Oficina/SAC — pagamento aos prestadores** (`migration-oficina-pagamentos.sql`, 06/08/2026). Aditiva pura.
+  `oficina_ordens` e `sac_casos` ganharam **`prestador_id UUID NULL REFERENCES montadores(id) ON DELETE SET NULL`**
+  (reusa o cadastro de montadores como prestador único — o Marcos monta e conserta) e **`data_servico DATE NULL`**
+  (data de execução; `data_conclusao` não serve porque OSes antigas são finalizadas em lote). Índices parciais
+  em ambos. Nova tabela **`oficina_pagamentos`** (`ordem_id` XOR `sac_caso_id` via CHECK, `prestador_id`,
+  `valor NUMERIC(12,2) > 0`, `data_pagamento`, `lancamento_id TEXT → lancamentos ON DELETE SET NULL`,
+  `observacoes`), RLS + policy `acesso_total`, 4 índices parciais. **Sem trigger de recálculo, de propósito:**
+  diferente de `montagens_lotes` (que agrega N itens), cada serviço é uma unidade só — o saldo
+  (`custo_mao_obra − Σ pagamentos`) é somado no cliente, padrão do `_cpSaldo()` de Contas a Pagar. Vários
+  pagamentos podem dividir o mesmo `lancamento_id` (Pix agregado). Dossiê: `frontend/CLAUDE.md` → "Oficina —
+  controle de pagamento aos prestadores".
+
 - **`clientes`** ganhou **endereço estruturado**: `cep`, `rua`, `numero`, `complemento`, `bairro` (todos `text NULL`). Aditiva pura (`ADD COLUMN IF NOT EXISTS`), nada alterado/removido; RLS `acesso_total` já cobre. Motivação: o PDV captura endereço estruturado (obrigatório), mas `clientes` só tinha `endereco` (texto livre) + `cidade`/`uf`. Agora o PDV grava **estruturado + `endereco` composto** (Tela Clientes e sync Tiny seguem lendo `endereco`/`cidade`/`uf` intactos). Registros antigos (229) ficam com os novos campos `NULL` e enriquecem na 1ª venda PDV; clientes vindos do Tiny só têm `endereco` texto. Consumido pela busca/prefill de cliente no PDV (`_pdvPreencherCliente`) e pela gravação best-effort no finalizar (dedup por `cpf_cnpj`). Sem índice novo (cardinalidade/uso não justificam por ora).
 - `lancamentos.transferencia_id UUID NULL` + `idx_lancamentos_transferencia` (parcial, WHERE transferencia_id IS NOT NULL) — vincula par de lançamentos que representam uma transferência entre contas. Convenções na seção "Lançamentos" abaixo.
 - `contas_pagar.recorrencia_id UUID NULL` + `idx_contas_pagar_recorrencia` (parcial, WHERE recorrencia_id IS NOT NULL) — vincula todas as ocorrências de uma conta recorrente. Pré-geração de N ocorrências (52 semanais, 12 mensais, etc) no momento da criação.
