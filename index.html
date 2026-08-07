@@ -5362,6 +5362,9 @@ async function carregarDados() {
     // pra curar qualquer descolamento do saldo guardado (ex.: sobrescrita por
     // aba antiga). Lançamentos são a fonte da verdade.
     recalcularSaldos();
+    // Mesma ideia pras contas a pagar: se o pagamento já está lançado e
+    // vinculado, a conta é paga — mesmo que o status tenha ficado 'pendente'.
+    _cpReconciliarPagas();
 
     return true;
   } catch(e) {
@@ -16467,6 +16470,33 @@ function _cpStatusBadge(st) {
     parcial:  '<span class="badge" style="background:rgba(56,139,253,.16);color:#5aa9ff;border:1px solid rgba(56,139,253,.4);">Parcial</span>',
   };
   return m[st] || '';
+}
+
+// Reconciliação de contas a pagar: conta cujo pagamento JÁ está lançado e
+// vinculado (soma dos lançamentos com contaPagarId >= valor) mas que ficou com
+// status 'pendente'. Acontece quando o lançamento nasce fora do modal de
+// pagamento — por SQL/MCP, por importação, ou quando a tela salva o lançamento
+// e falha antes de gravar o status. Sem isso a conta fica "VENCIDA" pra sempre
+// mesmo com o dinheiro já tendo saído (9 contas assim em 07/08/2026: salários,
+// comissões, Atlas e contabilidade de 04/08).
+//
+// Roda no load, junto de recalcularSaldos(): os LANÇAMENTOS são a fonte da
+// verdade. Ao marcar `paga`, a linha fica suja e o próximo salvarDados() cura
+// o banco sozinho.
+function _cpReconciliarPagas() {
+  let n = 0;
+  for (const c of (contasPagar || [])) {
+    if (c.paga) continue;
+    const pago = _cpTotalPago(c);
+    if (pago > 0.005 && pago >= (Number(c.valor) || 0) - 0.005) {
+      const pags = _cpPagamentosDe(c);          // já vem ordenado por data
+      c.paga   = true;
+      c.pagaEm = pags.length ? pags[pags.length - 1].data : (c.pagaEm || new Date().toISOString().slice(0,10));
+      n++;
+    }
+  }
+  if (n) console.log('[contas a pagar] ' + n + ' conta(s) reconciliada(s): pagamento já lançado, status estava pendente.');
+  return n;
 }
 
 function statusConta(c) {
