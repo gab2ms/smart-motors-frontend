@@ -1055,11 +1055,21 @@ Aba **"A pagar"** na Oficina, espelhando o conceito das Montagens: ver o que fal
 selecionar vários serviços e dar baixa numa operação só. Pedido do dono depois que o Pix de **R$ 4.566,20**
 ao Marcos (04/08/2026) misturou **montagem + manutenção** e só apareceu na conciliação do extrato.
 
-**⚠️ A unidade de cobrança é a QUARTA-FEIRA, não a OS.** O dono corrigiu a premissa em 06/08/2026: o Marcos
-vai à loja **toda quarta** e recebe uma **diária fixa (R$ 100) + alimentação (~R$ 16)**, *independente de
-quantos serviços fez*. Somar `custo_mao_obra` das OS como dívida criaria conta que não existe — 3 serviços de
-R$ 70 numa quarta não viram R$ 210 a pagar, viram R$ 116. E quarta sem serviço nenhum **ainda** custa R$ 116.
-Por isso o painel lista **diárias**; `custo_mao_obra` continua na OS só pra medir o lucro do serviço.
+**⚠️ Regime REAL: diária da quarta + serviço cobrado à parte, marcado explicitamente.** A premissa foi
+corrigida **três vezes** pelo dono (06-07/08/2026) — vale ler a evolução antes de mexer, pra não repetir:
+
+1. **1ª versão (errada):** pendente = soma do `custo_mao_obra` das OS. Falha: o Marcos vai à loja **toda
+   quarta** e recebe **diária fixa (R$ 100) + alimentação (~R$ 16)** *independente de quantos serviços fez*.
+   3 serviços de R$ 70 numa quarta não viram R$ 210 a pagar, viram R$ 116 — e quarta sem serviço **ainda**
+   custa R$ 116.
+2. **2ª versão (também errada):** painel só de diárias, serviço fora. Falha: quando o serviço é feito **fora
+   da quarta**, ele É cobrado à parte, além da diária. `custo_mao_obra > 0` é o sinal de "extra a pagar".
+3. **3ª e atual:** o regime é **explícito por serviço** (`mao_obra_regime`), porque custo zero é ambíguo —
+   pode ser "coberto pela diária" ou "não gastou nada com ninguém". Em 07/08/2026, **46 das 54 OS** estavam
+   com custo zero; inferir "coberto pela diária" encheria o painel de serviço que não é do prestador.
+
+**A pagar = diárias em aberto + serviços marcados `a_parte`** (Oficina + SAC somados; é a mesma pessoa e o
+mesmo bolso). `custo_mao_obra` continua medindo o lucro do serviço, mas só vira dívida com regime `a_parte`.
 
 **Decisões (todas do dono, 06/08/2026):**
 - **Prestador = a mesma tabela `montadores`.** O Marcos monta E conserta; lista única deixa a dívida total
@@ -1085,6 +1095,11 @@ Por isso o painel lista **diárias**; `custo_mao_obra` continua na OS só pra me
   `valor_alimentacao`, `lancamento_alimentacao_id` → o lançamento da marmita que já existe, UNIQUE
   `(prestador_id, data)` pra não duplicar ao gerar as quartas) + `oficina_pagamentos.diaria_id` + o CHECK de
   origem passa de XOR-de-2 pra "exatamente uma das três" + `config_custos.oficina_diaria_valor` (100).
+- `migration-oficina-regime-mao-obra.sql`: **`mao_obra_regime`** em `oficina_ordens` e `sac_casos` (CHECK +
+  índice parcial). `NULL` = a classificar (histórico, vira alerta e fica fora da conta) · `sem_custo` =
+  resolvido internamente · `diaria` = o prestador fez dentro da diária (não paga extra, mas **conta** como
+  serviço coberto por aquela quarta) · `a_parte` = cobrado além da diária. Backfill: quem já tinha custo > 0
+  virou `a_parte` (as 8 OS de R$ 710 já pagas); custo zero ficou NULL **de propósito**.
 
 **Diferença consciente pra Montagens: sem coluna derivada e sem trigger.** Lá o lote agrega N motos, então
 `valor_pago`/`status_pagamento` são mantidos por trigger. Aqui cada serviço é uma unidade só — o saldo
@@ -1114,7 +1129,13 @@ mudança de modelo, mas agora só alimenta o contador "N serviços no dia" de ca
   antigo. ⚠️ **Montagens e Consignação ainda usam `toCamel` cru** (`lancamentos.unshift(toCamel(lancPayload))`)
   — mesmo furo, não corrigido aqui pra não misturar frentes.
 - Quarta-feira **sem diária registrada** vira aviso dourado no topo do painel com o botão de gerar — é o
-  "não deixar esquecer" que o dono pediu.
+  "não deixar esquecer" que o dono pediu. Serviço **sem regime** vira aviso azul ("N sem o campo Mão de obra").
+- **O painel vive em `#page-oficina-sac`, não em `#page-oficina`.** Os itens de menu "Oficina" e "Pós-venda"
+  abrem os DOIS o painel unificado (`_osAreaModo`/`_pageDomId`); `#page-oficina` é legado e ninguém acessa.
+  A 1ª entrega foi feita lá e o dono não achou nada — não repetir o erro. O KPI **"A pagar ao prestador"**
+  aparece nas duas visões e é o que abre o painel (`_osMostrarPagamentos`).
+- **Serviço marcado `diaria` só conta na diária do MESMO prestador e do MESMO dia** (`_ofServicosNaDiaria`):
+  serviço que outra pessoa fez naquela quarta não infla o "N serviços no dia".
 - A aba é gated por `_podeVerCusto()` — o custo do serviço segue visível pra todos (decisão de 28/07/2026),
   mas **pagar** é financeiro.
 - **`oficina_pagamentos` ainda aceita `ordem_id`/`sac_caso_id`** (usado no backfill das 8 OS antigas). A UI
