@@ -1077,7 +1077,14 @@ mesmo bolso). `custo_mao_obra` continua medindo o lucro do serviço, mas só vir
   renomeada pra não quebrar Montagens. Hoje **só o Marcos** presta serviço (Helder e Danton parados).
 - **Alimentação entra no CUSTO, nunca no "a pagar".** A marmita já saiu do caixa em lançamento próprio
   (historicamente em "Compras Gerais"/"Serviços Terceirizados"/"Oficina"); o painel amarra esse lançamento à
-  diária pra compor o custo real da quarta (100 + 16 = 116) sem cobrar 2×.
+  diária pra compor o custo real da quarta (100 + 16 = 116) sem cobrar 2×. **Categoria padronizada em
+  07/08/2026:** 4 lançamentos que **nomeiam o Marcos** (27/05 R$ 18 · 23/06 R$ 21 · 02/07 R$ 14 · 08/07 R$ 21,
+  este último uma quarta sem nome na descrição) migraram pra `Oficina - Peças e Serviços`. **Não foram tocados:**
+  comida de funcionário (Rafael/Samuel/Henrique), de obra (Adelson/Joel → `Obra Loja Nova`), de evento, de
+  cliente, e os **2 lançamentos mistos** (`marmita adelson + marmita marcos` 03/06 R$ 36 · `quentinha marcos e
+  adelson` 22/06 R$ 64) — jogar o misto inteiro na oficina levaria custo de obra pra lá. Reclassificar entre
+  categorias de despesa **não muda o resultado da DRE**, só o agrupamento por categoria. A vinculação
+  automática da marmita à diária **não depende da categoria** (casa por data + palavra-chave + nome).
 - **Corte histórico em 04/08/2026:** tudo anterior está quitado — vinha embutido nos acertos acumulados de
   manutenção (`manutencao-marcos-2026-08-04` R$ 1.266,20 e `mautencoes realizadas marcos` R$ 208,52 de 20/06).
   Não há diária em espécie sem lançar. O controle começa na quarta **05/08/2026** (`OFICINA_DIARIAS_INICIO`).
@@ -1100,6 +1107,14 @@ mesmo bolso). `custo_mao_obra` continua medindo o lucro do serviço, mas só vir
   resolvido internamente · `diaria` = o prestador fez dentro da diária (não paga extra, mas **conta** como
   serviço coberto por aquela quarta) · `a_parte` = cobrado além da diária. Backfill: quem já tinha custo > 0
   virou `a_parte` (as 8 OS de R$ 710 já pagas); custo zero ficou NULL **de propósito**.
+
+**Histórico classificado em 07/08/2026 (decisão do dono):** as **45 OS + 14 casos de SAC** anteriores a
+05/08/2026 (todos com `custo_mao_obra` = 0 e sem responsável) foram marcados em massa como **`diaria`** com o
+**Marcos** como prestador — o dono já tinha afirmado que *"todos os serviços atuais são do Marcos"* e que
+*"tudo anterior ao dia 04 já foi pago"*. **Efeito financeiro: zero** (regime `diaria` não gera dívida, e não
+existe diária registrada antes do corte); serve pra sumir o aviso azul e deixar o histórico legível. A **OS #79**
+(aberta em 05/08, ainda `acao_interna`) ficou NULL de propósito — é do período novo, o dono classifica ao
+fechar. Reverter é um `UPDATE ... SET mao_obra_regime = NULL` pelo mesmo recorte de data.
 
 **Diferença consciente pra Montagens: sem coluna derivada e sem trigger.** Lá o lote agrega N motos, então
 `valor_pago`/`status_pagamento` são mantidos por trigger. Aqui cada serviço é uma unidade só — o saldo
@@ -1126,8 +1141,15 @@ mudança de modelo, mas agora só alimenta o contador "N serviços no dia" de ca
 - **Lançamento novo entra na memória via `TABLE_MAP.lancamentos.fromDb(...)`, não `toCamel` cru.** O resto do
   app lê `l.conta`, e `toCamel` geraria `contaNome` — com a chave errada o lançamento fica invisível pra
   `recalcularSaldos()`, e clicar "Recalcular saldos" na mesma sessão desfaria o débito e gravaria o saldo
-  antigo. ⚠️ **Montagens e Consignação ainda usam `toCamel` cru** (`lancamentos.unshift(toCamel(lancPayload))`)
-  — mesmo furo, não corrigido aqui pra não misturar frentes.
+  antigo. ✅ **Montagens e Consignação corrigidas em 07/08/2026** (eram os 3 `lancamentos.unshift(toCamel(...))`
+  restantes: pagamento de lote de montagem, venda de consignada "lançar no caixa agora" e pagamento ao dono da
+  consignada). Os outros `lancamentos.push(...)` do arquivo montam o objeto já no formato do app (`conta`/`obs`)
+  — só o caminho "payload do banco → memória" precisa do `fromDb`.
+- **"+ Diária avulsa" (07/08/2026):** botão no cabeçalho do painel pra registrar a diária de um dia que **não é
+  quarta** (`abrirOfDiariaAvulsaModal`/`_ofSalvarDiariaAvulsa`) — antes só dava pra fazer por SQL. Mesma tabela
+  e mesmas regras: vincula sozinho o lançamento de alimentação do dia (`_ofLancAlimentacaoDoDia`), respeita o
+  UNIQUE `(prestador_id, data)` (checa em memória **e** trata o 23505 de corrida entre abas), bloqueia data
+  futura e data anterior a `OFICINA_DIARIAS_INICIO` (período já quitado), e tem a trava anti-duplo-clique.
 - Quarta-feira **sem diária registrada** vira aviso dourado no topo do painel com o botão de gerar — é o
   "não deixar esquecer" que o dono pediu. Serviço **sem regime** vira aviso azul ("N sem o campo Mão de obra").
 - **O painel vive em `#page-oficina-sac`, não em `#page-oficina`.** Os itens de menu "Oficina" e "Pós-venda"
@@ -1231,6 +1253,20 @@ trade-in — que é 1 por unidade — sempre terá amostra de 1. É o esperado; 
 tabela.
 
 ## Histórico de mudanças
+
+### 2026-08-07 — Oficina: histórico classificado, diária avulsa e o bug do "Recalcular saldos" fechado
+Quatro pendências que estavam anotadas foram fechadas de uma vez. **(1)** As **45 OS + 14 casos de SAC**
+anteriores a 05/08 foram classificados em massa como `diaria` com o Marcos como prestador (efeito financeiro
+zero — só sai o aviso azul); a OS #79, de 05/08 e ainda aberta, ficou de fora de propósito. **(2)** Botão
+**"+ Diária avulsa"** no painel de pagamento, pro dia que não é quarta (antes só por SQL) — com vínculo
+automático da marmita, bloqueio de data futura/anterior ao corte, guarda contra diária duplicada e trava
+anti-duplo-clique. **(3)** **Bug pré-existente corrigido:** Montagens e Consignação inseriam o lançamento novo
+na memória com `toCamel` cru → virava `contaNome` em vez de `conta` e ficava invisível pro `recalcularSaldos()`;
+clicar "Recalcular saldos" logo após pagar um lote/repasse **desfazia o débito e gravava o saldo antigo**. Os 3
+pontos passaram a usar `TABLE_MAP.lancamentos.fromDb(...)`. **(4)** Categoria da marmita do Marcos padronizada
+em `Oficina - Peças e Serviços` (4 lançamentos; comida de funcionário/obra/evento/cliente e os 2 lançamentos
+mistos ficaram como estavam). Validado no navegador (boot limpo; modal e 5 cenários de validação; 3 cliques →
+1 insert; `fromDb` visível pro recálculo × `toCamel` invisível — 10 vs 0).
 
 ### 2026-08-05 — Margem do Dashboard passou a ser a REALIZADA (era preço de tabela)
 Dono viu a X-Buddy seminova #1052 com −7,9% no painel e perguntou por quê, já que o custo "é uns 6 mil e

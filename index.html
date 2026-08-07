@@ -3058,6 +3058,7 @@ select:not(.input-pro):not(.search-input){
           </select>
           <input type="date" class="search-input" id="of-pag-ini" onchange="renderOficinaPagamentos()" title="Data — de" style="max-width:150px;">
           <input type="date" class="search-input" id="of-pag-fim" onchange="renderOficinaPagamentos()" title="Data — até" style="max-width:150px;">
+          <button class="btn btn-gold" type="button" onclick="abrirOfDiariaAvulsaModal()" title="Ele veio num dia que não é quarta">+ Diária avulsa</button>
           <button class="btn" type="button" onclick="_osMostrarPagamentos(false)">← Voltar pras OS</button>
         </div>
       </div>
@@ -20177,6 +20178,96 @@ async function _ofEditarDiaria(chave) {
   } catch (e) { smAlert('Erro ao editar: ' + (e.message || e)); }
 }
 
+// ── DIÁRIA AVULSA (o prestador veio num dia que não é quarta) ──────────────
+// O "+ Gerar quartas" só enxerga quarta-feira. Quando ele vem num sábado pra
+// resolver algo urgente, aquele dia é cobrado igual — antes só dava pra
+// registrar por SQL. Mesma tabela e mesmas regras da diária normal (inclusive
+// o UNIQUE prestador+data, que impede registrar o mesmo dia duas vezes).
+function abrirOfDiariaAvulsaModal() {
+  if (!_podeVerCusto()) { smAlert('Sem permissão.'); return; }
+  document.getElementById('of-diaria-modal')?.remove();
+  const ativos = (montadores || []).filter(m => m.ativo !== false);
+  if (!ativos.length) return smAlert('Cadastre um prestador ativo antes.');
+  const principal = ativos.find(m => m.principal) || ativos[0];
+  const hoje = _locHojeISO ? _locHojeISO() : new Date().toISOString().slice(0,10);
+
+  const shell = document.createElement('div');
+  shell.id = 'of-diaria-modal';
+  shell.className = 'modal-overlay open';
+  shell.innerHTML =
+      `<div class="modal" style="width:520px;max-width:96vw;">`
+    +   `<div class="modal-title">Registrar <span>diária avulsa</span></div>`
+    +   `<div style="margin-bottom:14px;padding:10px 12px;background:rgba(56,139,253,0.08);border:1px solid rgba(56,139,253,.4);border-radius:var(--r-sm);font-size:11px;color:var(--text2);">`
+    +     `Use quando o prestador veio num dia <strong>fora da quarta</strong>. As quartas normais saem sozinhas no botão “+ Gerar quartas”.`
+    +   `</div>`
+    +   `<div class="form-grid">`
+    +     `<div class="form-group"><label>Prestador</label><select class="form-input" id="of-dia-prestador">`
+    +       ativos.map(m => `<option value="${escHtml(String(m.id))}" ${String(m.id)===String(principal.id)?'selected':''}>${escHtml(m.nome)}</option>`).join('')
+    +     `</select></div>`
+    +     `<div class="form-group"><label>Data do serviço</label><input class="form-input" id="of-dia-data" type="date" value="${hoje}" max="${hoje}"></div>`
+    +     `<div class="form-group"><label>Valor da diária (R$)</label><input class="form-input" id="of-dia-valor" type="number" step="0.01" min="0" value="${_ofValorDiariaPadrao().toFixed(2)}"></div>`
+    +     `<div class="form-group full"><label>Observação (opcional)</label><input class="form-input" id="of-dia-obs" placeholder="Ex.: veio no sábado pra entregar a moto da Ana"></div>`
+    +   `</div>`
+    +   `<div style="margin-top:10px;font-size:10px;color:var(--text3);">A alimentação do dia, se já estiver lançada no caixa, é vinculada sozinha — não é lançada de novo.</div>`
+    +   `<div class="modal-actions">`
+    +     `<button class="btn" type="button" onclick="document.getElementById('of-diaria-modal').remove();">Cancelar</button>`
+    +     `<button class="btn btn-gold" type="button" id="of-dia-btn-salvar" onclick="_ofSalvarDiariaAvulsa()">Registrar diária</button>`
+    +   `</div>`
+    + `</div>`;
+  document.body.appendChild(shell);
+  shell.addEventListener('click', e => { if (e.target === shell) shell.remove(); });
+}
+
+async function _ofSalvarDiariaAvulsa() {
+  const btn = document.getElementById('of-dia-btn-salvar');
+  if (btn?.disabled) return;                       // trava anti-duplo-clique (síncrona)
+  const prestadorId = document.getElementById('of-dia-prestador')?.value || '';
+  const data        = document.getElementById('of-dia-data')?.value || '';
+  const valor       = parseFloat(String(document.getElementById('of-dia-valor')?.value || '').replace(',','.'));
+  const obs         = (document.getElementById('of-dia-obs')?.value || '').trim() || null;
+  const hoje = _locHojeISO ? _locHojeISO() : new Date().toISOString().slice(0,10);
+
+  if (!prestadorId)  return smAlert('Escolha o prestador.');
+  if (!data)         return smAlert('Escolha a data do serviço.');
+  if (data > hoje)   return smAlert('Não dá pra registrar diária de um dia que ainda não aconteceu.');
+  // Antes do corte, tudo já foi quitado nos acertos acumulados — registrar ali
+  // criaria dívida que não existe.
+  if (data < OFICINA_DIARIAS_INICIO) {
+    return smAlert('Esse período já está quitado (o controle começa em '
+      + String(OFICINA_DIARIAS_INICIO).split('-').reverse().join('/') + ').');
+  }
+  if (!(valor >= 0)) return smAlert('Valor inválido.');
+
+  const jaTem = (oficinaDiarias || []).some(d =>
+    String(d.prestadorId) === String(prestadorId) && d.data === data);
+  if (jaTem) return smAlert('Já existe diária desse prestador nesse dia. Edite o valor na lista em vez de criar outra.');
+
+  const alim = _ofLancAlimentacaoDoDia(data, prestadorId);
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+  try {
+    const { data: rows, error } = await sb.from('oficina_diarias').insert({
+      prestador_id: prestadorId,
+      data,
+      valor_diaria: valor,
+      valor_alimentacao: alim ? Number(alim.valor || 0) : 0,
+      lancamento_alimentacao_id: alim ? alim.id : null,
+      observacoes: obs,
+    }).select();
+    if (error) {
+      // UNIQUE (prestador_id, data) — outra aba pode ter criado no meio-tempo.
+      if (error.code === '23505') throw new Error('Já existe diária desse prestador nesse dia (recarregue a tela).');
+      throw error;
+    }
+    oficinaDiarias.push(...toCamelArr(rows || []));
+    document.getElementById('of-diaria-modal')?.remove();
+    renderOficinaPagamentos();
+    if (typeof smToast === 'function') smToast('✅ Diária de ' + String(data).split('-').reverse().join('/') + ' registrada.');
+  } catch (e) {
+    smAlert('Erro ao registrar diária: ' + (e.message || e));
+    if (btn) { btn.disabled = false; btn.textContent = 'Registrar diária'; }
+  }
+}
+
 function renderOficinaPagamentosKpis(lista) {
   const el = document.getElementById('of-pag-kpis');
   if (!el) return;
@@ -21653,7 +21744,11 @@ async function _montagensConfirmarPagamento() {
       };
       const { error: errLanc } = await sb.from('lancamentos').insert(lancPayload);
       if (errLanc) throw new Error('Erro ao criar lançamento: ' + errLanc.message);
-      lancamentos.unshift(toCamel(lancPayload));
+      // fromDb (não toCamel cru): o resto do app lê `l.conta`/`l.obs`, e toCamel
+      // geraria `contaNome`/`observacao`. Com a chave errada o lançamento fica
+      // invisível pra `recalcularSaldos()` — aí "Recalcular saldos" na mesma
+      // sessão desfaria este débito e gravaria o saldo antigo.
+      lancamentos.unshift(TABLE_MAP.lancamentos.fromDb(lancPayload));
       if (ctaBanco) ctaBanco.saldo = Number(ctaBanco.saldo || 0) - valorTotal;
     }
 
@@ -25003,7 +25098,9 @@ async function _consigrConfirmarVenda() {
       };
       const { error: eL } = await sb.from('lancamentos').insert(lancPayload);
       if (eL) throw new Error('Erro ao lançar no caixa: ' + eL.message);
-      lancamentos.unshift(toCamel(lancPayload));
+      // fromDb (não toCamel cru) — ver nota em `_ofConfirmarPagamento`: com
+      // `contaNome` no lugar de `conta` o lançamento some do `recalcularSaldos()`.
+      lancamentos.unshift(TABLE_MAP.lancamentos.fromDb(lancPayload));
       ctaBanco.saldo = Number(ctaBanco.saldo || 0) + valor;
     }
     // receb === 'fora' → não cria conta a receber nem lançamento (você já lançou por fora)
@@ -25175,7 +25272,9 @@ async function _consigrSalvarPagamentoDono() {
       };
       const { error: eL } = await sb.from('lancamentos').insert(lancPayload);
       if (eL) throw new Error('Erro ao lançar no caixa: ' + eL.message);
-      lancamentos.unshift(toCamel(lancPayload));
+      // fromDb (não toCamel cru) — ver nota em `_ofConfirmarPagamento`: com
+      // `contaNome` no lugar de `conta` o lançamento some do `recalcularSaldos()`.
+      lancamentos.unshift(TABLE_MAP.lancamentos.fromDb(lancPayload));
       ctaBanco.saldo = Number(ctaBanco.saldo || 0) - valor;
     }
     // 2) registro do pagamento ao dono
