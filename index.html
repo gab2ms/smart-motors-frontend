@@ -19538,12 +19538,13 @@ function abrirOfModal(id) {
     +     `<div class="form-group full"><label>Tipo de atendimento ${ofTaRevisar?'<span style="color:#1a1a1a;background:var(--gold-bright);font-weight:800;font-size:10px;border-radius:4px;padding:1px 5px;">⚠ A CLASSIFICAR — confirme e salve</span>':'<span style="color:var(--text3);font-weight:400;font-size:10px;">(serviço pago = cliente paga; garantia/loja = não cobra)</span>'}</label><select class="form-input" id="of-tipo-atend">${ofTaOpts}</select></div>`
     +     `<div class="form-group full"><label>Localização do item <span style="color:var(--text3);font-weight:400;font-size:10px;">(onde está a scooter ou peça)</span></label><select class="form-input" id="of-localizacao">${ofLocOpts}</select></div>`
     +     `<div class="form-group"><label>Valor do serviço (R$)</label><input class="form-input" id="of-valor" type="number" step="0.01" value="${(o&&o.valorServico)||0}" oninput="ofRecalcResumo()"></div>`
-    +     `<div class="form-group"><label>Mão de obra (custo R$) <span style="color:var(--text3);font-weight:400;font-size:10px;">(o que a loja paga ao técnico)</span></label><input class="form-input" id="of-custo-mo" type="number" step="0.01" value="${(o&&o.custoMaoObra)||0}" oninput="ofRecalcResumo();_ofSyncCamposPrestador()"></div>`
-    // Responsável + data de execução alimentam o painel "A pagar" (aba da Oficina).
-    // Só fazem sentido quando há mão de obra a pagar; _ofSyncCamposPrestador()
-    // destaca os dois quando o custo é preenchido e o responsável está vazio.
-    +     `<div class="form-group"><label>Responsável pelo serviço <span style="color:var(--text3);font-weight:400;font-size:10px;">(quem recebe a mão de obra)</span></label><select class="form-input" id="of-prestador" onchange="_ofSyncCamposPrestador()">${_ofPrestadorOpts(o&&o.prestadorId)}</select></div>`
-    +     `<div class="form-group"><label>Data de execução <span style="color:var(--text3);font-weight:400;font-size:10px;">(quando o serviço foi feito)</span></label><input class="form-input" id="of-data-servico" type="date" value="${(o&&o.dataServico)||''}"></div>`
+    // Regime de mão de obra: custo zero é ambíguo (pode ser "coberto pela
+    // diária" ou "não gastou nada"), então a intenção é explícita aqui.
+    +     `<div class="form-group full"><label>Mão de obra <span style="color:var(--text3);font-weight:400;font-size:10px;">(como esse serviço é pago)</span></label><select class="form-input" id="of-mo-regime" onchange="_ofSyncCamposPrestador()">${_ofRegimeOpts(o&&o.maoObraRegime)}</select></div>`
+    +     `<div class="form-group" id="of-custo-mo-wrap"><label>Quanto vai pagar (R$) <span style="color:var(--text3);font-weight:400;font-size:10px;">(mão de obra cobrada à parte)</span></label><input class="form-input" id="of-custo-mo" type="number" step="0.01" value="${(o&&o.custoMaoObra)||0}" oninput="ofRecalcResumo();_ofSyncCamposPrestador()"></div>`
+    // Responsável + data de execução alimentam o painel "A pagar" da Oficina.
+    +     `<div class="form-group" id="of-prestador-wrap"><label>Responsável pelo serviço <span style="color:var(--text3);font-weight:400;font-size:10px;">(quem faz / recebe)</span></label><select class="form-input" id="of-prestador" onchange="_ofSyncCamposPrestador()">${_ofPrestadorOpts(o&&o.prestadorId)}</select></div>`
+    +     `<div class="form-group" id="of-data-servico-wrap"><label>Data de execução <span style="color:var(--text3);font-weight:400;font-size:10px;">(quando o serviço foi feito)</span></label><input class="form-input" id="of-data-servico" type="date" value="${(o&&o.dataServico)||''}"></div>`
     +     `<div class="form-group full"><label>Peças usadas (custo)</label>`
     +       `<table style="width:100%;border-collapse:collapse;"><tbody id="of-pecas-tbody"></tbody></table>`
     +       `<button type="button" class="btn" style="margin-top:6px;padding:4px 10px;font-size:13px;" onclick="ofAddPeca()"><svg class="ic ic-sm"><use href="#ic-plus"/></svg> Peça</button>`
@@ -19766,6 +19767,7 @@ async function _ofSalvarExec(editId) {
   const custoMo   = parseFloat(document.getElementById('of-custo-mo').value) || 0;
   const prestador = document.getElementById('of-prestador')?.value || '';
   const dataServ  = document.getElementById('of-data-servico')?.value || '';
+  const moRegime  = document.getElementById('of-mo-regime')?.value || null;
   const pecas     = [...document.querySelectorAll('#of-pecas-tbody .of-peca-row')]
     .map(r => ({ descricao: (r.querySelector('.of-peca-desc').value || '').trim(),
                  custo: parseFloat(r.querySelector('.of-peca-custo').value) || 0 }))
@@ -19795,9 +19797,10 @@ async function _ofSalvarExec(editId) {
     custo_mao_obra: custoMo,
     pecas: pecas,
     prestador_id: prestador || null,
+    mao_obra_regime: moRegime,
     // Data de execução: quando não informada, assume a data em que a OS foi
-    // aberta (só faz sentido guardar se há mão de obra a pagar).
-    data_servico: dataServ || (custoMo > 0 ? (dataAbert || new Date().toISOString().split('T')[0]) : null),
+    // aberta (só faz sentido guardar se o prestador está envolvido).
+    data_servico: dataServ || ((moRegime === 'diaria' || moRegime === 'a_parte') ? (dataAbert || new Date().toISOString().split('T')[0]) : null),
     data_abertura: dataAbert || new Date().toISOString().split('T')[0],
     data_proximo_contato: dataProx || null,
   };
@@ -19875,17 +19878,38 @@ function _ofNomePrestador(id) {
   return m ? m.nome : null;
 }
 
-// Destaque suave: custo de mão de obra preenchido sem responsável = o serviço
-// não vai aparecer agrupado no painel. Não bloqueia o salvamento (pode ser um
-// custo que a loja absorve), só avisa.
+// Regimes de mão de obra. NULL/'' = a classificar (histórico anterior à regra).
+const OF_MO_REGIMES = [
+  ['sem_custo', 'Não teve custo — resolvido internamente'],
+  ['diaria',    'Coberto pela diária do prestador (não paga extra)'],
+  ['a_parte',   'Cobrado à parte — além da diária'],
+];
+function _ofRegimeOpts(sel) {
+  return '<option value="">— a classificar —</option>'
+    + OF_MO_REGIMES.map(([v,l]) => `<option value="${v}"${String(sel||'')===v?' selected':''}>${l}</option>`).join('');
+}
+const OF_MO_LABEL = { sem_custo:'Sem custo', diaria:'Na diária', a_parte:'À parte' };
+
+// Mostra/esconde os campos conforme o regime: valor só faz sentido em 'a_parte';
+// responsável e data só quando o prestador está envolvido ('diaria'/'a_parte').
 function _ofSyncCamposPrestador() {
-  const custo = parseFloat(document.getElementById('of-custo-mo')?.value) || 0;
+  const reg   = document.getElementById('of-mo-regime')?.value || '';
+  const custoW = document.getElementById('of-custo-mo-wrap');
+  const prestW = document.getElementById('of-prestador-wrap');
+  const dataW  = document.getElementById('of-data-servico-wrap');
+  const custo = document.getElementById('of-custo-mo');
   const sel   = document.getElementById('of-prestador');
   const data  = document.getElementById('of-data-servico');
-  if (!sel) return;
-  const faltando = custo > 0 && !sel.value;
-  sel.style.borderColor = faltando ? 'var(--gold)' : '';
-  if (data && custo > 0 && !data.value) data.value = document.getElementById('of-data-abert')?.value || new Date().toISOString().split('T')[0];
+  const envolvePrestador = reg === 'diaria' || reg === 'a_parte';
+  if (custoW) custoW.style.display = (reg === 'a_parte') ? '' : 'none';
+  if (prestW) prestW.style.display = envolvePrestador ? '' : 'none';
+  if (dataW)  dataW.style.display  = envolvePrestador ? '' : 'none';
+  // Regime sem pagamento não pode carregar valor preso de uma edição anterior.
+  if (custo && reg && reg !== 'a_parte' && Number(custo.value) > 0) { custo.value = 0; if (typeof ofRecalcResumo === 'function') ofRecalcResumo(); }
+  if (envolvePrestador) {
+    if (sel && !sel.value) sel.style.borderColor = 'var(--gold)'; else if (sel) sel.style.borderColor = '';
+    if (data && !data.value) data.value = document.getElementById('of-data-abert')?.value || new Date().toISOString().split('T')[0];
+  } else if (sel) { sel.style.borderColor = ''; }
 }
 
 // Lista unificada Oficina + SAC dos serviços com mão de obra a pagar.
@@ -19901,7 +19925,11 @@ function _ofServicosPagaveis() {
 
   const monta = (reg, origem) => {
     const custo = Number(reg.custoMaoObra || 0);
-    if (!(custo > 0)) return null;                      // sem mão de obra = nada a pagar
+    // Só entra no "a pagar" o que foi explicitamente marcado como cobrado à
+    // parte. Custo zero NÃO significa "coberto pela diária" — pode ser serviço
+    // resolvido internamente (46 das 54 OS estavam assim em 07/08/2026).
+    if (reg.maoObraRegime !== 'a_parte') return null;
+    if (!(custo > 0)) return null;
     const chave = _ofPagChave(origem, reg.id);
     const pags  = (pagsPor[chave] || []).slice().sort((a,b) => String(a.dataPagamento||'').localeCompare(String(b.dataPagamento||'')));
     const pago  = pags.reduce((s,p) => s + Number(p.valor || 0), 0);
@@ -19978,7 +20006,9 @@ function _ofDiariasPagaveis() {
     }
     const saldo = Math.max(0, +(valorDiaria - pago).toFixed(2));
     // Serviços executados naquele dia — informativo, ajuda a conferir a visita.
-    const doDia = _ofServicosPagaveis().filter(s => s.dataServico === d.data);
+    // Controle da diária: o que ela cobriu naquele dia — serviços marcados
+    // como 'diaria' (não os com custo à parte, que são pagos por fora).
+    const doDia = _ofServicosNaDiaria(d.data, d.prestadorId);
     const servicosNoDia = doDia.length;
     const servicosOf    = doDia.filter(s => s.origem === 'of').length;   // oficina
     const servicosSac   = doDia.length - servicosOf;                     // pós-venda/garantia
@@ -19995,6 +20025,25 @@ function _ofDiariasPagaveis() {
       observacoes: d.observacoes || null,
     };
   }).sort((a,b) => String(b.data).localeCompare(String(a.data)));
+}
+
+// Serviços que aquela diária cobriu: marcados como 'diaria', no mesmo dia e do
+// mesmo prestador. É o controle sobre a diária que o dono pediu — dá pra ver o
+// que ela rendeu, sem confundir com serviço que não custou nada a ninguém.
+function _ofServicosNaDiaria(data, prestadorId) {
+  const casa = r => r && r.maoObraRegime === 'diaria'
+    && (r.dataServico || r.dataAbertura) === data
+    && (!prestadorId || String(r.prestadorId || '') === String(prestadorId));
+  return [
+    ...(oficinaOrdens || []).filter(casa).map(r => ({ origem:'of',  id:r.id, numero:r.numero, clienteNome:r.clienteNome })),
+    ...(sacCasos      || []).filter(casa).map(r => ({ origem:'sac', id:r.id, numero:r.numero, clienteNome:r.clienteNome })),
+  ];
+}
+
+// Serviços ainda sem regime definido (histórico) — viram alerta no painel.
+function _ofServicosAClassificar() {
+  const semReg = r => r && !r.maoObraRegime;
+  return [...(oficinaOrdens || []).filter(semReg), ...(sacCasos || []).filter(semReg)];
 }
 
 // ── O QUE SE DEVE AO PRESTADOR = diárias + serviços cobrados à parte ───────
@@ -20180,6 +20229,16 @@ function renderOficinaPagamentos() {
        </div>`
     : '';
 
+  // Serviços sem regime de mão de obra — enquanto não forem classificados, não
+  // dá pra saber se são do prestador. Não bloqueia nada, só lembra.
+  const semReg = _ofServicosAClassificar();
+  const avisoClassificar = semReg.length
+    ? `<div style="padding:10px 20px;background:rgba(56,139,253,0.08);border-bottom:1px solid rgba(56,139,253,.4);font-size:11px;">
+         📋 <strong>${semReg.length}</strong> serviço${semReg.length===1?'':'s'} sem o campo <em>Mão de obra</em> preenchido
+         <span style="color:var(--text3);">— abra a OS e marque se foi resolvido internamente, coberto pela diária ou cobrado à parte. Enquanto isso, ficam de fora desta conta.</span>
+       </div>`
+    : '';
+
   // Sticky bar da seleção múltipla.
   let barra = '';
   if (_ofPagSelecionados.size > 0) {
@@ -20202,7 +20261,7 @@ function renderOficinaPagamentos() {
     const vazio = filtro === 'pagos' ? 'Nenhuma diária paga no filtro'
                 : filtro === 'pendentes' ? 'Nenhuma diária pendente 🎉'
                 : 'Nenhuma diária registrada no filtro';
-    el.innerHTML = avisoQuartas + barra + '<div class="empty" style="padding:32px;">' + vazio + '</div>';
+    el.innerHTML = avisoQuartas + avisoClassificar + barra + '<div class="empty" style="padding:32px;">' + vazio + '</div>';
     return;
   }
 
@@ -20220,7 +20279,7 @@ function renderOficinaPagamentos() {
   const DSEM = ['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
   const diaSemana = iso => DSEM[new Date(iso + 'T12:00:00Z').getUTCDay()];
 
-  el.innerHTML = avisoQuartas + barra + nomes.map(nome => {
+  el.innerHTML = avisoQuartas + avisoClassificar + barra + nomes.map(nome => {
     const itens    = grupos[nome];
     const pendGrp  = itens.filter(d => d.status !== 'pago');
     const saldoGrp = pendGrp.reduce((a,d) => a + d.saldo, 0);
@@ -27994,7 +28053,8 @@ function abrirSacModal(id) {
     +     `<div class="form-group"><label>Mão de obra (custo R$) <span style="color:var(--text3);font-weight:400;font-size:10px;">(o que a loja paga ao técnico)</span></label><input class="form-input" id="sac-custo-mo" type="number" step="0.01" value="${(c&&c.custoMaoObra)||0}" oninput="sacRecalcResumo()"></div>`
     // Espelha a Oficina: responsável + data de execução alimentam o painel
     // "A pagar" (que soma Oficina + SAC do mesmo prestador).
-    +     `<div class="form-group"><label>Responsável pelo serviço <span style="color:var(--text3);font-weight:400;font-size:10px;">(quem recebe a mão de obra)</span></label><select class="form-input" id="sac-prestador">${_ofPrestadorOpts(c&&c.prestadorId)}</select></div>`
+    +     `<div class="form-group full"><label>Mão de obra <span style="color:var(--text3);font-weight:400;font-size:10px;">(como esse serviço é pago)</span></label><select class="form-input" id="sac-mo-regime">${_ofRegimeOpts(c&&c.maoObraRegime)}</select></div>`
+    +     `<div class="form-group"><label>Responsável pelo serviço <span style="color:var(--text3);font-weight:400;font-size:10px;">(quem faz / recebe)</span></label><select class="form-input" id="sac-prestador">${_ofPrestadorOpts(c&&c.prestadorId)}</select></div>`
     +     `<div class="form-group"><label>Data de execução <span style="color:var(--text3);font-weight:400;font-size:10px;">(quando o serviço foi feito)</span></label><input class="form-input" id="sac-data-servico" type="date" value="${(c&&c.dataServico)||''}"></div>`
     +     `<div class="form-group full"><label>Peças usadas (custo)</label>`
     +       `<table style="width:100%;border-collapse:collapse;"><tbody id="sac-pecas-tbody"></tbody></table>`
@@ -28186,6 +28246,7 @@ async function _sacSalvarExec(editId) {
   const custoMo         = parseFloat(document.getElementById('sac-custo-mo').value) || 0;
   const prestadorSac    = document.getElementById('sac-prestador')?.value || '';
   const dataServSac     = document.getElementById('sac-data-servico')?.value || '';
+  const moRegimeSac     = document.getElementById('sac-mo-regime')?.value || null;
   const localizacao     = document.getElementById('sac-localizacao')?.value || 'com_cliente';
   const tipoAtend       = document.getElementById('sac-tipo-atend')?.value || 'pos_venda';
   const pecas           = [...document.querySelectorAll('#sac-pecas-tbody .sac-peca-row')]
@@ -28214,7 +28275,8 @@ async function _sacSalvarExec(editId) {
     custo_mao_obra: custoMo,
     pecas: pecas,
     prestador_id: prestadorSac || null,
-    data_servico: dataServSac || (custoMo > 0 ? (dataAbertura || new Date().toISOString().split('T')[0]) : null),
+    mao_obra_regime: moRegimeSac,
+    data_servico: dataServSac || ((moRegimeSac === 'diaria' || moRegimeSac === 'a_parte') ? (dataAbertura || new Date().toISOString().split('T')[0]) : null),
     localizacao: localizacao,
     tipo_atendimento: tipoAtend,
     classificacao_revisar: false,
