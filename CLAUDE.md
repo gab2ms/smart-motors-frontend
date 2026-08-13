@@ -1327,7 +1327,233 @@ de Preços com 9 colunas, `colspan` do vazio corrigido e a seminova mostrando **
 trade-in — que é 1 por unidade — sempre terá amostra de 1. É o esperado; o alerta útil pra esses é o de
 tabela.
 
+## KPIs alimentados só por dado real da operação (13/08/2026)
+
+Pedido do dono depois de comparar o card "Lucro bruto" (R$ 21.856,14) com a "Margem bruta" da DRE
+(R$ 42.307,21) no mesmo mês: *"não quero indicadores baseados em estimativas, preços de cadastro ou
+valores teóricos"*. Três frentes, todas em `index.html`.
+
+### 1. Lucro bruto = receita vendida − CPV real (era estimativa de tabela)
+O card fazia `receita × MC média do catálogo`. Essa média era **aritmética simples** sobre TODOS os 44
+registros de `produtos_precos` (inclusive os 17 **inativos**), e `mcpReal` devolve **0** pra modelo sem
+preço casado — então a média afundava pra 11,3% e o card mostrava **metade** do lucro real. Pior: usava
+preço **de tabela**, não o preço pelo qual a moto saiu.
+- **Fonte única agora: `_cpvRealDosPedidos(pedidos, avgMCpct)`** (logo antes de `calcularDRE`), extraída
+  do corpo da DRE — por item: `custoPuro + montagem (respeitando "na caixa" do item) + comissão (0 em
+  venda direta)`, NF **1× por pedido**, consignada pelo `custo_consignacao`. Chamada por **`calcularDRE`**,
+  pelo **card do Dashboard** (`carregarFaturamentoDash`) e pela **aba Vendas** (`renderizarDREVendas`, que
+  tinha o mesmo "Lucro bruto est."). O card não faz query nova — reusa `mergedAtual`/`mergedAnt` que já
+  estão em memória, e o período anterior passa pela mesma régua (delta comparável).
+- **`_avgMCpctCatalogo()`** centraliza a MC média (só ativos) que sobrou como **fallback de item sem
+  cadastro**. `buscarLinhasVenda` (Relatórios) também passou a chamá-la — eram 3 cópias da mesma fórmula,
+  e o card usava uma 4ª variante (com inativos), que era a raiz da divergência.
+- **Estimativa virou visível, não silenciosa:** `_cpvRealDosPedidos` devolve `estimados` /
+  `receitaEstimada` / `nomesEstimados`; `calcularDRE` expõe como `cpvEstimadoQtd/Receita/Nomes`. O card
+  ganha o selo **"parcial"** (só quando há item sem cadastro — antes o selo "est." era permanente,
+  porque o lucro inteiro era chute) + sublinha `⚠ N% da receita com custo estimado`, e a **DRE** ganhou
+  sublinha equivalente sob a linha do CPV. `_kpiBadgeEst` foi removida.
+- **Efeito medido em agosto/2026:** card passa de R$ 21.856,14 → **R$ 42.307,21**, batendo ao centavo com
+  a margem bruta da DRE (reproduzido no navegador).
+
+### 1b. CPV resolve o modelo pelo VÍNCULO do cadastro, não por nome (bug antigo)
+Investigando o "custo estimado" da Cytron o dono perguntou se não dava pra copiar de outra cor — e a
+resposta expôs um bug mais fundo: **o custo estava lá, cadastrado e vinculado, e o cálculo ignorava.**
+`pdv_itens_pedido.produto_id` → `produtos.produto_precos_id` diz exatamente de qual modelo é aquela
+unidade, mas o CPV chamava **`_matchProdutoPorNome`** (herança da época em que a venda vinha do Tiny,
+sem FK). O modelo da Cytron está cadastrado como **"MOTONETA CYTRON BRANCA"** (cor no nome do modelo,
+com as 3 cores vinculadas nele), então o item "MOTONETA CYTRON VERMELHA" **não casava** e caía na
+estimativa por MC média — com R$ 7.990 de custo real disponível ao lado.
+- **`_modeloDoItemVendido(it)`**: vínculo (`produtoId` → `precosId` → `products`) primeiro, nome só como
+  fallback pro que não tem FK (arquivo Tiny ≤ 31/05). Usada por `_cpvRealDosPedidos` **e** por
+  `buscarLinhasVenda` — se as duas divergirem, Relatórios param de reconciliar com a DRE.
+- Como o vínculo é por **id**, some junto o risco de fuzzy match errado que o guard `_ehSeminovo`
+  cobria (esse guard fica, ainda vale pro caminho por nome).
+- **Impacto medido** (código real sobre as vendas do banco): **4 unidades da Cytron Vermelha**
+  (R$ 43.288 de receita histórica) saem da estimativa e passam a usar o custo real de R$ 8.200/un.
+  Em **agosto/2026**: CPV R$ 150.921,73 → **R$ 147.745,62**, lucro bruto R$ 42.307,27 → **R$ 45.483,38**
+  (margem 21,89% → **23,54%**), receita com custo estimado **21% → 9%**.
+- **Sobra estimado só o que realmente não tem cadastro:** MC20 VERMELHA (R$ 8.800), X13 VERMELHA
+  (R$ 8.000) e Frete (R$ 150) — nenhum tem irmão com custo (MC20 só tem o registro morto
+  "Scooter  MC20 2000W" inativo; X13 Carbono/Preta/Vermelha estão todas soltas; X11 e X14 são outros
+  modelos, não servem de molde).
+
+### 2. Scooters vendidas: classificação pela CATEGORIA, não pelo nome
+A contagem **já somava unidades** (`quantidade`), nunca pedidos — isso estava certo e segue coberto por
+teste (pedido #68, com 3 motos, conta 3). O furo era **o que conta como scooter**: `SCOOTER_RE`
+(`/MOTONETA|TRICICLO|SCOOTER/`) testava o **nome digitado no cadastro**. Moto cadastrada como
+"MC20 VERMELHA" ou "X13 VERMELHA" sumia do KPI sem avisar — agosto/2026 mostrava **21** quando foram
+**23** (+1 frete = os 24 itens do "Fechar Mês", que soma tudo).
+- **`_ehScooterItem(item)`**: `produtos.categoria` manda (`scooter` / `acessorio` / `servico`), nome só
+  como fallback pro que não tem vínculo (itens do arquivo Tiny ≤ 31/05 não têm `produto_id`). A categoria
+  está preenchida em **100%** dos 126 produtos, e é dado da operação, não texto livre.
+- **`_PROD_CAT_IDX`** (`_carregarCategoriaProdutos`, TTL 30min) mapeia `produto_id → categoria`;
+  `buscarVendasMescladas` anexa `categoria` a cada item. **Índice à parte de propósito** — um embed
+  `produtos(categoria)` dentro do select de pedidos faria um erro de RLS/PostgREST derrubar o faturamento
+  inteiro; aqui, se falhar, degrada pro regex e loga um warn.
+- **`_contarScootersDetalhe`** devolve também `semClassificacao` (item com cadastro mas sem categoria) →
+  vira aviso no card. `calcularRankingScooters` usa o mesmo critério.
+- ⚠️ **O gatilho de comissão no banco (`fn_recalc_comissao_vendedor`) continua no regex do nome** — é SQL,
+  não foi tocado nesta rodada. Consequência real: as vendas **#78 (Michelle)** e **#80 (Samuel)** de
+  10/08/2026 não geraram os R$ 100 de comissão. Ver "Pendências" abaixo.
+
+### 3. Cancelados — já era automático (auditado, nada a mudar)
+Auditadas todas as portas de leitura: `buscarVendasMescladas` filtra `.neq('status','cancelado')` no PDV
+e exige `_pedStatusGroup === 'concluido'` no arquivo Tiny; como **Dashboard, DRE, Relatórios e Fechamento
+consomem essa mesma função**, cancelar um pedido o tira de tudo na próxima carga. O backend
+(`resumoWhatsapp.js`, `status=neq.cancelado`) e o calendário fazem o mesmo. `pdv_pedidos` só tem dois
+status hoje (`entregue` 58 · `cancelado` 17). O estoque volta no cancelamento e o trigger de comissão
+recalcula sozinho.
+
+### Catálogo corrigido no banco (13/08/2026) — o que sobrou
+O dono passou os custos e o cadastro foi fechado via MCP:
+- **Modelos novos em `produtos_precos`:** **X13** (`944ee97e…`, custo puro 5.800 + montagem 110 +
+  comissão 100, venda 9.200, forn. IMPORTS MARTINS) e **MC20** (`289ff967…`, 6.000 + 110 + 100, venda
+  8.500, forn. MOTOCHEFE). As 3 cores da X13 (Carbono/Preta/Vermelha) e a MC20 Vermelha foram
+  **vinculadas** e renomeadas pro padrão `MOTONETA <MODELO> - <COR>`.
+- **Modelo da Cytron renomeado** de `MOTONETA CYTRON BRANCA` → **`Cytron`** (as 3 cores já apontavam pra
+  ele). Alinha com o padrão dos outros modelos (Savage, Skylo, Konek 800) e, de quebra, faz o **match por
+  nome funcionar** — ou seja, o CPV da Cytron fica certo **mesmo antes** do deploy do front.
+- **`pdv_itens_pedido.produto_nome_tiny`** dos 2 itens já vendidos (#78 MC20, #80 X13) atualizado pro nome
+  novo — é o campo que `fn_recalc_comissao_vendedor` lê. O trigger recalculou sozinho: **Michelle 800 →
+  900**, **Samuel 100 → 200**.
+- **Resultado de agosto/2026:** CPV **R$ 146.262,35**, lucro bruto **R$ 46.966,65** (margem **24,31%**),
+  e a receita com custo estimado caiu de **21% → 0,1%**. Percurso completo do número no mês:
+  21.856,14 (card antigo) → 42.307,21 (CPV real) → 45.483,38 (vínculo do cadastro) → **46.966,65**
+  (catálogo cadastrado).
+
+### Serviço (frete de entrega) tem CPV ZERO — decisão contábil, não lacuna
+O dono explicou o custo do frete: *"é o combustível que vou lançando no financeiro, mas acaba sendo usado
+pra tudo, difícil precisar quanto custou essa entrega sozinha"*. Verificado: **R$ 8.793,90** em 60
+lançamentos de combustível (04-08/2026) na categoria **`Veículos, transportes`** (natureza semifixo), que
+**já é despesa operacional na DRE**. Logo, pôr custo no frete dentro do CPV contaria a mesma saída **2×**
+(CPV + despesa) — o espelho do erro que a regra do frete de COMPRA evita mandando o lançamento pra
+`Fornecedores`.
+- **Regra:** item com `categoria = 'servico'` **sem** modelo cadastrado → CPV **0**, e **não** conta como
+  "estimado" (não é cadastro faltando, é decisão). Serviço COM modelo cadastrado usa o custo do modelo,
+  normalmente. Serviço de oficina não passa por aqui — tem custo próprio no módulo Oficina.
+- **Distinção que vale gravar:** frete de **compra** entra no `custo_puro` (é aquisição de estoque);
+  frete de **entrega** é despesa do período. Confundir os dois dobra a contagem num sentido ou no outro.
+- Efeito: os R$ 150 do frete viram margem bruta cheia, e o combustível desce como despesa — o resultado
+  final do mês é o mesmo, mas cada valor fica na linha certa.
+- ⚠️ **Dado para acompanhar:** frete foi cobrado **1 única vez** desde o início (R$ 150, 03/08/2026),
+  contra R$ 8.793,90 de combustível no período. A frota é usada pra tudo (compra, banco, obra), então não
+  é comparação direta — mas se entrega virar rotina, vale cobrar frete com mais frequência ou medir isso
+  à parte, senão a operação de entrega fica invisível no resultado.
+
+**Observação:** `Tricilo Fenix 750w` é o único outro produto ativo de categoria `scooter` sem
+`produto_precos_id` — estoque 0 e nunca vendido, então não afeta indicador nenhum hoje; vinculá-lo antes
+da primeira venda evita repetir a história.
+
+**Estado final de agosto/2026 — ZERO estimativa:** CPV **R$ 146.140,00**, lucro bruto **R$ 47.089,00**,
+margem **24,37%**, com **100% do custo apurado** (nenhum item estimado → card sem selo "parcial").
+
+**Validado (13/08/2026):** sintaxe dos 2 blocos `<script>`; **37 testes** sobre o código real extraído do
+arquivo (resolução vínculo × nome, classificação por categoria, unidades vs pedidos, na-caixa, venda
+direta, consignada, serviço a custo zero, NF 1×/pedido, item sem cadastro, null-safety); **no navegador** (localhost:8791, boot
+limpo — só 401 de RLS por não estar logado) com o `sb` interceptado pelos **dados reais de agosto**: 21
+pedidos · receita R$ 193.229 · **23 scooters** · 24 itens · CPV reproduzido **ao centavo** (R$ 150.921,79)
+= a tela da DRE de hoje, cards com selo e tooltip corretos; e o **antes/depois do fix de vínculo** medido
+rodando as duas versões do CPV sobre as vendas reais do banco.
+
+⚠️ **Ao mexer no CPV, conferir os 3 consumidores juntos** (`calcularDRE`, `carregarFaturamentoDash`,
+`buscarLinhasVenda`) — a reconciliação Relatórios × DRE depende de todos usarem `_cpvRealDosPedidos` +
+`_modeloDoItemVendido` + `_avgMCpctCatalogo`. Era exatamente a duplicação dessas fórmulas que produziu a
+divergência que o dono viu.
+
+## Custos diretos por venda: NF por vigência + deslocamento da entrega (13/08/2026)
+
+Pedido do dono: *"sempre que identificarmos um custo recorrente que impacta diretamente cada venda,
+devemos incorporá-lo ao cálculo"*. Duas entradas novas no CPV.
+
+### NF: valor por VIGÊNCIA, não valor único
+O pacote de 10 notas subiu de R$ 300 para **R$ 400** (lançamento de 10/08/2026) → R$ 30 → **R$ 40/nota**.
+Um valor único aplicaria o preço de hoje às vendas de abril e vice-versa, então o custo passou a ser
+resolvido **pela data do pedido**.
+- **Tabela `custos_vigencia`** (`chave`, `valor`, `vigente_de`; RLS `tem_modulo('custos')`), semeada com
+  `nf_pedido` = 30 desde 01/04/2026 e 40 desde 10/08/2026. `_carregarCustosVigencia` +
+  **`_custoVigenteEm(chave, dataISO, fallback)`** (faixas ordenadas desc, pega a 1ª que já começou) +
+  **`_nfDoPedido(ped)`**. Sem a tabela, cai no `CONFIG_CUSTOS.nf_pedido` de sempre.
+- `_pdvParaVenda` passou a expor **`dataISO`** (competência) — `data` era só BR (dd/mm/aaaa).
+- Efeito em agosto: 14 pedidos a R$ 30 + 7 a R$ 40 = **R$ 70** a mais de CPV no mês.
+
+### Deslocamento da entrega (R$ 0,50/km, ida e volta)
+- **Só pedido MARCADO como entrega conta.** Coluna `pdv_pedidos.entrega_no_cliente` (NULL = histórico
+  → custo zero, não se inventa custo retroativo) + checkbox **"🚚 Entrega no endereço do cliente"** na
+  finalização do PDV (`_pdvEntregaHtml`/`_pdvSetEntrega`), que mostra ao vivo os km e o R$ estimados.
+  Persiste na criação e na edição do pedido; ao editar um pedido antigo, marcar e salvar passa a contar.
+- **Distância:** `_haversineKm(loja, CEP)` × **fator de rota 1,5** (linha reta → rodoviário) × 2 (ida e
+  volta) × R$ 0,50. Config em `config_custos` (`deslocamento_rs_km`, `deslocamento_ida_volta`,
+  `deslocamento_fator_rota`, `loja_latitude/longitude`) — tudo ajustável sem tocar em código.
+- **Coordenadas: tabela `cep_geo`** (cache por CEP). Populada com os **47 CEPs** já usados: **36 por rua
+  via Nominatim/OSM** e 11 pela coordenada do município (BrasilAPI). ⚠️ **A BrasilAPI v2 devolve o ponto
+  do MUNICÍPIO**, não do CEP — Santa Cruz e Santa Teresa retornam a mesma coordenada (60 km de erro
+  dentro do Rio); por isso o Nominatim é o primário (Santa Cruz 16 km × Santa Teresa 90 km, correto).
+- **Calibração do fator 1,5** contra rodoviário real: Seropédica 1,44 · Mangaratiba 1,35 · Angra 1,6 ·
+  Japeri 1,7 · Volta Redonda 2,1. Subestima trajeto longo com serra, superestima trajeto curto — é
+  estimativa consistente, como o dono pediu, não roteirização.
+
+### ⚠️ RECLASSIFICAÇÃO — a regra que impede o combustível de contar 2×
+O combustível **já é despesa** (`Veículos, transportes`, R$ 1.250 em 08/2026). Somar o deslocamento no
+CPV sem mexer nisso faria o mesmo litro entrar duas vezes e o mês sairia ~R$ 560 pior que a realidade.
+Então `calcularDRE` **abate da despesa exatamente o que subiu pro CPV**, com trava
+`Math.min(deslocamento, combustível lançado no período)` — o que sobra (frota usada em compra, banco,
+obra) **continua despesa**. Constante `DESLOC_CATEGORIA_DESPESA`; retorno da DRE ganhou `deslocamento`,
+`deslocEntregas`, `deslocKm`, `deslocReclassificado`, `combustivelPeriodo`, e a linha do CPV mostra
+uma sublinha com km/entregas/valor. **Decisão do dono** entre 3 opções apresentadas — as outras eram
+somar por cima (duplicando) ou deixar só informativo.
+
+**Por que NÃO entrou em `_DRE_CATEGORIAS_FORA_DESPESA`:** aquela lista tira a categoria INTEIRA da
+despesa (é o caso da NF e da Comissão, 100% ligadas a venda). A frota roda pra muito mais que entrega,
+então só a **parcela estimada** sai.
+
+### Dimensionamento (agosto/2026, se todas as 21 vendas fossem marcadas como entrega)
+1.123 km ida-e-volta · **R$ 561,44** de deslocamento (média **R$ 26,74/venda**) · 45% do combustível do
+mês seria reclassificado. Hoje o valor real é **R$ 0** — nenhuma venda tem o campo marcado (é novo).
+
+**⚠️ 3 pedidos de agosto ficariam sem estimativa por CEP inválido:** #68 (Consumidor Final, sem CEP),
+#74 (`2386000`, 7 dígitos) e #76 (`238120400`, 9 dígitos). O PDV avisa "CEP ainda sem coordenada" em vez
+de chutar distância.
+
+**Validado (13/08/2026):** sintaxe; **27 testes** de NF/distância/deslocamento + **10 testes** da
+reclassificação (ambos sobre o código real extraído do arquivo — inclusive a trava de não abater mais
+que o lançado, mês sem combustível e histórico sem o campo); navegador com boot limpo, funções
+carregadas, bloco do PDV nos 3 estados (com CEP → "≈ 195 km · R$ 97,62", sem CEP, CEP sem coordenada),
+toggle e guard de `_pdvVenda` nulo.
+
+⚠️ **Armadilha de SQL encontrada na auditoria:** `GREATEST(-1, NULL)` no Postgres **ignora o NULL** e
+devolve -1 → `acos(-1)` = π → 30.022 km (o antípoda) para CEP sem coordenada. Só afetou uma query de
+conferência (o JS só calcula quando achou a coordenada), mas vale lembrar ao auditar distância em SQL.
+
 ## Histórico de mudanças
+
+### 2026-08-13 (2) — Custos diretos por venda: NF por vigência + deslocamento da entrega
+Continuação do mesmo pedido ("lucro cada vez mais próximo do real"). NF deixou de ser valor único e
+passou a ser **resolvida pela data do pedido** (R$ 30 até 09/08, R$ 40 a partir de 10/08 — data do
+pacote de R$ 400), via tabela `custos_vigencia`. E entrou o **custo de deslocamento** (R$ 0,50/km ida e
+volta) nas vendas marcadas como entrega, com distância estimada por CEP (cache `cep_geo`, 47 CEPs
+geocodificados — 36 por rua via Nominatim). **O ponto que exigiu decisão do dono:** o combustível já é
+despesa, então somar o deslocamento no CPV contaria 2× — ele escolheu **reclassificar** (abater da
+despesa exatamente o que subiu pro CPV, com trava no valor lançado). Checkbox novo no PDV; histórico
+sem o campo não gera custo. Seção **"Custos diretos por venda"**. 37 testes + navegador.
+
+### 2026-08-13 — KPIs passaram a sair só de dado real (lucro bruto, scooters, cancelados)
+Dono comparou o card "Lucro bruto" (21.856,14) com a margem bruta da DRE (42.307,21) do mesmo mês e pediu
+indicador sem estimativa. Diagnóstico: o card fazia `receita × MC média de TABELA` — média aritmética que
+incluía produto inativo e contava 0% pra quem não casava preço (11,3%), ignorando por quanto a moto saiu.
+Agora Dashboard, DRE, aba Vendas e Relatórios usam **uma função só** (`_cpvRealDosPedidos`), e a parte do
+CPV que ainda é estimada (item sem cadastro) virou **selo "parcial" + aviso de % da receita**, em vez de
+sumir dentro do número. Na contagem de scooters, o critério deixou de ser o **nome** e passou a ser a
+**categoria do cadastro**: agosto tinha **23** scooters, não 21 (MC20 e X13 estavam invisíveis por não ter
+"MOTONETA/SCOOTER" no nome) — e a soma continua por unidade, nunca por pedido. Cancelados: auditado, já
+saía de tudo automaticamente (filtro na fonte única de vendas) — nada mudou. Seção **"KPIs alimentados só
+por dado real"**. Validado com 27 testes + navegador com os dados reais de agosto (CPV bate ao centavo).
+No meio disso, a pergunta dele ("não dá pra copiar de outra cor?") expôs um **bug mais fundo**: o CPV
+resolvia o modelo por **nome**, ignorando o `produto_precos_id` que o item já carrega — então a Cytron
+Vermelha, **com custo cadastrado e vinculado**, caía na estimativa só porque o modelo se chama "MOTONETA
+CYTRON BRANCA". Corrigido (`_modeloDoItemVendido`): agosto vai de R$ 42.307,27 → **R$ 45.483,38** de lucro
+bruto e a receita com custo estimado cai de 21% para 9%. **Pendências do dono:** custo puro + montagem da
+**MC20** e da **X13** (não têm molde no catálogo) e definir o custo do **Frete**; acertar R$ 100 de
+comissão da Michelle e do Samuel.
 
 ### 2026-08-07 (noite) — Prestadores: pagamento deixou de ser por módulo e passou a ser por QUEM RECEBE
 Evolução de arquitetura pedida pelo dono logo depois do "a pagar" da Oficina: *"não estou pagando uma montagem

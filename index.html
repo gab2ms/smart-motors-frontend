@@ -6018,6 +6018,211 @@ const SCOOTER_RE = /MOTONETA|TRICICLO|SCOOTER/i;
 // a contagem de scooters vendidas (essa usa SCOOTER_RE no nome do item do pedido).
 const SERVICO_RE = /frete|manuten|servi[cç]o/i;
 
+// ── Categoria REAL do item vendido (produtos.categoria) ───────────────────────
+// O SCOOTER_RE acima decide pelo NOME, e o nome é digitado no cadastro: uma
+// scooter cadastrada como "MC20 VERMELHA" (sem a palavra MOTONETA/SCOOTER) some
+// da contagem sem avisar — foi o que aconteceu com as vendas #78 e #80 de
+// 08/2026. A categoria do cadastro é o dado da operação e está preenchida em
+// 100% dos produtos, então ela MANDA; o regex vira só fallback pro que não tem
+// vínculo (itens do arquivo Tiny ≤ 31/05, que não têm produto_id).
+// O índice guarda também o `produto_precos_id` — o VÍNCULO do produto vendido
+// com o modelo do catálogo. É o dado que diz de qual modelo aquela unidade é,
+// e vale mais que qualquer inferência por nome (ver _cpvRealDosPedidos).
+let _PROD_CAT_IDX     = new Map();   // produto_id → { categoria, precosId }
+let _PROD_CAT_TS      = 0;
+let _PROD_CAT_FETCH   = null;
+const _PROD_CAT_TTL_MS = 30 * 60 * 1000;
+
+async function _carregarCategoriaProdutos() {
+  if (_PROD_CAT_IDX.size && (Date.now() - _PROD_CAT_TS) < _PROD_CAT_TTL_MS) return;
+  if (_PROD_CAT_FETCH) return _PROD_CAT_FETCH;
+  _PROD_CAT_FETCH = (async () => {
+    try {
+      // Sem filtro de `ativo`: produto desativado depois da venda continua
+      // precisando ser classificado (a venda passada não muda de natureza).
+      const { data, error } = await sb.from('produtos').select('id,categoria,produto_precos_id');
+      if (error) throw new Error(error.message);
+      const idx = new Map();
+      for (const p of (data || [])) {
+        if (!p.id) continue;
+        idx.set(String(p.id), {
+          categoria: (p.categoria || '').toLowerCase(),
+          precosId:  p.produto_precos_id || null,
+        });
+      }
+      _PROD_CAT_IDX = idx;
+      _PROD_CAT_TS  = Date.now();
+    } catch (e) {
+      // Degrada pro regex do nome (comportamento antigo) — nunca derruba o
+      // faturamento por causa da classificação.
+      console.warn('[prod-categoria] falhou, contagem cai no nome:', e.message);
+    } finally {
+      _PROD_CAT_FETCH = null;
+    }
+  })();
+  return _PROD_CAT_FETCH;
+}
+
+// Modelo do catálogo daquele item VENDIDO. Ordem: vínculo real do cadastro
+// (produtos.produto_precos_id, gravado no item pelo produto_id) → match por
+// NOME (legado: itens do arquivo Tiny, que não têm produto_id).
+//
+// O vínculo tem que vir primeiro porque o match por nome erra quando o modelo
+// foi cadastrado com a cor no nome: o item "MOTONETA CYTRON VERMELHA" não casa
+// com o modelo "MOTONETA CYTRON BRANCA", e o CPV caía na estimativa mesmo com
+// o custo cadastrado e vinculado corretamente (2 vendas de 08/2026).
+function _modeloDoItemVendido(it) {
+  const pid = it && it.produtoId;
+  if (pid && products && products.length) {
+    const rec = _PROD_CAT_IDX.get(String(pid));
+    if (rec && rec.precosId) {
+      const m = products.find(p => String(p.id) === String(rec.precosId));
+      if (m) return m;
+    }
+  }
+  return _matchProdutoPorNome(((it && (it.produto || it.nome)) || '').trim());
+}
+
+// Item de venda é veículo? `categoria` vem anexada em buscarVendasMescladas.
+// Ordem: categoria cadastrada (fonte da verdade) → nome (legado/arquivo Tiny).
+function _ehScooterItem(item) {
+  if (!item) return false;
+  const cat = (item.categoria || '').toLowerCase();
+  if (cat === 'scooter')   return true;
+  if (cat === 'acessorio' || cat === 'servico') return false;
+  return SCOOTER_RE.test((item.produto || item.nome || '').trim());
+}
+
+// Item vendido cuja natureza não deu pra determinar: tem cadastro (produto_id)
+// mas ficou sem categoria. Alimenta o aviso de cadastro incompleto no card.
+function _itemSemClassificacao(item) {
+  return !!(item && item.produtoId && !(item.categoria || '').trim());
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  CUSTOS DIRETOS POR VENDA — NF por vigência + deslocamento da entrega
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── NF: o custo por nota MUDA no tempo (pacote de 10 saiu de R$300 pra R$400
+// em 10/08/2026). Um valor único aplicaria o preço de hoje a venda de abril e
+// vice-versa, então o CPV resolve pelo valor vigente NA DATA do pedido.
+// Fonte: tabela custos_vigencia (chave='nf_pedido'); sem ela, cai no
+// CONFIG_CUSTOS.nf_pedido de sempre (degradação para o comportamento antigo).
+let _CUSTOS_VIGENCIA = null;      // { chave: [{valor, de}, ...] } ordenado desc
+let _CUSTOS_VIG_FETCH = null;
+
+async function _carregarCustosVigencia() {
+  if (_CUSTOS_VIGENCIA) return;
+  if (_CUSTOS_VIG_FETCH) return _CUSTOS_VIG_FETCH;
+  _CUSTOS_VIG_FETCH = (async () => {
+    try {
+      const { data, error } = await sb.from('custos_vigencia').select('chave,valor,vigente_de');
+      if (error) throw new Error(error.message);
+      const idx = {};
+      for (const r of (data || [])) {
+        (idx[r.chave] = idx[r.chave] || []).push({ valor: Number(r.valor) || 0, de: r.vigente_de });
+      }
+      for (const k of Object.keys(idx)) idx[k].sort((a, b) => (a.de < b.de ? 1 : -1)); // mais recente 1º
+      _CUSTOS_VIGENCIA = idx;
+    } catch (e) {
+      console.warn('[custos-vigencia] falhou, usando valor único do config:', e.message);
+      _CUSTOS_VIGENCIA = {};
+    } finally {
+      _CUSTOS_VIG_FETCH = null;
+    }
+  })();
+  return _CUSTOS_VIG_FETCH;
+}
+
+// Valor vigente de uma chave numa data (YYYY-MM-DD). Sem vigência cadastrada
+// pra data (ex.: venda anterior à 1ª linha), devolve o fallback.
+function _custoVigenteEm(chave, dataISO, fallback) {
+  const faixas = _CUSTOS_VIGENCIA && _CUSTOS_VIGENCIA[chave];
+  if (!faixas || !faixas.length || !dataISO) return fallback;
+  for (const f of faixas) if (dataISO >= f.de) return f.valor;   // ordenado desc
+  return fallback;
+}
+
+function _nfDoPedido(ped) {
+  const base = CONFIG_CUSTOS.nf_pedido || 0;
+  return _custoVigenteEm('nf_pedido', ped && ped.dataISO, base);
+}
+
+// ── Deslocamento: custo estimado de levar a moto até o cliente.
+// Distância = haversine(loja, CEP do cliente) × fator de rota; custo = km ×
+// R$/km × 2 (ida e volta). Só vale pra pedido MARCADO como entrega — venda
+// retirada na loja não roda quilômetro nenhum.
+let _CEP_GEO_IDX   = new Map();   // cep (só dígitos) → {lat, lon, fonte}
+let _CEP_GEO_TS    = 0;
+let _CEP_GEO_FETCH = null;
+const _CEP_GEO_TTL_MS = 30 * 60 * 1000;
+
+async function _carregarCepGeo() {
+  if (_CEP_GEO_IDX.size && (Date.now() - _CEP_GEO_TS) < _CEP_GEO_TTL_MS) return;
+  if (_CEP_GEO_FETCH) return _CEP_GEO_FETCH;
+  _CEP_GEO_FETCH = (async () => {
+    try {
+      const { data, error } = await sb.from('cep_geo').select('cep,latitude,longitude,fonte');
+      if (error) throw new Error(error.message);
+      const idx = new Map();
+      for (const r of (data || [])) {
+        idx.set(String(r.cep).replace(/\D/g, ''),
+                { lat: Number(r.latitude), lon: Number(r.longitude), fonte: r.fonte || '' });
+      }
+      _CEP_GEO_IDX = idx;
+      _CEP_GEO_TS  = Date.now();
+    } catch (e) {
+      // Sem o cache, o deslocamento fica 0 — nunca derruba o cálculo.
+      console.warn('[cep-geo] falhou, deslocamento não será estimado:', e.message);
+    } finally {
+      _CEP_GEO_FETCH = null;
+    }
+  })();
+  return _CEP_GEO_FETCH;
+}
+
+const _DESL_RAIO_TERRA_KM = 6371;
+function _haversineKm(lat1, lon1, lat2, lon2) {
+  const rad = g => g * Math.PI / 180;
+  const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1);
+  const a = Math.sin(dLat/2) ** 2
+          + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon/2) ** 2;
+  return 2 * _DESL_RAIO_TERRA_KM * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function _deslocCfg() {
+  const n = (k, d) => { const v = Number(CONFIG_CUSTOS[k]); return isFinite(v) && v !== 0 ? v : d; };
+  return {
+    rsKm:      n('deslocamento_rs_km', 0.50),
+    fatorRota: n('deslocamento_fator_rota', 1.5),   // linha reta → rodoviário
+    idaVolta:  String(CONFIG_CUSTOS.deslocamento_ida_volta ?? '1') !== '0',
+    lojaLat:   n('loja_latitude',  -22.85222),      // Rua Monteiro Mendes 76, Itaguaí
+    lojaLon:   n('loja_longitude', -43.77528),
+  };
+}
+
+// Distância rodoviária ESTIMADA loja → CEP (só ida), em km. 0 = sem coordenada.
+function _distanciaEntregaKm(cep) {
+  const c = String(cep || '').replace(/\D/g, '');
+  if (c.length !== 8) return 0;
+  const geo = _CEP_GEO_IDX.get(c);
+  if (!geo) return 0;
+  const cfg = _deslocCfg();
+  return _haversineKm(cfg.lojaLat, cfg.lojaLon, geo.lat, geo.lon) * cfg.fatorRota;
+}
+
+// Custo de deslocamento de UM pedido. Zero quando: não foi marcado como entrega
+// (inclui todo o histórico, `entregaNoCliente` null), sem CEP, ou CEP sem
+// coordenada no cache. Devolve também os km pra exibição/auditoria.
+function _custoDeslocamentoPedido(ped) {
+  if (!ped || ped.entregaNoCliente !== true) return { custo: 0, km: 0 };
+  const kmIda = _distanciaEntregaKm(ped.cep);
+  if (!kmIda) return { custo: 0, km: 0 };
+  const cfg = _deslocCfg();
+  const km  = cfg.idaVolta ? kmIda * 2 : kmIda;
+  return { custo: km * cfg.rsKm, km };
+}
+
 // Converte row de pdv_pedidos pra venda no formato unificado (mesmo shape
 // dos pedidos do Tiny). Quando `itens` e `vendedor` são passados, vão
 // preenchidos no objeto — alimenta rankings de scooters/vendedores. Sem
@@ -6032,6 +6237,12 @@ function _pdvParaVenda(p, itens, vendedor) {
     // Canal de venda (local_venda_id → pdv_locais_venda). Alimenta o KPI
     // "Vendas por canal" no Dashboard. Tiny/arquivo não tem → fica undefined.
     localVendaId: p.local_venda_id || null,
+    // Data ISO da competência — o CPV usa pra resolver o custo de NF vigente
+    // NAQUELA data (o valor mudou em 10/08/2026). `data` acima é BR (dd/mm).
+    dataISO: (p.criado_em || '').slice(0, 10),
+    // Entrega no endereço do cliente? NULL = histórico/desconhecido → sem custo
+    // de deslocamento (não inventar custo retroativo).
+    entregaNoCliente: (p.entrega_no_cliente == null) ? null : !!p.entrega_no_cliente,
   };
   // cliente_dados é jsonb no banco; quando vier no select, expõe o nome
   // pra renderDashPedidos casar com o shape do Tiny. cidade/uf/cpf são
@@ -6042,6 +6253,8 @@ function _pdvParaVenda(p, itens, vendedor) {
     if (cd.cidade)   out.cidade  = cd.cidade;
     if (cd.uf)       out.uf      = cd.uf;
     if (cd.cpf_cnpj) out.cpfCnpj = cd.cpf_cnpj;
+    // CEP só dígitos — chave do cache de coordenadas (custo de deslocamento).
+    if (cd.cep) out.cep = String(cd.cep).replace(/\D/g, '');
   }
   // forma_pagamento (jsonb {desconto, metodos:[{tipo,valor,parcelas}]}) — lista
   // completa de métodos preservada (suporta split de pagamento). PDV-only.
@@ -6118,6 +6331,12 @@ async function buscarVendasMescladas(iniISO, fimISO, forcar) {
       if (!r.error && r.data) pdvVendedores = toCamelArr(r.data);
     } catch (e) { /* ranking sem vendedor é aceitável */ }
   }
+  // Categoria real de cada produto vendido (scooter/acessório/serviço) — usada
+  // por _ehScooterItem. Índice à parte de propósito: um embed dentro do select
+  // de pedidos faria um erro de RLS/PostgREST derrubar o faturamento inteiro.
+  // Junto vão as vigências de custo (NF) e as coordenadas por CEP (deslocamento):
+  // os 3 alimentam o CPV e degradam sozinhos se falharem.
+  await Promise.all([_carregarCategoriaProdutos(), _carregarCustosVigencia(), _carregarCepGeo()]);
   try {
     var j = _janelaPdvUTC(iniISO, fimISO);
     // pdv_itens_pedido é trazido via join (FK pedido_id). Vendedor resolvido
@@ -6125,7 +6344,7 @@ async function buscarVendasMescladas(iniISO, fimISO, forcar) {
     // normalizarNomeVendedor pra agrupar com Tiny ("Henrique Quiosque" e
     // "Henrique" do PDV viram "Henrique" no ranking).
     var resp = await sb.from('pdv_pedidos')
-      .select('id,numero_smart,total,status,tiny_pedido_id,criado_em,vendedor_id,local_venda_id,cliente_dados,forma_pagamento,pdv_itens_pedido(produto_id,produto_nome_tiny,quantidade,valor_unitario,ordem,custo_consignacao,na_caixa)')
+      .select('id,numero_smart,total,status,tiny_pedido_id,criado_em,vendedor_id,local_venda_id,cliente_dados,forma_pagamento,entrega_no_cliente,pdv_itens_pedido(produto_id,produto_nome_tiny,quantidade,valor_unitario,ordem,custo_consignacao,na_caixa)')
       .neq('status', 'cancelado')
       .gte('criado_em', j.iniUTC)
       .lt('criado_em', j.fimUTC);
@@ -6140,6 +6359,7 @@ async function buscarVendasMescladas(iniISO, fimISO, forcar) {
             quantidade:    Number(it.quantidade) || 0,
             valorUnitario: Number(it.valor_unitario) || 0,
             produtoId:     it.produto_id || null, // FK p/ produtos (relatórios); descartado antes
+            categoria:     it.produto_id ? ((_PROD_CAT_IDX.get(String(it.produto_id)) || {}).categoria || '') : '',
             custoConsig:   (it.custo_consignacao != null) ? Number(it.custo_consignacao) : null,
             naCaixa:       !!it.na_caixa, // modalidade da venda: na caixa = sem montagem no CPV
           };
@@ -6204,12 +6424,9 @@ async function buscarLinhasVenda(iniISO, fimISO){
   const merged = (await buscarVendasMescladas(iniISO, fimISO)).merged;
   // mcpReal/_matchProdutoPorNome dependem do preço Tiny — mesma dep. da DRE.
   await carregarTinyPrecos();
-  // avgMCpct calculado IGUAL ao calcularDRE (espelho exato) → o CPV estimado dos
-  // itens sem cadastro reconcilia com a DRE.
-  const produtosAtivos = (products || []).filter(p => p.ativo !== false);
-  const avgMCpct = produtosAtivos.length
-    ? produtosAtivos.reduce((s,p) => s + mcpReal(p), 0) / produtosAtivos.length / 100
-    : 0;
+  // Mesma função que a DRE e o Dashboard usam → o CPV estimado dos itens sem
+  // cadastro reconcilia com a DRE (antes era uma cópia da fórmula aqui).
+  const avgMCpct = _avgMCpctCatalogo();
   const nfPedido = (typeof CONFIG_CUSTOS !== 'undefined' && CONFIG_CUSTOS.nf_pedido) || 0;
   const _canalNome = id => {
     if (!id) return null;
@@ -6262,7 +6479,9 @@ async function buscarLinhasVenda(iniISO, fimISO){
       const qtd     = it.quantidade || 0;
       const preco   = it.valorUnitario || 0;
       const receita = qtd * preco;
-      const prod    = _matchProdutoPorNome((it.produto || '').trim());
+      // Mesma resolução da DRE (vínculo do cadastro primeiro, nome como
+      // fallback) — se divergir aqui, Relatórios param de reconciliar com a DRE.
+      const prod    = _modeloDoItemVendido(it);
       let cpvProduto, comissao, cpvEstimado, categoria, fabricante, matched, modelo, modeloBase, cor;
       if (it.custoConsig != null) {
         // Consignação recebida: o custo real é o REPASSE ao dono (+ comissão),
@@ -6963,8 +7182,8 @@ function calcularRankingScooters(pedidos) {
     itens.forEach(function(item) {
       var nome = (item.produto || '').trim();
       if (!nome) return;
-      // Allowlist — só conta veículos (mesmo critério do resumo WhatsApp).
-      if (!SCOOTER_RE.test(nome)) return;
+      // Só veículos — categoria do cadastro manda, nome é fallback.
+      if (!_ehScooterItem(item)) return;
       var qtd     = item.quantidade    || 1;
       var receita = (item.valorUnitario || 0) * qtd;
       if (!contagem[nome]) contagem[nome] = { nome: nome, qtd: 0, receita: 0 };
@@ -6977,20 +7196,26 @@ function calcularRankingScooters(pedidos) {
     .slice(0, 10);
 }
 
-// Total de UNIDADES de scooter num conjunto de pedidos — mesma regra do
-// ranking/resumo WhatsApp (SCOOTER_RE, soma quantidade), mas SEM slice top-10,
-// pra nunca subcontar. Alimenta o subtexto do card "Pedidos faturados".
+// Total de UNIDADES de scooter num conjunto de pedidos — soma `quantidade`,
+// NUNCA conta pedidos (pedido com 2 motos = 2). Sem slice top-10, pra nunca
+// subcontar. Classificação por _ehScooterItem (categoria do cadastro).
+// Retorna também `semClassificacao`: itens cadastrados que ficaram sem
+// categoria — o card avisa em vez de engolir a unidade em silêncio.
 function _contarScootersUnidades(pedidos) {
-  var total = 0;
+  return _contarScootersDetalhe(pedidos).unidades;
+}
+
+function _contarScootersDetalhe(pedidos) {
+  var unidades = 0, semClassificacao = 0;
   (pedidos || []).forEach(function(pedido) {
     var itens = Array.isArray(pedido.itens) ? pedido.itens : [];
     itens.forEach(function(item) {
-      var nome = (item.produto || '').trim();
-      if (!nome || !SCOOTER_RE.test(nome)) return;
-      total += item.quantidade || 1;
+      var qtd = item.quantidade || 1;
+      if (_ehScooterItem(item)) { unidades += qtd; return; }
+      if (_itemSemClassificacao(item)) semClassificacao += qtd;
     });
   });
-  return total;
+  return { unidades: unidades, semClassificacao: semClassificacao };
 }
 
 function renderDashRanking() {
@@ -8256,12 +8481,29 @@ function _kpiCompara(atual, anterior, tipo) {
   return diffLine + '<div class="kpi-vs">vs. ' + antTxt + ' anterior</div>';
 }
 
-// Selo "est." do Lucro — único hover ativo dos cards (tooltip nativo via title).
-function _kpiBadgeEst(pct) {
-  var p = (pct * 100).toFixed(1);
-  var t = 'Estimativa: receita do período × margem de contribuição média atual ('
-    + p + '%). Não usa CMV real por pedido — lucro real virá em fase futura.';
-  return '<span class="kpi-badge-est" title="' + t + '" tabindex="0">est.<span class="kpi-badge-i">ⓘ</span></span>';
+// Selo "parcial" do Lucro bruto — aparece SÓ quando algum item vendido não tem
+// cadastro casável e o custo dele teve que ser estimado. Sem itens assim, o
+// card não leva selo nenhum (o número é 100% apurado). Único hover ativo dos
+// cards (tooltip nativo via title). Substituiu o antigo selo "est.", que era
+// permanente porque o lucro inteiro vinha de estimativa.
+function _kpiBadgeCpvParcial(info) {
+  var nomes = (info.nomesEstimados || []).slice(0, 4).join(', ');
+  var t = info.estimados + ' item(ns) vendido(s) sem custo cadastrado — o custo deles foi '
+    + 'estimado pela margem média do catálogo, o resto é custo real. '
+    + 'Cadastre o custo desses produtos pro lucro ficar 100% apurado'
+    + (nomes ? ': ' + nomes : '.');
+  return '<span class="kpi-badge-est" title="' + escHtml(t) + '" tabindex="0">parcial<span class="kpi-badge-i">ⓘ</span></span>';
+}
+
+// Sublinha do card de Lucro bruto: diz a régua usada (margem real do período)
+// e, quando houver, o quanto da receita ficou com custo estimado.
+function _dashSublabelLucroBruto(mcPct, info, receita) {
+  var base = 'receita vendida − custo real · margem ' + (mcPct || 0).toFixed(1) + '%';
+  if (info && info.estimados > 0 && receita > 0) {
+    var pct = (info.receitaEstimada / receita * 100).toFixed(0);
+    base += ' · ⚠ ' + pct + '% da receita com custo estimado';
+  }
+  return base;
 }
 
 // Card de KPI em COLUNA FLEX, sem altura travada (forward-compat p/ a sparkline
@@ -8416,11 +8658,17 @@ async function carregarFaturamentoDash(forcar) {
     var totalPedidos = kc.qtd;
     var ticketMedio  = kc.ticket;
     var custoFixoMensal = _despPlanejadoHistorico().media;
-    var avgMCpct    = products.length ? products.reduce(function(s,p){return s+mcpReal(p);},0)/products.length/100 : 0;
-    var lucroBruto  = receitaTotal * avgMCpct;
-    // Lucro bruto do período anterior (para o delta comparativo).
-    // O lucro líquido saiu daqui — o widget DRE é a fonte autoritativa.
-    var lucroBrutoAnt = ka.receita * avgMCpct;
+    // LUCRO BRUTO REAL = receita efetivamente vendida − CPV real item a item
+    // (mesma função da DRE: _cpvRealDosPedidos). Antes era `receita × MC média
+    // do catálogo` — uma estimativa em cima de PREÇO DE TABELA que ignorava
+    // por quanto cada moto saiu e devolvia ~metade do lucro real (11,3% vs
+    // 21,9% em 08/2026). Sem query nova: reusa os pedidos já em memória.
+    var avgMCpct       = _avgMCpctCatalogo();
+    var cpvInfo        = _cpvRealDosPedidos(mergedAtual, avgMCpct);
+    var lucroBruto     = receitaTotal - cpvInfo.cpv;
+    var mcPctPeriodo   = receitaTotal > 0 ? (lucroBruto / receitaTotal * 100) : 0;
+    // Período anterior pela MESMA régua (delta comparando maçã com maçã).
+    var lucroBrutoAnt  = ka.receita - _cpvRealDosPedidos(mergedAnt, avgMCpct).cpv;
 
     // Parse YYYY-MM-DD em local time (new Date('2026-04-01') eh UTC midnight,
     // que no Brasil GMT-3 vira 31/03 21h e o toLocaleString mostra "marco").
@@ -8433,12 +8681,18 @@ async function carregarFaturamentoDash(forcar) {
     label.textContent    = 'Faturamento — ' + mesLabel;
 
     var _kpisIsAdmin = _isAdminUser();
-    // Unidades de scooter (mesma regra do resumo WhatsApp: SCOOTER_RE + soma
-    // quantidade) — destaque do card. Período anterior conta sobre mergedAnt,
-    // cujo range já é "mês cheio vs mês cheio" via calcPeriodoAnterior.
-    var scootersUnid    = _contarScootersUnidades(pedidos);
+    // UNIDADES de scooter (nunca nº de pedidos): soma a quantidade de cada item
+    // classificado como veículo — pedido com 2 motos conta 2. Período anterior
+    // sobre mergedAnt, cujo range já é "mês cheio vs mês cheio".
+    var scootersInfo    = _contarScootersDetalhe(pedidos);
+    var scootersUnid    = scootersInfo.unidades;
     var scootersUnidAnt = _contarScootersUnidades(mergedAnt);
     var pedidosTxt      = totalPedidos + ' ' + (totalPedidos === 1 ? 'pedido' : 'pedidos') + ' · no período';
+    // Item vendido com cadastro mas sem categoria — não dá pra afirmar se é
+    // veículo. Avisa em vez de subcontar calado.
+    if (scootersInfo.semClassificacao > 0) {
+      pedidosTxt += ' · ⚠ ' + scootersInfo.semClassificacao + ' item(ns) sem categoria no cadastro';
+    }
 
     // ── Fase 1: cards enriquecidos (comparação em destaque) · cards calmos ──
     // Mesmos números de sempre (diff-zero); só a montagem da string mudou via
@@ -8459,8 +8713,9 @@ async function carregarFaturamentoDash(forcar) {
                      sublabel:'por pedido' })
         + _kpiCard({ label:'Lucro bruto', valor: fmt(lucroBruto), cor:(lucroBruto>=0?'green':'red'),
                      comparaHtml: _kpiCompara(lucroBruto, lucroBrutoAnt, 'money'),
-                     sublabel:'MC média ' + (avgMCpct*100).toFixed(1) + '% × receita',
-                     badge: _kpiBadgeEst(avgMCpct) })
+                     sublabel: _dashSublabelLucroBruto(mcPctPeriodo, cpvInfo, receitaTotal),
+                     // Selo só quando parte do CPV NÃO é real (item sem cadastro).
+                     badge: cpvInfo.estimados > 0 ? _kpiBadgeCpvParcial(cpvInfo) : '' })
         // Custo Fixo: média histórica, não métrica de período → SEM comparação.
         + _kpiCard({ label:'Custo Fixo Planejado', valor: fmt(custoFixoMensal), cor:'red',
                      sublabel:'média histórica · real no widget DRE' });
@@ -8783,6 +9038,13 @@ const _DRE_CATEGORIAS_FORA_DESPESA = [
   'Troca de Veículo',
 ];
 
+// Categoria onde o combustível é lançado. O custo de deslocamento estimado por
+// venda entra no CPV e é ABATIDO daqui (até o limite lançado no período) — sem
+// isso o mesmo litro contaria 2×. Não entra em _DRE_CATEGORIAS_FORA_DESPESA
+// porque a frota roda pra muita coisa além de entrega (compra, banco, obra):
+// só a parcela estimada das entregas sai da despesa, o resto continua.
+const DESLOC_CATEGORIA_DESPESA = 'Veículos, transportes';
+
 // Decompõe as parcelas de empréstimo pagas num período em JUROS vs PRINCIPAL.
 // Regra contábil: só os JUROS são despesa/resultado (entram na DRE); a
 // amortização do PRINCIPAL é devolução de dívida (fluxo de financiamento) —
@@ -8823,6 +9085,75 @@ function _mesInicioParcial() {
   return parseInt(primeira.slice(8, 10), 10) > 5 ? { mes: primeira.slice(0, 7), desde: primeira } : null;
 }
 
+// MC% média do catálogo — SÓ pro fallback de item sem cadastro no CPV.
+// Não serve como margem do negócio: é média aritmética de preço de TABELA,
+// não pondera volume e não sabe por quanto a moto saiu de verdade.
+// `ativo !== false` → registros antigos/seed sem a flag contam como ativos.
+function _avgMCpctCatalogo() {
+  const ativos = (products || []).filter(p => p.ativo !== false);
+  return ativos.length ? ativos.reduce((s,p) => s + mcpReal(p), 0) / ativos.length / 100 : 0;
+}
+
+// CPV REAL de um conjunto de pedidos — fonte ÚNICA do custo dos produtos
+// vendidos (DRE, card de lucro bruto do Dashboard e Relatórios reconciliam
+// por aqui). Por item: custoPuro + montagem (respeitando "na caixa" do item)
+// + comissão do vendedor; a NF entra 1× por PEDIDO (config_custos.nf_pedido),
+// não por unidade. Em venda direta os sócios não recebem comissão — excluída
+// direto no CPV. Consignação recebida usa o repasse gravado na venda
+// (custo_consignacao), não o custo do modelo do catálogo.
+//
+// Item SEM cadastro casável cai no fallback estimado por avgMCpct (evita
+// margem fictícia de 100%) — e é devolvido em `estimados`/`receitaEstimada`
+// pra quem exibe poder avisar que aquele pedaço não é custo real.
+function _cpvRealDosPedidos(pedidos, avgMCpct) {
+  let cpv = 0, estimados = 0, receitaEstimada = 0, nomesEstimados = new Set();
+  let deslocamento = 0, entregas = 0, kmTotal = 0;
+  for (const ped of (pedidos || [])) {
+    // Venda direta da loja. Aceita o nome do Tiny ('Venda Direta Smart Motors',
+    // arquivo) e o do PDV ('Smart Motors').
+    const _nomeVend = (ped.vendedor && ped.vendedor.nome) || '';
+    const vendaDireta = _nomeVend === 'Venda Direta Smart Motors' || _nomeVend === 'Smart Motors';
+    for (const it of (ped.itens || [])) {
+      const qtd = it.quantidade || 0;
+      if (it.custoConsig != null) { cpv += Number(it.custoConsig) * qtd; continue; }
+      const nome = (it.produto || it.nome || '').trim();
+      const prod = _modeloDoItemVendido(it);
+      if (prod) {
+        const comissao = vendaDireta ? 0 : (prod.comissao || 0);
+        cpv += ((prod.custoPuro || 0) + _montagemCustoVenda(prod, it) + comissao) * qtd;
+      } else if ((it.categoria || '').toLowerCase() === 'servico') {
+        // SERVIÇO (frete de entrega, etc): CPV zero de propósito, não é lacuna
+        // de cadastro. O gasto que viabiliza a entrega é o COMBUSTÍVEL, e ele já
+        // sai como despesa operacional ('Veículos, transportes') na linha de
+        // baixo da DRE — pôr um custo aqui contaria a mesma saída 2× (CPV +
+        // despesa), o mesmo erro que a regra do frete de COMPRA evita ao mandar
+        // o lançamento pra 'Fornecedores'. Frete de compra vira custo do produto;
+        // frete de ENTREGA é despesa do período. Serviço de oficina também não
+        // entra aqui — tem custo próprio no módulo Oficina. Estimar por MC média
+        // seria pior: inventaria um custo que ninguém pagou por essa venda.
+        // Serviço COM modelo cadastrado cai no ramo de cima e usa o custo dele.
+      } else {
+        const receitaItem = qtd * (it.valorUnitario || 0);
+        cpv += receitaItem * (1 - avgMCpct);
+        estimados       += qtd;
+        receitaEstimada += receitaItem;
+        if (nome) nomesEstimados.add(nome);
+      }
+    }
+    // NF: custo por PEDIDO (não por unidade), no valor vigente na data da venda.
+    cpv += _nfDoPedido(ped);
+    // Deslocamento da entrega: só em pedido marcado como entrega no cliente.
+    const d = _custoDeslocamentoPedido(ped);
+    if (d.custo > 0) { cpv += d.custo; deslocamento += d.custo; entregas++; kmTotal += d.km; }
+  }
+  return {
+    cpv, estimados, receitaEstimada, nomesEstimados: Array.from(nomesEstimados),
+    // Deslocamento devolvido à parte: a DRE precisa dele pra ABATER a mesma
+    // quantia da despesa de combustível (senão o gasto conta 2×).
+    deslocamento, entregas, kmTotal,
+  };
+}
+
 // Cálculo puro do DRE pra um período arbitrário. Não toca DOM. Consumido
 // pelo widget renderDashDreMes (mês corrente) e por gerarFechamentoMes
 // (range escolhido no selector do Dashboard).
@@ -8843,40 +9174,9 @@ async function calcularDRE(iniISO, fimISO) {
   // fica vazio, mcpReal retorna 0 e cai pro caso "todos zero" → avgMCpct=0.
   await carregarTinyPrecos();
 
-  // Só produtos ativos entram na média de MC% do CPV estimado.
-  // `ativo !== false` → registros antigos/seed sem a flag contam como ativos.
-  const produtosAtivos = (products || []).filter(p => p.ativo !== false);
-  const avgMCpct = produtosAtivos.length
-    ? produtosAtivos.reduce((s,p) => s + mcpReal(p), 0) / produtosAtivos.length / 100
-    : 0;
-  // CPV real (estrutura Custos de Produtos): por item matchado soma
-  // custoPuro + montagem + comissão; a NF entra 1× por pedido
-  // (config_custos.nf_pedido), não por unidade. Em venda direta os
-  // sócios não recebem comissão — excluída direto no CPV (antes era
-  // devolvida na linha "Ajuste comissão venda direta", agora removida).
-  // Item sem cadastro (acessório/serviço) cai no fallback estimado por
-  // avgMCpct — evita margem fictícia de 100% nesses itens.
-  let cpv = 0;
-  for (const ped of pedidos) {
-    // Venda direta da loja (sem comissão de vendedor no CPV). Aceita o nome do
-    // Tiny ('Venda Direta Smart Motors', arquivo) e o do PDV ('Smart Motors').
-    const _nomeVend = (ped.vendedor && ped.vendedor.nome) || '';
-    const vendaDireta = _nomeVend === 'Venda Direta Smart Motors' || _nomeVend === 'Smart Motors';
-    for (const it of (ped.itens || [])) {
-      const qtd  = it.quantidade || 0;
-      // Consignação recebida: o custo real da loja é o repasse ao dono (+ comissão),
-      // gravado em custo_consignacao — NÃO o custo do modelo do catálogo.
-      if (it.custoConsig != null) { cpv += Number(it.custoConsig) * qtd; continue; }
-      const prod = _matchProdutoPorNome((it.produto || it.nome || '').trim());
-      if (prod) {
-        const comissao = vendaDireta ? 0 : (prod.comissao || 0);
-        cpv += ((prod.custoPuro || 0) + _montagemCustoVenda(prod, it) + comissao) * qtd;
-      } else {
-        cpv += (qtd * (it.valorUnitario || 0)) * (1 - avgMCpct);
-      }
-    }
-    cpv += (CONFIG_CUSTOS.nf_pedido || 0); // NF: custo por pedido, não por unidade
-  }
+  const avgMCpct = _avgMCpctCatalogo();
+  const _cpvInfo = _cpvRealDosPedidos(pedidos, avgMCpct);
+  const cpv = _cpvInfo.cpv;
   const lucroBruto = receita - cpv;
   const pctLB = receita > 0 ? (lucroBruto / receita * 100) : 0;
 
@@ -8886,8 +9186,21 @@ async function calcularDRE(iniISO, fimISO) {
     && !l.transferenciaId
     && !_DRE_CATEGORIAS_FORA_DESPESA.includes(l.categoria)
   );
-  const despReal = desp.reduce((s,l) => s + (l.valor || 0), 0);
+  const despRealBruta = desp.reduce((s,l) => s + (l.valor || 0), 0);
   const despCount = desp.length;
+
+  // ── RECLASSIFICAÇÃO do combustível das entregas ──────────────────────────
+  // O deslocamento estimado já entrou no CPV acima. O combustível que pagou
+  // essas entregas está lançado em 'Veículos, transportes' e, se ficasse
+  // inteiro na despesa, o MESMO gasto seria contado 2× (CPV + despesa) e o
+  // resultado do mês sairia pior que a realidade. Então abatemos da despesa
+  // exatamente o que subiu pro CPV — nunca mais do que foi lançado no período
+  // (a frota também roda pra compra, banco e obra: esse resto CONTINUA despesa).
+  const _combustivelPeriodo = desp
+    .filter(l => l.categoria === DESLOC_CATEGORIA_DESPESA)
+    .reduce((s,l) => s + (l.valor || 0), 0);
+  const deslocReclassificado = Math.min(_cpvInfo.deslocamento || 0, _combustivelPeriodo);
+  const despReal = despRealBruta - deslocReclassificado;
 
   // Separa a despesa em RECORRENTE (operação normal) vs NÃO-RECORRENTE
   // (gasto pontual/extraordinário — obra, eventos), pela natureza cadastrada.
@@ -8938,6 +9251,18 @@ async function calcularDRE(iniISO, fimISO) {
     periodo: { iniISO, fimISO },
     receita, pedidos,
     avgMCpct, cpv, lucroBruto, pctLB,
+    // Transparência do CPV: quanto do custo NÃO é real (item sem cadastro
+    // casável caiu na estimativa por avgMCpct). Zero = margem 100% apurada.
+    cpvEstimadoQtd:     _cpvInfo.estimados,
+    cpvEstimadoReceita: _cpvInfo.receitaEstimada,
+    cpvEstimadoNomes:   _cpvInfo.nomesEstimados,
+    // Deslocamento das entregas: quanto entrou no CPV, quantas entregas, km
+    // rodados e quanto disso foi abatido da despesa de combustível.
+    deslocamento:       _cpvInfo.deslocamento,
+    deslocEntregas:     _cpvInfo.entregas,
+    deslocKm:           _cpvInfo.kmTotal,
+    deslocReclassificado,
+    combustivelPeriodo: _combustivelPeriodo,
     despReal, despCount, despPlanejado, despPlanejadoBaseMeses,
     despRecorrente, despNaoRecorrente, naoRecorrentes, naoRecCount,
     empValor, empJuros, empPrincipal, empCount,
@@ -9118,7 +9443,9 @@ async function renderDashDreMes() {
   const { receita, cpv, lucroBruto, pctLB, despReal, despCount,
           despPlanejado: planejado, despPlanejadoBaseMeses, empValor, empCount,
           despRecorrente, despNaoRecorrente, naoRecorrentes, empJuros, empPrincipal,
-          resultadoOperacao, pctOperacao, resultado, pctRes, tinyEstabilidade } = dre;
+          resultadoOperacao, pctOperacao, resultado, pctRes, tinyEstabilidade,
+          cpvEstimadoQtd, cpvEstimadoReceita, cpvEstimadoNomes,
+          deslocamento, deslocEntregas, deslocKm, deslocReclassificado } = dre;
   const temNaoRec = (despNaoRecorrente || 0) > 0;
 
   // Subtítulo do widget + badge de resultado parcial do Tiny.
@@ -9194,6 +9521,16 @@ async function renderDashDreMes() {
       ${linha('(−) CPV — custo real dos produtos vendidos', cpv, {
         title: 'Custo de cada produto vendido: custo puro + montagem + comissão (exceto venda direta) por unidade + NF por pedido (não por unidade). Itens sem cadastro usam estimativa por MC% médio.'
       })}
+      ${(cpvEstimadoQtd || 0) > 0
+        ? sublinha(`⚠ ${cpvEstimadoQtd} item(ns) sem custo cadastrado — ${fmt(cpvEstimadoReceita)} de receita `
+            + `(${receita > 0 ? (cpvEstimadoReceita/receita*100).toFixed(0) : 0}%) com custo estimado`
+            + ((cpvEstimadoNomes || []).length ? `: ${cpvEstimadoNomes.slice(0,3).join(', ')}` : ''))
+        : ''}
+      ${(deslocamento || 0) > 0
+        ? sublinha(`inclui ${fmt(deslocamento)} de deslocamento — ${deslocEntregas} entrega${deslocEntregas!==1?'s':''}, `
+            + `${Math.round(deslocKm)} km rodados`
+            + ((deslocReclassificado || 0) > 0 ? ` (abatido do combustível na despesa, sem contar 2×)` : ''))
+        : ''}
       ${sep}
       ${linha('= Margem bruta', lucroBruto, {
         bold: true,
@@ -12344,8 +12681,13 @@ async function renderizarDREVendas(pedidos, mescladas) {
   var qtdPedidos   = base.length;
   var ticketMedio  = qtdPedidos > 0 ? receitaTotal / qtdPedidos : 0;
   var custoFixo    = _despPlanejadoHistorico().media;
-  var avgMC        = products.length ? products.reduce(function(s,p){return s+mcpReal(p);},0)/products.length/100 : 0;
-  var lucroBruto   = receitaTotal * avgMC;
+  // Lucro bruto REAL (mesma régua da DRE e do Dashboard): receita vendida −
+  // CPV real item a item. Era `receita × MC média de tabela` — estimativa que
+  // ignorava o preço praticado e divergia da DRE.
+  var avgMC        = _avgMCpctCatalogo();
+  var cpvInfo      = _cpvRealDosPedidos(base, avgMC);
+  var lucroBruto   = receitaTotal - cpvInfo.cpv;
+  var mcPct        = receitaTotal > 0 ? (lucroBruto / receitaTotal * 100) : 0;
   // Lucro líquido saiu daqui — widget DRE do Dashboard é a fonte única.
 
   document.getElementById('vendas-kpis').innerHTML =
@@ -12353,7 +12695,7 @@ async function renderizarDREVendas(pedidos, mescladas) {
     +'<div class="kpi"><div class="kpi-label">Ticket médio</div><div class="kpi-value gold">'+fmt(ticketMedio)+'</div><div class="kpi-change">por pedido</div></div>'
     // Lucro bruto / MC% / Custo Fixo: só p/ quem tem módulo de custo/financeiro.
     + (_podeVerCusto()
-        ? '<div class="kpi"><div class="kpi-label">Lucro bruto est.</div><div class="kpi-value '+(lucroBruto>=0?'green':'red')+'">'+fmt(lucroBruto)+'</div><div class="kpi-change">MC média '+(avgMC*100).toFixed(1)+'%</div></div>'
+        ? '<div class="kpi"><div class="kpi-label">Lucro bruto</div><div class="kpi-value '+(lucroBruto>=0?'green':'red')+'">'+fmt(lucroBruto)+'</div><div class="kpi-change">'+escHtml(_dashSublabelLucroBruto(mcPct, cpvInfo, receitaTotal))+'</div></div>'
           +'<div class="kpi"><div class="kpi-label">Custo Fixo Planejado</div><div class="kpi-value red">'+fmt(custoFixo)+'</div><div class="kpi-change">média histórica</div></div>'
         : '');
 }
@@ -26391,6 +26733,7 @@ function _pdvVendaNova() {
     vendedorId: '', localId: '', afiliadoId: '', itens: [],
     cliente: { nome:'', cpfCnpj:'', telefone:'', email:'', cep:'', rua:'', numero:'', complemento:'', bairro:'', cidade:'', uf:'', _consumidorFinal:false, _clienteId:null },
     dataPrevistaEntrega: '', entregaImediata: false, observacao: '', desconto: 0, pagamentos: [],
+    entregaNoCliente: false,   // marcado na finalização → custo de deslocamento no CPV
     _contratoImpresso: false, _contratoDispensado: false,  // trava do contrato de venda (finalização)
   };
 }
@@ -27109,6 +27452,40 @@ function _pdvAvancarParaFinalizacao() {
 }
 
 // ─── Step 2: Finalização (pagamento) ────────────────────────
+// Bloco "Entrega no endereço do cliente" na finalização da venda. Marcado, a
+// venda carrega o custo de deslocamento estimado (R$/km × distância loja→CEP,
+// ida e volta) no CPV — e a DRE abate essa quantia do combustível pra não
+// contar 2×. Sem marcar (retirada na loja), custo zero. Mostra a estimativa ao
+// vivo pro vendedor saber o que aquela entrega custa.
+function _pdvEntregaHtml() {
+  const v = _pdvVenda || {};
+  const cep = String((v.cliente && (v.cliente.cep || v.cliente.CEP)) || '').replace(/\D/g, '');
+  const marcado = v.entregaNoCliente === true;
+  const kmIda = cep ? _distanciaEntregaKm(cep) : 0;
+  const cfg = _deslocCfg();
+  const km  = cfg.idaVolta ? kmIda * 2 : kmIda;
+  const custo = km * cfg.rsKm;
+  let detalhe;
+  if (!cep)        detalhe = 'cliente sem CEP — não dá pra estimar a distância';
+  else if (!kmIda) detalhe = 'CEP ainda sem coordenada — a entrega fica sem custo estimado';
+  else detalhe = `≈ ${Math.round(km)} km ${cfg.idaVolta ? '(ida e volta)' : '(só ida)'} · `
+               + `${_fmtBRMoney(custo)} de deslocamento no custo da venda`;
+  return `<div style="margin-top:14px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);">`
+    + `<label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;font-size:12px;">`
+    +   `<input type="checkbox" id="pdv-entrega-chk" ${marcado ? 'checked' : ''} onchange="_pdvSetEntrega(this.checked)" style="margin-top:2px;">`
+    +   `<span><b>🚚 Entrega no endereço do cliente</b>`
+    +     `<div style="font-size:11px;color:var(--text3);margin-top:3px;">${escHtml(detalhe)}</div>`
+    +   `</span>`
+    + `</label></div>`;
+}
+
+function _pdvSetEntrega(v) {
+  if (!_pdvVenda) return;
+  _pdvVenda.entregaNoCliente = !!v;
+  const el = document.getElementById('pdv-entrega-bloco');
+  if (el) el.innerHTML = _pdvEntregaHtml();
+}
+
 function _pdvRenderFinalizacao(root) {
   const v = _pdvVenda;
   const subtotal = v.itens.reduce((s, it) => s + Number(it.qtd) * Number(it.precoUnit), 0);
@@ -27135,6 +27512,7 @@ function _pdvRenderFinalizacao(root) {
     +   `<div style="display:flex;justify-content:space-between;margin-bottom:14px;font-size:13px;align-items:center;"><span>Desconto (R$)</span><input type="number" min="0" step="0.01" class="form-input" value="${Number(v.desconto).toFixed(2)}" style="width:130px;text-align:right;" oninput="_pdvSetDesconto(this.value)"></div>`
     +   `<div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid var(--border);font-size:16px;font-weight:800;"><span>A PAGAR</span><span style="color:var(--gold);font-family:var(--mono,monospace);" id="pdv-apagar">${_fmtBRMoney(apagar)}</span></div>`
     +   `<div id="pdv-pgto-resumo">${_pdvPgtoResumoInner(soma, apagar)}</div>`
+    +   `<div id="pdv-entrega-bloco">${_pdvEntregaHtml()}</div>`
     +   `<div id="pdv-contrato-gate">${_pdvContratoGateHtml()}</div>`
     +   `<button class="btn btn-gold" id="pdv-btn-finalizar" onclick="_pdvFinalizarVenda()" style="width:100%;margin-top:18px;padding:14px;font-size:13px;font-weight:800;" ${(Math.abs(restante)<0.01 && !(_pdvGateContratoAtivo() && !_pdvContratoResolvido()))?'':'disabled'}>${emEdicao ? 'Salvar alterações' : 'Finalizar venda'} <svg class="ic ic-sm"><use href="#ic-check"/></svg></button>`
     + `</div></div>`
@@ -27278,6 +27656,8 @@ async function _pdvFinalizarVenda() {
       criado_por: criadoPor,
       sincronizado_tiny: false,
       venda_local: true,
+      // Entrega no endereço do cliente → gera custo de deslocamento no CPV.
+      entrega_no_cliente: !!v.entregaNoCliente,
     };
     if (_temConsig) pedidoPayload.origem = 'consignacao';
     if (v.entregaImediata) {
@@ -28022,6 +28402,9 @@ async function _pdvEditarPedido(pedidoId) {
     },
     dataPrevistaEntrega: _isoParaInputLocal(p.dataPrevistaEntrega),
     entregaImediata:     !p.dataPrevistaEntrega,
+    // Pedido antigo (anterior ao campo) vem null → checkbox desmarcado; marcar
+    // e salvar passa a contar o deslocamento daquela venda.
+    entregaNoCliente:    p.entregaNoCliente === true,
     observacao:          p.observacao || '',
     desconto:            Number(p.desconto || 0),
     pagamentos: ((p.formaPagamento && p.formaPagamento.metodos) || []).map(m => {
@@ -28056,6 +28439,7 @@ async function _pdvSalvarEdicao(v, built) {
       desconto,
       total,
       observacao:      v.observacao?.trim() || null,
+      entrega_no_cliente: !!v.entregaNoCliente,
       // Entrega: só ajusta a data prevista — NÃO mexe no status (fluxo próprio).
       data_prevista_entrega: v.entregaImediata
         ? null
