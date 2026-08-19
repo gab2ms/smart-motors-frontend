@@ -11785,15 +11785,16 @@ function invSort(col) {
   renderInventario();
 }
 
-// Base da tela: ativos não-serviço. Chip "Scooters" usa SCOOTER_RE no nome
-// (decisão do dono) — atenção: "ECO BIKE" não casa na regex e cai em
-// "Acessórios"; o chip "Todos" cobre tudo.
+// Base da tela: ativos não-serviço. Chips "Scooters"/"Acessórios" seguem a
+// CATEGORIA do cadastro (mesma regra dos KPIs logo acima e do resto do sistema).
+// Era SCOOTER_RE no nome até 19/08/2026, e por isso TAZZO e ECO BIKE — que são
+// scooter no cadastro — apareciam em "Acessórios".
 function _invListaFiltrada() {
   const q = (document.getElementById('inv-search')?.value || '').toLowerCase();
   let lista = produtosCatalogo.filter(p => p.ativo !== false && (p.categoria || '') !== 'servico');
   if (q) lista = lista.filter(p => p.nome.toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q));
-  if      (invTipo === 'scooter')   lista = lista.filter(p => SCOOTER_RE.test(p.nome));
-  else if (invTipo === 'acessorio') lista = lista.filter(p => !SCOOTER_RE.test(p.nome));
+  if      (invTipo === 'scooter')   lista = lista.filter(p =>  _ehScooterItem(p));
+  else if (invTipo === 'acessorio') lista = lista.filter(p => !_ehScooterItem(p));
   if      (invSaldo === 'comSaldo')  lista = lista.filter(p => p.estoque > 0);
   else if (invSaldo === 'zerados')   lista = lista.filter(p => p.estoque === 0);
   else if (invSaldo === 'negativos') lista = lista.filter(p => p.estoque < 0);
@@ -28601,6 +28602,7 @@ async function _pdvTextoContabilidade(pedidoId) {
     const corDefault = (prod && prod.cor) || corDoNome || '';
     const modeloBase = _modeloBase(x.nome, (prod && prod.cor) || corDoNome || null);
     return {
+      itemId:        x.it.id || null,          // linha em pdv_itens_pedido (grava o chassi)
       produtoId:     x.it.produtoId || null,
       modeloDefault: x.nome,
       fabDefault:    (prod && prod.fabricante) || '',
@@ -28734,6 +28736,16 @@ async function _pdvContabPersistir(ctx, dados) {
       if (d.motor)      upd.motor      = d.motor;
       if (Object.keys(upd).length === 1) return Promise.resolve();
       return sb.from('produtos').update(upd).eq('id', sc.produtoId);
+    }));
+
+    // Chassi → volta pro ITEM do pedido (pedido do dono, 19/08/2026): antes só
+    // entrava no texto e se perdia. Só grava o que foi digitado e mudou; campo
+    // deixado em branco NÃO apaga o chassi que já estava gravado.
+    await Promise.all(ctx.scooters.map((sc, i) => {
+      const novo = ((dados.scooters[i] || {}).chassi || '').trim().toUpperCase();
+      if (!sc.itemId || !novo || novo === (sc.chassiOrig || '').trim().toUpperCase()) return Promise.resolve();
+      return sb.from('pdv_itens_pedido').update({ chassi: novo }).eq('id', sc.itemId)
+               .then(r => { if (!r.error) sc.chassiOrig = novo; return r; });
     }));
 
     // Garantia por modelo: aplica a TODAS as cores do(s) modelo(s) do pedido.

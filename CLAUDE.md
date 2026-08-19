@@ -1550,13 +1550,18 @@ No banco, `fn_recalc_comissao_vendedor` usa o mesmo critério (migração
 **Quem é quem:** `_ehScooterItem(item)` = pra item que já vem com `categoria` anexada (faturamento/ranking);
 `_ehScooterCadastro(produtoId, nome)` = pra item que só tem `produto_id` + nome (PDV, `pdv_itens_pedido`).
 
-**Continua decidindo pelo NOME de propósito:** o chip **"Scooters"** da tela de Estoque
-(`_invListaFiltrada` ~11791) — decisão antiga do dono; TAZZO e ECO BIKE caem em "Acessórios" ali. O chip
-"Todos" cobre tudo.
+**Chips "Scooters"/"Acessórios" da tela de Estoque** (`_invListaFiltrada` ~11791): também passaram a seguir
+a categoria (pedido do dono na mesma conversa) — antes eram os únicos que sobravam no critério do nome, e os
+KPIs logo acima já contavam por categoria, então a lista filtrada discordava do próprio KPI.
 
-**Pendências de cadastro da TAZZO:** sem `produto_precos_id` (não está vinculada a um modelo do catálogo de
-preços → CPV cai na estimativa e não tem montagem/"na caixa") e sem `garantia_meses` (o texto da
-contabilidade assume 12 meses por default).
+**Chassi digitado no modal da contabilidade agora VOLTA pro item do pedido** (`_pdvContabPersistir`): antes
+só entrava no texto e se perdia. Grava em `pdv_itens_pedido.chassi` (maiúsculo) só quando foi digitado e
+mudou — campo em branco **não apaga** o chassi que já estava lá.
+
+**Pendências de cadastro da TAZZO:** não tem linha em `produtos_precos` (sem custo puro/montagem → CPV cai
+na estimativa) e está sem `garantia_meses`. ⚠️ O modal da contabilidade **grava a garantia que estiver no
+campo** (default 12) em todas as cores do modelo — se ninguém souber a garantia real do fornecedor, ela
+entra como 12 no cadastro.
 
 
 ## Histórico de mudanças
