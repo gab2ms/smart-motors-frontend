@@ -691,8 +691,9 @@ vendedor/mês** (pedido do dono: acumular ao longo do mês e pagar todo mundo no
 fechamento de AFILIADOS, mas pros vendedores internos. **100% no banco (trigger)** — o front NÃO mudou;
 as contas aparecem no módulo Contas a Pagar normalmente.
 - **Regra do cálculo:** `pdv_vendedores.comissao_moto` (hoje **R$100** p/ os 4 vendedores; Smart Motors=0)
-  × nº de **scooters** (SCOOTER_RE = `/MOTONETA|TRICICLO|SCOOTER/i` no `produto_nome_tiny`). **Acessório NÃO
-  conta.** Competência = **data da venda** (`criado_em`, fuso America/Sao_Paulo). Só pedidos **não
+  × nº de **scooters** — desde **19/08/2026** contadas pela **`produtos.categoria`** do item (o regex no nome
+  virou fallback só pra item sem `produto_id`; ver a seção *Scooter: quem decide é a categoria*). **Acessório
+  NÃO conta.** Competência = **data da venda** (`criado_em`, fuso America/Sao_Paulo). Só pedidos **não
   cancelados** e **sem afiliado** (afiliado tem o fluxo dele). Vencimento **dia 5 do mês seguinte**.
 - **Conta gerada:** `contas_pagar` id **`comvend-<YYYY-MM>-<vendedor_id>`**, categoria **"Comissão de
   Vendas"**, status pendente, `beneficiario`=nome, `comissao_competencia`. **Idempotente** (recalcula o
@@ -1523,6 +1524,40 @@ toggle e guard de `_pdvVenda` nulo.
 ⚠️ **Armadilha de SQL encontrada na auditoria:** `GREATEST(-1, NULL)` no Postgres **ignora o NULL** e
 devolve -1 → `acos(-1)` = π → 30.022 km (o antípoda) para CEP sem coordenada. Só afetou uma query de
 conferência (o JS só calcula quando achou a coordenada), mas vale lembrar ao auditar distância em SQL.
+
+## Scooter: quem decide é a CATEGORIA do cadastro, não o nome (19/08/2026)
+
+**Problema:** `SCOOTER_RE = /MOTONETA|TRICICLO|SCOOTER/i` decide pelo NOME, e o nome é digitado no
+cadastro. Cinco modelos ativos não têm a palavra: **TAZZO AZUL/PRETA**, **ECO BIKE ELÉTRICA
+CINZA/PRETA** e **"Tricilo Fenix 750w"** (sem o "c"). Tudo que dependia do regex os tratava como
+acessório.
+
+**O que quebrava (vendas #89 e #90, TAZZO AZUL da Michelle, 08/2026):**
+- botão **"Copiar informações do pedido"** (texto pra contabilidade) recusava: *"Este pedido não tem scooter"*;
+- PDV não mostrava o campo de **chassi** nem o **"vender na caixa"** (por isso as duas vendas estão sem chassi no banco);
+- **comprovante** saía sem o checklist de vistoria;
+- **comissão** do vendedor (função no banco) não contava as 2 motos → R$ 200 a menos pra Michelle em 08/2026.
+
+**Correção (commit `8fd2db6`):** helper `_ehScooterCadastro(produtoId, nome)` (~6097) — `produtos.categoria`
+manda (`scooter` → sim; `acessorio`/`servico` → não), e o nome só decide o que **não tem vínculo**
+(consignada e itens do arquivo Tiny ≤31/05, que têm `produto_id` null) ou está sem categoria. Depende do
+índice `_PROD_CAT_IDX`, então quem chama dá `await _carregarCategoriaProdutos()` antes — hoje isso acontece
+em `_pdvGarantirProdutos`, `_pdvEditarPedido`, `_pdvAbrirDetalhe`, `_pdvReimprimirDireto` e
+`_pdvTextoContabilidade`. Se o índice falhar, degrada pro nome (comportamento antigo — nunca quebra a tela).
+No banco, `fn_recalc_comissao_vendedor` usa o mesmo critério (migração
+`comissao_vendedor_conta_scooter_por_categoria`); os meses já **pagos** não são recalculados.
+
+**Quem é quem:** `_ehScooterItem(item)` = pra item que já vem com `categoria` anexada (faturamento/ranking);
+`_ehScooterCadastro(produtoId, nome)` = pra item que só tem `produto_id` + nome (PDV, `pdv_itens_pedido`).
+
+**Continua decidindo pelo NOME de propósito:** o chip **"Scooters"** da tela de Estoque
+(`_invListaFiltrada` ~11791) — decisão antiga do dono; TAZZO e ECO BIKE caem em "Acessórios" ali. O chip
+"Todos" cobre tudo.
+
+**Pendências de cadastro da TAZZO:** sem `produto_precos_id` (não está vinculada a um modelo do catálogo de
+preços → CPV cai na estimativa e não tem montagem/"na caixa") e sem `garantia_meses` (o texto da
+contabilidade assume 12 meses por default).
+
 
 ## Histórico de mudanças
 
