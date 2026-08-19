@@ -6093,6 +6093,23 @@ function _ehScooterItem(item) {
   return SCOOTER_RE.test((item.produto || item.nome || '').trim());
 }
 
+// Mesma decisão do _ehScooterItem, mas pra quem só tem produto_id + nome: o
+// carrinho do PDV e os itens gravados em pdv_itens_pedido (que não carregam
+// `categoria`). Usa o índice _PROD_CAT_IDX — quem chama precisa ter dado
+// await em _carregarCategoriaProdutos(); sem índice, degrada pro nome.
+//
+// Existe porque o regex do nome sozinho errava: "TAZZO AZUL" e "ECO BIKE
+// ELÉTRICA" estão cadastradas como scooter mas não têm MOTONETA/SCOOTER/
+// TRICICLO no nome — o PDV não mostrava o campo de chassi/"na caixa" e o texto
+// pra contabilidade recusava o pedido (vendas #89 e #90 de 08/2026).
+function _ehScooterCadastro(produtoId, nome) {
+  const rec = produtoId ? _PROD_CAT_IDX.get(String(produtoId)) : null;
+  const cat = (rec && rec.categoria) || '';
+  if (cat === 'scooter') return true;
+  if (cat === 'acessorio' || cat === 'servico') return false;
+  return SCOOTER_RE.test(String(nome || '').trim());
+}
+
 // Item vendido cuja natureza não deu pra determinar: tem cadastro (produto_id)
 // mas ficou sem categoria. Alimenta o aviso de cadastro incompleto no card.
 function _itemSemClassificacao(item) {
@@ -26758,6 +26775,9 @@ async function initPdv() {
 // forcar=true rebusca mesmo com cache (usado pelo initPdv: produto novo aparece sem F5).
 async function _pdvGarantirProdutos(forcar = false) {
   if (produtosTiny.length && !forcar) return;
+  // Índice de categoria: quem decide se o item é scooter (campo de chassi,
+  // "na caixa", checklist, texto da contabilidade). Sem ele tudo cai no nome.
+  try { await _carregarCategoriaProdutos(); } catch (_) {}
   try {
     // Lê do NOSSO banco (tabela produtos) — instantâneo, saldo real, sem Tiny ao
     // vivo (que travava no N+1 de estoque). Mapeia pro mesmo shape do produtosTiny[]:
@@ -27039,7 +27059,7 @@ function _pdvRenderItensTabela() {
           <td style="padding:8px;">
             <div style="font-weight:700;">${escHtml(it.produtoNomeTiny)}</div>
             <div style="font-size:10px;color:var(--text3);font-family:var(--mono,monospace);">${escHtml(it.codigo || 'sem código')}</div>
-            ${SCOOTER_RE.test(it.produtoNomeTiny || '') ? `<input class="form-input" type="text" value="${escHtml(it.chassi || '').replace(/"/g,'&quot;')}" placeholder="Chassi (opcional)" style="margin-top:6px;font-size:11px;padding:5px 8px;max-width:260px;text-transform:uppercase;" oninput="_pdvSetItem(${idx},'chassi',this.value.toUpperCase());this.value=this.value.toUpperCase();">
+            ${_ehScooterCadastro(it.produtoId, it.produtoNomeTiny) ? `<input class="form-input" type="text" value="${escHtml(it.chassi || '').replace(/"/g,'&quot;')}" placeholder="Chassi (opcional)" style="margin-top:6px;font-size:11px;padding:5px 8px;max-width:260px;text-transform:uppercase;" oninput="_pdvSetItem(${idx},'chassi',this.value.toUpperCase());this.value=this.value.toUpperCase();">
             <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text2);cursor:pointer;user-select:none;" title="Entregue na caixa, sem montar — a loja não paga a montagem nessa venda">
               <input type="checkbox" ${it.naCaixa ? 'checked' : ''} style="width:auto;cursor:pointer;" onchange="_pdvSetItem(${idx},'naCaixa',this.checked)"> 📦 Vender na caixa (sem montagem)
             </label>` : ''}
@@ -27113,7 +27133,7 @@ async function _pdvAddItemFromIdx(idx) {
       comissaoConsig: p._consignacaoId ? (Number(p._comissaoConsig) || 0) : null,
       // Modalidade: só scooter tem montagem. Default herda o padrão do modelo
       // (produtos_precos.venda_na_caixa); o vendedor pode mudar por venda.
-      naCaixa: SCOOTER_RE.test(p.nome || '') ? !!(_matchProdutoPorNome(p.nome || '') || {}).vendaNaCaixa : false,
+      naCaixa: _ehScooterCadastro(p.produtoId, p.nome) ? !!(_matchProdutoPorNome(p.nome || '') || {}).vendaNaCaixa : false,
     });
   }
   document.getElementById('pdv-itens-tabela').innerHTML = _pdvRenderItensTabela();
@@ -27681,7 +27701,7 @@ async function _pdvFinalizarVenda() {
       quantidade: parseInt(it.qtd, 10),
       valor_unitario: Number(it.precoUnit),
       valor_total: Number(it.qtd) * Number(it.precoUnit),
-      chassi: (SCOOTER_RE.test(it.produtoNomeTiny || '') && it.chassi?.trim()) ? it.chassi.trim() : null,
+      chassi: (_ehScooterCadastro(it.produtoId, it.produtoNomeTiny) && it.chassi?.trim()) ? it.chassi.trim() : null,
       ordem: idx,
       consignacao_id: it.consignacaoId || null,
       custo_consignacao: it.consignacaoId ? ((Number(it.repasse)||0) + (Number(it.comissaoConsig)||0)) : null,
@@ -27712,9 +27732,10 @@ async function _pdvFinalizarVenda() {
       cliente:      clienteDados,
       itens:        v.itens.map(it => ({
         nome:      it.produtoModelo || it.produtoNomeTiny || '—',
+        produtoId: it.produtoId || null,
         qtd:       Number(it.qtd),
         precoUnit: Number(it.precoUnit),
-        chassi:    (SCOOTER_RE.test(it.produtoNomeTiny || '') && it.chassi?.trim()) ? it.chassi.trim() : '',
+        chassi:    (_ehScooterCadastro(it.produtoId, it.produtoNomeTiny) && it.chassi?.trim()) ? it.chassi.trim() : '',
       })),
       pagamentos:   formaPagamento.metodos,
       subtotal, desconto, total,
@@ -27880,8 +27901,9 @@ function _pdvImprimirComprovante(snap) {
    .map(([k, v]) => `<tr><td class="k">${e(k)}</td><td>${e(v)}</td></tr>`).join('');
 
   // Checklist de vistoria — só quando a venda inclui veículo (mesma regra do
-  // resumo/ranking: SCOOTER_RE). Venda só de acessório não mostra checklist.
-  const temScooter = (c.itens || []).some(it => SCOOTER_RE.test(it.nome || ''));
+  // resumo/ranking: categoria do cadastro, nome como fallback). Venda só de
+  // acessório não mostra checklist.
+  const temScooter = (c.itens || []).some(it => _ehScooterCadastro(it.produtoId, it.nome));
   const VISTORIA = ['Carregador separado', 'Chave reserva', 'Brinde incluído', 'NF emitida', 'Scooter testada/ligada', 'Bateria carregada', 'Pneus calibrados', 'Freios testados', 'Avarias/riscos conferidos'];
   const checklistHTML = temScooter ? `
     <div class="box checklist">
@@ -28041,6 +28063,7 @@ function _pdvMontarSnapshotComprovante(p, itensCam, vNome, lNome) {
     cliente:      p.clienteDados || {},
     itens:        (itensCam || []).map(it => ({
       nome:      it.produtoModelo || it.produtoNomeTiny || '—',
+      produtoId: it.produtoId || null,
       qtd:       Number(it.quantidade),
       precoUnit: Number(it.valorUnitario),
       chassi:    it.chassi || '',
@@ -28060,7 +28083,10 @@ function _pdvMontarSnapshotComprovante(p, itensCam, vNome, lNome) {
 async function _pdvReimprimirDireto(pedidoId) {
   const p = _pdvPedidosLista.find(x => x.id === pedidoId);
   if (!p) return smAlert('Pedido não encontrado.');
-  const r = await sb.from('pdv_itens_pedido').select('*').eq('pedido_id', pedidoId).order('ordem');
+  const [r] = await Promise.all([
+    sb.from('pdv_itens_pedido').select('*').eq('pedido_id', pedidoId).order('ordem'),
+    _carregarCategoriaProdutos(),   // checklist de vistoria decide por categoria
+  ]);
   if (r.error) return smAlert('Erro ao buscar itens do pedido: ' + r.error.message);
   const itensCam = (r.data || []).map(toCamel);
   const vNome = (pdvVendedores.find(x => x.id === p.vendedorId) || {}).nome || '—';
@@ -28080,6 +28106,7 @@ async function _pdvAbrirDetalhe(pedidoId) {
   const [r1, r2] = await Promise.all([
     sb.from('pdv_itens_pedido').select('*').eq('pedido_id', pedidoId).order('ordem'),
     sb.from('pdv_auditoria_log').select('*').eq('pedido_id', pedidoId).order('quando', { ascending: true }),
+    _carregarCategoriaProdutos(),   // checklist de vistoria decide por categoria
   ]);
   if (r1.error) { smAlert('Erro: ' + r1.error.message); return; }
   const itensCam = (r1.data || []).map(toCamel);
@@ -28353,7 +28380,9 @@ async function _pdvEditarPedido(pedidoId) {
   if (!p) { smAlert('Pedido não encontrado.'); return; }
   if (p.status === 'cancelado') { smAlert('Pedido cancelado não pode ser editado.'); return; }
 
-  // Itens vêm do banco (o cache da lista não traz itens).
+  // Itens vêm do banco (o cache da lista não traz itens). A categoria é o que
+  // decide o campo de chassi/"na caixa" dos itens já gravados.
+  try { await _carregarCategoriaProdutos(); } catch (_) {}
   const r = await sb.from('pdv_itens_pedido').select('*').eq('pedido_id', pedidoId).order('ordem');
   if (r.error) { smAlert('Erro ao carregar itens do pedido: ' + r.error.message); return; }
   const itensCam = (r.data || []).map(toCamel);
@@ -28472,7 +28501,7 @@ async function _pdvSalvarEdicao(v, built) {
       quantidade:        parseInt(it.qtd, 10),
       valor_unitario:    Number(it.precoUnit),
       valor_total:       Number(it.qtd) * Number(it.precoUnit),
-      chassi:            (SCOOTER_RE.test(it.produtoNomeTiny || '') && it.chassi?.trim()) ? it.chassi.trim() : null,
+      chassi:            (_ehScooterCadastro(it.produtoId, it.produtoNomeTiny) && it.chassi?.trim()) ? it.chassi.trim() : null,
       ordem:             idx,
       na_caixa:          !!it.naCaixa,
     }));
@@ -28535,6 +28564,7 @@ async function _pdvTextoContabilidade(pedidoId) {
   const [rp, ri] = await Promise.all([
     sb.from('pdv_pedidos').select('*').eq('id', pedidoId).single(),
     sb.from('pdv_itens_pedido').select('*').eq('pedido_id', pedidoId).order('ordem'),
+    _carregarCategoriaProdutos(),   // índice de categoria — é ele que diz o que é scooter
   ]);
   if (rp.error || !rp.data) { smAlert('Erro ao carregar o pedido: ' + (rp.error?.message || 'não encontrado')); return; }
   if (ri.error) { smAlert('Erro ao carregar itens do pedido: ' + ri.error.message); return; }
@@ -28542,11 +28572,12 @@ async function _pdvTextoContabilidade(pedidoId) {
   const itens = (ri.data || []).map(toCamel);
   const cli   = ped.clienteDados || {};
 
-  // Só scooters (mesma regra do projeto). Cada linha de item vira um bloco.
+  // Só scooters. A CATEGORIA do cadastro manda (fonte da verdade da operação);
+  // o nome só decide o que não tem vínculo — consignada e itens do arquivo Tiny.
   const linhasScooter = itens
     .map(it => ({ it, nome: it.produtoModelo || it.produtoNomeTiny || '' }))
-    .filter(x => SCOOTER_RE.test(x.nome));
-  if (!linhasScooter.length) { smAlert('Este pedido não tem scooter — o texto de contabilidade só se aplica a scooters (acessórios não entram).'); return; }
+    .filter(x => _ehScooterCadastro(x.it.produtoId, x.nome));
+  if (!linhasScooter.length) { smAlert('Este pedido não tem scooter — o texto de contabilidade só se aplica a scooters (acessórios não entram).\n\nSe for scooter, confira a categoria do produto em Estoque › cadastro.'); return; }
 
   // Catálogo: Fabricante/Cor/Motor vêm do cadastro do produto (item.produtoId);
   // garantia vem por MODELO (compartilhada entre cores — ver _modeloBase).
